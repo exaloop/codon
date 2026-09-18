@@ -1,6 +1,7 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
 from argparse import ArgumentError
+from copy import deepcopy
 import ctypes
 import inspect
 import sys
@@ -146,9 +147,36 @@ def _codon_type(arg, **kwargs):
 def _codon_types(args, **kwargs):
     return tuple(_codon_type(arg, **kwargs) for arg in args)
 
+_jit_options = {}
+_jit_initialized = False
+_jit_started = False
+
+
+def set_options(**options):
+    """Configure the shared JIT before using jit, convert, or execute.
+
+    Keys match compiler Options fields, for example fastmath=True or pynum=False.
+    Calls merge settings. Invalid options leave the current configuration intact.
+    """
+    if _jit_started:
+        raise RuntimeError("JIT options must be set before the first JIT use")
+    options = deepcopy(options)
+    _jit.set_options(**options)
+    _jit_options.update(options)
+
+
 def _reset_jit():
-    global _jit
-    _jit = JITWrapper()
+    global _jit, _jit_initialized
+    _jit = JITWrapper(**_jit_options)
+    _jit_initialized = False
+    return _jit
+
+
+def _get_jit():
+    global _jit_initialized, _jit_started
+    if _jit_initialized:
+        return _jit
+    _jit_started = True
     init_code = (
         "from internal.python import "
         "setup_decorator, PyTuple_GetItem, PyObject_GetAttrString\n"
@@ -159,6 +187,7 @@ def _reset_jit():
     if debug_override == 2:
         print(f"[jit_debug] execute:\n{init_code}", file=sys.stderr)
     _jit.execute(init_code, "", 0, int(debug_override > 0))
+    _jit_initialized = True
     return _jit
 
 _jit = _reset_jit()
@@ -232,7 +261,7 @@ def convert(t):
 
     if debug_override == 2:
         print(f"[jit_debug] execute:\n{code}", file=sys.stderr)
-    _jit.execute(code, "", 0, int(debug_override > 0))
+    _get_jit().execute(code, "", 0, int(debug_override > 0))
     custom_conversions[t] = name
     return t
 
@@ -244,7 +273,7 @@ def _jit_register_fn(f, pyvars, debug):
             fn, fl = f.__code__.co_filename, f.__code__.co_firstlineno
         if debug == 2:
             print(f"[jit_debug] execute:\n{obj_str}", file=sys.stderr)
-        _jit.execute(obj_str, fn, fl, int(debug > 0))
+        _get_jit().execute(obj_str, fn, fl, int(debug > 0))
         return obj_name
     except JITError:
         _reset_jit()
@@ -270,7 +299,7 @@ def _jit_callback_fn(fn,
         types = _codon_types(args, debug=debug, sample_size=sample_size)
         if debug > 0:
             print("[python] {}({})".format(obj_name, list(types)), file=sys.stderr)
-        return _jit.run_wrapper(
+        return _get_jit().run_wrapper(
             obj_name, list(types), module, list(pyvars), args, int(debug > 0)
         )
     except JITError:
@@ -323,7 +352,7 @@ def execute(code, debug=0):
     try:
         if debug == 2:
             print(f"[jit_debug] execute:\n{code}", file=sys.stderr)
-        _jit.execute(code, "<internal>", 0, int(debug))
+        _get_jit().execute(code, "<internal>", 0, int(debug))
     except JITError:
         _reset_jit()
         raise

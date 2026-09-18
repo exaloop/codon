@@ -1,3 +1,5 @@
+# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
+
 """Native JSON parsing and encoding with a tagged `JSON` value.
 
 Provides `load`, `loads`, `dump`, `dumps`, `JSONDecoder`, `JSONEncoder`, and
@@ -39,7 +41,7 @@ print(json.dumps(value, indent=2))
 """
 
 from internal import gc
-from internal.str import _UnicodeCodecBuffer, _make_meta, _kind_width, KIND_ASCII
+from internal.types.str import _UnicodeCodecBuffer, _make_meta, _kind_width, KIND_ASCII
 from algorithms.pdqsort import pdq_sort_array
 import math
 

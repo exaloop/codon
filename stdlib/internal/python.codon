@@ -2,7 +2,7 @@
 
 from gc import atomic, alloc_uncollectable
 from internal.dlopen import *
-from internal.str import (
+from internal.types.str import (
     KIND_LATIN1,
     KIND_UCS2,
     _ENCODING_UTF8,

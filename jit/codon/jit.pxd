@@ -8,6 +8,8 @@ cdef extern from "codon/compiler/jit_extern.h":
         char *error
 
     void *jit_init(char *name)
+    CJITResult jit_init_with_options(const char *name, const char *options)
+    CJITResult jit_validate_options(const char *options)
     void jit_exit(void *jit)
 
     cdef char *get_jit_library()

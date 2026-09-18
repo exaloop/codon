@@ -1,6 +1,6 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
-from .normalization_data import (
+from internal.unicode.generated.normalization import (
     NORMALIZATION_COMBINING_MASK,
     NORMALIZATION_COMPATIBILITY_DECOMPOSITION_MASK,
     NORMALIZATION_COMPOSITION_MASK,
@@ -15,7 +15,7 @@ from .normalization_data import (
     _normalization_raw_decomposition_entry,
     _normalization_raw_decomposition_value,
 )
-from internal.str import _unicode_from_codepoints
+from internal.types.str import _unicode_from_codepoints
 
 HANGUL_SBASE: Literal[int] = 0xAC00
 HANGUL_LBASE: Literal[int] = 0x1100

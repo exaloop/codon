@@ -1035,6 +1035,72 @@ struct CoroBranchSimplifier : public llvm::PassInfoMixin<CoroBranchSimplifier> {
   }
 };
 
+struct OpenMPThreadIdOptimizer : public llvm::PassInfoMixin<OpenMPThreadIdOptimizer> {
+  llvm::PreservedAnalyses run(llvm::Function &function,
+                              llvm::FunctionAnalysisManager &) {
+    if (!function.hasLocalLinkage() || function.use_empty() || function.arg_size() < 2)
+      return llvm::PreservedAnalyses::all();
+
+    bool forkCallback = function.getArg(0)->getType()->isPointerTy() &&
+                        function.getArg(1)->getType()->isPointerTy();
+    bool taskCallback = function.getArg(0)->getType()->isIntegerTy(32) &&
+                        function.getArg(1)->getType()->isPointerTy();
+    if (!forkCallback && !taskCallback)
+      return llvm::PreservedAnalyses::all();
+
+    for (auto &use : function.uses()) {
+      auto *call = llvm::dyn_cast<llvm::CallBase>(use.getUser());
+      auto *callee = call ? call->getCalledFunction() : nullptr;
+      if (!callee || !call->isArgOperand(&use))
+        return llvm::PreservedAnalyses::all();
+      if (forkCallback) {
+        if (callee->getName() != "__kmpc_fork_call" || call->getArgOperandNo(&use) != 2)
+          return llvm::PreservedAnalyses::all();
+      } else {
+        if (callee->getName() != "__kmpc_omp_task_alloc" ||
+            call->getArgOperandNo(&use) != 5)
+          return llvm::PreservedAnalyses::all();
+        auto *flags = llvm::dyn_cast<llvm::ConstantInt>(call->getArgOperand(2));
+        if (!flags || !(flags->getZExtValue() & 1))
+          return llvm::PreservedAnalyses::all();
+      }
+    }
+
+    llvm::SmallVector<llvm::CallInst *, 8> globalQueries, teamQueries;
+    for (auto &block : function) {
+      for (auto &instruction : block) {
+        auto *call = llvm::dyn_cast<llvm::CallInst>(&instruction);
+        auto *callee = call ? call->getCalledFunction() : nullptr;
+        if (!callee || !call->getType()->isIntegerTy(32))
+          continue;
+        if (callee->getName() == "__kmpc_global_thread_num" && call->arg_size() == 1)
+          globalQueries.push_back(call);
+        else if (forkCallback && callee->getName() == "omp_get_thread_num" &&
+                 call->arg_empty())
+          teamQueries.push_back(call);
+      }
+    }
+    if (globalQueries.empty() && teamQueries.empty())
+      return llvm::PreservedAnalyses::all();
+
+    llvm::IRBuilder<> builder(&*function.getEntryBlock().getFirstInsertionPt());
+    auto replaceQueries = [&](auto &queries, unsigned argument, const char *name) {
+      if (queries.empty())
+        return;
+      llvm::Value *threadId = function.getArg(argument);
+      if (forkCallback)
+        threadId = builder.CreateLoad(builder.getInt32Ty(), threadId, name);
+      for (auto *query : queries) {
+        query->replaceAllUsesWith(threadId);
+        query->eraseFromParent();
+      }
+    };
+    replaceQueries(globalQueries, 0, "omp.gtid");
+    replaceQueries(teamQueries, 1, "omp.btid");
+    return llvm::PreservedAnalyses::none();
+  }
+};
+
 void registerCodonLLVMOptimizationPasses(llvm::PassBuilder &pb, PluginManager *plugins,
                                          Options *options) {
   pb.registerLateLoopOptimizationsEPCallback(
@@ -1046,6 +1112,7 @@ void registerCodonLLVMOptimizationPasses(llvm::PassBuilder &pb, PluginManager *p
   pb.registerPeepholeEPCallback(
       [=](llvm::FunctionPassManager &pm, llvm::OptimizationLevel opt) {
         if (opt.isOptimizingForSpeed()) {
+          pm.addPass(OpenMPThreadIdOptimizer());
           pm.addPass(AllocationRemover());
           pm.addPass(llvm::LoopSimplifyPass());
           pm.addPass(llvm::LCSSAPass());

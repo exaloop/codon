@@ -1,7 +1,7 @@
 import gzip
 import bz2
 import sys
-from internal.str import (
+from internal.types.str import (
     _encoding_matches,
     _unicode_from_codepoint,
     _unicode_encode_code_with_ownership,

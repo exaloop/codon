@@ -252,10 +252,162 @@ TEST(LLVMOptimizationTest, RemovesUnusedStandardStreamInitialization) {
   unsigned definitions = 0;
   for (const auto &function : *module) {
     EXPECT_FALSE(function.getName().contains("std.internal.format"));
-    EXPECT_FALSE(function.getName().contains("std.internal.str"));
+    EXPECT_FALSE(function.getName().contains("std.internal.types.str"));
     definitions += !function.isDeclaration();
   }
   EXPECT_EQ(1, definitions);
+}
+
+TEST(LLVMOptimizationTest, ReusesOpenMPThreadIds) {
+  ASSERT_EXIT(
+      {
+        auto compiler = compileAndOptimize(R"(
+import openmp as omp
+
+@export
+def static_ids(data: Ptr[int], count: int):
+    @par(num_threads=4)
+    for index in range(count):
+        data[index] = omp._get_gtid() + omp.get_thread_num()
+    data[0] = omp.get_thread_num()
+
+@export
+def chunked_ids(data: Ptr[int], count: int):
+    @par(schedule='static', chunk_size=7)
+    for index in range(count):
+        data[index] = omp._get_gtid() + omp.get_thread_num()
+
+@export
+def dynamic_ids(data: Ptr[int], count: int):
+    @par(schedule='dynamic', chunk_size=7)
+    for index in range(count):
+        data[index] = omp._get_gtid() + omp.get_thread_num()
+
+def items(count):
+  for index in range(count):
+    yield index
+
+@export
+def task_ids(data: Ptr[int], count: int):
+  @par
+  for index in items(count):
+    data[index] = omp._get_gtid()
+)");
+        unsigned outlines = 0;
+        unsigned outsideQueries = 0;
+        for (auto &function : *compiler->getLLVMVisitor()->getModule()) {
+          if (function.isDeclaration())
+            continue;
+          bool outlined = function.getName().contains("_loop_outline_template");
+          outlines += outlined;
+          for (auto &block : function) {
+            for (auto &instruction : block) {
+              auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+              auto *callee = call ? call->getCalledFunction() : nullptr;
+              if (callee && (callee->getName() == "__kmpc_global_thread_num" ||
+                             callee->getName() == "omp_get_thread_num")) {
+                EXPECT_FALSE(outlined) << function.getName().str();
+                outsideQueries += !outlined;
+              }
+            }
+          }
+        }
+        EXPECT_EQ(5, outlines);
+        EXPECT_GT(outsideQueries, 0);
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(LLVMOptimizationTest, KeepsOpenMPAccumulatorsInRegisters) {
+  ASSERT_EXIT(
+      {
+        auto compiler = compileAndOptimize(R"(
+@export
+def sum_int(data: Ptr[int], count: int):
+    total = 0
+    @par
+    for index in range(count):
+        total += data[index]
+    return total
+
+@export
+def sum_float(data: Ptr[float], count: int):
+    total = 0.0
+    @par
+    for index in range(count):
+        total += data[index]
+    return total
+)");
+        unsigned outlines = 0;
+        unsigned loopBlocks = 0;
+        for (auto &function : *compiler->getLLVMVisitor()->getModule()) {
+          if (!function.getName().contains("_loop_outline_template"))
+            continue;
+          ++outlines;
+          llvm::DominatorTree dominators(function);
+          llvm::LoopInfo loops(dominators);
+          for (auto &block : function) {
+            if (!loops.getLoopFor(&block))
+              continue;
+            ++loopBlocks;
+            for (auto &instruction : block) {
+              if (auto *store = llvm::dyn_cast<llvm::StoreInst>(&instruction))
+                EXPECT_FALSE(llvm::isa<llvm::AllocaInst>(store->getPointerOperand()));
+            }
+          }
+        }
+        EXPECT_EQ(2, outlines);
+        EXPECT_GT(loopBlocks, 0);
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(LLVMOptimizationTest, KeepsOpenMPQueriesWithoutStableContext) {
+  auto optimized = compileAndOptimizeIR(R"(
+declare void @__kmpc_fork_call(ptr, i32, ptr, ...)
+declare ptr @__kmpc_omp_task_alloc(ptr, i32, i32, i64, i64, ptr, ptr)
+declare i32 @__kmpc_global_thread_num(ptr)
+declare i32 @omp_get_thread_num()
+declare void @escape(ptr)
+
+define private void @escaped(ptr %gtid, ptr %btid, ptr %result) noinline {
+  %global = call i32 @__kmpc_global_thread_num(ptr null)
+  %team = call i32 @omp_get_thread_num()
+  %total = add i32 %global, %team
+  store i32 %total, ptr %result
+  ret void
+}
+
+define private i32 @untied(i32 %gtid, ptr %task) noinline {
+  %global = call i32 @__kmpc_global_thread_num(ptr null)
+  ret i32 %global
+}
+
+define void @launch(ptr %result) {
+  call void (ptr, i32, ptr, ...) @__kmpc_fork_call(ptr null, i32 1,
+                                                ptr @escaped, ptr %result)
+  call void @escape(ptr @escaped)
+  %task = call ptr @__kmpc_omp_task_alloc(ptr null, i32 0, i32 0, i64 64,
+                                        i64 0, ptr @untied, ptr null)
+  call void @escape(ptr %task)
+  ret void
+}
+)");
+  ASSERT_NE(nullptr, optimized.module);
+  unsigned queries = 0;
+  for (auto &function : *optimized.module) {
+    for (auto &block : function) {
+      for (auto &instruction : block) {
+        auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+        auto *callee = call ? call->getCalledFunction() : nullptr;
+        queries += callee && (callee->getName() == "__kmpc_global_thread_num" ||
+                              callee->getName() == "omp_get_thread_num");
+      }
+    }
+  }
+  EXPECT_EQ(3, queries);
 }
 
 TEST(LLVMOptimizationTest, HoistsNonescapingPointerThroughAggregatePhi) {

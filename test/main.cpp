@@ -357,7 +357,9 @@ TEST_P(SeqTest, Run) {
     status = runInChildProcess();
   if (!WIFEXITED(status))
     std::cerr << result() << std::endl;
-  ASSERT_TRUE(WIFEXITED(status));
+  ASSERT_TRUE(WIFEXITED(status))
+      << "child wait status: " << status
+      << ", signal: " << (WIFSIGNALED(status) ? WTERMSIG(status) : 0);
 
   string output = result();
 

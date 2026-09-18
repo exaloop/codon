@@ -30,6 +30,51 @@ def test_popcnt():
 test_popcnt()
 
 @test
+def test_int_shift_count(N: Literal[int]):
+    signed = Int[N](-1)
+    unsigned = UInt[N](-1)
+    for count in range(N):
+        signed_left = signed << count
+        signed_right = signed >> count
+        unsigned_left = unsigned << count
+        unsigned_right = unsigned >> count
+        assert type(signed_left) is Int[N]
+        assert type(signed_right) is Int[N]
+        assert type(unsigned_left) is UInt[N]
+        assert type(unsigned_right) is UInt[N]
+        assert signed_left == signed << Int[N](count)
+        assert signed_right == signed
+        assert unsigned_left == unsigned << UInt[N](count)
+        assert unsigned_right == unsigned >> UInt[N](count)
+
+    assert type(signed << 0) is Int[N]
+    assert type(signed >> 0) is Int[N]
+    assert type(unsigned << 0) is UInt[N]
+    assert type(unsigned >> 0) is UInt[N]
+    if N > 1:
+        signed <<= 1
+        assert type(signed) is Int[N]
+        assert signed == Int[N](-2)
+        signed >>= 1
+        assert signed == Int[N](-1)
+        unsigned >>= 1
+        assert type(unsigned) is UInt[N]
+        assert unsigned == UInt[N](-1) >> UInt[N](1)
+        unsigned <<= 1
+        assert unsigned == UInt[N](-2)
+
+test_int_shift_count(1)
+test_int_shift_count(2)
+test_int_shift_count(7)
+test_int_shift_count(8)
+test_int_shift_count(16)
+test_int_shift_count(32)
+test_int_shift_count(64)
+test_int_shift_count(65)
+test_int_shift_count(128)
+test_int_shift_count(256)
+
+@test
 def test_conversions():
     # int -> int, float, bool, str
     assert int(-42) == -42

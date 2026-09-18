@@ -3,14 +3,14 @@
 import internal.static as static
 import internal.gc as gc
 
-from .str import (
+from internal.types.str import (
     KIND_ASCII,
     _kind_for_maxchar,
     _kind_width,
     _make_meta,
     _unicode_copy_range,
 )
-from .unicode.float_dtoa import (
+from .numeric.float_dtoa import (
     _float_dtoa_exponent_write,
     _float_dtoa_fixed_write,
     _float_dtoa_general_write,

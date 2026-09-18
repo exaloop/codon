@@ -18,6 +18,9 @@ argv = list(__argv__, __argc__)
 stdin = File[str](_C.seq_stdin(), mode="r")
 stdout = File[str](_C.seq_stdout(), mode="w")
 stderr = File[str](_C.seq_stderr(), mode="w")
+stdin._state._read_ahead = False
+stdout._state._write_through = True
+stderr._state._write_through = True
 
 __stdin__ = stdin
 __stdout__ = stdout

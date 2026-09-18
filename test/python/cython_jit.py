@@ -1,6 +1,76 @@
 from typing import Dict, List, Tuple
+import subprocess
+import sys
 import numpy as np
 import codon
+
+def test_options():
+    for settings in ({"fastmath": 1}, {"fastmath": None}, {"mcpu": True},
+                     {"disabled": "folding"}, {"mattrs": [1]},
+                     {"unknown": True}, {"standalone": True}):
+        try:
+            codon.set_options(**settings)
+            assert False, settings
+        except ValueError:
+            pass
+
+    disabled = ["not-a-pass"]
+    codon.set_options(fastmath=True, native=False, disabled=disabled)
+    codon.set_options(pynum=False, unordereddict=True,
+                      defines=["JIT_SCALE=7", "JIT_LABEL=str:configured"])
+    disabled.append(1)
+    try:
+        codon.set_options(pynum=True, unknown=True)
+        assert False
+    except ValueError:
+        pass
+
+    @codon.jit
+    def configured(value):
+        return value // 2, __py_numerics__, __dict_unordered__, JIT_SCALE, JIT_LABEL
+
+    assert configured(-3) == (-1, 0, 1, 7, "configured")
+    try:
+        codon.set_options(pynum=True)
+        assert False
+    except RuntimeError:
+        pass
+
+    try:
+        codon.execute("1 + 'bad'\n")
+        assert False
+    except codon.JITError:
+        pass
+
+    @codon.jit
+    def configured_after_reset(value):
+        return value // 2, __py_numerics__, __dict_unordered__, JIT_SCALE, JIT_LABEL
+
+    assert configured_after_reset(-3) == (-1, 0, 1, 7, "configured")
+    try:
+        codon.set_options(pynum=True)
+        assert False
+    except RuntimeError:
+        pass
+
+    wrapper = codon.JITWrapper(pynum=False, debug=True)
+    wrapper.set_options(fastmath=True)
+    wrapper.execute("assert __py_numerics__ == 0\nassert __debug__ == 1\n", "", 0, False)
+    try:
+        wrapper.set_options(pynum=True)
+        assert False
+    except RuntimeError:
+        pass
+    default_wrapper = codon.JITWrapper()
+    default_wrapper.execute("assert __py_numerics__ == 1\nassert __debug__ == 0\n", "", 0, False)
+
+
+if __name__ == "__main__" and "--options-only" in sys.argv:
+    test_options()
+    print("JIT options tests passed", flush=True)
+    sys.exit(0)
+
+subprocess.run([sys.executable, __file__, "--options-only"], check=True, timeout=300)
 
 @codon.convert
 class Foo:
