@@ -78,6 +78,26 @@ TEST(JITOptionsTest, ReportsPluginInitializationErrors) {
   free(result.error);
 }
 
+TEST(JITOptionsTest, CollectsAfterJITTeardown) {
+  ASSERT_EXIT(
+      {
+        auto options = codon::Options::getDefault("build/codon_test");
+        options->capture = true;
+        {
+          codon::jit::JIT jit(*options);
+          auto error = jit.init();
+          ASSERT_FALSE(bool(error)) << llvm::toString(std::move(error));
+          auto result = jit.execute("values = [str(index) for index in range(100)]\n"
+                                    "print(values[-1])\n");
+          ASSERT_TRUE(bool(result)) << llvm::toString(result.takeError());
+          EXPECT_EQ(*result, "99\n");
+        }
+        GC_gcollect();
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
 namespace {
 const std::string recursiveVirtualCode = R"codon(
 import internal.static as static
