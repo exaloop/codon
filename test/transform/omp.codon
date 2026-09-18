@@ -16,10 +16,10 @@ class A:
     def __atomic_add__(a: Ptr[A], other: A):
         with lock:
             a[0] = A(a[0].n + other.n)
-    
+
     def __sub__(self, other: A):
         return A(self.n - other.n)
-        
+
     def __atomic_sub__(a: Ptr[A], other: A):
         with lock:
             a[0] = A(a[0].n - other.n)
@@ -367,7 +367,7 @@ def test_omp_reductions():
     for i in L:
         a += i
     assert a == expected(N, 0, int.__add__)
-    
+
     x = A(0)
     @par
     for i in L:
@@ -448,7 +448,7 @@ def test_omp_reductions():
     for i in L:
         x += A(i)
     assert x.n == expected(N, 0, int.__add__)
-    
+
     x = A(0)
     @par(chunk_size=3)
     for i in L:
@@ -509,7 +509,7 @@ def test_omp_reductions():
     for i in L:
         a = (i == N//2) or a
     assert a
-    
+
     a = 1
     @par(schedule='dynamic')
     for i in L[1:10]:
@@ -702,7 +702,7 @@ def test_omp_reductions():
     vectors = [Vector(i, i) for i in range(10)]
     v_add = Vector()
     v_sub = Vector()
-    
+
     @par
     for vv in vectors:
         v_add += vv
@@ -882,6 +882,35 @@ def test_omp_nested():
             with lock:
                 v.append(i + j)
     assert set(v) == {i + j for i in squares(N) for j in squares(i)}
+
+@test
+def test_omp_nested_thread_ids():
+    @omp.master
+    def increment(data: Ptr[int], index: int):
+        data[index] += 1
+
+    levels = omp.get_max_active_levels()
+    omp.set_max_active_levels(2)
+    data = Ptr[int](2)
+    teams = Ptr[int](2)
+    global_ids = Ptr[int](4)
+    data[0] = 0
+    data[1] = 0
+    @par(num_threads=2)
+    for outer in range(2):
+        @par(num_threads=2)
+        for inner in range(200):
+            thread = omp.get_thread_num()
+            global_ids[2 * outer + thread] = omp._get_gtid()
+            if thread == 0:
+                teams[outer] = omp.get_num_threads()
+            increment(data, outer)
+    omp.set_max_active_levels(levels)
+    assert teams[0] == 2 and teams[1] == 2
+    assert data[0] == 100 and data[1] == 100
+    assert global_ids[0] != global_ids[1]
+    assert global_ids[2] != global_ids[3]
+    assert global_ids[0] != global_ids[2]
 
 @test
 def test_omp_corner_cases():
@@ -1115,6 +1144,7 @@ test_omp_non_imperative_reductions()
 test_omp_transform(111, 222, 333)
 test_omp_transform(111.1, 222.2, 333.3)
 test_omp_nested()
+test_omp_nested_thread_ids()
 test_omp_corner_cases()
 test_omp_collapse()
 test_omp_ordered()

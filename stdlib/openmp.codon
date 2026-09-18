@@ -602,6 +602,11 @@ def get_thread_num():
     return int(omp_get_thread_num())
 
 @pure
+def _get_gtid():
+    from C import __kmpc_global_thread_num(Ptr[Ident]) -> i32
+    return int(__kmpc_global_thread_num(_default_loc()))
+
+@pure
 def get_max_threads():
     from C import omp_get_max_threads() -> i32
     return int(omp_get_max_threads())
@@ -751,7 +756,7 @@ def get_wtick():
 
 def single(func):
     def _wrapper(*args, **kwargs):
-        gtid = get_thread_num()
+        gtid = _get_gtid()
         loc = _default_loc()
         if _single_begin(loc, gtid) != 0:
             try:
@@ -763,7 +768,7 @@ def single(func):
 
 def master(func):
     def _wrapper(*args, **kwargs):
-        gtid = get_thread_num()
+        gtid = _get_gtid()
         loc = _default_loc()
         if _master_begin(loc, gtid) != 0:
             try:
@@ -775,7 +780,7 @@ def master(func):
 
 def ordered(func):
     def _wrapper(*args, **kwargs):
-        gtid = get_thread_num()
+        gtid = _get_gtid()
         loc = _default_loc()
         _ordered_begin(loc, gtid)
         try:
@@ -789,7 +794,7 @@ _default_lock = Lock()
 
 def critical(func):
     def _wrapper(*args, **kwargs):
-        gtid = get_thread_num()
+        gtid = _get_gtid()
         loc = _default_loc()
         _critical_begin(loc, gtid, __ptr__(_default_lock))
         try:
@@ -801,7 +806,7 @@ def critical(func):
 
 def _push_num_threads(num_threads: int):
     from C import __kmpc_push_num_threads(Ptr[Ident], i32, i32)
-    gtid = get_thread_num()
+    gtid = _get_gtid()
     loc = _default_loc()
     __kmpc_push_num_threads(loc, i32(gtid), i32(num_threads))
 
