@@ -418,7 +418,6 @@ llvm::Expected<std::unique_ptr<codon::Options>> parseJITOptions(const char *name
       {"pynum", &Options::pynum},       {"noexc", &Options::noexc},
       {"fastmath", &Options::fastmath}, {"autopy", &Options::autopy},
       {"autofree", &Options::autofree}, {"unordereddict", &Options::unordereddict},
-      {"cabi", &Options::cabi},
   };
   for (const auto &[key, member] : booleans) {
     if (auto *value = object->get(key)) {

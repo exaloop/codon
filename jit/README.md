@@ -36,7 +36,7 @@ Option names match the fields in `codon/compiler/options.h`:
 
 | Type | Options |
 | --- | --- |
-| `bool` | `debug`, `pmempty`, `capture`, `native`, `pynum`, `noexc`, `fastmath`, `autopy`, `autofree`, `unordereddict`, `cabi` |
+| `bool` | `debug`, `pmempty`, `capture`, `native`, `pynum`, `noexc`, `fastmath`, `autopy`, `autofree`, `unordereddict` |
 | `str` | `libdevice`, `gpuName`, `gpuFeat`, `gpuOutput`, `log`, `march`, `mcpu` |
 | List of `str` | `plugins`, `defines`, `disabled`, `mattrs` |
 
