@@ -183,6 +183,9 @@ bool canForwardVariable(AssignInstr *assign, Value *destination, BodiedFunc *fun
   return true;
 }
 
+// Edges point from a consumer to a producer that can replace one of its leaves.
+// Reaching definitions establish single-use; CFG and effect checks establish
+// that moving the producer to the consumer cannot change observable behavior.
 ForwardingDAG buildForwardingDAG(BodiedFunc *func, RD *rd, CFG *cfg, SE *se,
                                  std::vector<NumPyOptimizationUnit> &exprs) {
   std::unordered_map<id_t, NumPyExpr *> parsedValues;
@@ -213,10 +216,12 @@ ForwardingDAG buildForwardingDAG(BodiedFunc *func, RD *rd, CFG *cfg, SE *se,
       for (auto &src : exprs) {
         if (srcId != dstId && src.assign && src.assign->getLhs() == p.first) {
           auto checkFwdVar = canForwardVariable(src.assign, p.second->val, func, rd);
-          auto checkFwdExpr =
-              canForwardExpression(&src, p.second->val, parsedValues, cfg, se);
-          if (checkFwdVar && checkFwdExpr)
+          // Keep reductions materialized. Their buffers can be reused later
+          // without moving the reduction itself into another expression.
+          if (checkFwdVar && !src.expr->isReduction() &&
+              canForwardExpression(&src, p.second->val, parsedValues, cfg, se)) {
             forwardingVec.push_back({&dst, &src, p.first, p.second, dstId, srcId});
+          }
         }
         ++srcId;
       }
@@ -343,6 +348,104 @@ void doForwardingHelper(ForwardingDAG &dag, NumPyOptimizationUnit *curr,
 
   done.insert(curr);
 }
+
+NumPyOptimizationUnit *getForwardingRoot(ForwardingDAG &dag) {
+  std::unordered_set<NumPyOptimizationUnit *> notRoot;
+  for (auto &entry : dag) {
+    for (auto &forwarding : entry.second)
+      notRoot.insert(forwarding.src);
+  }
+  seqassertn(notRoot.size() == dag.size() - 1,
+             "multiple roots found in forwarding DAG");
+  for (auto &entry : dag) {
+    if (!notRoot.count(entry.first))
+      return entry.first;
+  }
+  seqassertn(false, "could not find root in forwarding DAG");
+  return nullptr;
+}
+
+// An array result is not necessarily owned: views and no-copy casts may still
+// share storage with live inputs and must not be advertised as reusable.
+bool hasOwnedResult(NumPyExpr &expr) {
+  if (!expr.type.isArray() || expr.isLeaf())
+    return false;
+  switch (expr.op) {
+  case NumPyExpr::NP_OP_TRANSPOSE:
+  case NumPyExpr::NP_OP_POS:
+  case NumPyExpr::NP_OP_CONJ:
+    return false;
+  case NumPyExpr::NP_OP_CAST: {
+    auto *call = cast<CallInstr>(expr.val);
+    return call && (call->numArgs() == 2 || (isA<BoolConst>(call->back()) &&
+                                             cast<BoolConst>(call->back())->getVal()));
+  }
+  default:
+    return true;
+  }
+}
+
+// Allow a final pointwise consumer to reuse a buffer after earlier reductions
+// have finished reading it. Any other reached use prevents this ownership transfer.
+bool canReuseAfterReads(NumPyOptimizationUnit &source, NumPyExpr &destination,
+                        NumPyOptimizationUnit &consumer,
+                        std::vector<NumPyOptimizationUnit> &exprs, CFG *cfg, RD *rd,
+                        SE *se) {
+  if (consumer.expr->isReduction() || consumer.expr->depth() != 2 ||
+      (&destination != consumer.expr->lhs.get() &&
+       &destination != consumer.expr->rhs.get()))
+    return false;
+  auto *assign = source.assign;
+  auto *var = assign->getLhs();
+  auto reaching = rd->getReachingDefinitions(var, destination.val);
+  if (reaching.size() != 1 || reaching[0].assignment->getId() != assign->getId())
+    return false;
+
+  auto *block = cfg->getBlock(assign);
+  std::unordered_map<id_t, size_t> positions;
+  for (const auto *value : *block)
+    positions.emplace(value->getId(), positions.size());
+  auto target = positions.find(destination.val->getId());
+  if (target == positions.end())
+    return false;
+
+  std::unordered_set<id_t> completedReads;
+  for (auto &reader : exprs) {
+    auto &expr = *reader.expr;
+    if (!expr.isReduction() || !expr.lhs->isLeaf())
+      continue;
+    auto position = positions.find(reader.value->getId());
+    if (position == positions.end() ||
+        position->second <= positions.at(assign->getId()) ||
+        position->second >= target->second)
+      continue;
+    auto *operand = cast<VarValue>(expr.lhs->val);
+    auto *call = cast<CallInstr>(expr.val);
+    if (!operand || operand->getVar() != var || !call)
+      continue;
+    bool pureArguments = true;
+    for (auto argument = std::next(call->begin()); argument != call->end(); ++argument)
+      pureArguments &= !se->hasSideEffect(*argument);
+    if (pureArguments)
+      completedReads.insert(operand->getId());
+  }
+  if (completedReads.empty())
+    return false;
+
+  std::vector<Value *> uses;
+  GetAllUses collect(var, uses);
+  consumer.func->accept(collect);
+  for (auto *use : uses) {
+    if (use == destination.val || use->getId() == assign->getId())
+      continue;
+    for (auto &definition : rd->getReachingDefinitions(var, use)) {
+      if (definition.assignment->getId() == assign->getId() &&
+          !completedReads.count(use->getId()))
+        return false;
+    }
+  }
+  return true;
+}
 } // namespace
 
 std::vector<ForwardingDAG>
@@ -353,6 +456,39 @@ getForwardingDAGs(BodiedFunc *func, RD *rd, CFG *cfg, SE *se,
   dags.erase(std::remove_if(dags.begin(), dags.end(),
                             [&](ForwardingDAG &dag) { return hasCycle(dag, exprs); }),
              dags.end());
+  // Transfer ownership separately from expression forwarding. A freeable leaf
+  // permits reuse or release at the consumer, but keeps the source computation
+  // at its original evaluation point and adds no forwarding edge.
+  for (auto &component : dags) {
+    auto *root = getForwardingRoot(component);
+    auto *block = cfg->getBlock(root->value);
+    for (auto &source : exprs) {
+      if (!block || !source.assign || component.count(&source) ||
+          !hasOwnedResult(*source.expr) || source.assign->getLhs()->isGlobal() ||
+          cfg->getBlock(source.assign) != block)
+        continue;
+      bool available = false;
+      for (const auto *value : *block) {
+        if (value == root->value)
+          break;
+        if (value == source.assign)
+          available = true;
+      }
+      if (!available)
+        continue;
+      for (auto &entry : component) {
+        entry.first->expr->apply([&](NumPyExpr &element) {
+          auto *variable = element.isLeaf() ? cast<VarValue>(element.val) : nullptr;
+          if (variable && variable->getVar() == source.assign->getLhs() &&
+              ((source.expr->isReduction() &&
+                canForwardVariable(source.assign, element.val, func, rd)) ||
+               (entry.first == root &&
+                canReuseAfterReads(source, element, *root, exprs, cfg, rd, se))))
+            element.freeable = true;
+        });
+      }
+    }
+  }
   return dags;
 }
 
@@ -364,23 +500,7 @@ NumPyOptimizationUnit *doForwarding(ForwardingDAG &dag,
     doForwardingHelper(dag, e.first, done, assignsToDelete);
   }
 
-  // Find the root
-  std::unordered_set<NumPyOptimizationUnit *> notRoot;
-  for (auto &e : dag) {
-    for (auto &f : e.second) {
-      notRoot.insert(f.src);
-    }
-  }
-  seqassertn(notRoot.size() == dag.size() - 1,
-             "multiple roots found in forwarding DAG");
-
-  for (auto &e : dag) {
-    if (notRoot.count(e.first) == 0)
-      return e.first;
-  }
-
-  seqassertn(false, "could not find root in forwarding DAG");
-  return nullptr;
+  return getForwardingRoot(dag);
 }
 
 } // namespace numpy

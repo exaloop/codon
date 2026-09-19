@@ -18,6 +18,13 @@ namespace transform {
 namespace numpy {
 extern const std::string FUSION_MODULE;
 
+class NumPyInlinePass : public OperatorPass {
+public:
+  static const std::string KEY;
+  std::string getKey() const override { return KEY; }
+  void visit(BodiedFunc *func) override;
+};
+
 /// NumPy operator fusion pass.
 class NumPyFusionPass : public OperatorPass {
 private:
@@ -211,6 +218,15 @@ struct NumPyExpr {
     NP_OP_DEG2RAD,
     NP_OP_RAD2DEG,
     NP_OP_HEAVISIDE,
+    NP_OP_CAST,
+    NP_OP_ZEROS_LIKE,
+    NP_OP_ONES_LIKE,
+    NP_OP_SUM,
+    NP_OP_PROD,
+    NP_OP_ANY,
+    NP_OP_ALL,
+    NP_OP_AMIN,
+    NP_OP_AMAX,
   } op;
   std::unique_ptr<NumPyExpr> lhs;
   std::unique_ptr<NumPyExpr> rhs;
@@ -244,6 +260,10 @@ struct NumPyExpr {
   std::string str() const;
 
   bool isLeaf() const { return !lhs && !rhs; }
+  bool isReduction() const {
+    return op == NP_OP_SUM || op == NP_OP_PROD || op == NP_OP_ANY || op == NP_OP_ALL ||
+           op == NP_OP_AMIN || op == NP_OP_AMAX;
+  }
 
   int depth() const {
     return std::max(lhs ? lhs->depth() : 0, rhs ? rhs->depth() : 0) + 1;
@@ -255,7 +275,9 @@ struct NumPyExpr {
 
   Value *codegenBroadcasts(CodegenContext &C);
 
-  Var *codegenFusedEval(CodegenContext &C);
+  Var *codegenLayout(CodegenContext &C);
+
+  Var *codegenFusedEval(CodegenContext &C, Var *destination = nullptr);
 
   Var *codegenSequentialEval(CodegenContext &C);
 
@@ -269,7 +291,8 @@ struct NumPyExpr {
 
 std::unique_ptr<NumPyExpr> parse(Value *v,
                                  std::vector<std::pair<NumPyExpr *, Value *>> &leaves,
-                                 NumPyPrimitiveTypes &T);
+                                 NumPyPrimitiveTypes &T, bool allowReduction = false,
+                                 Value **destination = nullptr);
 
 struct NumPyOptimizationUnit {
   /// Original IR value being corresponding to expression
@@ -283,7 +306,7 @@ struct NumPyOptimizationUnit {
   /// AssignInstr in which RHS is represented by this expression, or null if none
   AssignInstr *assign;
 
-  bool optimize(NumPyPrimitiveTypes &T);
+  bool optimize(NumPyPrimitiveTypes &T, analyze::module::SideEffectResult *sideEffects);
 };
 
 struct Forwarding {

@@ -8,6 +8,7 @@
 #include <cstdlib>
 
 #include <llvm/AsmParser/Parser.h>
+#include <llvm/Support/CommandLine.h>
 #include <llvm/Support/FileUtilities.h>
 #include <llvm/Support/SourceMgr.h>
 
@@ -256,6 +257,533 @@ TEST(LLVMOptimizationTest, RemovesUnusedStandardStreamInitialization) {
     definitions += !function.isDeclaration();
   }
   EXPECT_EQ(1, definitions);
+}
+
+TEST(LLVMOptimizationTest, FusesSingleExpressionArrayHelpers) {
+  ASSERT_EXIT(
+      {
+        auto compiler = compileAndOptimize(R"(
+import numpy as np
+
+def square(values):
+    return values * values
+
+@noinline
+def kept_square(values):
+    return values * values
+
+@export
+def unfused_helper(values: np.ndarray[float, 1]):
+    return kept_square(values) + 1.0
+
+@export
+def fused_helper(values: np.ndarray[float, 1]):
+    return square(values) + 1.0
+
+def affine_helper(left, right, bias):
+  return left * right + bias
+
+@export
+def fused_affine_helper(left: np.ndarray[float, 2], right: np.ndarray[float, 2], bias: np.ndarray[float, 2]):
+  return affine_helper(left, right, bias) * bias
+
+@export
+def direct_affine_helper(left: np.ndarray[float, 2], right: np.ndarray[float, 2], bias: np.ndarray[float, 2]):
+  return (left * right + bias) * bias
+
+@export
+def fused_sum(values: np.ndarray[float, 1]):
+    return np.sum(values.astype(np.float32).copy() * 2 + 1.0)
+
+@export
+def fused_prod(values: np.ndarray[int, 1]):
+    return (values + 1).prod()
+
+@export
+def fused_filled(values: np.ndarray[float, 1]):
+    return np.sum(np.ones_like(values) + np.zeros_like(values))
+
+@export
+def fused_sum_2d(values: np.ndarray[float, 2]):
+    return (values + 1.0).sum()
+
+@export
+def fused_sum_transpose(values: np.ndarray[float, 2]):
+    return (values.T + 1.0).sum()
+
+@export
+def fused_sum_3d(values: np.ndarray[float, 3]):
+    return (values + 1.0).sum()
+
+@export
+def fused_prod_3d(values: np.ndarray[float, 3]):
+    return (values + 1.0).prod()
+
+@export
+def fused_any(values: np.ndarray[float, 2]):
+    return (values < 1).any()
+
+@export
+def fused_all(values: np.ndarray[float, 3]):
+    return np.all(values >= 1)
+
+@export
+def fused_min(values: np.ndarray[float, 2]):
+    return (values + 1).min()
+
+@export
+def fused_max(values: np.ndarray[float, 3]):
+    return np.max(values + 1, initial=0.)
+
+@export
+def fused_amin(values: np.ndarray[float, 2]):
+    return np.amin(values * 2)
+
+@export
+def fused_amax(values: np.ndarray[float, 2]):
+    return np.amax(values * 2)
+
+@export
+def fused_producers_2d(values: np.ndarray[float, 2]):
+    return ((values + 1).astype(np.float32, order='F').copy(order='C') + np.ones_like(values, order='F')).sum()
+
+@export
+def fused_filled_3d(values: np.ndarray[float, 3]):
+    return (np.ones_like(values, order='K') + np.zeros_like(values, order='F')).sum()
+
+@export
+def fused_cast_4d(values: np.ndarray[float, 4]):
+    return values.astype(np.float32, order='F').sum()
+
+@export
+def fused_any_producer(values: np.ndarray[float, 2]):
+    return (values.astype(np.int8, order='F') < 1).any()
+
+@export
+def fused_copy_array(values: np.ndarray[float, 2]):
+    return (values + 1).copy(order='F')
+
+@export
+def fused_cast_array(values: np.ndarray[float, 2]):
+    return (values + 1).astype(np.float32, order='F')
+
+@export
+def fused_filled_array(values: np.ndarray[float, 3]):
+    return np.zeros_like(values + 1, order='F') + np.ones_like(values, order='C')
+
+@export
+def fused_axis_sum(values: np.ndarray[float, 2], axis: int):
+  return (values + 1).sum(axis=axis)
+
+@export
+def fused_axis_any(values: np.ndarray[float, 3]):
+  return (values < 1).any(axis=(0, 2), keepdims=True)
+
+@export
+def fused_axis_min(values: np.ndarray[float, 3], axis: int):
+  return (values + 1).min(axis=axis)
+
+@export
+def fused_axis_keepdims(values: np.ndarray[float, 3], axis: int):
+  return (values.copy(order='F') + 1).sum(axis=axis, keepdims=True)
+
+@export
+def forwarded_axis_sum(values: np.ndarray[np.float32, 2]):
+    reduced = np.sum(values, axis=1)
+    return reduced * np.float32(2)
+
+@export
+def axis_sum_reference(values: np.ndarray[np.float32, 2]):
+    return np.sum(values, axis=1)
+
+retained_sum = np.zeros(0, dtype=np.float32)
+
+@export
+def global_axis_sum(values: np.ndarray[np.float32, 2]):
+  global retained_sum
+  retained_sum = np.sum(values, axis=1)
+  return retained_sum * np.float32(2)
+
+@export
+def get_retained_sum():
+  return retained_sum
+
+@export
+def last_use_division(values: np.ndarray[np.float32, 4]):
+  temporary = np.exp(values)
+  total = temporary.sum()
+  return temporary / total
+
+@export
+def last_use_reference(values: np.ndarray[np.float32, 4]):
+  temporary = np.exp(values)
+  total = temporary.sum()
+  return temporary, total
+
+@export
+def destination_slice(values: np.ndarray[float, 2]):
+  out = np.empty_like(values)
+  out[:] = values * values + 1.0
+  return out
+
+@export
+def destination_ufunc(values: np.ndarray[float, 2]):
+  out = np.empty_like(values)
+  return np.add(values * values, 1.0, out=out)
+
+@export
+def destination_reference(values: np.ndarray[float, 2]):
+  return np.empty_like(values)
+)");
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        auto allocationCount = [](llvm::Function *function) {
+          unsigned allocations = 0;
+          for (auto &block : *function) {
+            if (llvm::isa<llvm::UnreachableInst>(block.getTerminator()))
+              continue;
+            for (auto &instruction : block) {
+              auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+              auto *callee = call ? call->getCalledFunction() : nullptr;
+              if (callee && (callee->getName() == "seq_alloc_atomic" ||
+                             callee->getName() == "seq_alloc"))
+                ++allocations;
+            }
+          }
+          return allocations;
+        };
+        for (auto name : {"fused_helper", "fused_copy_array", "fused_cast_array",
+                          "fused_filled_array", "fused_axis_sum", "fused_axis_any",
+                          "fused_axis_min", "fused_axis_keepdims"}) {
+          auto *function = module->getFunction(name);
+          ASSERT_NE(nullptr, function);
+          auto allocations = allocationCount(function);
+          if (allocations != 1)
+            function->print(llvm::errs());
+          EXPECT_EQ(1, allocations) << name;
+        }
+        auto *forwarded = module->getFunction("forwarded_axis_sum");
+        auto *reference = module->getFunction("axis_sum_reference");
+        ASSERT_NE(nullptr, forwarded);
+        ASSERT_NE(nullptr, reference);
+        std::vector<llvm::Function *> active;
+        std::function<unsigned(llvm::Function *)> reachableAllocations =
+            [&](llvm::Function *function) {
+              if (std::find(active.begin(), active.end(), function) != active.end())
+                return 0u;
+              active.push_back(function);
+              auto count = allocationCount(function);
+              for (auto &block : *function) {
+                if (llvm::isa<llvm::UnreachableInst>(block.getTerminator()))
+                  continue;
+                for (auto &instruction : block) {
+                  auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+                  auto *callee = call ? call->getCalledFunction() : nullptr;
+                  if (callee && !callee->isDeclaration())
+                    count += reachableAllocations(callee);
+                }
+              }
+              active.pop_back();
+              return count;
+            };
+        auto *destinationReference = module->getFunction("destination_reference");
+        auto *affineHelper = module->getFunction("fused_affine_helper");
+        auto *directAffine = module->getFunction("direct_affine_helper");
+        ASSERT_NE(nullptr, affineHelper);
+        ASSERT_NE(nullptr, directAffine);
+        EXPECT_EQ(reachableAllocations(directAffine),
+                  reachableAllocations(affineHelper));
+        ASSERT_NE(nullptr, destinationReference);
+        auto destinationAllocations = reachableAllocations(destinationReference);
+        EXPECT_GT(destinationAllocations, 0);
+        for (auto name : {"destination_slice", "destination_ufunc"}) {
+          auto *destination = module->getFunction(name);
+          ASSERT_NE(nullptr, destination);
+          auto count = reachableAllocations(destination);
+          if (count != destinationAllocations)
+            llvm::errs() << name << ": " << count
+                         << " allocation sites; reference: " << destinationAllocations
+                         << '\n';
+          EXPECT_EQ(destinationAllocations, count) << name;
+        }
+        auto referenceAllocations = reachableAllocations(reference);
+        auto forwardedAllocations = reachableAllocations(forwarded);
+        if (referenceAllocations == 0 || referenceAllocations != forwardedAllocations)
+          llvm::errs() << "Reference allocations: " << referenceAllocations
+                       << ", forwarded allocations: " << forwardedAllocations << '\n';
+        EXPECT_GT(referenceAllocations, 0);
+        EXPECT_EQ(referenceAllocations, forwardedAllocations);
+        auto *global = module->getFunction("global_axis_sum");
+        ASSERT_NE(nullptr, global);
+        EXPECT_GT(reachableAllocations(global), referenceAllocations);
+        auto *lastUse = module->getFunction("last_use_division");
+        auto *lastUseReference = module->getFunction("last_use_reference");
+        ASSERT_NE(nullptr, lastUse);
+        ASSERT_NE(nullptr, lastUseReference);
+        auto lastUseAllocations = reachableAllocations(lastUse);
+        auto lastUseReferenceAllocations = reachableAllocations(lastUseReference);
+        if (lastUseAllocations != lastUseReferenceAllocations) {
+          llvm::errs() << "Last-use allocations: " << lastUseAllocations
+                       << ", reference allocations: " << lastUseReferenceAllocations
+                       << '\n';
+          lastUse->print(llvm::errs());
+        }
+        EXPECT_GT(lastUseReferenceAllocations, 0);
+        EXPECT_EQ(lastUseReferenceAllocations, lastUseAllocations);
+        auto *unfused = module->getFunction("unfused_helper");
+        ASSERT_NE(nullptr, unfused);
+        bool keptCall = false;
+        for (auto &block : *unfused) {
+          for (auto &instruction : block) {
+            auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+            auto *callee = call ? call->getCalledFunction() : nullptr;
+            keptCall |= callee && callee->getName().contains("kept_square");
+          }
+        }
+        EXPECT_TRUE(keptCall);
+        for (auto name : {"fused_sum", "fused_prod", "fused_filled", "fused_sum_2d",
+                          "fused_sum_transpose", "fused_sum_3d", "fused_prod_3d",
+                          "fused_any", "fused_all", "fused_min", "fused_max",
+                          "fused_amin", "fused_amax", "fused_producers_2d",
+                          "fused_filled_3d", "fused_cast_4d", "fused_any_producer"}) {
+          auto *reduction = module->getFunction(name);
+          ASSERT_NE(nullptr, reduction);
+          for (auto &block : *reduction) {
+            if (llvm::isa<llvm::UnreachableInst>(block.getTerminator()))
+              continue;
+            for (auto &instruction : block) {
+              auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+              auto *callee = call ? call->getCalledFunction() : nullptr;
+              if (callee && callee->getName() == "seq_alloc_atomic") {
+                llvm::errs() << "Unexpected array allocation in " << name << '\n';
+                reduction->print(llvm::errs());
+                ADD_FAILURE();
+              }
+            }
+          }
+        }
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(LLVMOptimizationTest, PreservesHighwayMathLoops) {
+  ASSERT_EXIT(
+      {
+        auto compiler = compileAndOptimize(R"(
+import numpy as np
+
+@export
+def highway_sin(values: np.ndarray[float, 2], bias: np.ndarray[float, 2]):
+    return np.sin(values) + bias
+
+@export
+def highway_exp(values: np.ndarray[np.float32, 2], bias: np.ndarray[np.float32, 2]):
+    return np.exp(values) + bias
+
+@export
+def highway_log(values: np.ndarray[float, 2], bias: np.ndarray[float, 2]):
+    return np.log(values) + bias
+
+@export
+def highway_hypot(left: np.ndarray[np.float32, 2], right: np.ndarray[np.float32, 2]):
+    return np.hypot(left, right) + right
+)");
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        for (auto name :
+             {"highway_sin", "highway_exp", "highway_log", "highway_hypot"}) {
+          auto *function = module->getFunction(name);
+          ASSERT_NE(nullptr, function);
+          std::string expected = "cnp_" + std::string(name).substr(8) + "_float";
+          std::unordered_set<llvm::Function *> visited;
+          std::function<bool(llvm::Function *)> hasHighwayCall =
+              [&](llvm::Function *current) {
+                if (!visited.insert(current).second)
+                  return false;
+                if (current->getName().starts_with(expected))
+                  return true;
+                for (auto &block : *current) {
+                  for (auto &instruction : block) {
+                    auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+                    auto *callee = call ? call->getCalledFunction() : nullptr;
+                    if (callee && hasHighwayCall(callee))
+                      return true;
+                  }
+                }
+                return false;
+              };
+          EXPECT_TRUE(hasHighwayCall(function)) << name;
+        }
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+namespace {
+void checkMatmulAddFusion(bool enabled) {
+  if (!enabled) {
+    auto *option = llvm::cl::getRegisteredOptions().lookup("npfuse-matmul");
+    ASSERT_NE(nullptr, option);
+    ASSERT_FALSE(option->addOccurrence(0, "npfuse-matmul", "false"));
+  }
+  auto compiler = compileAndOptimize(R"(
+import numpy as np
+
+@export
+def fused_gemv(left: np.ndarray[float, 2], right: np.ndarray[float, 1],
+               bias: np.ndarray[float, 1]):
+    return left @ right + bias
+
+@export
+def fused_gemm(left: np.ndarray[np.float32, 2], right: np.ndarray[np.float32, 2],
+               bias: np.ndarray[np.float32, 2]):
+    return left @ right + bias
+
+@export
+def fused_gemm_into(left: np.ndarray[float, 2], right: np.ndarray[float, 2]):
+    output = np.ones((left.shape[0], right.shape[1]))
+    output[:] = left @ right + output
+    return output
+
+@export
+def fused_gemm_out(left: np.ndarray[float, 2], right: np.ndarray[float, 2]):
+    output = np.ones((left.shape[0], right.shape[1]))
+    return np.add(left @ right, output, out=output)
+
+@export
+def reversed_gemv(left: np.ndarray[float, 2], right: np.ndarray[float, 1],
+          bias: np.ndarray[float, 1]):
+  return bias + left @ right
+
+@export
+def reversed_gemm(left: np.ndarray[np.float32, 2], right: np.ndarray[np.float32, 2],
+          bias: np.ndarray[np.float32, 2]):
+  return bias + left @ right
+
+@export
+def reversed_gemm_into(left: np.ndarray[float, 2], right: np.ndarray[float, 2]):
+  output = np.ones((left.shape[0], right.shape[1]))
+  output[:] = output + left @ right
+  return output
+
+@export
+def reversed_gemm_out(left: np.ndarray[float, 2], right: np.ndarray[float, 2]):
+  output = np.ones((left.shape[0], right.shape[1]))
+  return np.add(output, left @ right, out=output)
+
+@export
+def subtract_gemv(left: np.ndarray[float, 2], right: np.ndarray[float, 1],
+          bias: np.ndarray[float, 1]):
+  return left @ right - bias
+
+@export
+def reverse_subtract_gemv(left: np.ndarray[float, 2], right: np.ndarray[float, 1],
+              bias: np.ndarray[float, 1]):
+  return bias - left @ right
+
+@export
+def subtract_gemm(left: np.ndarray[np.float32, 2], right: np.ndarray[np.float32, 2],
+          bias: np.ndarray[np.float32, 2]):
+  return left @ right - bias
+
+@export
+def reverse_subtract_gemm(left: np.ndarray[np.float32, 2], right: np.ndarray[np.float32, 2],
+              bias: np.ndarray[np.float32, 2]):
+  return bias - left @ right
+
+@export
+def subtract_gemm_into(left: np.ndarray[float, 2], right: np.ndarray[float, 2]):
+  output = np.ones((left.shape[0], right.shape[1]))
+  output[:] = left @ right - output
+  return output
+
+@export
+def reverse_subtract_gemm_into(left: np.ndarray[float, 2], right: np.ndarray[float, 2]):
+  output = np.ones((left.shape[0], right.shape[1]))
+  output[:] = output - left @ right
+  return output
+
+@export
+def subtract_gemm_out(left: np.ndarray[float, 2], right: np.ndarray[float, 2]):
+  output = np.ones((left.shape[0], right.shape[1]))
+  return np.subtract(left @ right, output, out=output)
+
+@export
+def reverse_subtract_gemm_out(left: np.ndarray[float, 2], right: np.ndarray[float, 2]):
+  output = np.ones((left.shape[0], right.shape[1]))
+  return np.subtract(output, left @ right, out=output)
+)");
+  auto *module = compiler->getLLVMVisitor()->getModule();
+  std::vector<llvm::Function *> active;
+  std::function<unsigned(llvm::Function *, double, double)> accumulatingCalls =
+      [&](llvm::Function *function, double expectedAlpha, double expectedBeta) {
+        if (std::find(active.begin(), active.end(), function) != active.end())
+          return 0u;
+        active.push_back(function);
+        unsigned count = 0;
+        for (auto &block : *function) {
+          for (auto &instruction : block) {
+            auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+            auto *callee = call ? call->getCalledFunction() : nullptr;
+            if (!callee)
+              continue;
+            auto name = callee->getName();
+            bool gemm = name.contains("cblas_sgemm") || name.contains("cblas_dgemm");
+            bool gemv = name.contains("cblas_sgemv") || name.contains("cblas_dgemv");
+            if (gemm || gemv) {
+              auto *alpha =
+                  llvm::dyn_cast<llvm::ConstantFP>(call->getArgOperand(gemm ? 6 : 4));
+              auto *beta =
+                  llvm::dyn_cast<llvm::ConstantFP>(call->getArgOperand(gemm ? 11 : 9));
+              count += alpha && beta && alpha->isExactlyValue(expectedAlpha) &&
+                       beta->isExactlyValue(expectedBeta);
+            } else if (!callee->isDeclaration()) {
+              count += accumulatingCalls(callee, expectedAlpha, expectedBeta);
+            }
+          }
+        }
+        active.pop_back();
+        return count;
+      };
+  struct {
+    const char *name;
+    double alpha;
+    double beta;
+  } cases[] = {{"fused_gemv", 1, 1},          {"fused_gemm", 1, 1},
+               {"fused_gemm_into", 1, 1},     {"fused_gemm_out", 1, 1},
+               {"reversed_gemv", 1, 1},       {"reversed_gemm", 1, 1},
+               {"reversed_gemm_into", 1, 1},  {"reversed_gemm_out", 1, 1},
+               {"subtract_gemv", 1, -1},      {"reverse_subtract_gemv", -1, 1},
+               {"subtract_gemm", 1, -1},      {"reverse_subtract_gemm", -1, 1},
+               {"subtract_gemm_into", 1, -1}, {"reverse_subtract_gemm_into", -1, 1},
+               {"subtract_gemm_out", 1, -1},  {"reverse_subtract_gemm_out", -1, 1}};
+  for (auto &test : cases) {
+    auto *function = module->getFunction(test.name);
+    ASSERT_NE(nullptr, function);
+    auto count = accumulatingCalls(function, test.alpha, test.beta);
+    if ((count > 0) != enabled)
+      llvm::errs() << test.name << ": accumulating BLAS calls=" << count
+                   << ", enabled=" << enabled << '\n';
+    EXPECT_EQ(enabled, count > 0) << test.name;
+  }
+}
+} // namespace
+
+TEST(LLVMOptimizationTest, FusesMatmulAddByDefault) {
+  ASSERT_EXIT(
+      {
+        checkMatmulAddFusion(true);
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(LLVMOptimizationTest, DisablesMatmulAddFusion) {
+  ASSERT_EXIT(
+      {
+        checkMatmulAddFusion(false);
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
 }
 
 TEST(LLVMOptimizationTest, ReusesOpenMPThreadIds) {

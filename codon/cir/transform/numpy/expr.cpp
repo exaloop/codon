@@ -2,6 +2,7 @@
 
 #include "numpy.h"
 
+#include "codon/cir/util/cloning.h"
 #include "codon/cir/util/irtools.h"
 
 namespace codon {
@@ -135,6 +136,16 @@ bool NumPyExpr::haveVectorizedLoop() const {
 
 int64_t NumPyExpr::opcost() const {
   switch (op) {
+  case NP_OP_CAST:
+  case NP_OP_ZEROS_LIKE:
+  case NP_OP_ONES_LIKE:
+  case NP_OP_SUM:
+  case NP_OP_PROD:
+  case NP_OP_ANY:
+  case NP_OP_ALL:
+  case NP_OP_AMIN:
+  case NP_OP_AMAX:
+    return 1;
   case NP_OP_NONE:
     return 0;
   case NP_OP_POS:
@@ -306,6 +317,7 @@ int64_t NumPyExpr::cost() const {
     c *= 3;
     if (lhs->type.dtype == NumPyType::NP_TYPE_ARR_F32)
       c *= 2;
+    c = std::max<int64_t>(c, 64);
   }
 
   bool lhsIntConst = (lhs && lhs->isLeaf() && isA<IntConst>(lhs->val));
@@ -427,6 +439,15 @@ std::string NumPyExpr::opstring() const {
       {NP_OP_DEG2RAD, "deg2rad"},
       {NP_OP_RAD2DEG, "rad2deg"},
       {NP_OP_HEAVISIDE, "heaviside"},
+      {NP_OP_CAST, "cast"},
+      {NP_OP_ZEROS_LIKE, "zeros_like"},
+      {NP_OP_ONES_LIKE, "ones_like"},
+      {NP_OP_SUM, "sum"},
+      {NP_OP_PROD, "prod"},
+      {NP_OP_ANY, "any"},
+      {NP_OP_ALL, "all"},
+      {NP_OP_AMIN, "amin"},
+      {NP_OP_AMAX, "amax"},
   };
 
   auto it = m.find(op);
@@ -510,15 +531,49 @@ Value *NumPyExpr::codegenBroadcasts(CodegenContext &C) {
   return result ? result : M->getBool(false);
 }
 
-Var *NumPyExpr::codegenFusedEval(CodegenContext &C) {
+// Plan shapes and strides without materializing producer arrays. Fusion needs
+// these descriptors to preserve layout-dependent traversal and reduction order.
+Var *NumPyExpr::codegenLayout(CodegenContext &C) {
+  if (isLeaf())
+    return C.vars.at(this);
+  auto *M = C.M;
+  auto *baseType = type.getIRBaseType(C.T);
+  std::vector<Value *> operands;
+  if (lhs && lhs->type.isArray())
+    operands.push_back(M->Nr<VarValue>(lhs->codegenLayout(C)));
+  if (rhs && rhs->type.isArray())
+    operands.push_back(M->Nr<VarValue>(rhs->codegenLayout(C)));
+  Func *layoutFunc = nullptr;
+  if (op == NP_OP_CAST || op == NP_OP_ZEROS_LIKE || op == NP_OP_ONES_LIKE) {
+    auto *call = cast<CallInstr>(val);
+    auto *order = cast<StringConst>(*std::next(call->begin()));
+    auto *copy = call->numArgs() == 3 ? cast<BoolConst>(call->back()) : nullptr;
+    operands.push_back(M->getBool(!copy || copy->getVal()));
+    layoutFunc = M->getOrRealizeFunc(
+        "_producer_layout", {operands[0]->getType(), M->getBoolType()},
+        {baseType, opstring(), order->getVal()}, FUSION_MODULE);
+  } else {
+    auto *arrays = util::makeTuple(operands);
+    operands = {arrays};
+    layoutFunc =
+        M->getOrRealizeFunc("_layout", {arrays->getType()}, {baseType}, FUSION_MODULE);
+  }
+  seqassertn(layoutFunc, "fusion layout func not found for {}", opstring());
+  return util::makeVar(util::call(layoutFunc, operands), C.series, C.func);
+}
+
+// Build a scalar callback for one element, then let a stdlib loop helper handle
+// broadcasting, strides and allocation (or reduction / writing into a destination).
+Var *NumPyExpr::codegenFusedEval(CodegenContext &C, Var *destination) {
   auto *M = C.M;
   auto *series = C.series;
   auto *func = C.func;
   auto &vars = C.vars;
   auto &T = C.T;
+  auto *element = isReduction() ? lhs.get() : this;
 
   std::vector<std::pair<NumPyExpr *, Var *>> leaves;
-  apply([&](NumPyExpr &e) {
+  element->apply([&](NumPyExpr &e) {
     if (e.isLeaf()) {
       auto it = vars.find(&e);
       seqassertn(it != vars.end(), "NumPyExpr not found in vars map (fused eval)");
@@ -537,9 +592,11 @@ Var *NumPyExpr::codegenFusedEval(CodegenContext &C) {
   std::vector<Value *> extra;
   std::unordered_map<NumPyExpr *, unsigned> extraMap;
 
-  auto *baseType = type.getIRBaseType(T);
-  scalarFuncArgNames.push_back("out");
-  scalarFuncArgTypes.push_back(M->getPointerType(baseType));
+  auto *baseType = element->type.getIRBaseType(T);
+  if (!isReduction()) {
+    scalarFuncArgNames.push_back("out");
+    scalarFuncArgTypes.push_back(M->getPointerType(baseType));
+  }
 
   unsigned argIdx = 0;
   unsigned extraIdx = 0;
@@ -558,35 +615,86 @@ Var *NumPyExpr::codegenFusedEval(CodegenContext &C) {
   auto *extraTuple = util::makeTuple(extra, M);
   scalarFuncArgNames.push_back("extra");
   scalarFuncArgTypes.push_back(extraTuple->getType());
-  auto *scalarFuncType = M->getFuncType(M->getNoneType(), scalarFuncArgTypes);
+  auto *scalarFuncType =
+      M->getFuncType(isReduction() ? baseType : M->getNoneType(), scalarFuncArgTypes);
   auto *scalarFunc = M->Nr<BodiedFunc>("__numpy_fusion_scalar_fn");
   scalarFunc->realize(scalarFuncType, scalarFuncArgNames);
   std::vector<Var *> scalarFuncArgVars(scalarFunc->arg_begin(), scalarFunc->arg_end());
 
-  argIdx = 1;
+  argIdx = isReduction() ? 0 : 1;
   for (auto &e : leaves) {
     if (e.first->type.isArray()) {
       scalarFuncArgMap.emplace(e.first, scalarFuncArgVars[argIdx++]);
     }
   }
-  auto *scalarExpr =
-      codegenScalarExpr(C, scalarFuncArgMap, extraMap, scalarFuncArgVars.back());
-  auto *ptrsetFunc = M->getOrRealizeFunc("_ptrset", {scalarFuncArgTypes[0], baseType},
-                                         {}, FUSION_MODULE);
-  seqassertn(ptrsetFunc, "ptrset func not found");
-  scalarFunc->setBody(util::series(
-      util::call(ptrsetFunc, {M->Nr<VarValue>(scalarFuncArgVars[0]), scalarExpr})));
+  auto *scalarExpr = element->codegenScalarExpr(C, scalarFuncArgMap, extraMap,
+                                                scalarFuncArgVars.back());
+  if (isReduction()) {
+    auto *castFunc = M->getOrRealizeFunc("_cast", {scalarExpr->getType()}, {baseType},
+                                         FUSION_MODULE);
+    scalarFunc->setBody(
+        util::series(M->Nr<ReturnInstr>(util::call(castFunc, {scalarExpr}))));
+  } else {
+    auto *ptrsetFunc = M->getOrRealizeFunc("_ptrset", {scalarFuncArgTypes[0], baseType},
+                                           {}, FUSION_MODULE);
+    seqassertn(ptrsetFunc, "ptrset func not found");
+    scalarFunc->setBody(util::series(
+        util::call(ptrsetFunc, {M->Nr<VarValue>(scalarFuncArgVars[0]), scalarExpr})));
+  }
 
   auto *arraysTuple = util::makeTuple(arrays);
-  auto *loopFunc = M->getOrRealizeFunc(
-      "_loop_alloc",
-      {arraysTuple->getType(), scalarFunc->getType(), extraTuple->getType()},
-      {baseType}, FUSION_MODULE);
-  seqassertn(loopFunc, "loop_alloc func not found");
+  std::vector<Value *> loopArgs = {arraysTuple, M->Nr<VarValue>(scalarFunc),
+                                   extraTuple};
+  std::vector<Type *> loopTypes = {arraysTuple->getType(), scalarFunc->getType(),
+                                   extraTuple->getType()};
+  std::vector<Generic> loopGenerics = {baseType};
+  if (isReduction()) {
+    Value *initial = nullptr;
+    if (rhs)
+      initial = M->Nr<VarValue>(vars.at(rhs.get()));
+    else
+      initial = util::makeTuple({}, M);
+    loopArgs.push_back(initial);
+    loopTypes.push_back(initial->getType());
+    loopGenerics = {baseType, type.getIRBaseType(T), opstring()};
+  }
+  bool needsLayout = false;
+  element->apply([&](NumPyExpr &expr) {
+    if (expr.type.ndim > 1 && (expr.op == NP_OP_CAST || expr.op == NP_OP_ZEROS_LIKE ||
+                               expr.op == NP_OP_ONES_LIKE))
+      needsLayout = true;
+  });
+  // Dispatch this callback to an allocating loop, a reduction, or a destination
+  // write. Add layout planning where shapes and traversal order must be preserved.
+  std::string loopName = isReduction() ? "_loop_reduce" : "_loop_alloc";
+  auto *reductionCall = isReduction() ? cast<CallInstr>(val) : nullptr;
+  auto *axis = reductionCall ? *std::next(reductionCall->begin()) : nullptr;
+  bool axisReduction =
+      isReduction() && (type.isArray() || !axis->getType()->is(T.none));
+  if (needsLayout || axisReduction) {
+    auto *layout = element->codegenLayout(C);
+    loopArgs.push_back(M->Nr<VarValue>(layout));
+    loopTypes.push_back(layout->getType());
+    loopName += "_layout";
+  }
+  if (axisReduction) {
+    util::CloneVisitor clone(M);
+    loopArgs.push_back(clone.clone(axis));
+    loopTypes.push_back(axis->getType());
+    loopGenerics.push_back(int64_t(type.ndim));
+    loopName = "_loop_reduce_axis";
+  }
+  if (destination) {
+    loopArgs.push_back(M->Nr<VarValue>(destination));
+    loopTypes.push_back(destination->getType());
+    loopGenerics.clear();
+    loopName = "_loop_into";
+  }
+  auto *loopFunc =
+      M->getOrRealizeFunc(loopName, loopTypes, loopGenerics, FUSION_MODULE);
+  seqassertn(loopFunc, "fusion loop func not found");
 
-  auto *result = util::makeVar(
-      util::call(loopFunc, {arraysTuple, M->Nr<VarValue>(scalarFunc), extraTuple}),
-      series, func);
+  auto *result = util::makeVar(util::call(loopFunc, loopArgs), series, func);
 
   // Free temporary arrays
   apply([&](NumPyExpr &e) {
@@ -594,16 +702,25 @@ Var *NumPyExpr::codegenFusedEval(CodegenContext &C) {
       auto it = vars.find(&e);
       seqassertn(it != vars.end(), "NumPyExpr not found in vars map (fused eval)");
       auto *var = it->second;
-      auto *freeFunc =
-          M->getOrRealizeFunc("_free", {var->getType()}, {}, FUSION_MODULE);
+      std::vector<Value *> freeArgs = {M->Nr<VarValue>(var)};
+      std::vector<Type *> freeTypes = {var->getType()};
+      if (needsLayout && !isReduction()) {
+        freeArgs.push_back(M->Nr<VarValue>(result));
+        freeTypes.push_back(result->getType());
+      }
+      auto *freeFunc = M->getOrRealizeFunc(
+          needsLayout && !isReduction() ? "_free_copy_source" : "_free", freeTypes, {},
+          FUSION_MODULE);
       seqassertn(freeFunc, "free func not found");
-      series->push_back(util::call(freeFunc, {M->Nr<VarValue>(var)}));
+      series->push_back(util::call(freeFunc, freeArgs));
     }
   });
 
   return result;
 }
 
+// Evaluate whole-array operations one node at a time when fusion is not chosen.
+// Owned temporaries can still be recycled if their dtype, rank and runtime shape fit.
 Var *NumPyExpr::codegenSequentialEval(CodegenContext &C) {
   auto *M = C.M;
   auto *series = C.series;
@@ -633,6 +750,23 @@ Var *NumPyExpr::codegenSequentialEval(CodegenContext &C) {
   bool rfreeable = rhs && rhs->type.isArray() && (rhs->freeable || !rhs->isLeaf());
   bool ltmp = lfreeable && lhs->type.dtype == type.dtype && lhs->type.ndim == type.ndim;
   bool rtmp = rfreeable && rhs->type.dtype == type.dtype && rhs->type.ndim == type.ndim;
+
+  if (type.ndim > 1 &&
+      (op == NP_OP_CAST || op == NP_OP_ZEROS_LIKE || op == NP_OP_ONES_LIKE)) {
+    auto *call = cast<CallInstr>(val);
+    std::vector<Value *> args(call->begin(), call->end());
+    args[0] = M->Nr<VarValue>(lv);
+    auto *result =
+        util::makeVar(util::call(util::getFunc(call->getCallee()), args), series, func);
+    if (lfreeable) {
+      auto *freeSource = M->getOrRealizeFunc(
+          "_free_copy_source", {lv->getType(), result->getType()}, {}, FUSION_MODULE);
+      seqassertn(freeSource, "free copy source func not found");
+      series->push_back(
+          util::call(freeSource, {M->Nr<VarValue>(lv), M->Nr<VarValue>(result)}));
+    }
+    return result;
+  }
 
   if (rv) {
     // Can't do anything special with matmul here...
@@ -867,9 +1001,13 @@ Var *NumPyExpr::codegenSequentialEval(CodegenContext &C) {
           util::call(ptrsetFunc, {M->Nr<VarValue>(scalarFuncArgVars[0]), oitem}));
     } else {
       auto *litem = deref(result == lv ? 0 : 1);
-      auto *op = M->getOrRealizeFunc(name, {litem->getType()}, {}, FUSION_MODULE);
-      seqassertn(op, "1-op func '{}' not found", name);
-      auto *oitem = util::call(op, {litem});
+      std::vector<Generic> generics;
+      if (op == NP_OP_CAST || op == NP_OP_ZEROS_LIKE || op == NP_OP_ONES_LIKE)
+        generics.emplace_back(baseType);
+      auto *operation =
+          M->getOrRealizeFunc(name, {litem->getType()}, generics, FUSION_MODULE);
+      seqassertn(operation, "1-op func '{}' not found", name);
+      auto *oitem = util::call(operation, {litem});
       auto *ptrsetFunc = M->getOrRealizeFunc(
           "_ptrset", {scalarFuncArgTypes[0], oitem->getType()}, {}, FUSION_MODULE);
       seqassertn(ptrsetFunc, "ptrset func not found");
@@ -980,7 +1118,10 @@ Value *NumPyExpr::codegenScalarExpr(
     return util::call(f, {lv, rv});
   } else if (lv) {
     auto *t = type.getIRBaseType(T);
-    auto *f = M->getOrRealizeFunc(name, {lv->getType()}, {}, FUSION_MODULE);
+    std::vector<Generic> generics;
+    if (op == NP_OP_CAST || op == NP_OP_ZEROS_LIKE || op == NP_OP_ONES_LIKE)
+      generics.emplace_back(t);
+    auto *f = M->getOrRealizeFunc(name, {lv->getType()}, generics, FUSION_MODULE);
     seqassertn(f, "1-op func '{}' not found", name);
     return util::call(f, {lv});
   } else {

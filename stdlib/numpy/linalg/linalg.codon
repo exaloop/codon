@@ -2505,7 +2505,8 @@ def _is_blasable2d(byte_stride1: int,
 def _gemv(ip1: Ptr[T], is1_m: int, is1_n: int,
           ip2: Ptr[T], is2_n: int,
           op: Ptr[T],  op_m: int,
-          m: int, n: int, T: type):
+          m: int, n: int, T: type, accumulate: Literal[bool] = False,
+          product_sign: Literal[int] = 1, bias_sign: Literal[int] = 1):
     itemsize = sizeof(T)
     if _is_blasable2d(is1_m, is1_n, m, n, itemsize):
         order = fint(CBLAS_COL_MAJOR)
@@ -2514,19 +2515,19 @@ def _gemv(ip1: Ptr[T], is1_m: int, is1_n: int,
         order = fint(CBLAS_ROW_MAJOR)
         lda = is1_n.cdiv(itemsize)
 
-    one_dtype = cast(1, T)
-    zero_dtype = cast(0, T)
+    alpha_dtype = cast(product_sign, T)
+    beta_dtype = cast(bias_sign if accumulate else 0, T)
 
     if T is float or T is float32:
-        one = one_dtype
-        zero = zero_dtype
+        alpha = alpha_dtype
+        beta = beta_dtype
     else:
-        one = __ptr__(one_dtype).as_byte()
-        zero = __ptr__(zero_dtype).as_byte()
+        alpha = __ptr__(alpha_dtype).as_byte()
+        beta = __ptr__(beta_dtype).as_byte()
 
     args = (order, fint(CBLAS_TRANS), fint(n), fint(m),
-            one, ip1.as_byte(), fint(lda), ip2.as_byte(),
-            fint(is2_n.cdiv(itemsize)), zero, op.as_byte(),
+            alpha, ip1.as_byte(), fint(lda), ip2.as_byte(),
+            fint(is2_n.cdiv(itemsize)), beta, op.as_byte(),
             fint(op_m.cdiv(itemsize)))
 
     if T is float:
@@ -2543,7 +2544,9 @@ def _gemv(ip1: Ptr[T], is1_m: int, is1_n: int,
 def _matmul_matrixmatrix(ip1: Ptr[T], is1_m: int, is1_n: int,
                          ip2: Ptr[T], is2_n: int, is2_p: int,
                          op: Ptr[T],  os_m: int, os_p: int,
-                         m: int, n: int, p: int, T: type):
+                         m: int, n: int, p: int, T: type,
+                         accumulate: Literal[bool] = False,
+                         product_sign: Literal[int] = 1, bias_sign: Literal[int] = 1):
     order = fint(CBLAS_ROW_MAJOR)
     itemsize = sizeof(T)
     ldc = os_m.cdiv(itemsize)
@@ -2562,17 +2565,17 @@ def _matmul_matrixmatrix(ip1: Ptr[T], is1_m: int, is1_n: int,
         trans2 = fint(CBLAS_TRANS)
         ldb = is2_p.cdiv(itemsize)
 
-    one_dtype = cast(1, T)
-    zero_dtype = cast(0, T)
+    alpha_dtype = cast(product_sign, T)
+    beta_dtype = cast(bias_sign if accumulate else 0, T)
 
     if T is float or T is float32:
-        one = one_dtype
-        zero = zero_dtype
+        alpha = alpha_dtype
+        beta = beta_dtype
     else:
-        one = __ptr__(one_dtype).as_byte()
-        zero = __ptr__(zero_dtype).as_byte()
+        alpha = __ptr__(alpha_dtype).as_byte()
+        beta = __ptr__(beta_dtype).as_byte()
 
-    if (ip1 == ip2 and
+    if (not accumulate and ip1 == ip2 and
         m == p and
         is1_m == is2_p and
         is1_n == is2_n and
@@ -2580,8 +2583,8 @@ def _matmul_matrixmatrix(ip1: Ptr[T], is1_m: int, is1_n: int,
 
         ld = lda if trans1 == fint(CBLAS_NO_TRANS) else ldb
         args = (order, fint(CBLAS_UPPER), trans1, fint(p),
-                fint(n), one, ip1, fint(ld),
-                zero, op, fint(ldc))
+                fint(n), alpha, ip1, fint(ld),
+                beta, op, fint(ldc))
 
         if T is float:
             cblas_dsyrk(*args)
@@ -2600,8 +2603,8 @@ def _matmul_matrixmatrix(ip1: Ptr[T], is1_m: int, is1_n: int,
                 op[j * ldc + i] = op[i * ldc + j]
     else:
         args = (order, trans1, trans2, fint(m), fint(p), fint(n),
-                one, ip1, fint(lda), ip2,
-                fint(ldb), zero, op, fint(ldc))
+                alpha, ip1, fint(lda), ip2,
+                fint(ldb), beta, op, fint(ldc))
 
         if T is float:
             cblas_dgemm(*args)

@@ -622,7 +622,8 @@ class ndarray[dtype, ndim: Literal[int]]:
     @inline
     def _loop(arrays, func, broadcast: Literal[str] = 'all',
               check: Literal[bool] = True, alloc: type = type(()),
-              optimize_order: Literal[bool] = True, extra = None):
+              optimize_order: Literal[bool] = True, extra = None,
+              plan: Literal[bool] = False, preserve_shape: Literal[bool] = False):
         def call(func, args, extra):
             if extra is None:
                 return func(*args)
@@ -869,6 +870,24 @@ class ndarray[dtype, ndim: Literal[int]]:
             shape, strides = broadcast_args(arrays, broadcast, check)
 
         alloc_tuple = util.zero(alloc)
+
+        if plan:
+            if static.len(alloc_tuple) != 0:
+                compile_error("iteration plans cannot allocate arrays")
+            if all_contig and not preserve_shape:
+                shape = (1,) * (static.len(shape) - 1) + (arrays[0].size,)
+                strides = tuple((0,) * (static.len(shape) - 1) + (arr.itemsize,)
+                                for arr in arrays)
+                output_strides = ndarray(shape, Ptr[u8]()).strides
+            elif all_contig:
+                output_strides = ndarray(shape, Ptr[u8](), fcontig=not ccontig).strides
+            else:
+                perm = reorder_loops(max_arr.strides) if optimize_order else None
+                perm_shape = util.tuple_perm(shape, perm)
+                output_strides = ndarray(perm_shape, Ptr[u8]()).strides
+                if perm is not None:
+                    output_strides = util.tuple_perm(output_strides, util.tuple_perm_inv(perm))
+            return shape, strides, tuple(arr.data for arr in arrays), output_strides
 
         if static.len(alloc_tuple) > 0:
             if optimize_order:
