@@ -1374,7 +1374,7 @@ class FunctionStmt(Stmt, ItemIterator):
     def get_signature(self):
         """A function signature that consists of generics and arguments in a S-expression form."""
         if not self.signature:
-            self.signature = ":".join("-" if p.type is None else str(p.type) for p in self.items)
+            self.signature = ":".join("-" if p.type is None else dump(p.type) for p in self.items)
         return self.signature
 
     def get_star_arg(self) -> int:
@@ -1759,6 +1759,7 @@ def dump(
     annotate_fields=True,
     include_attributes=False,
     indent: int | None = None,
+    types: bool = False,
 ):
     """
     Return a formatted dump of the tree in node.  This is mainly useful for
@@ -1773,6 +1774,7 @@ def dump(
     """
 
     from ..bridge import class_name
+    from .types import Type
 
     def _format(node, level=0):
         if indent:
@@ -1811,7 +1813,9 @@ def dump(
                 return f"attrs=({fs[0]})", fs[1]
             return "", True
 
-        if isinstance(node, SuiteStmt):
+        if isinstance(node, Type):
+            return node.to_string(mode=2)
+        elif isinstance(node, SuiteStmt):
             if not node.items:
                 return "", True
             args = []
@@ -1831,6 +1835,8 @@ def dump(
             allsimple = True
             for name, value in Codon.any_members(node):  # type: ignore
                 if name in ["attributes", "info", "done"]:
+                    continue
+                if not types and name in ["type", "expected_type", "orig"]:
                     continue
                 value, simple = _format(value, level)
                 allsimple = allsimple and simple

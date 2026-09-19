@@ -34,11 +34,11 @@ def main(argv):
             node = cache.scope(node)
             node = typecheck.typecheck_program(cache, node, file=argv[1])
 
-            print(ast.dump(node, indent=2, include_attributes=True))
+            print(ast.dump(node, indent=2, include_attributes=True, types=True))
             for fn_data in cache.functions.values():
                 for r in fn_data.realizations.values():
                     if r.ast:
-                        print(ast.dump(r.ast, indent=2, include_attributes=True))
+                        print(ast.dump(r.ast, indent=2, include_attributes=True, types=True))
         except parser.pegen.CodonSyntaxError as error:
             print(f"{error.location}: {error.msg}")
         except ast.NodeError as error:

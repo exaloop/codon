@@ -141,7 +141,9 @@ def discover_tests(path):
     return cases
 
 
-def run_python(case):
+def run_python(case, typecheck):
+    from .passes import typecheck
+
     try:
         cc = cache.Cache("codon")
         if case.code is None:
@@ -149,7 +151,17 @@ def run_python(case):
         else:
             node = parser.parse(file=None, code=case.code)
         node = cc.scope(node)
-        return Result(ast.dump(node, indent=2, include_attributes=True))
+        if typecheck:
+            node = typecheck.typecheck_program(cc, node, file=str(case.path))
+
+            out = ast.dump(node, indent=2, include_attributes=True, types=True) + "\n"
+            for fn_data in cc.functions.values():
+                for r in fn_data.realizations.values():
+                    if r.ast:
+                        out += ast.dump(r.ast, indent=2, include_attributes=True, types=True) + "\n"
+        else:
+            out = ast.dump(node, indent=2, include_attributes=True)
+        return Result(out)
     except Exception as error:
         msg = ""
         if hasattr(error, "info"):
@@ -388,8 +400,8 @@ def main(argv=None):
     print(f"Comparing {len(cases)} scoped ASTs using {library_path}")
 
     for case in cases:
-        python_result = run_python(case)
-        native_result = native.run(case)
+        python_result = run_python(case, typecheck=2)
+        native_result = native.run(case, typecheck=2)
 
         if python_result.output is not None and native_result.output is not None:
             python_output = ignore_class_deduce(python_result.output)
