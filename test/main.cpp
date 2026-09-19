@@ -585,6 +585,7 @@ INSTANTIATE_TEST_SUITE_P(
             "numpy/test_fft.codon",
             "numpy/test_functional.codon",
             // "numpy/test_fusion.codon", // TODO: uses a lot of RAM
+            "numpy/test_fusion_extended.codon",
             "numpy/test_indexing.codon",
             "numpy/test_io.codon",
             "numpy/test_lib.codon",

@@ -21,6 +21,7 @@ from .lib.arraysetops import *
 from .statistics import *
 from .npio import *
 from .reductions import *
+from .reductions import min as amin, max as amax
 from .util import AxisError, TooHardError
 
 import linalg

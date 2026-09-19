@@ -196,6 +196,9 @@ void PassManager::registerStandardPasses() {
                              capKey,
                              /*globalAssignmentHasSideEffects=*/false),
                          {capKey});
+    registerPass(std::make_unique<numpy::NumPyInlinePass>(),
+                 /*insertBefore=*/"", {},
+                 {seKey1, seKey2, rdKey, cfgKey, globalKey, capKey});
     registerPass(
         std::make_unique<folding::FoldingPassGroup>(
             seKey1, rdKey, globalKey, /*repeat=*/5, /*runGlobalDemoton=*/false),
