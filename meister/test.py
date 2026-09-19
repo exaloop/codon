@@ -47,18 +47,19 @@ class NativeCodon:
     def __init__(self, library):
         self.library = ctypes.CDLL(str(library))
 
-        self.dump_code = self.library.codon_ast_parse_scope_dump_code
+        self.dump_code = self.library.codon_ast_dump_code
         self.dump_code.argtypes = [
             ctypes.c_char_p,
             ctypes.c_char_p,
             ctypes.c_int,
             ctypes.c_uint8,
             ctypes.c_int,
+            ctypes.c_int,
         ]
         self.dump_code.restype = _NativeResult
 
-        self.dump_file = self.library.codon_ast_parse_scope_dump_file
-        self.dump_file.argtypes = [ctypes.c_char_p, ctypes.c_uint8, ctypes.c_int]
+        self.dump_file = self.library.codon_ast_dump_file
+        self.dump_file.argtypes = [ctypes.c_char_p, ctypes.c_uint8, ctypes.c_int, ctypes.c_int]
         self.dump_file.restype = _NativeResult
 
         self.free = self.library.codon_ast_dump_free
@@ -86,12 +87,12 @@ class NativeCodon:
             if result.error:
                 self.free(result.error)
 
-    def run(self, case):
+    def run(self, case, typecheck: int = 0):
         filename = os.fsencode(case.path)
         if case.code is None:
-            return self._consume(self.dump_file(filename, True, 2))
+            return self._consume(self.dump_file(filename, True, 2, typecheck))
         return self._consume(
-            self.dump_code(case.code.encode("utf-8"), filename, case.line, True, 2)
+            self.dump_code(case.code.encode("utf-8"), filename, case.line, True, 2, typecheck)
         )
 
 
@@ -263,23 +264,14 @@ def print_side_by_side_diff(python_output, native_output, max_lines):
     text_width = max(20, (terminal_width - 2 * number_width - 9) // 2)
     side_width = number_width + 1 + text_width
 
-    print(
-        f"  {'C++ Codon':<{side_width}} | "
-        f"{'Python port':<{side_width}}"
-    )
+    print(f"  {'C++ Codon':<{side_width}} | {'Python port':<{side_width}}")
     print(f"  {'-' * side_width}-+-{'-' * side_width}")
 
     for marker, native_index, native_line, python_index, python_line in rows[:max_lines]:
         native_number = "" if native_index is None else str(native_index + 1)
         python_number = "" if python_index is None else str(python_index + 1)
-        native_side = (
-            f"{native_number:>{number_width}} "
-            f"{_clip_diff_line(native_line, text_width)}"
-        )
-        python_side = (
-            f"{python_number:>{number_width}} "
-            f"{_clip_diff_line(python_line, text_width)}"
-        )
+        native_side = f"{native_number:>{number_width}} {_clip_diff_line(native_line, text_width)}"
+        python_side = f"{python_number:>{number_width}} {_clip_diff_line(python_line, text_width)}"
         print(f"{marker} {native_side:<{side_width}} | {python_side:<{side_width}}")
 
     if len(rows) > max_lines:
@@ -327,9 +319,7 @@ def ignore_class_deduce(output):
     while index < len(lines):
         line = lines[index]
         value = line.strip()
-        if value == "ClassDeduce," or (
-            value.startswith("ClassDeduce=[") and value.endswith("],")
-        ):
+        if value == "ClassDeduce," or (value.startswith("ClassDeduce=[") and value.endswith("],")):
             index += 1
             continue
         if value == "ClassDeduce=[":
@@ -434,10 +424,7 @@ def main(argv=None):
             if args.stop_on_error:
                 break
 
-    print(
-        f"Scoped ASTs: {matched} matched, {mismatched} mismatched, "
-        f"{rejected} rejected by both"
-    )
+    print(f"Scoped ASTs: {matched} matched, {mismatched} mismatched, {rejected} rejected by both")
     return 1 if mismatched else 0
 
 

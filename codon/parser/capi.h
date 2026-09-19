@@ -17,14 +17,15 @@ struct CodonAstDumpResult {
 };
 
 /// Parse code from memory, run the scoping pass and return its Codon AST dump.
-struct CodonAstDumpResult
-codon_ast_parse_scope_dump_code(const char *code, const char *file, int line_offset,
-                                uint8_t include_attributes, int indent);
+struct CodonAstDumpResult codon_ast_dump_code(const char *code, const char *file,
+                                              int line_offset,
+                                              uint8_t include_attributes, int indent,
+                                              int typecheck);
 
 /// Parse a file, run the scoping pass and return its Codon AST dump.
-struct CodonAstDumpResult codon_ast_parse_scope_dump_file(const char *file,
-                                                          uint8_t include_attributes,
-                                                          int indent);
+struct CodonAstDumpResult codon_ast_dump_file(const char *file,
+                                              uint8_t include_attributes, int indent,
+                                              int typecheck);
 
 /// Release a string returned in CodonAstDumpResult.
 void codon_ast_dump_free(char *value);

@@ -584,9 +584,9 @@ def typecheck_instantiate(self: TypeVisitor, node: ast.InstantiateExpr) -> ast.N
                 node.items[idx] = self.visit_expr(ast.IdExpr(name), enforce_type=True)
                 prepends.append(front)
         if prepends:
-            result = self.visit_expr(
-                ast.StmtExpr(prepends, expr=result if result is not None else node)
-            )
+            if result is None:
+                return self.visit_expr(ast.StmtExpr(prepends, expr=node, type=node.type))
+            result = self.visit_expr(ast.StmtExpr(prepends, expr=result))
     return node if result is None else result
 
 

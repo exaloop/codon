@@ -1004,7 +1004,7 @@ class Literal(Class):
         return self.to_string(0)
 
     @abstractmethod
-    def get_static_expr(self):
+    def get_static_expr(self) -> ast.Expr:
         pass
 
     @property

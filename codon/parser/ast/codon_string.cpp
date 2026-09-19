@@ -11,6 +11,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -421,6 +422,10 @@ Formatted formatNode(const std::string &name, const ASTNode *node, bool done,
 Formatted formatExprNode(const std::string &name, const Expr *node,
                          std::vector<Field> fields, bool attributes, int indent,
                          int level) {
+  static thread_local std::unordered_set<const Expr *> active;
+  if (!active.insert(node).second)
+    return {"", true};
+
   const int child = nestedLevel(indent, level);
   std::vector<Field> all{
       field("type", formatValue(node->getType(), attributes, indent, child)),
@@ -429,8 +434,10 @@ Formatted formatExprNode(const std::string &name, const Expr *node,
             formatValue(node->getExpectedType(), attributes, indent, child))};
   all.insert(all.end(), std::make_move_iterator(fields.begin()),
              std::make_move_iterator(fields.end()));
-  return formatNode(name, node, node->isDone(), std::move(all), attributes, indent,
-                    level);
+  auto result = formatNode(name, node, node->isDone(), std::move(all), attributes, indent,
+                           level);
+  active.erase(node);
+  return result;
 }
 
 Formatted formatSuite(const SuiteStmt *node, const std::vector<Stmt *> &items,

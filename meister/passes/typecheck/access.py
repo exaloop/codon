@@ -508,7 +508,7 @@ def get_dispatch(self: TypeVisitor, fn: str) -> ast.types.Function:
     )
     root = ast.CallExpr(
         root,
-        items=[ast.StarExpr(ast.IdExpr("args")), ast.KeywordStarExpr(args=ast.IdExpr("kwargs"))],
+        items=[ast.StarExpr(ast.IdExpr("args")), ast.KeywordStarExpr(expr=ast.IdExpr("kwargs"))],
     )
     args_name = self.ctx.generate_canonical_name("args")
     kwargs_name = self.ctx.generate_canonical_name("kwargs")

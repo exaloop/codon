@@ -133,7 +133,7 @@ def can_call(
                     reordered.append((None, 0))
             else:
                 reordered.append((args[slot[0]].value.type, slot[0]))
-    except TypecheckError:
+    except (TypecheckError, ReorderError):
         return -1
 
     value_idx = 0
@@ -922,15 +922,15 @@ def get_param_type(typ: ast.types.Type | None) -> ast.Expr | None:
 def has_side_effect(expr: ast.Expr):
     # TODO: What if StringExpr has a nested value as a f-string?
     match expr:
-        case ast.IdExpr:
+        case ast.IdExpr():
             return False
         case ast.DotExpr(expr=ast.IdExpr()):
             return False
-        case ast.NoneExpr | ast.BoolExpr | ast.IntExpr | ast.FloatExpr | ast.StringExpr:
+        case ast.NoneExpr() | ast.BoolExpr() | ast.IntExpr() | ast.FloatExpr() | ast.StringExpr():
             return False
-        case ast.EllipsisExpr | ast.YieldExpr:
+        case ast.EllipsisExpr() | ast.YieldExpr():
             return False
-        case ast.InstantiateExpr:
+        case ast.InstantiateExpr():
             return False
         case _:
             return True
@@ -1168,7 +1168,8 @@ def reorder_named_args(
     extra_named_args: Dict[str, int] = {}
     slot_idx = 0
     assert not known or len(fn.ast.items) == len(known), "bad 'known' string"
-    for arg_idx, arg in enumerate(args[: -int(partial)]):
+    positional_args = args[:-1] if partial else args
+    for arg_idx, arg in enumerate(positional_args):
         if not arg.name:
             while (
                 known and slot_idx < len(slots) and known[slot_idx] == ast.types.Class.Flag.Included

@@ -39,13 +39,13 @@ def main(argv):
                 for r in fn_data.realizations.values():
                     if r.ast:
                         print(ast.dump(r.ast, indent=2, include_attributes=True))
-        # except parser.pegen.CodonSyntaxError as error:
-        #     print(f"{error.location}: {error.msg}")
-        # except ast.NodeError as error:
-        #     if error.info:
-        #         print(f"{error.info}: {error}")
-        #     else:
-        #         print(error)
+        except parser.pegen.CodonSyntaxError as error:
+            print(f"{error.location}: {error.msg}")
+        except ast.NodeError as error:
+            if error.info:
+                print(f"{error.info}: {error}")
+            else:
+                print(error)
         finally:
             pass
     elif mode == "test":

@@ -173,6 +173,10 @@ class Node:
     def __bool__(self) -> bool:
         return True
 
+    def __str__(self) -> str:
+        return dump(self, annotate_fields=False)
+
+
 class NodeError(Exception):
     info: Node.SrcInfo | None
 
@@ -344,6 +348,8 @@ class IntExpr(Expr):
                     )
             except ValueError:
                 pass
+        else:
+            assert False, f"bad type {type(value)}"
 
     @property
     def has_value(self):
@@ -386,6 +392,8 @@ class FloatExpr(Expr):
                 self.float_value = float(self.value)
             except ValueError:
                 pass
+        else:
+            assert False, f"bad type {type(value)}"
 
     @property
     def has_value(self):

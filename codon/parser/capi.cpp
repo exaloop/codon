@@ -9,9 +9,11 @@
 
 #include <llvm/Support/Error.h>
 
+#include "codon/compiler/compiler.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/scoping/scoping.h"
+#include "codon/parser/visitors/typecheck/typecheck.h"
 
 namespace {
 
@@ -34,17 +36,43 @@ CodonAstDumpResult failure(const std::string &error) {
 
 template <typename Parse>
 CodonAstDumpResult parseScopeDump(const std::string &argv0, Parse &&parse,
-                                  bool includeAttributes, int indent) {
+                                  bool includeAttributes, int indent, int typecheck) {
   try {
-    codon::ast::Cache cache(argv0);
-    auto parsed = parse(&cache);
+    std::vector<std::string> disabledOptsVec;
+    auto compiler = std::make_unique<codon::Compiler>(argv0, true, disabledOptsVec,
+                                                      /*isTest=*/true, false, false);
+    auto parsed = parse(compiler->getCache());
     if (!parsed)
       return failure(llvm::toString(parsed.takeError()));
-
-    auto *node = *parsed;
-    if (auto error = codon::ast::ScopingVisitor::apply(&cache, node))
-      return failure(llvm::toString(std::move(error)));
-    return success(node->toCodonString(includeAttributes, indent));
+    std::string str;
+    if (typecheck) {
+      auto abspath = (*parsed)->getSrcInfo().file;
+      std::unordered_map<std::string, std::string> earlyDefines{
+          {"__debug__", "1"},
+          {"__py_numerics__", "0"},
+          {"__py_extension__", "0"},
+          {"__apple__", "1"}};
+      fprintf(stderr, "-- %s\n",
+              (*parsed)->toCodonString(includeAttributes, indent).c_str());
+      auto node = codon::ast::TypecheckVisitor::apply(
+          compiler->getCache(), *parsed, abspath,
+          std::unordered_map<std::string, std::string>{}, earlyDefines, typecheck > 1);
+      str = node->toCodonString(includeAttributes, indent);
+      fprintf(stderr, "%s\n", str.c_str());
+      str += "\n";
+      for (auto &f : compiler->getCache()->functions)
+        for (auto &r : f.second.realizations) {
+          if (r.second->ast)
+            str += fmt::format("{}\n",
+                               r.second->ast->toCodonString(includeAttributes, indent));
+        }
+    } else {
+      auto node = *parsed;
+      if (auto error = codon::ast::ScopingVisitor::apply(compiler->getCache(), node))
+        return failure(llvm::toString(std::move(error)));
+      str = node->toCodonString(includeAttributes, indent);
+    }
+    return success(str);
   } catch (const std::exception &error) {
     return failure(error.what());
   } catch (...) {
@@ -54,10 +82,9 @@ CodonAstDumpResult parseScopeDump(const std::string &argv0, Parse &&parse,
 
 } // namespace
 
-CodonAstDumpResult codon_ast_parse_scope_dump_code(const char *code, const char *file,
-                                                   int line_offset,
-                                                   uint8_t include_attributes,
-                                                   int indent) {
+CodonAstDumpResult codon_ast_dump_code(const char *code, const char *file,
+                                       int line_offset, uint8_t include_attributes,
+                                       int indent, int typecheck) {
   if (!code)
     return failure("code must not be null");
   const std::string filename = file ? file : "";
@@ -66,19 +93,18 @@ CodonAstDumpResult codon_ast_parse_scope_dump_code(const char *code, const char 
       [&](codon::ast::Cache *cache) {
         return codon::ast::parseCode(cache, filename, code, line_offset);
       },
-      bool(include_attributes), indent);
+      bool(include_attributes), indent, typecheck);
 }
 
-CodonAstDumpResult codon_ast_parse_scope_dump_file(const char *file,
-                                                   uint8_t include_attributes,
-                                                   int indent) {
+CodonAstDumpResult codon_ast_dump_file(const char *file, uint8_t include_attributes,
+                                       int indent, int typecheck) {
   if (!file)
     return failure("file must not be null");
   const std::string filename(file);
   return parseScopeDump(
       filename,
       [&](codon::ast::Cache *cache) { return codon::ast::parseFile(cache, filename); },
-      bool(include_attributes), indent);
+      bool(include_attributes), indent, typecheck);
 }
 
 void codon_ast_dump_free(char *value) { std::free(value); }
