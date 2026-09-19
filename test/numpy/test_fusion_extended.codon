@@ -32,6 +32,14 @@ def mutate_array(array):
     array[0] = 100
     return array
 
+def mutate_index(array):
+    array[0] = 100
+    return 0
+
+@noinline
+def indexed_callback(array, callback):
+    return (array + 1) + array[callback(array):]
+
 def effectful_none():
     events.append(7)
 
@@ -73,6 +81,207 @@ def test_inline_arguments():
         assert False
     except ValueError:
         assert events == [9]
+
+@test
+def test_safe_fusion_leaves():
+    matrix = np.arange(12).reshape(3, 4)
+    result = (matrix[1:, :-1] + matrix[:-1, 1:]) * matrix[1:, 1:]
+    expected = materialize(matrix[1:, :-1] + matrix[:-1, 1:]) * matrix[1:, 1:]
+    assert np.array_equal(result, expected)
+    result = (np.clip(matrix, 2, 10) * 3 + matrix) * 2
+    assert np.array_equal(result, (materialize(np.clip(matrix, 2, 10)) * 3 + matrix) * 2)
+    mutable = np.array([1, 2, 3])
+    result = (mutable + 1) + mutable[mutate_index(mutable):]
+    assert np.array_equal(result, [102, 5, 7])
+    mutable = np.array([1, 2, 3])
+    result = (mutable + 1) + np.clip(mutable, mutate_initial(mutable), 10)
+    assert np.array_equal(result, [12, 5, 7])
+    mutable = np.array([1, 2, 3])
+    result = (mutable + 1) + np.clip(mutable, 0, 2, out=mutable)
+    assert np.array_equal(result, [3, 5, 6])
+    mutable = np.array([1, 2, 3])
+    assert np.array_equal(indexed_callback(mutable, mutate_index), [102, 5, 7])
+    mutable = np.array([1, 2, 3])
+    result = (mutable + 1) / (2 * mutate_initial(mutable))
+    assert np.array_equal(result, [0.5, 0.75, 1.])
+    dx, dy = 0.5, 2.
+    result = (matrix[1:, :-1] / (2 * dx) + matrix[:-1, 1:] * (1 / dy)) / (2 * (dx ** 2 + dy ** 2))
+    left = materialize(matrix[1:, :-1] / (2 * dx))
+    right = materialize(matrix[:-1, 1:] * (1 / dy))
+    assert np.array_equal(result, (left + right) / (2 * (dx ** 2 + dy ** 2)))
+
+@noinline
+def forwarding_branch(values, condition):
+    temporary = values + 1
+    if condition:
+        values[0] = 100
+    return temporary * 2
+
+@noinline
+def forwarding_reassignment(values, condition):
+    factor = 2
+    temporary = values * factor
+    if condition:
+        factor = 10
+    return temporary + factor
+
+@noinline
+def forwarding_loop_before(values, count):
+    temporary = values + 1
+    while count > 0:
+        values[0] += 10
+        count -= 1
+    return temporary * 2
+
+@noinline
+def forwarding_loop_consumer(values, count):
+    temporary = values + 1
+    result = np.zeros_like(values)
+    for iteration in range(count):
+        result[:] = temporary * 2
+        values[0] += 10
+    return result
+
+@test
+def test_forwarding_control_flow():
+    for condition in (False, True):
+        values = np.array([1, 2, 3])
+        assert np.array_equal(forwarding_branch(values, condition), [4, 6, 8])
+        assert values[0] == (100 if condition else 1)
+        values = np.array([1, 2, 3])
+        expected = [12, 14, 16] if condition else [4, 6, 8]
+        assert np.array_equal(forwarding_reassignment(values, condition), expected)
+    for count in (0, 1, 3):
+        values = np.array([1, 2, 3])
+        assert np.array_equal(forwarding_loop_before(values, count), [4, 6, 8])
+        assert values[0] == 1 + 10 * count
+        values = np.array([1, 2, 3])
+        expected = [4, 6, 8] if count else [0, 0, 0]
+        assert np.array_equal(forwarding_loop_consumer(values, count), expected)
+        assert values[0] == 1 + 10 * count
+
+test_forwarding_control_flow()
+
+@noinline
+def lifetime_update(values):
+    values += 2.0 * values[::-1]
+    temporary = values * values + 1.0
+    values[:] = temporary
+    values[:] = temporary
+    temporary = values * 2.0
+    values[:] = temporary
+    temporary = temporary * 3.0
+    values[:] = temporary
+
+@noinline
+def lifetime_escape(values):
+    temporary = values * 2.0
+    view = temporary[::-1]
+    values[:] = temporary
+    return view
+
+@noinline
+def lifetime_loop(values):
+    temporary = values * 2.0
+    for iteration in range(4):
+        values[:] = temporary
+        temporary = values + 1.0
+    return temporary
+
+@noinline
+def lifetime_exception(values):
+    temporary = values * 2.0
+    try:
+        values[:1] = temporary
+    except ValueError:
+        return temporary[::-1]
+    return temporary
+
+@noinline
+def lifetime_local_loop(values, count):
+    for iteration in range(count):
+        temporary = values + 1.0
+        values[:] = temporary
+        values[:] = temporary
+
+@noinline
+def lifetime_transferred(values):
+    temporary = np.exp(values)
+    total = temporary.sum()
+    return temporary / total
+
+@test
+def test_prompt_release():
+    for original in (np.arange(17.), np.arange(34.)[::2], np.arange(17.)[::-1], np.arange(0.)):
+        for values in (original.copy(), original.copy()[::-1], np.repeat(original, 2)[::2]):
+            snapshot = values.copy()
+            expected = snapshot + 2.0 * snapshot[::-1]
+            expected = (expected * expected + 1.0) * 6.0
+            lifetime_update(values)
+            assert np.array_equal(values, expected)
+            for count in (0, 1, 7):
+                before = values.copy()
+                lifetime_local_loop(values, count)
+                assert np.array_equal(values, before + count)
+        escaped_input = original.copy()
+        escaped = lifetime_escape(escaped_input)
+        carried = lifetime_loop(original.copy())
+        caught = lifetime_exception(np.arange(17.))
+        borrowed = original.astype(float, copy=False)
+        values = original.copy()
+        values[:] = borrowed
+        for repeat in range(32):
+            replacement = np.ones(original.shape) * (repeat + 1.0)
+            assert replacement.size == original.size
+        assert np.array_equal(values, original)
+        assert np.array_equal(escaped, (original * 2.0)[::-1])
+        assert np.array_equal(carried, original * 2.0 + 4.0)
+        assert np.array_equal(caught, (np.arange(17.) * 2.0)[::-1])
+    values = np.arange(17.)
+    expected = np.exp(values)
+    expected /= expected.sum()
+    transferred = lifetime_transferred(values)
+    values[:] = np.conj(values)
+    for repeat in range(32):
+        replacement = np.ones(17) * (repeat + 1.0)
+        assert replacement.size == 17
+    assert np.allclose(transferred, expected)
+    assert np.array_equal(values, np.arange(17.))
+
+@test
+def test_inner_loop_aliases():
+    from numpy.fusion import _loop_basic
+
+    def subtract(destination, left, right, extra):
+        destination[0] = left[0] - right[0] + extra
+
+    original = np.arange(63.).reshape(7, 9)
+    for array in (original.copy(), original.copy(order='F'),
+                  original[:, ::-1], original[::2, ::2], original[:0, :]):
+        for other in (np.ones(array.shape), np.ones((1, array.shape[1])),
+                      np.ones((array.shape[0], 1)), np.array(2.),
+                      np.ones(array.shape, dtype=np.float32)):
+            expected = array - other + 3.
+            _loop_basic((array, array, other), subtract, 3.)
+            assert np.array_equal(array, expected)
+            expected = other - array + 3.
+            _loop_basic((array, other, array), subtract, 3.)
+            assert np.array_equal(array, expected)
+            output = np.empty_like(array)
+            expected = array - other + 3.
+            _loop_basic((output, array, other), subtract, 3.)
+            assert np.array_equal(output, expected)
+
+    array = np.arange(9.).reshape(3, 3)
+    reference = array.copy()
+    other = np.ones((3, 3))
+    np.ndarray._loop((reference, reference.T, other), subtract, extra=3.)
+    _loop_basic((array, array.T, other), subtract, 3.)
+    assert np.array_equal(array, reference)
+
+test_safe_fusion_leaves()
+test_prompt_release()
+test_inner_loop_aliases()
 
 def check_reduction_dtype(dtype: type):
     for size in (0, 1, 7, 8, 63, 64, 65, 127, 128, 129, 255, 513):
@@ -618,6 +827,71 @@ def test_axis_reduction_edges():
     assert values[0, 0] == 0.
 
 test_axis_reduction_edges()
+
+@test
+def test_axis_negative_strides():
+    from numpy.fusion import _loop_reduce_axis
+
+    def record_axis(pointer, context):
+        trace, count = context
+        trace[count[0]] = pointer[0]
+        count[0] += 1
+        return pointer[0]
+
+    values = np.arange(12).reshape(3, 4)
+    for array in (values[::-1], values[:, ::-1], values[::-1, ::-1]):
+        trace = np.empty(12, dtype=int)
+        count = 0
+        result = _loop_reduce_axis((array,), record_axis, (trace.data, __ptr__(count)),
+                                   0, array, 0, int, int, 'sum', 1)
+        assert np.array_equal(result, array.sum(axis=0))
+        assert count == 12
+        assert np.array_equal(trace, array.flatten())
+
+test_axis_negative_strides()
+
+def check_axis_gradual_identity(dtype: type, operation: Literal[str], initial):
+    from numpy.fusion import _axis_gradual_expr
+
+    def read_value(pointer, extra):
+        return pointer[0]
+
+    values = np.array([[2, 3], [4, 5]], dtype=dtype)
+    partitions = (((values.strides[0],), (values.strides[1],)),)
+    for length in (0, 2):
+        output = np.full(2, 123, dtype=dtype)
+        _axis_gradual_expr(output, (length,), partitions, (values.data,), read_value,
+                           None, initial, False, operation)
+        if length == 0:
+            expected = np.full(2, initial, dtype=dtype)
+        elif operation == 'sum':
+            expected = np.array([6, 8], dtype=dtype) + initial
+        else:
+            expected = np.array([8, 15], dtype=dtype) * initial
+        assert np.array_equal(output, expected)
+
+def check_axis_default_identities(dtype: type):
+    values = np.array([[2, 3], [4, 5]], dtype=dtype)
+    for array in (values, values[::-1], values[:, ::-1], values.copy(order='F')):
+        for length in (0, 2):
+            view = array[:length]
+            assert np.array_equal((view + dtype(1)).sum(axis=0),
+                                  materialize(view + dtype(1)).sum(axis=0))
+            assert np.array_equal((view + dtype(1)).prod(axis=0),
+                                  materialize(view + dtype(1)).prod(axis=0))
+    check_axis_gradual_identity(dtype, 'sum', 0)
+    check_axis_gradual_identity(dtype, 'prod', 1)
+    check_axis_gradual_identity(dtype, 'sum', 7)
+    check_axis_gradual_identity(dtype, 'prod', 3)
+
+@test
+def test_axis_gradual_identities():
+    check_axis_default_identities(np.int64)
+    check_axis_default_identities(np.float32)
+    check_axis_default_identities(np.float64)
+    check_axis_default_identities(np.complex128)
+
+test_axis_gradual_identities()
 
 @test
 def test_axis_short_circuit_loop():

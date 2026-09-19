@@ -47,6 +47,17 @@ public:
   void visit(BodiedFunc *f) override;
 };
 
+class NumPyLifetimePass : public OperatorPass {
+  std::string reachingDefKey;
+
+public:
+  static const std::string KEY;
+  explicit NumPyLifetimePass(const std::string &reachingDefKey)
+      : reachingDefKey(reachingDefKey) {}
+  std::string getKey() const override { return KEY; }
+  void visit(BodiedFunc *func) override;
+};
+
 struct NumPyPrimitiveTypes {
   Type *none;
   Type *optnone;
@@ -293,6 +304,8 @@ std::unique_ptr<NumPyExpr> parse(Value *v,
                                  std::vector<std::pair<NumPyExpr *, Value *>> &leaves,
                                  NumPyPrimitiveTypes &T, bool allowReduction = false,
                                  Value **destination = nullptr);
+
+bool hasOwnedResult(const NumPyExpr &expr);
 
 struct NumPyOptimizationUnit {
   /// Original IR value being corresponding to expression

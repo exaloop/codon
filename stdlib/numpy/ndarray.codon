@@ -623,7 +623,8 @@ class ndarray[dtype, ndim: Literal[int]]:
     def _loop(arrays, func, broadcast: Literal[str] = 'all',
               check: Literal[bool] = True, alloc: type = type(()),
               optimize_order: Literal[bool] = True, extra = None,
-              plan: Literal[bool] = False, preserve_shape: Literal[bool] = False):
+              plan: Literal[bool] = False, preserve_shape: Literal[bool] = False,
+              alias: Literal[bool] = False):
         def call(func, args, extra):
             if extra is None:
                 return func(*args)
@@ -638,6 +639,26 @@ class ndarray[dtype, ndim: Literal[int]]:
                 call(func, ptrs, extra)
             elif static.len(shape) == 1:
                 n = shape[0]
+
+                if alias and static.len(ptrs) == 3:
+                    if type(ptrs[0]) is type(ptrs[1]):
+                        if ptrs[0] == ptrs[1] and strides[0] == strides[1]:
+                            def inplace_left(destination, source, context):
+                                callback, extra = context
+                                call(callback, (destination, destination, source), extra)
+
+                            loop(shape, (strides[0], strides[2]),
+                                 (ptrs[0], ptrs[2]), inplace_left, (func, extra))
+                            return
+                    if type(ptrs[0]) is type(ptrs[2]):
+                        if ptrs[0] == ptrs[2] and strides[0] == strides[2]:
+                            def inplace_right(destination, source, context):
+                                callback, extra = context
+                                call(callback, (destination, source, destination), extra)
+
+                            loop(shape, (strides[0], strides[1]),
+                                 (ptrs[0], ptrs[1]), inplace_right, (func, extra))
+                            return
 
                 # Common cases are:
                 #   - len(ptrs) == 1 ; i.e. in-place unary operation
@@ -904,10 +925,17 @@ class ndarray[dtype, ndim: Literal[int]]:
             allocated = ()
 
         if all_contig:
-            for i in range(arrays[0].size):
-                call(func,
-                     tuple(tup[0] + i for tup in allocated) + tuple(arr.data + i for arr in arrays),
-                     extra)
+            if alias:
+                loop((arrays[0].size,),
+                     tuple((util.sizeof(type(tup[0][0])),) for tup in allocated) +
+                     tuple((arr.itemsize,) for arr in arrays),
+                     tuple(tup[0] for tup in allocated) + tuple(arr.data for arr in arrays),
+                     func, extra)
+            else:
+                for i in range(arrays[0].size):
+                    call(func,
+                         tuple(tup[0] + i for tup in allocated) + tuple(arr.data + i for arr in arrays),
+                         extra)
             return tuple(ndarray(shape, tup[0], fcontig=(not ccontig)) for tup in allocated)
 
         shape0 = shape

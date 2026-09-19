@@ -207,6 +207,9 @@ void PassManager::registerStandardPasses() {
     registerPass(std::make_unique<numpy::NumPyFusionPass>(rdKey, seKey2),
                  /*insertBefore=*/"", {rdKey, seKey2},
                  {seKey1, rdKey, cfgKey, globalKey, capKey});
+    registerPass(std::make_unique<numpy::NumPyLifetimePass>(rdKey),
+                 /*insertBefore=*/"", {rdKey},
+                 {seKey1, seKey2, rdKey, cfgKey, globalKey, capKey});
     registerPass(std::make_unique<lowering::ImperativeForFlowLowering>());
     registerPass(std::make_unique<numpy::NumPyBoundsCheckElisionPass>(rdKey),
                  /*insertBefore=*/"", {rdKey},

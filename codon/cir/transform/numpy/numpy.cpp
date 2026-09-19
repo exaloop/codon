@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <complex>
 #include <sstream>
+#include <unordered_set>
 #include <utility>
 
 #define XLOG(c, ...)                                                                   \
@@ -63,6 +64,20 @@ bool isUFuncType(Type *t) {
 
 bool isNoneType(Type *t, NumPyPrimitiveTypes &T) {
   return t && (t->is(T.none) || t->is(T.optnone));
+}
+
+bool hasLifetimeTag(const Value *value, const std::string &tag) {
+  auto *attributes = value->getAttribute<KeyValueAttribute>();
+  return attributes && attributes->has(tag);
+}
+
+void setLifetimeTag(Value *value, const std::string &tag) {
+  auto *attributes = value->getAttribute<KeyValueAttribute>();
+  if (!attributes) {
+    value->setAttribute(std::make_unique<KeyValueAttribute>());
+    attributes = value->getAttribute<KeyValueAttribute>();
+  }
+  attributes->attributes[tag] = "";
 }
 } // namespace
 
@@ -969,6 +984,64 @@ Var *optimizeHelper(NumPyOptimizationUnit &unit, NumPyExpr *expr, CodegenContext
   return expr->codegenSequentialEval(C);
 }
 
+bool isBasicIndexType(Type *type, NumPyPrimitiveTypes &types) {
+  if (type->is(types.i64) || isNoneType(type, types))
+    return true;
+  auto slice = ast::getMangledClass("std.internal.types.slice", "Slice") + "[";
+  bool isSlice = type->getName().rfind(slice, 0) == 0;
+  if (!isSlice && type->getName().rfind("Tuple[", 0) != 0)
+    return false;
+  auto generics = type->getGenerics();
+  return !generics.empty() &&
+         std::all_of(generics.begin(), generics.end(), [&](const auto &generic) {
+           return generic.isType() &&
+                  (isSlice ? generic.getTypeValue()->is(types.i64)
+                           : isBasicIndexType(generic.getTypeValue(), types));
+         });
+}
+
+bool isSafeFusionLeaf(Value *value, NumPyPrimitiveTypes &types,
+                      analyze::module::SideEffectResult *sideEffects) {
+  if (!sideEffects->hasSideEffect(value))
+    return true;
+  auto *call = cast<CallInstr>(value);
+  auto *callee = call ? util::getFunc(call->getCallee()) : nullptr;
+  if (!callee)
+    return false;
+  auto name = callee->getUnmangledName();
+  bool arrayMethod = isArrayType(callee->getParentType());
+  auto scalarType = callee->getParentType()
+                        ? NumPyType::get(callee->getParentType(), types)
+                        : NumPyType();
+  static const std::unordered_set<std::string> scalarOperations = {
+      "__add__",      "__radd__",      "__sub__",     "__rsub__",
+      "__mul__",      "__rmul__",      "__truediv__", "__rtruediv__",
+      "__floordiv__", "__rfloordiv__", "__mod__",     "__rmod__",
+      "__pow__",      "__rpow__",      "__neg__",     "__pos__"};
+  bool safeRead = scalarType && !scalarType.isArray() && scalarOperations.count(name) &&
+                  std::all_of(call->begin(), call->end(), [&](Value *argument) {
+                    auto type = NumPyType::get(argument->getType(), types);
+                    return type && !type.isArray();
+                  });
+  safeRead |= arrayMethod && name == Module::GETITEM_MAGIC_NAME &&
+              call->numArgs() == 2 &&
+              NumPyType::get(call->front()->getType(), types).isArray() &&
+              isBasicIndexType(call->back()->getType(), types);
+  if (name == "clip" && call->numArgs() == 4 &&
+      (arrayMethod ||
+       callee->getName().rfind(ast::getMangledFunc("std.numpy.routines", "clip") + "[",
+                               0) == 0) &&
+      isNoneType(call->back()->getType(), types)) {
+    safeRead = std::all_of(call->begin(), call->end(), [&](Value *argument) {
+      return NumPyType::get(argument->getType(), types) ||
+             isNoneType(argument->getType(), types);
+    });
+  }
+  return safeRead && std::all_of(call->begin(), call->end(), [&](Value *argument) {
+           return isSafeFusionLeaf(argument, types, sideEffects);
+         });
+}
+
 // Ufunc receivers and out=None expressions are absent from the arithmetic tree,
 // but removing their calls must not discard observable argument evaluation.
 bool hasUFuncArgumentEffects(NumPyExpr &expr,
@@ -987,6 +1060,24 @@ bool hasUFuncArgumentEffects(NumPyExpr &expr,
 }
 } // namespace
 
+bool hasOwnedResult(const NumPyExpr &expr) {
+  if (!expr.type.isArray() || expr.isLeaf())
+    return false;
+  switch (expr.op) {
+  case NumPyExpr::NP_OP_TRANSPOSE:
+  case NumPyExpr::NP_OP_POS:
+  case NumPyExpr::NP_OP_CONJ:
+    return false;
+  case NumPyExpr::NP_OP_CAST: {
+    auto *call = cast<CallInstr>(expr.val);
+    return call && (call->numArgs() == 2 || (isA<BoolConst>(call->back()) &&
+                                             cast<BoolConst>(call->back())->getVal()));
+  }
+  default:
+    return true;
+  }
+}
+
 bool NumPyOptimizationUnit::optimize(NumPyPrimitiveTypes &T,
                                      analyze::module::SideEffectResult *sideEffects) {
   bool reduction = expr->isReduction();
@@ -999,7 +1090,7 @@ bool NumPyOptimizationUnit::optimize(NumPyPrimitiveTypes &T,
     return false;
 
   for (auto &leaf : leaves) {
-    if (sideEffects->hasSideEffect(leaf.second))
+    if (!isSafeFusionLeaf(leaf.second, T, sideEffects))
       return false;
   }
 
@@ -1028,11 +1119,14 @@ bool NumPyOptimizationUnit::optimize(NumPyPrimitiveTypes &T,
   auto *series = M->Nr<SeriesFlow>();
   CodegenContext C(M, series, func, T);
   util::CloneVisitor cv(M);
+  bool ownsResult = hasOwnedResult(*expr) && !reduction;
 
   // Bind leaves once in their recorded evaluation order; every generated path
   // uses these bindings rather than reevaluating the original operands.
   for (auto &p : leaves) {
     auto *var = util::makeVar(cv.clone(p.second), series, func);
+    if (ownsResult && !p.first->freeable)
+      setLifetimeTag(series->back(), "numpy.lifetime.input");
     C.vars.emplace(p.first, var);
   }
 
@@ -1046,6 +1140,9 @@ bool NumPyOptimizationUnit::optimize(NumPyPrimitiveTypes &T,
   auto *result =
       reduction ? expr->codegenFusedEval(C) : optimizeHelper(*this, expr.get(), C);
   auto *replacement = M->Nr<FlowInstr>(C.series, M->Nr<VarValue>(result));
+  setLifetimeTag(replacement, "numpy.lifetime.expression");
+  if (ownsResult)
+    setLifetimeTag(replacement, "numpy.lifetime.owned");
   value->replaceAll(replacement);
   return true;
 }
@@ -1299,6 +1396,222 @@ struct ExtractArrayExpressions : public util::Operator {
 const std::string NumPyFusionPass::KEY = "core-numpy-fusion";
 
 const std::string NumPyInlinePass::KEY = "core-numpy-inline";
+
+const std::string NumPyLifetimePass::KEY = "core-numpy-lifetime";
+
+namespace {
+bool ownsArrayResult(Value *value, NumPyPrimitiveTypes &types) {
+  if (!NumPyType::get(value->getType(), types).isArray())
+    return false;
+  if (hasLifetimeTag(value, "numpy.lifetime.owned"))
+    return true;
+  std::vector<std::pair<NumPyExpr *, Value *>> leaves;
+  auto expression = parse(value, leaves, types);
+  return expression && hasOwnedResult(*expression);
+}
+
+bool isArrayUpdate(CallInstr *call, NumPyPrimitiveTypes &types) {
+  auto *callee = util::getFunc(call->getCallee());
+  if (!callee || call->numArgs() < 2 || !isArrayType(callee->getParentType()) ||
+      !NumPyType::get(call->front()->getType(), types).isArray())
+    return false;
+  const auto name = callee->getUnmangledName();
+  if (name == Module::SETITEM_MAGIC_NAME && call->numArgs() == 3)
+    return isBasicIndexType((*std::next(call->begin()))->getType(), types);
+  static const std::unordered_set<std::string> updates = {
+      "__iadd__",      "__isub__", "__imul__",    "__itruediv__",
+      "__ifloordiv__", "__imod__", "__ipow__",    "__iand__",
+      "__ior__",       "__ixor__", "__ilshift__", "__irshift__"};
+  return call->numArgs() == 2 && updates.count(name);
+}
+} // namespace
+
+void NumPyLifetimePass::visit(BodiedFunc *func) {
+  auto *result = getAnalysisResult<analyze::dataflow::RDResult>(reachingDefKey);
+  auto found = result->results.find(func->getId());
+  if (found == result->results.end())
+    return;
+  auto *definitions = found->second.get();
+  auto *graph = result->cfgResult->graphs.at(func->getId()).get();
+
+  struct LocalLifetime : public util::Operator {
+    struct Definition {
+      AssignInstr *assignment;
+      SeriesFlow *series;
+    };
+    struct Use {
+      Value *value;
+      std::vector<Node *> parents;
+      bool safe;
+    };
+    NumPyPrimitiveTypes types;
+    std::vector<Definition> candidates;
+    std::unordered_map<id_t, std::vector<Use>> uses;
+
+    explicit LocalLifetime(BodiedFunc *func) : types(func->getModule()) {}
+
+    void handle(AssignInstr *assignment) override {
+      auto *series = depth() ? getParent<SeriesFlow>() : nullptr;
+      if (!series || assignment->getLhs()->isGlobal() ||
+          !ownsArrayResult(assignment->getRhs(), types))
+        return;
+      for (auto parent = parent_begin(); parent != parent_end(); ++parent) {
+        auto *value = cast<Value>(*parent);
+        if (isA<TryCatchFlow>(*parent) ||
+            (value && hasLifetimeTag(value, "numpy.lifetime.expression")))
+          return;
+      }
+      candidates.push_back({assignment, series});
+    }
+
+    bool safeRead(VarValue *read) {
+      if (!depth())
+        return false;
+      auto *parent = getParent();
+      if (auto *assignment = cast<AssignInstr>(parent)) {
+        return assignment->getRhs() == read &&
+               hasLifetimeTag(assignment, "numpy.lifetime.input");
+      }
+      auto *call = cast<CallInstr>(parent);
+      if (!call)
+        return false;
+      if (ownsArrayResult(call, types))
+        return true;
+      if (isArrayUpdate(call, types)) {
+        auto *callee = util::getFunc(call->getCallee());
+        return call->back() == read ||
+               (callee->getUnmangledName() == Module::SETITEM_MAGIC_NAME &&
+                call->front() == read);
+      }
+      auto *callee = util::getFunc(call->getCallee());
+      auto output = NumPyType::get(call->getType(), types);
+      return callee && isArrayType(callee->getParentType()) && output &&
+             !output.isArray() &&
+             callee->getUnmangledName() == Module::GETITEM_MAGIC_NAME &&
+             call->numArgs() == 2 && call->front() == read &&
+             isBasicIndexType(call->back()->getType(), types);
+    }
+
+    void preHook(Node *node) override {
+      auto *value = cast<Value>(node);
+      if (!value || isA<AssignInstr>(value))
+        return;
+      auto *read = cast<VarValue>(value);
+      bool safe = read && safeRead(read);
+      for (auto *variable : value->getUsedVariables()) {
+        if (isArrayType(variable->getType()))
+          uses[variable->getId()].push_back(
+              {value, {parent_begin(), parent_end()}, safe});
+      }
+    }
+  } lifetimes(func);
+  func->accept(lifetimes);
+
+  std::unordered_map<id_t, size_t> positions;
+  for (const auto &candidate : lifetimes.candidates) {
+    auto *block = graph->getBlock(candidate.assignment);
+    if (block) {
+      size_t position = 0;
+      for (const auto *value : *block)
+        positions[value->getId()] = position++;
+    }
+  }
+  std::unordered_map<Value *, std::vector<Value *>> insertions;
+  for (const auto &candidate : lifetimes.candidates) {
+    auto *assignment = candidate.assignment;
+    auto *variable = assignment->getLhs();
+    auto *block = graph->getBlock(assignment);
+    if (!block || definitions->isInvalid(variable))
+      continue;
+    Value *last = assignment;
+    size_t lastPosition = positions.at(assignment->getId());
+    bool safe = true;
+    for (const auto &use : lifetimes.uses[variable->getId()]) {
+      auto reaching = definitions->getReachingDefinitions(variable, use.value);
+      bool reaches =
+          std::any_of(reaching.begin(), reaching.end(), [&](const auto &def) {
+            return def.assignment->getId() == assignment->getId();
+          });
+      if (!reaches)
+        continue;
+      auto parent = std::find(use.parents.begin(), use.parents.end(), candidate.series);
+      auto *statement = parent != use.parents.end() && ++parent != use.parents.end()
+                            ? cast<Value>(*parent)
+                            : nullptr;
+      auto position = positions.find(use.value->getId());
+      if (!use.safe || reaching.size() != 1 || !statement ||
+          graph->getBlock(use.value) != block || position == positions.end() ||
+          position->second <= positions.at(assignment->getId()) ||
+          isA<ReturnInstr>(statement) || isA<Flow>(statement)) {
+        safe = false;
+        break;
+      }
+      if (position->second > lastPosition) {
+        lastPosition = position->second;
+        last = statement;
+      }
+    }
+    if (!safe)
+      continue;
+    auto *module = func->getModule();
+    auto *owner = module->Nr<Var>(variable->getType(), false);
+    func->push_back(owner);
+    insertions[assignment].push_back(
+        module->Nr<AssignInstr>(owner, module->Nr<VarValue>(variable)));
+    auto *release =
+        module->getOrRealizeFunc("_free", {variable->getType()}, {}, FUSION_MODULE);
+    seqassertn(release, "NumPy release function not found");
+    insertions[last].push_back(util::call(release, {module->Nr<VarValue>(owner)}));
+  }
+
+  struct InsertReleases : public util::Operator {
+    std::unordered_map<Value *, std::vector<Value *>> &insertions;
+    explicit InsertReleases(
+        std::unordered_map<Value *, std::vector<Value *>> &insertions)
+        : insertions(insertions) {}
+    void handle(SeriesFlow *series) override {
+      for (auto position = series->begin(); position != series->end(); ++position) {
+        auto found = insertions.find(*position);
+        if (found != insertions.end()) {
+          auto next = std::next(position);
+          for (auto *value : found->second)
+            series->insert(next, value);
+        }
+      }
+    }
+  } insert(insertions);
+  func->accept(insert);
+
+  struct ReleaseArguments : public util::Operator {
+    BodiedFunc *func;
+    NumPyPrimitiveTypes types;
+
+    explicit ReleaseArguments(BodiedFunc *func)
+        : func(func), types(func->getModule()) {}
+
+    void handle(CallInstr *call) override {
+      if (!isArrayUpdate(call, types) || !ownsArrayResult(call->back(), types))
+        return;
+      auto *module = call->getModule();
+      auto *series = module->Nr<SeriesFlow>();
+      util::CloneVisitor clone(module);
+      std::vector<Value *> arguments;
+      for (auto *argument : *call) {
+        auto *bound = util::makeVar(clone.clone(argument), series, func);
+        arguments.push_back(module->Nr<VarValue>(bound));
+      }
+      auto *result = util::makeVar(
+          util::call(util::getFunc(call->getCallee()), arguments), series, func);
+      auto *temporary = arguments.back();
+      auto *release =
+          module->getOrRealizeFunc("_free", {temporary->getType()}, {}, FUSION_MODULE);
+      seqassertn(release, "NumPy release function not found");
+      series->push_back(util::call(release, {temporary}));
+      call->replaceAll(module->Nr<FlowInstr>(series, module->Nr<VarValue>(result)));
+    }
+  } release(func);
+  func->accept(release);
+}
 
 // Open bounded, single-expression user helpers so the fusion parser can see
 // through calls without requiring general-purpose inlining of the NumPy library.

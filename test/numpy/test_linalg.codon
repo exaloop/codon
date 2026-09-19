@@ -2786,6 +2786,46 @@ def test_dot_matmul_higher_dims(dtype: type):
     assert np.array_equal(C, D)
     assert D.data == E.data
 
+@test
+def test_dot_strides(dtype: type):
+    left = np.arange(65, dtype=dtype)
+    right = np.arange(1, 66, dtype=dtype)
+    if dtype is np.complex64 or dtype is np.complex128:
+        left += 2j
+        right -= 3j
+    original_left = left.copy()
+    original_right = right.copy()
+    for length in (0, 1, 2, 17, 32):
+        for left_step in (-2, -1, 1, 2):
+            for right_step in (-2, -1, 1, 2):
+                lhs = left[::left_step][:length]
+                rhs = right[::right_step][:length]
+                expected = dtype(0)
+                for index in range(length):
+                    expected += lhs[index] * rhs[index]
+                assert np.isclose(np.dot(lhs, rhs), expected)
+                assert np.isclose(lhs @ rhs, expected)
+                output = np.empty((1, 1), dtype=dtype)
+                result = np.dot(lhs.reshape(1, length), rhs.reshape(length, 1), out=output)
+                assert result.data == output.data
+                assert np.isclose(output[0, 0], expected)
+
+    repeated = np.broadcast_to(right[:1], (33,))
+    assert np.isclose(np.dot(left[::-2], repeated), left[::-2].sum() * right[0])
+    assert np.isclose(np.dot(repeated, left[::-2]), left[::-2].sum() * right[0])
+    integers = np.arange(65, dtype=np.int32)
+    assert np.isclose(np.dot(left[::-1], integers), (left[::-1] * integers).sum())
+    assert np.isclose(np.dot(integers, left[::-1]), (integers * left[::-1]).sum())
+    assert np.array_equal(left, original_left)
+    assert np.array_equal(right, original_right)
+
+test_dot_strides(np.float64)
+test_dot_strides(np.float32)
+test_dot_strides(np.complex128)
+test_dot_strides(np.complex64)
+test_dot_strides(np.int64)
+test_dot_strides(np.int32)
+
 test_matmul_contigs(np.float64)
 test_matmul_contigs(np.float32)
 test_matmul_contigs(np.complex64)

@@ -2468,23 +2468,55 @@ def _blas_stride(stride: int, itemsize: int):
 
 def _dot(ip1: Ptr[T1], is1: int, ip2: Ptr[T2], is2: int, op: Ptr[T3], n: int,
          T1: type, T2: type, T3: type):
+    if not ((T1 is float and T2 is float and T3 is float) or
+            (T1 is float32 and T2 is float32 and T3 is float32) or
+            (T1 is complex and T2 is complex and T3 is complex) or
+            (T1 is complex64 and T2 is complex64 and T3 is complex64)):
+        _dot_noblas(ip1, is1, ip2, is2, op, n)
+        return
+
+    if n <= 0:
+        op[0] = zero(T3)
+        return
+
     ib1 = _blas_stride(is1, sizeof(T1))
     ib2 = _blas_stride(is2, sizeof(T2))
-    args = (fint(n), ip1.as_byte(), fint(ib1), ip2.as_byte(), fint(ib2))
-
-    if ib1 == 0 or ib2 == 0:
+    if (n > _CBLAS_INT_MAX or (ib1 == 0 and is1 >= 0) or
+        (ib2 == 0 and is2 >= 0)):
         _dot_noblas(ip1, is1, ip2, is2, op, n)
-    else:
-        if T1 is float and T2 is float and T3 is float:
-            op[0] = cblas_ddot(*args)
-        elif T1 is float32 and T2 is float32 and T3 is float32:
-            op[0] = cblas_sdot(*args)
-        elif T1 is complex and T2 is complex and T3 is complex:
-            cblas_zdotu_sub(*args, op)
-        elif T1 is complex64 and T2 is complex64 and T3 is complex64:
-            cblas_cdotu_sub(*args, op)
-        else:
-            _dot_noblas(ip1, is1, ip2, is2, op, n)
+        return
+
+    if is1 < 0:
+        packed1 = Ptr[T1](n)
+        source1 = ip1.as_byte()
+        for index in range(n):
+            packed1[index] = Ptr[T1](source1)[0]
+            source1 += is1
+        ip1 = packed1
+        ib1 = 1
+    if is2 < 0:
+        packed2 = Ptr[T2](n)
+        source2 = ip2.as_byte()
+        for index in range(n):
+            packed2[index] = Ptr[T2](source2)[0]
+            source2 += is2
+        ip2 = packed2
+        ib2 = 1
+
+    args = (fint(n), ip1.as_byte(), fint(ib1), ip2.as_byte(), fint(ib2))
+    if T1 is float:
+        op[0] = cblas_ddot(*args)
+    elif T1 is float32:
+        op[0] = cblas_sdot(*args)
+    elif T1 is complex:
+        cblas_zdotu_sub(*args, op)
+    elif T1 is complex64:
+        cblas_cdotu_sub(*args, op)
+
+    if is1 < 0:
+        free(ip1)
+    if is2 < 0:
+        free(ip2)
 
 BLAS_MAXSIZE: Literal[int] = 2147483646  # 2^31 - 1
 

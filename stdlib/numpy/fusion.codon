@@ -105,29 +105,7 @@ def _loop_reduce_layout(arrays, func, extra, initial, layout,
 
 @inline
 def _loop_basic(arrays, func, extra):
-    if static.len(arrays) == 3:
-        output, left, right = arrays
-        if type(output) is type(left):
-            if (output.data == left.data and output.shape == left.shape and
-                    output.strides == left.strides):
-                def inplace_left(destination, source, context):
-                    callback, extra = context
-                    callback(destination, destination, source, extra)
-
-                ndarray._loop((output, right), inplace_left, broadcast='first',
-                              extra=(func, extra))
-                return
-        if type(output) is type(right):
-            if (output.data == right.data and output.shape == right.shape and
-                    output.strides == right.strides):
-                def inplace_right(destination, source, context):
-                    callback, extra = context
-                    callback(destination, source, destination, extra)
-
-                ndarray._loop((output, left), inplace_right, broadcast='first',
-                              extra=(func, extra))
-                return
-    ndarray._loop(arrays, func, extra=extra)
+    ndarray._loop(arrays, func, extra=extra, alias=True)
 
 @inline
 def _reduce_ptr(pointer: Ptr[T], strides, position, T: type):
@@ -355,6 +333,10 @@ def _axis_base(pointer: Ptr[T], strides, index, T: type):
 
 def _axis_gradual_expr(output, reduced_shape, partitions, bases, func, extra,
                         initial, transpose: bool, operation: Literal[str]):
+    """Sum/prod receive resolved initial values, including their default 0/1.
+
+    Only extrema without an initial use (); output storage is not preinitialized.
+    """
     def accept(*args):
         pointers, context = args[:-1], args[-1]
         func, extra, position, initial = context
@@ -441,11 +423,13 @@ def _loop_reduce_axis(arrays, func, extra, initial, layout, axis,
         min_reduced_stride = -1
         min_retained_stride = -1
         for stride in reduced_layout:
-            if stride and (min_reduced_stride == -1 or abs(stride) < min_reduced_stride):
-                min_reduced_stride = stride
+            magnitude = abs(stride)
+            if magnitude and (min_reduced_stride == -1 or magnitude < min_reduced_stride):
+                min_reduced_stride = magnitude
         for stride in retained_layout:
-            if stride and (min_retained_stride == -1 or abs(stride) < min_retained_stride):
-                min_retained_stride = stride
+            magnitude = abs(stride)
+            if magnitude and (min_retained_stride == -1 or magnitude < min_retained_stride):
+                min_retained_stride = magnitude
         gradual = (operation != 'any' and operation != 'all' and layout.ndim > 1 and
                    min_retained_stride > 0 and min_retained_stride < min_reduced_stride)
         transpose = layout._should_transpose()

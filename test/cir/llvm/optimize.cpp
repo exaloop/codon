@@ -259,6 +259,193 @@ TEST(LLVMOptimizationTest, RemovesUnusedStandardStreamInitialization) {
   EXPECT_EQ(1, definitions);
 }
 
+TEST(LLVMOptimizationTest, ReleasesNumpyUpdateTemporaries) {
+  ASSERT_EXIT(
+      {
+        auto compiler = compileAndOptimize(R"(
+import numpy as np
+
+@export
+def release_update(values: np.ndarray[float, 1]):
+    values += 2.0 * values[::-1]
+    return values
+
+@export
+def release_fused_update(values: np.ndarray[float, 1]):
+  values[:] = values * values + 1.0
+
+@export
+def release_named_update(values: np.ndarray[float, 1]):
+  temporary = values * 2.0
+  values[:] = temporary
+  values[:] = temporary
+
+@export
+def retain_view(values: np.ndarray[float, 1]):
+    temporary = values * 2.0
+    view = temporary[::-1]
+    values[:] = temporary
+    return view
+
+@noinline
+def keep_array(values):
+    return values
+
+@export
+def retain_unknown(values: np.ndarray[float, 1]):
+    temporary = values * 2.0
+    alias = keep_array(temporary)
+    values[:] = temporary
+    return alias
+
+@export
+def retain_borrowed(values: np.ndarray[float, 1]):
+    temporary = values.astype(float, copy=False)
+    values[:] = temporary
+    return temporary
+
+@export
+def retain_loop_carried(values: np.ndarray[float, 1], count: int):
+    temporary = values * 2.0
+    for iteration in range(count):
+        values[:] = temporary
+        temporary = values * 3.0
+    return temporary
+
+@export
+def retain_container(values: np.ndarray[float, 1]):
+    temporary = values * 2.0
+    saved = [temporary]
+    values[:] = temporary
+    return saved
+
+@export
+def retain_inplace_result(values: np.ndarray[float, 1]):
+    temporary = values * 2.0
+    alias = temporary.__iadd__(values)
+    return alias
+
+@export
+def retain_pointer(values: np.ndarray[float, 1]):
+  temporary = values * 2.0
+  pointer = temporary.data
+  values[:] = temporary
+  return pointer
+
+@export
+def retain_branch(values: np.ndarray[float, 1], condition: bool):
+  temporary = values * 2.0
+  if condition:
+    values[:] = temporary
+  return temporary
+
+@export
+def release_loop_update(values: np.ndarray[float, 1], count: int):
+  for iteration in range(count):
+    temporary = values * values + 1.0
+    values[:] = temporary
+    values[:] = temporary
+
+@export
+def release_reassigned_update(values: np.ndarray[float, 1]):
+  temporary = values * 2.0
+  values[:] = temporary
+  temporary = temporary * 3.0
+  values[:] = temporary
+
+@export
+def retain_conjugate(values: np.ndarray[float, 1]):
+    temporary = np.conj(values)
+    values[:] = temporary
+    return temporary
+
+@export
+def retain_transferred(values: np.ndarray[float, 1]):
+    temporary = np.exp(values)
+    total = temporary.sum()
+    return temporary / total
+)");
+        auto countReleases = [&](llvm::StringRef name) {
+          int releases = 0;
+          for (auto &function : *compiler->getLLVMVisitor()->getModule()) {
+            if (!function.getName().contains(name))
+              continue;
+            for (auto &block : function) {
+              for (auto &instruction : block) {
+                auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+                auto *callee = call ? call->getCalledFunction() : nullptr;
+                if (callee && callee->getName() == "seq_free")
+                  ++releases;
+              }
+            }
+          }
+          return releases;
+        };
+        EXPECT_EQ(countReleases("release_update"), 1);
+        EXPECT_EQ(countReleases("release_fused_update"), 1);
+        EXPECT_EQ(countReleases("release_named_update"), 1);
+        EXPECT_EQ(countReleases("retain_view"), 0);
+        EXPECT_EQ(countReleases("retain_unknown"), 0);
+        EXPECT_EQ(countReleases("retain_borrowed"), 0);
+        EXPECT_EQ(countReleases("retain_loop_carried"), 0);
+        EXPECT_EQ(countReleases("retain_container"), 0);
+        EXPECT_EQ(countReleases("retain_inplace_result"), 0);
+        EXPECT_EQ(countReleases("retain_pointer"), 0);
+        EXPECT_EQ(countReleases("retain_branch"), 0);
+        EXPECT_GE(countReleases("release_loop_update"), 1);
+        EXPECT_EQ(countReleases("release_reassigned_update"), 2);
+        EXPECT_EQ(countReleases("retain_conjugate"), 0);
+        EXPECT_EQ(countReleases("retain_transferred"), 0);
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(LLVMOptimizationTest, PacksAndReleasesReversedDotOperands) {
+  ASSERT_EXIT(
+      {
+        auto compiler = compileAndOptimize(R"(
+import numpy as np
+
+@export
+def dot_reversed(left: np.ndarray[float, 1], right: np.ndarray[float, 1]):
+    return np.dot(left[::-1], right[::-1])
+)");
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        auto *function = module->getFunction("dot_reversed");
+        ASSERT_NE(nullptr, function);
+        auto countCalls = [&](llvm::StringRef prefix) {
+          std::unordered_set<llvm::Function *> visited;
+          std::function<unsigned(llvm::Function *)> count =
+              [&](llvm::Function *current) {
+                if (!visited.insert(current).second)
+                  return 0u;
+                unsigned calls = 0;
+                for (auto &block : *current) {
+                  for (auto &instruction : block) {
+                    auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+                    auto *callee = call ? call->getCalledFunction() : nullptr;
+                    if (callee)
+                      calls +=
+                          callee->getName().starts_with(prefix) ? 1 : count(callee);
+                  }
+                }
+                return calls;
+              };
+          return count(function);
+        };
+        auto dots = countCalls("cblas_ddot");
+        auto releases = countCalls("seq_free");
+        if (dots != 1 || releases != 2)
+          llvm::errs() << "Reversed dot: BLAS calls=" << dots
+                       << ", scratch releases=" << releases << '\n';
+        EXPECT_EQ(1, dots);
+        EXPECT_EQ(2, releases);
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
 TEST(LLVMOptimizationTest, FusesSingleExpressionArrayHelpers) {
   ASSERT_EXIT(
       {
@@ -290,6 +477,29 @@ def fused_affine_helper(left: np.ndarray[float, 2], right: np.ndarray[float, 2],
 @export
 def direct_affine_helper(left: np.ndarray[float, 2], right: np.ndarray[float, 2], bias: np.ndarray[float, 2]):
   return (left * right + bias) * bias
+
+@export
+def fused_slices(values: np.ndarray[float, 2]):
+  return (values[1:, :-1] + values[:-1, 1:]) * values[1:, 1:]
+
+@export
+def fused_indexed_slices(values: np.ndarray[float, 2], index: int):
+  return (values[1:, index] + values[:-1, index]) * values[1:, index]
+
+@export
+def indexed_slices_reference(values: np.ndarray[float, 2], index: int):
+  left = values[1:, index]
+  right = values[:-1, index]
+  factor = values[1:, index]
+  return (left + right) * factor
+
+@export
+def fused_clip(values: np.ndarray[float, 2]):
+  return (np.clip(values, 2., 10.) * 3. + values) * 2.
+
+@export
+def fused_scalar_coefficients(values: np.ndarray[float, 2], dx: float, dy: float):
+  return (values[1:, :-1] / (2 * dx) + values[:-1, 1:] * (1 / dy)) / (2 * (dx ** 2 + dy ** 2))
 
 @export
 def fused_sum(values: np.ndarray[float, 1]):
@@ -453,7 +663,8 @@ def destination_reference(values: np.ndarray[float, 2]):
         };
         for (auto name : {"fused_helper", "fused_copy_array", "fused_cast_array",
                           "fused_filled_array", "fused_axis_sum", "fused_axis_any",
-                          "fused_axis_min", "fused_axis_keepdims"}) {
+                          "fused_axis_min", "fused_axis_keepdims", "fused_slices",
+                          "fused_scalar_coefficients"}) {
           auto *function = module->getFunction(name);
           ASSERT_NE(nullptr, function);
           auto allocations = allocationCount(function);
@@ -485,6 +696,15 @@ def destination_reference(values: np.ndarray[float, 2]):
               active.pop_back();
               return count;
             };
+        auto *clipped = module->getFunction("fused_clip");
+        ASSERT_NE(nullptr, clipped);
+        EXPECT_EQ(2, reachableAllocations(clipped));
+        auto *indexed = module->getFunction("fused_indexed_slices");
+        auto *indexedReference = module->getFunction("indexed_slices_reference");
+        ASSERT_NE(nullptr, indexed);
+        ASSERT_NE(nullptr, indexedReference);
+        EXPECT_GT(allocationCount(indexedReference), 0);
+        EXPECT_EQ(allocationCount(indexedReference), allocationCount(indexed));
         auto *destinationReference = module->getFunction("destination_reference");
         auto *affineHelper = module->getFunction("fused_affine_helper");
         auto *directAffine = module->getFunction("direct_affine_helper");

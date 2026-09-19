@@ -79,7 +79,7 @@ bool canForwardExpressionAlongPath(
     const std::unordered_map<id_t, NumPyExpr *> &parsedValues, SE *se,
     const std::vector<CFBlock *> &path) {
   if (path.empty())
-    return true;
+    return false;
 
   bool go = false;
   for (auto *block : path) {
@@ -92,8 +92,7 @@ bool canForwardExpressionAlongPath(
 
       // Skip things after 'destination' in last block
       if (go && block == path.back() && value == destination) {
-        go = false;
-        break;
+        return true;
       }
 
       if (!go)
@@ -105,7 +104,7 @@ bool canForwardExpressionAlongPath(
         return false;
     }
   }
-  return true;
+  return false;
 }
 
 bool canForwardExpression(NumPyOptimizationUnit *expr, Value *target,
@@ -133,19 +132,39 @@ bool canForwardExpression(NumPyOptimizationUnit *expr, Value *target,
   auto *end = cfg->getBlock(target);
   seqassertn(start, "start CFG block not found");
   seqassertn(end, "end CFG block not found");
+  std::unordered_set<CFBlock *> visited;
+  std::vector<CFBlock *> pending(end->successors_begin(), end->successors_end());
+  while (!pending.empty()) {
+    auto *curr = pending.back();
+    pending.pop_back();
+    if (curr == start)
+      continue;
+    if (curr == end)
+      return false;
+    if (visited.insert(curr).second)
+      pending.insert(pending.end(), curr->successors_begin(), curr->successors_end());
+  }
+
   bool ok = true;
+  bool reached = false;
 
   std::function<void(CFBlock *, std::vector<CFBlock *> &)> dfs =
       [&](CFBlock *curr, std::vector<CFBlock *> &path) {
+        if (!ok)
+          return;
         path.push_back(curr);
         if (curr == end) {
+          reached = true;
           if (!canForwardExpressionAlongPath(source, target, vids, parsedValues, se,
                                              path))
             ok = false;
         } else {
           for (auto it = curr->successors_begin(); it != curr->successors_end(); ++it) {
-            if (std::find(path.begin(), path.end(), *it) != path.end())
-              dfs(*it, path);
+            if (std::find(path.begin(), path.end(), *it) != path.end()) {
+              ok = false;
+              break;
+            }
+            dfs(*it, path);
           }
         }
         path.pop_back();
@@ -153,7 +172,7 @@ bool canForwardExpression(NumPyOptimizationUnit *expr, Value *target,
 
   std::vector<CFBlock *> path;
   dfs(start, path);
-  return ok;
+  return ok && reached;
 }
 
 bool canForwardVariable(AssignInstr *assign, Value *destination, BodiedFunc *func,
@@ -363,26 +382,6 @@ NumPyOptimizationUnit *getForwardingRoot(ForwardingDAG &dag) {
   }
   seqassertn(false, "could not find root in forwarding DAG");
   return nullptr;
-}
-
-// An array result is not necessarily owned: views and no-copy casts may still
-// share storage with live inputs and must not be advertised as reusable.
-bool hasOwnedResult(NumPyExpr &expr) {
-  if (!expr.type.isArray() || expr.isLeaf())
-    return false;
-  switch (expr.op) {
-  case NumPyExpr::NP_OP_TRANSPOSE:
-  case NumPyExpr::NP_OP_POS:
-  case NumPyExpr::NP_OP_CONJ:
-    return false;
-  case NumPyExpr::NP_OP_CAST: {
-    auto *call = cast<CallInstr>(expr.val);
-    return call && (call->numArgs() == 2 || (isA<BoolConst>(call->back()) &&
-                                             cast<BoolConst>(call->back())->getVal()));
-  }
-  default:
-    return true;
-  }
 }
 
 // Allow a final pointwise consumer to reuse a buffer after earlier reductions
