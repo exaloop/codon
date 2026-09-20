@@ -297,7 +297,7 @@ function_def_extern[ast.FunctionStmt]:
         )
     }
 llvm_block[str]: NEWLINE INDENT a=llvm_line+ DEDENT { ''.join(a).rstrip("\n") }
-llvm_line[str]: ANY_BUT_NEWLINE* n=NEWLINE { n.line }
+llvm_line[str]: ANY_BUT_NEWLINE* n=NEWLINE { self.preserve_llvm_line(n) }
 
 # Function parameters
 # -------------------
@@ -995,7 +995,7 @@ fstring_full_format_spec[str]:
 fstring_format_char[str]:
     | !'}' a=ANY_BUT_NEWLINE { a.string }
 fstring[ast.StringExpr]:
-    | a=FSTRING_START b=fstring_mid* c=FSTRING_END { ast.StringExpr(b, LOCATIONS) }
+    | a=FSTRING_START b=fstring_mid* c=FSTRING_END { self.make_fstring(a, b, LOCATIONS) }
 
 fstring_format_spec[str]:
     | a=[fstring_options] b=[fstring_width_and_precision] c=[fstring_type] {

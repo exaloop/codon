@@ -45,7 +45,10 @@ class TypeVisitor(ast.NodeVisitor):
 
         self.ctx.node_stack.append(node)
         self.ctx.prepend_stmts.append([])
-        with self.ctx.substitute("time", node.get(ast.Attr.ExprTime, int, 0)):
+        with (
+            self.ctx.substitute("time", node.get(ast.Attr.ExprTime, int, 0)),
+            ast.Node.creation_context(self.ctx),
+        ):
             transformed = cast(ast.Stmt, self.visit(node))
         self.ctx.node_stack.pop()
         prepended = self.ctx.prepend_stmts.pop()
@@ -65,17 +68,11 @@ class TypeVisitor(ast.NodeVisitor):
         enforce_type: bool = False,
         simple_types: bool = False,
     ) -> ast.Expr:
-        if not node.type:
-            node.type = utils.instantiate_unbound(self.ctx, node.info)
         if enforce_type:
             if isinstance(node, ast.NoneExpr):
-                node = ast.IdExpr(
-                    ast.types.Stdlib.NoneType,
-                    info=node.info,
-                    type=utils.instantiate_unbound(self.ctx, node.info),
-                )
+                node = ast.IdExpr(ast.types.Stdlib.NoneType, info=node.info)
             with self.ctx.substitute("simple_types", simple_types):
-                node = cast(ast.Expr, self.visit(node))
+                node = self.visit_expr(node)
             assert isinstance(node, ast.Expr) and node.type
             if node.type.static_kind is not ast.types.Type.Behaviour.Runtime:
                 pass
@@ -86,10 +83,13 @@ class TypeVisitor(ast.NodeVisitor):
             else:
                 raise TypecheckError(node, "expected a type expression")
         else:
+            if not node.type:
+                node.type = utils.instantiate_unbound(self.ctx, node.info)
             if not node.done:
                 self.ctx.node_stack.append(node)
-                transformed = self.visit(node)
-                assert isinstance(transformed, ast.Expr) and transformed.type
+                with ast.Node.creation_context(self.ctx):
+                    transformed = self.visit(node)
+                assert isinstance(transformed, ast.Expr)
                 self.ctx.node_stack.pop()
                 if transformed is not node:
                     for attr, value in node.attributes.items():
@@ -379,8 +379,7 @@ def load_std_library(
     # Use __init_test__ for faster testing (e.g., #%% name,barebones)
     # TODO: get rid of it one day...
     if barebones:
-        stdlib_path.path.removesuffix("__init__.codon")
-        stdlib_path.path += "__init_test__.codon"
+        stdlib_path.path = stdlib_path.path.removesuffix(initial_file) + "__init_test__.codon"
     stdlib.filename = stdlib_path.path
     cache.imports[STDLIB_IMPORT] = cache.imports.setdefault(
         stdlib_path.path, Import(STDLIB_IMPORT, stdlib_path.path, stdlib)
@@ -430,9 +429,11 @@ def load_std_library(
 
 
 def typecheck_node(ctx: TypeContext, node: ast.Stmt, file: str = "<internal>") -> ast.Stmt | None:
-    with ctx.substitute("filename", file):
+    with ast.Node.creation_context(None):
         preamble = ast.SuiteStmt()
+    with ctx.substitute("filename", file), ctx.substitute("preamble", preamble):
         if inferred := infer.infer_types(ctx, node, is_toplevel=True):
-            return ast.SuiteStmt(preamble, inferred)
+            with ast.Node.creation_context(None):
+                return ast.SuiteStmt(preamble, inferred)
         raise TypecheckError(trace=utils.find_typecheck_errors(ctx, node))
     return None

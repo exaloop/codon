@@ -482,6 +482,14 @@ class BaseParser:
             return self._tokenizer.advance(tok)
         return None
 
+    def preserve_llvm_line(self, token: tokenize.TokenInfo) -> str:
+        """Restore blank physical lines discarded by the token stream."""
+        for previous in reversed(self._tokenizer._tokens[: self._mark() - 1]):
+            if previous.type == tokenize.Tokens.NEWLINE:
+                blanks = max(0, token.start[0] - previous.end[0] - 1)
+                return "\n" * blanks + token.line
+        return token.line
+
     def name(self) -> Optional[tokenize.TokenInfo]:
         tok = self._tokenizer.peek()
         if tok.type == tokenize.Tokens.NAME and tok.string not in self.KEYWORDS:
@@ -902,6 +910,8 @@ class Parser(BaseParser):
         if value.lower().endswith("j"):
             value = value[:-1]
             suffix = "j" + suffix
+        if value.startswith(("0b", "0B", "0o", "0O", "0x", "0X")):
+            return ast.IntExpr(value, suffix=suffix, **locations)
         if any(marker in value for marker in (".", "e", "E")):
             return ast.FloatExpr(value, suffix=suffix, **locations)
         return ast.IntExpr(value, suffix=suffix, **locations)
@@ -971,7 +981,7 @@ class Parser(BaseParser):
         return self.suite(
             [
                 ast.ImportStmt(
-                    what=self.dotted_expr(name, **locations),
+                    from_expr=self.dotted_expr(name, **locations),
                     as_=as_name or "",
                     **locations,
                 )
@@ -1078,6 +1088,13 @@ class Parser(BaseParser):
         for part in parts:
             strings.extend(part.strings)
         return ast.StringExpr(strings, **locations)
+
+    def make_fstring(self, start, parts, **locations):
+        if "r" not in start.string.lower():
+            for part in parts:
+                if part.expr is None:
+                    part.value = unescape(part.value)
+        return ast.StringExpr(parts, **locations)
 
     def check_fstring_conversion(self, mark: tokenize.TokenInfo, name: tokenize.TokenInfo) -> str:
         if mark.end != name.start:

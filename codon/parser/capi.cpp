@@ -5,12 +5,14 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
+#include <ranges>
 #include <string>
 
 #include <llvm/Support/Error.h>
 
 #include "codon/compiler/compiler.h"
 #include "codon/parser/cache.h"
+#include "codon/parser/common.h"
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/scoping/scoping.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
@@ -60,12 +62,14 @@ CodonAstDumpResult parseScopeDump(const std::string &argv0, Parse &&parse,
       str = node->toCodonString(includeAttributes, indent);
       fprintf(stderr, "%s\n", str.c_str());
       str += "\n";
-      for (auto &f : compiler->getCache()->functions)
-        for (auto &r : f.second.realizations) {
-          if (r.second->ast)
-            str += fmt::format("{}\n",
-                               r.second->ast->toCodonString(includeAttributes, indent));
+      for (const auto &[_, f] :
+           codon::ast::sorted_view(compiler->getCache()->functions)) {
+        for (const auto &[_, r] : codon::ast::sorted_view(f.realizations)) {
+          if (r->ast)
+            str +=
+                fmt::format("{}\n", r->ast->toCodonString(includeAttributes, indent));
         }
+      }
     } else {
       auto node = *parsed;
       if (auto error = codon::ast::ScopingVisitor::apply(compiler->getCache(), node))

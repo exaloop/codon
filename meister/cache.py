@@ -418,6 +418,8 @@ class Cache:
         content = imported.content[
             max(0, info.line - 1) : min(info.end_line, len(imported.content))
         ]
+        if not content:
+            return ""
         content[0] = content[0][info.col - 1 :]
         content[-1] = content[-1][: info.end_col]
         return "".join(content)
@@ -618,6 +620,7 @@ class Cache:
         # self.codegen_ctx.series = old
         # return current
 
+    @ast.Node.creation_context(None)
     def scope(
         self, node: ast.Stmt, globals: Dict[str, int] | None = None, dominate_all: bool = False
     ):

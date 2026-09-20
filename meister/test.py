@@ -142,24 +142,39 @@ def discover_tests(path):
 
 
 def run_python(case, typecheck):
-    from .passes import typecheck
+    from .passes.typecheck import typecheck_program
 
+    recursion_limit = sys.getrecursionlimit()
     try:
+        if typecheck:
+            # One Codon realization uses many Python visitor frames.
+            sys.setrecursionlimit(max(recursion_limit, cache.MAX_REALIZATION_DEPTH * 100))
         cc = cache.Cache("codon")
         if case.code is None:
             node = parser.parse(file=str(case.path))
         else:
             node = parser.parse(file=None, code=case.code)
-        node = cc.scope(node)
         if typecheck:
-            node = typecheck.typecheck_program(cc, node, file=str(case.path))
+            node = typecheck_program(
+                cc,
+                node,
+                file=str(case.path),
+                early_defines={
+                    "__apple__": "1",
+                    "__py_extension__": "0",
+                    "__py_numerics__": "0",
+                    "__debug__": "1",
+                },
+                barebones=typecheck > 1,
+            )
 
             out = ast.dump(node, indent=2, include_attributes=True, types=True) + "\n"
-            for fn_data in cc.functions.values():
-                for r in fn_data.realizations.values():
+            for _, fn_data in sorted(cc.functions.items()):
+                for _, r in sorted(fn_data.realizations.items()):
                     if r.ast:
                         out += ast.dump(r.ast, indent=2, include_attributes=True, types=True) + "\n"
         else:
+            node = cc.scope(node)
             out = ast.dump(node, indent=2, include_attributes=True)
         return Result(out)
     except Exception as error:
@@ -167,6 +182,8 @@ def run_python(case, typecheck):
         if hasattr(error, "info"):
             msg = f" ({case.path}:{error.info.line}:{error.info.col})"
         return Result(error=f"{type(error).__name__}: {error}{msg}\n\n{traceback.format_exc()}")
+    finally:
+        sys.setrecursionlimit(recursion_limit)
 
 
 def default_test_path(root):
@@ -351,8 +368,10 @@ def ignore_class_deduce(output):
 
 def main(argv=None):
     root = Path(__file__).resolve().parent.parent
+    if (root / "stdlib").is_dir():
+        os.environ.setdefault("CODON_PATH", str(root / "stdlib"))
     argument_parser = argparse.ArgumentParser(
-        description="Compare Python and C++ Codon AST dumps immediately after scoping."
+        description="Compare Python and C++ Codon AST dumps after typechecking."
     )
     argument_parser.add_argument(
         "tests",
@@ -397,7 +416,7 @@ def main(argv=None):
     mismatched = 0
     rejected = 0
     printed = 0
-    print(f"Comparing {len(cases)} scoped ASTs using {library_path}")
+    print(f"Comparing {len(cases)} typechecked ASTs using {library_path}")
 
     for case in cases:
         python_result = run_python(case, typecheck=2)
@@ -436,7 +455,9 @@ def main(argv=None):
             if args.stop_on_error:
                 break
 
-    print(f"Scoped ASTs: {matched} matched, {mismatched} mismatched, {rejected} rejected by both")
+    print(
+        f"Typechecked ASTs: {matched} matched, {mismatched} mismatched, {rejected} rejected by both"
+    )
     return 1 if mismatched else 0
 
 

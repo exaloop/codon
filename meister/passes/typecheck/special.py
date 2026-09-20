@@ -29,7 +29,7 @@ def prepare_vtables(ctx: TypeContext):
     processed, added = set(), True
     while added:
         added = False
-        for realized_name, realization in list(fn_data.realizations.items()):
+        for realized_name, realization in sorted(fn_data.realizations.items()):
             if realized_name in processed:
                 continue
             processed.add(realized_name)
@@ -52,7 +52,7 @@ def prepare_vtables(ctx: TypeContext):
     fn_data = utils.get_function(ctx, ast.types.mangle(cls="RTTIType", func="_dist"))
     assert fn_data and fn_data.ast
     old_ast = fn_data.ast
-    for realization in list(fn_data.realizations.values()):
+    for _, realization in sorted(fn_data.realizations.items()):
         fn_data.ast.suite = generate_base_derived_dist_ast(ctx, realization.type)
         realization.type.ast = fn_data.ast
         infer.realize_func(ctx, realization.type, True)
@@ -61,8 +61,8 @@ def prepare_vtables(ctx: TypeContext):
 
 def generate_class_populate_vtables_ast(ctx: TypeContext) -> ast.SuiteStmt:
     suite = ast.SuiteStmt()
-    for cls_data in ctx.cache.classes.values():
-        for realization in cls_data.realizations.values():
+    for _, cls_data in sorted(ctx.cache.classes.items()):
+        for _, realization in sorted(cls_data.realizations.items()):
             # p[real.ID].__setitem__(f.ID, Function[<TYPE_F>](f).__raw__())
             if not realization.vtable:
                 continue
@@ -253,7 +253,7 @@ def generate_get_thunk_id_ast(ctx: TypeContext, function: ast.types.Function):
     base_realization.vtable[key] = fn_type
 
     # Iterate through all derived classes and instantiate the corresponding thunk
-    for cls_name, cls_data in ctx.cache.classes.items():
+    for cls_name, cls_data in sorted(ctx.cache.classes.items()):
         # First check if our class descends from our base class
         # (ignore generics for now; this is just a speed-up).
         # TODO: use hashmap
@@ -264,7 +264,7 @@ def generate_get_thunk_id_ast(ctx: TypeContext, function: ast.types.Function):
                 break
         if not in_mro or cls_name == base_class:
             continue
-        for realization in list(cls_data.realizations.values()):
+        for _, realization in sorted(cls_data.realizations.items()):
             # Now check if generics match!
             in_mro = False
             # now check realizations!
@@ -627,11 +627,13 @@ def transform_super_f(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr:
     assert len(expr.items) == 1 and isinstance(expr.items[0].value, ast.CallExpr), "bad superf call"
     inner_call = expr.items[0].value
 
-    methods = []
-    new_args = inner_call.items
-    if fn_type.func_parent:
-        parent_type = fn_type.func_parent.require_cls
-        methods = utils.matching_methods(self.ctx, parent_type, supers, new_args)
+    new_args = [ast.CallExpr.Arg(arg.value) for arg in inner_call.items]
+    methods = utils.matching_methods(
+        self.ctx,
+        fn_type.func_parent.cls if fn_type.func_parent else None,
+        supers,
+        new_args,
+    )
     if not methods:
         raise TypecheckError(expr, "no superf methods found")
     return self.visit_expr(ast.CallExpr(ast.IdExpr(methods[0].func_name), new_args))
@@ -1038,7 +1040,6 @@ def transform_tuple_fn(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr:
             assert realized_type is not None, (
                 f"cannot realize '{cls_data.fields[idx].name}' in {cls_type!r}"
             )
-            items.append(ast.IdExpr(realized_type.realized_name()))
             items.append(ast.IdExpr(realized_type.realized_name()))
         return self.visit_expr(ast.InstantiateExpr(ast.IdExpr(ast.types.Stdlib.Tuple), items=items))
     items = []
@@ -1477,7 +1478,7 @@ def generate_super_dispatch_ast(
             idx += 1
         idx += 1
         if idx < len(child_data.mro):
-            next_type = utils.instantiate(ctx, child_data.mro[idx], [obj_type])
+            next_type = utils.instantiate(ctx, child_data.mro[idx], obj_type)
             if not next_type.can_realize():
                 continue
             infer.realize(ctx, next_type)

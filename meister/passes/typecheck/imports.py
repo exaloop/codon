@@ -43,6 +43,7 @@ def typecheck_import(self: TypeVisitor, node: ast.ImportStmt) -> ast.Stmt:
                 self, what.expr, what.member, node.args, node.ret, node.as_, not node.is_c_var()
             )
         case ast.ImportStmt(from_expr=ast.IdExpr(value="python")):
+            assert node.what
             return transform_python_import(self, node.what, node.args, node.ret, node.as_)
         case _:
             pass
@@ -57,10 +58,7 @@ def typecheck_import(self: TypeVisitor, node: ast.ImportStmt) -> ast.Stmt:
                 raise TypecheckError(node, f"unexpected import expression {node}")
 
     # Fetch the import
-    # `import package.module` stores the module path in `what` while
-    # `from package import name` stores it in `from_expr`.
-    path_expr = node.from_expr if node.from_expr is not None else node.what
-    components = get_import_path(path_expr, node.dots)
+    components = get_import_path(node.from_expr, node.dots)
     path = "/".join(components)
     # from "." case
     if node.dots == 1 and not path:
@@ -76,8 +74,8 @@ def typecheck_import(self: TypeVisitor, node: ast.ImportStmt) -> ast.Stmt:
             name_expr = self.ctx.cache.parse_expr(python_name)
             assert isinstance(name_expr, ast.Expr)
             python_import = ast.ImportStmt(
-                name_expr,
                 ast.IdExpr("python"),
+                name_expr,
                 args=node.args,
                 ret=node.ret,
                 as_=node.as_,
@@ -133,11 +131,11 @@ def typecheck_import(self: TypeVisitor, node: ast.ImportStmt) -> ast.Stmt:
                     # `__` while the standard library is being loaded
                     imported_item = value[0]
                     if imported_item.is_conditional() and "." not in name:
-                        if replacement := imported.ctx.find(name):
+                        if replacement := imported.ctx.get(name):
                             imported_item = replacement
                     # Imports should ignore noShadow property
                     self.ctx.add(name, imported_item)
-        case _ if node.from_expr is None:  # import foo
+        case _ if not node.what:  # import foo
             name = path if not node.as_ else node.as_
             imported_item = self.ctx[import_var]
             self.ctx.add(name, imported_item)
@@ -391,6 +389,10 @@ def transform_new_import(self: TypeVisitor, file: cache.Import.File) -> ast.Stmt
         cache=self.ctx.cache,
         is_stdlib_loading=self.ctx.is_stdlib_loading,
         module=file,
+        # C++ keeps the preamble on TypecheckVisitor and retains it when the
+        # visitor switches to an imported module's context for realization.
+        # Imported Python contexts therefore have to share the active preamble.
+        preamble=self.ctx.preamble,
     )
     imported = self.ctx.cache.imports.setdefault(
         file.path, cache.Import(file.module, file.path, ctx)
@@ -444,8 +446,7 @@ def transform_new_import(self: TypeVisitor, file: cache.Import.File) -> ast.Stmt
         # When loading the standard library, imports are not wrapped.
         # We assume that the standard library has no recursive imports and that all
         # statements are executed before the user-provided code.
-        with ctx.substitute("preamble", self.ctx.preamble):
-            return ctx.cache.typecheck(suite, ctx)
+        return ctx.cache.typecheck(suite, ctx)
 
     # Generate import identifier
     internal_return = ast.ReturnStmt()
@@ -463,9 +464,8 @@ def transform_new_import(self: TypeVisitor, file: cache.Import.File) -> ast.Stmt
     # Wrap all imported top-level statements into a function.
     fn_name = f"{var}_call"
     fn = ast.FunctionStmt(fn_name, ret=ast.IdExpr(ast.types.Stdlib.NoneType), suite=stmts)
-    with ctx.substitute("preamble", self.ctx.preamble):
-        transformed = ctx.cache.typecheck(fn, ctx)
-        infer.realize(ctx, ctx[fn_name].type)
-        self.ctx.preamble.add(transformed)
+    transformed = ctx.cache.typecheck(fn, ctx)
+    infer.realize(ctx, ctx[fn_name].type)
+    self.ctx.preamble.add(transformed)
 
     return None

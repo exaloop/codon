@@ -34,7 +34,7 @@ void TypecheckVisitor::prepareVTables() {
   std::unordered_set<std::string> cache;
   for (bool added = true; added;) {
     added = false;
-    for (const auto &[rn, real] : fn->realizations) {
+    for (const auto &[rn, real] : sorted_view(fn->realizations)) {
       if (in(cache, rn))
         continue;
       cache.insert(rn);
@@ -58,7 +58,7 @@ void TypecheckVisitor::prepareVTables() {
   //   return Tuple[<types before B is reached in D>].__elemsize__
   fn = getFunction(getMangledMethod("", "RTTIType", "_dist"));
   oldAst = fn->ast;
-  for (const auto &real : fn->realizations | std::views::values) {
+  for (const auto &[_, real] : sorted_view(fn->realizations)) {
     fn->ast->suite = generateBaseDerivedDistAST(real->getType());
     real->type->ast = fn->ast;
     LOG_REALIZE("[poly] {} : {}", real->type->debugString(2), fn->ast->toString(2));
@@ -69,7 +69,7 @@ void TypecheckVisitor::prepareVTables() {
 
 SuiteStmt *TypecheckVisitor::generateClassPopulateVTablesAST() {
   auto suite = N<SuiteStmt>();
-  for (const auto &[cls_name, cls] : ctx->cache->classes) {
+  for (const auto &[cls_name, cls] : sorted_view(ctx->cache->classes)) {
     for (const auto &[r, real] : cls.realizations) {
       if (real->vtable.empty())
         continue;
@@ -79,7 +79,7 @@ SuiteStmt *TypecheckVisitor::generateClassPopulateVTablesAST() {
           N<IdExpr>(real->getType()->realizedName()))));
 
       std::vector<std::pair<std::pair<std::string, std::string>, size_t>> thunks;
-      for (const auto &key : real->vtable | std::views::keys) {
+      for (const auto &[key, _] : real->vtable) {
         auto id = in(ctx->cache->thunkIds, key);
         seqassert(id, "key {} not found in thunkIds", key);
         thunks.emplace_back(key, *id);
@@ -237,7 +237,7 @@ SuiteStmt *TypecheckVisitor::generateGetThunkIDAST(types::FuncType *f) {
       std::static_pointer_cast<FuncType>(fp->shared_from_this());
 
   // Iterate through all derived classes and instantiate the corresponding thunk
-  for (const auto &[clsName, cls] : ctx->cache->classes) {
+  for (const auto &[clsName, cls] : sorted_view(ctx->cache->classes)) {
     // First check if our class descends from our base class
     // (ignore generics for now; this is just a speed-up).
     // TODO: use hashmap
@@ -249,7 +249,7 @@ SuiteStmt *TypecheckVisitor::generateGetThunkIDAST(types::FuncType *f) {
       }
     if (!inMro || clsName == baseCls)
       continue;
-    for (const auto &real : cls.realizations | std::views::values) {
+    for (const auto &[_, real] : sorted_view(cls.realizations)) {
       // Now check if generics match!
       inMro = false;
       for (auto &mro : real->bases) // now check realizations!

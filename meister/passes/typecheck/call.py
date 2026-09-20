@@ -130,14 +130,13 @@ def typecheck_call(self: TypeVisitor, node: ast.CallExpr) -> ast.Expr:
                     assert function and function.type
                     methods.append(function.type)
             methods.reverse()
-            if parent := callee_fn.func_parent:
-                matching = utils.matching_methods(
-                    self.ctx,
-                    parent.require_cls,
-                    methods,
-                    node.items,
-                    node.expr.type.partial if node.expr.type else None,
-                )
+            matching = utils.matching_methods(
+                self.ctx,
+                callee_fn.func_parent.cls if callee_fn.func_parent else None,
+                methods,
+                node.items,
+                node.expr.type.partial if node.expr.type else None,
+            )
         # partials have dangling ellipsis that messes up with the unbound check below
         do_dispatch = matching is None or not matching or partial.is_partial
         if not do_dispatch and matching is not None and len(matching) > 1:
@@ -292,7 +291,9 @@ def transform_call_args(self: TypeVisitor, expr: ast.CallExpr):
             inserted = []
             for field_idx, field in enumerate(fields):
                 base = (lead if lead and field_idx == 0 else head).clone()
-                inserted.append(self.visit_expr(ast.DotExpr(base, member=field.name)))
+                inserted.append(
+                    ast.CallExpr.Arg(self.visit_expr(ast.DotExpr(base, member=field.name)))
+                )
             expr.items[arg_idx : arg_idx + 1] = inserted
             arg_idx += len(inserted)
         elif isinstance(arg.value, ast.KeywordStarExpr):
@@ -398,7 +399,7 @@ def get_callee_fn(
         new_init = ast.AssignStmt(
             var.clone(), ast.CallExpr(ast.DotExpr(expr.expr, member="__new__"))
         )
-        result = ast.StmtExpr([new_init], expr=var.clone())
+        result = ast.StmtExpr([ast.SuiteStmt(new_init)], expr=var.clone())
         result.items.append(
             ast.ExprStmt(
                 ast.CallExpr(ast.DotExpr(var.clone(), member="__init__"), items=expr.items)
@@ -573,12 +574,11 @@ def call_reorder_arguments(
                     kwargs_expr = self.visit_expr(
                         ast.DotExpr(ast.IdExpr(part.var), member="kwargs")
                     )
-                    names, named_types = utils.extract_named_tuple(self.ctx, kwargs_expr)
-                    for name, named_type in zip(names, named_types):
+                    for name, named_expr in utils.extract_named_tuple(self.ctx, kwargs_expr):
                         if name not in new_names:
                             new_names.add(name)
                             kwstar_names.append(name)
-                            kwstar_args.append(self.visit_expr(ast.NoneExpr(type=named_type)))
+                            kwstar_args.append(self.visit_expr(named_expr))
                 # kwargs names can be overriden later
                 for source_idx in slot:
                     source = expr.items[source_idx].value
@@ -641,7 +641,7 @@ def call_reorder_arguments(
                                 )
                             )
                         else:
-                            transformed = default.clone()
+                            transformed = default.clone(clean=True)
                         arg = self.visit_expr(transformed)
                         args.append(ast.CallExpr.Arg(arg, name=real_name))
                     else:
@@ -706,11 +706,11 @@ def call_reorder_arguments(
         kwstar_expr.set(ast.Attr.ExprKwStarArgument)
         if partial:
             part.kw_args = kwstar_expr
-            args[kwstar_idx].value = self.visit_expr(
-                ast.EllipsisExpr(ast.EllipsisExpr.Kind.Partial)
+            args[kwstar_idx] = ast.CallExpr.Arg(
+                self.visit_expr(ast.EllipsisExpr(ast.EllipsisExpr.Kind.Partial))
             )
         else:
-            args[kwstar_idx].value = kwstar_expr
+            args[kwstar_idx] = ast.CallExpr.Arg(kwstar_expr)
 
     # Populate partial data
     if part.args:
@@ -785,7 +785,8 @@ def typecheck_call_args(
             arg = args[signature_idx]
             if param.name.startswith("*") and param.type:
                 # Special case: `*args: type` and `**kwargs: type`
-                if call_expr := cast(ast.CallExpr, arg.value):
+                if isinstance(arg.value, ast.CallExpr):
+                    call_expr = arg.value
                     type_expression = self.visit_expr(param.type.clone())
                     expected_type = utils.extract_type(self.ctx, type_expression)
                     if param.name.startswith("**"):
@@ -795,7 +796,8 @@ def typecheck_call_args(
                             self.ctx, call_arg.value, expected_type, callee_fn
                         )
                         if can_wrap:
-                            call_arg.type |= expected_type
+                            assert call_arg.value.type
+                            call_arg.value.type |= expected_type
                         else:
                             wrapping_done = False
                     call_type = call_expr.cls
@@ -833,14 +835,13 @@ def typecheck_call_args(
                     wrapping_done = False
                 replacements.append(arg.value.type if not expected_type.cls else expected_type)
             signature_idx += 1
-        return True
 
     # Realize arguments
     done = True
     for arg in args:
         # Previous unifications can qualify existing identifiers.
         # Transform again to get the full identifier
-        if infer.realize(arg.value.type):
+        if infer.realize(self.ctx, arg.value.type):
             arg.value = self.visit_expr(arg.value)
         done = done and arg.value.done
 
@@ -854,16 +855,17 @@ def typecheck_call_args(
                 generic = utils.extract_func_generic(callee_fn, generic_idx)
                 if param.default and utils.is_unbound(generic):
                     with utils.with_class_generics(self.ctx, callee_fn, True):
-                        default = self.visit_expr(param.default.clone())
-                    infer.unify(generic, utils.extract_type(self.ctx, default))
+                        default = self.visit_expr(param.default.clone(clean=True))
+                    generic |= utils.extract_type(self.ctx, default)
                 generic_idx += 1
 
     # Replace the arguments
-    callee_type = callee_fn[0].get_class()
+    callee_type = callee_fn.arg_type
     for idx, replacement in enumerate(replacements):
-        callee_type.generics[idx].type = replacement
-    callee_type._rn = ""
-    callee_fn._rn = ""  # TODO: TERRIBLE!
+        if replacement:
+            callee_type.generics[idx].type = replacement
+    callee_type._cached_name = ""
+    callee_fn._cached_name = ""  # TODO: TERRIBLE!
     return done
 
 
@@ -954,7 +956,7 @@ def transform_special_call(self: TypeVisitor, expr: ast.CallExpr):
 
 def generate_partial_call(
     self: TypeVisitor,
-    mask: str,
+    mask: List[ast.types.Class.Flag] | str,
     fn_type: ast.types.Function,
     args: ast.Expr | None = None,
     kwargs: ast.Expr | None = None,
@@ -971,6 +973,8 @@ def generate_partial_call(
         args = ast.TupleExpr([ast.TupleExpr()])
     if kwargs is None:
         kwargs = ast.CallExpr(ast.IdExpr(ast.types.Stdlib.NamedTuple))
+    if not isinstance(mask, str):
+        mask = "".join(str(flag.value) for flag in mask)
     return ast.CallExpr(
         ast.IdExpr("Partial"),
         items=[

@@ -86,9 +86,8 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool isToplevel) {
     if (ctx->getBase()->iteration == 1 && isToplevel) {
       // Realize all @force_realize functions
       // Copy keys to avoid modifications during the iteration (#768)
-      std::vector<std::string> fns{std::views::keys(ctx->cache->functions).begin(),
-                                   std::views::keys(ctx->cache->functions).end()};
-      for (const auto &fn : fns) {
+      auto copied = sorted_view(ctx->cache->functions);
+      for (const auto &[fn, _] : copied) {
         auto &f = ctx->cache->functions[fn];
         auto ast = f.ast;
         if (f.type && f.realizations.empty() &&

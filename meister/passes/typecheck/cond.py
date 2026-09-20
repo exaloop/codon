@@ -32,7 +32,7 @@ def typecheck_ifexpr(self: TypeVisitor, node: ast.IfExpr) -> ast.Expr:
     if not node.cond.type.is_runtime:
         condition = False
         if node.cond.type.can_realize():
-            match node.cond.type:
+            match node.cond.type.literal:
                 case ast.types.StrLiteral(value=v) if v:
                     condition = True
                 case ast.types.IntLiteral(value=v) if v:
@@ -143,19 +143,21 @@ def typecheck_if(self: TypeVisitor, node: ast.IfStmt) -> ast.Stmt:
 
         condition = False
         if node.cond.type.can_realize():
-            match node.cond.type:
+            match node.cond.type.literal:
                 case ast.types.StrLiteral(value=v) if v:
                     condition = True
-                case ast.types.IntLiteral(value=v) if v >= 0:
+                case ast.types.IntLiteral(value=v) if v:
                     condition = True
                 case ast.types.BoolLiteral(value=v) if v:
                     condition = True
                 case _:
                     condition = False
-            selected = node.if_suite if condition else ast.SuiteStmt.wrap(node.else_suite)
+            selected = node.if_suite if condition else node.else_suite
             if utils.has_side_effect(node.cond):
                 selected = ast.SuiteStmt(ast.ExprStmt(node.cond), selected)
-            result = self.visit_stmt(selected)
+            # C++ transforms the selected null branch into a generated empty
+            # suite after evaluating the condition.
+            result = self.visit_stmt(selected or ast.SuiteStmt())
             return result
 
     _, node.cond = utils.wrap_expr(

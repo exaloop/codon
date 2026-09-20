@@ -53,7 +53,7 @@ def best_method(
 
 def matching_methods(
     ctx: TypeContext,
-    typ: ast.types.Class,
+    typ: ast.types.Class | None,
     methods: List[ast.types.Function],
     args: List[ast.CallExpr.Arg],
     partial: ast.types.Class | None = None,
@@ -157,7 +157,7 @@ def can_call(
             if not expected_type.is_runtime:
                 arg = args[source_idx].value.type
                 # Check if this is a good generic!
-                if arg and arg.require_cls.is_runtime:
+                if arg and arg.is_runtime:
                     score = -1
                     break
                 arg_type = arg
@@ -581,8 +581,8 @@ def can_wrap_expr(
         destination = expected_class
         optional = source == ast.types.Stdlib.Optional and destination == ast.types.Stdlib.Optional
         if optional:
-            source = source[0].require_cls
-            destination = destination[0].require_cls
+            source = source[0].cls
+            destination = destination[0].cls
         if source and destination and source.name != destination.name:
             source_data = get_class(ctx, source)
             assert source_data
@@ -836,7 +836,7 @@ def add_class_generics(
             if isinstance(typ, ast.types.Link) and typ.kind is ast.types.Link.Kind.Generic:
                 typ = ast.types.Link(kind=ast.types.Link.Kind.Unbound, src=typ)
         assert generic.static_kind is ast.types.Type.Behaviour.Runtime or not typ.is_runtime
-        if generic.static_kind is ast.types.Type.Behaviour.Runtime and not typ.is_runtime:
+        if generic.static_kind is ast.types.Type.Behaviour.Runtime and typ != ast.types.Stdlib.Type:
             typ = instantiate_type_var(ctx, typ)
         name = generic.name if only_mangled else get_unmangled_name(ctx, generic.name)
         value = ctx.add_item(name, generic.name, typ)
@@ -891,8 +891,7 @@ def get_stdlib_type(ctx: TypeContext, type_name: str) -> ast.types.Class:
 
 
 def extract_func_generic(typ: ast.types.Type, idx: int = 0) -> ast.types.Type:
-    assert isinstance(typ, ast.types.Function)
-    return typ.func_generics[idx].type
+    return typ.require_func.func_generics[idx].type
 
 
 def get_class_method(ctx: TypeContext, typ: ast.types.Type, member: str) -> str:
@@ -922,9 +921,7 @@ def get_param_type(typ: ast.types.Type | None) -> ast.Expr | None:
 def has_side_effect(expr: ast.Expr):
     # TODO: What if StringExpr has a nested value as a f-string?
     match expr:
-        case ast.IdExpr():
-            return False
-        case ast.DotExpr(expr=ast.IdExpr()):
+        case ast.IdExpr() | ast.DotExpr(expr=ast.IdExpr()):
             return False
         case ast.NoneExpr() | ast.BoolExpr() | ast.IntExpr() | ast.FloatExpr() | ast.StringExpr():
             return False
@@ -1005,8 +1002,8 @@ def instantiate[T: ast.types.Type](
         for idx, generic_type in enumerate(generics):
             generic = typ.generics[idx]
             assert generic.type is not None, "generic is null"
-            if generic.is_runtime and generic.type.literal:
-                generic_type = generic.type.literal.runtime_type
+            if generic.is_runtime and generic_type.literal:
+                generic_type = generic_type.literal.runtime_type
             cls_type.generics.append(
                 ast.types.Generic(generic.name, generic_type, generic.id, generic.static_kind)
             )

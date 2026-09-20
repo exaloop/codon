@@ -250,7 +250,7 @@ def transform_assignment(
     if self.ctx.in_function and stmt.rhs and not must_exist:
         base = self.ctx.base
         if base.func and (bindings := base.func.get(ast.Attr.Bindings, Bindings)):
-            if (binding := bindings.bindings.get(var.value)) and binding.is_nonlocal:
+            if (binding := bindings.bindings.get(var.value, None)) and binding.is_nonlocal:
                 stmt.type_expr = (
                     ast.IndexExpr(ast.IdExpr(ast.types.Stdlib.Capsule), index=stmt.type_expr)
                     if stmt.type_expr

@@ -28,10 +28,9 @@ def typecheck_assert(self: TypeVisitor, node: ast.AssertStmt) -> ast.Stmt:
     base = self.ctx.base
     is_test = self.ctx.in_function and base and base.func and base.func.has(ast.Attr.Test)
     call = ast.CallExpr(
-        ast.IdExpr(
-            ast.types.mangle(
-                cls="__internal__", func="seq_assert_test" if is_test else "seq_assert"
-            )
+        ast.DotExpr(
+            ast.IdExpr("__internal__"),
+            member="seq_assert_test" if is_test else "seq_assert",
         ),
         items=[ast.StringExpr(node.info.file), ast.IntExpr(node.info.line), message],
     )

@@ -43,7 +43,8 @@ def infer_types(
         if base.iteration == 1 and is_toplevel:
             # Realize all @force_realize functions
             # Copy keys to avoid modifications during the iteration (#768)
-            for fn_name in list(ctx.cache.functions.keys()):
+            fns = sorted(ctx.cache.functions.keys())
+            for fn_name in fns:
                 fn_data = ctx.cache.functions[fn_name]
                 if (
                     fn_data.type
@@ -204,7 +205,10 @@ def realize_type(ctx: TypeContext, typ: ast.types.Class) -> ast.types.Class | No
         typ._cached_name = ""
 
     # Check if the type was already realized
-    realized_name = typ.realized_name()
+    # C++ explicitly calls ClassType::realizedName() here. For a StaticType this
+    # bypasses StaticType::realizedName() and uses the runtime class name.
+    # TODO: make it nicer!
+    realized_name = ast.types.Class.realized_name(typ)
     cls_data = utils.get_class(ctx, typ)
     assert cls_data
     existing = cls_data.realizations.get(realized_name)
@@ -233,7 +237,8 @@ def realize_type(ctx: TypeContext, typ: ast.types.Class) -> ast.types.Class | No
                     return None
 
     # Realizations should always be visible, so add them to the toplevel
-    realized_name = typ.realized_name()
+    # TODO: also make it nicer (remove Class manual override)!
+    realized_name = ast.types.Class.realized_name(typ)
     generalized = realized.generalize(0)
     item = Item(realized_name, base="", module=ctx.module_name, typ=generalized)
     if generalized != ast.types.Stdlib.Type:
@@ -290,7 +295,7 @@ def realize_func(
 
     old_ctx, ctx = ctx, imported.ctx
     try:
-        if ctx.realization_depth > cache.MAX_REALIZATION_DEPTH:
+        if len(ctx.bases) > cache.MAX_REALIZATION_DEPTH:
             raise TypecheckError(
                 ctx.node_stack[-1],
                 "maximum realization depth reached during the realization of "
@@ -298,7 +303,8 @@ def realize_func(
             )
         is_import = utils.is_import_fn(typ.ast.name)
         if is_import:
-            return _realize_func_body(ctx, typ, force, fn_data, existing, True)
+            with ast.Node.creation_context(ctx):
+                return _realize_func_body(ctx, typ, force, fn_data, existing, True)
         ctx.add_block()
         try:
             new_base = Base(name=typ.ast.name, type=typ, return_type=typ.ret_type)
@@ -310,7 +316,8 @@ def realize_func(
                     if ctx.base_name.startswith(ctx.bases[idx].name):
                         ctx.base.parent = idx
                         break
-                return _realize_func_body(ctx, typ, force, fn_data, existing, False)
+                with ast.Node.creation_context(ctx):
+                    return _realize_func_body(ctx, typ, force, fn_data, existing, False)
         finally:
             ctx.pop_block()
     finally:

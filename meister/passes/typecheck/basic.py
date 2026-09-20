@@ -23,7 +23,7 @@ def typecheck_none(self: TypeVisitor, node: ast.NoneExpr):
             utils.instantiate(
                 self.ctx,
                 ast.types.mangle(cls="Optional", func="__new__"),
-                [utils.extract_class_type(self.ctx, node)],
+                utils.extract_class_type(self.ctx, node),
             ),
         )
         node.done = True
@@ -160,6 +160,7 @@ def typecheck_str(self: TypeVisitor, node: ast.StringExpr):
                     ast.DotExpr(ast.IdExpr(ast.types.Stdlib.String), "cat"),
                     [ast.StringExpr(part.value), expr],
                 )
+            part.expr = expr
             items.append(expr)
         elif part.prefix:
             # Custom prefix strings:

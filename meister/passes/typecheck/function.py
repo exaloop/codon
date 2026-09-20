@@ -742,8 +742,8 @@ def transform_python_definition(
             )
         ),
         ast.ImportStmt(
-            ast.DotExpr(ast.IdExpr("__main__"), member=name),
             ast.IdExpr("python"),
+            ast.DotExpr(ast.IdExpr("__main__"), member=name),
             args=imported_args,
             ret=ret.clone() if ret else ast.IdExpr("pyobj"),
         ),

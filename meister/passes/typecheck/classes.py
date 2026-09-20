@@ -280,9 +280,9 @@ def typecheck_class(self: TypeVisitor, node: ast.ClassStmt) -> ast.Node:
                     canonical,
                     items=[arg.clone() for arg in args],
                     suite=ast.SuiteStmt(),
-                    attributes=copy.deepcopy(node.attributes),
                     base_classes=node.base_classes,
                 )
+                cached_ast.attributes = copy.deepcopy(node.attributes)
                 cls_data.ast = cached_ast
                 cls_data.module = self.ctx.module.path
                 cls_data.jit_cell = self.ctx.cache.jit_cell
@@ -809,7 +809,8 @@ def codegen_magic(
     else:
         assert False, f"invalid magic {magic}"
 
-    fn = ast.FunctionStmt(f"__{magic}__", ret=ret, items=fn_args, suite=ast.SuiteStmt(*stmts))
+    with ast.Node.creation_context(None):
+        fn = ast.FunctionStmt(f"__{magic}__", ret=ret, items=fn_args, suite=ast.SuiteStmt(*stmts))
     for attribute in attrs:
         fn.set(attribute)
     return fn
@@ -878,8 +879,9 @@ def generate_tuple(ctx: TypeContext, count: int, generate_new: bool = True) -> a
         with (
             stdlib.ctx.substitute("bases", [stdlib.ctx.bases[0]]),
             stdlib.ctx.substitute("block_level", 0),
-            stdlib.ctx.substitute("preamble", ctx.preamble),
         ):
-            extension = ctx.cache.typecheck(extension, ctx=stdlib.ctx)
+            from . import typecheck_node
+
+            extension = typecheck_node(stdlib.ctx, extension)
             ctx.preamble.add(extension)
     return result

@@ -319,9 +319,9 @@ class Type:
 
     @property
     def link(self) -> Link | None:
-        t = self.follow()
-        if isinstance(t, Link):
-            return cast(Link, t)
+        # TODO: why not follow here?
+        if isinstance(self, Link):
+            return self
         return None
 
     @property
@@ -871,7 +871,7 @@ class Class(Type):
 
     def to_string(self, mode: int) -> str:
         if self.name == Stdlib.NamedTuple:
-            if tid := self[0].int:
+            if (tid := self[0].int) is not None:
                 assert 0 <= tid < len(self.cache.generated_tuple_names), f"bad id: {tid}"
                 names = self.cache.generated_tuple_names[tid]
                 if not names:
@@ -883,7 +883,7 @@ class Class(Type):
                 return f"{self.name}[{','.join(values)}]"
             else:
                 return f"{self.name}[{self[0].to_string(mode)}]"
-        elif self.name == "Partial" and isinstance(self[3], Class):
+        elif self.name == "Partial" and self[3].cls and mode != 2:
             # Name: function[full_args](instantiated_args...)
             known = self.partial_mask
             function = self.partial_func
@@ -928,7 +928,7 @@ class Class(Type):
         else:
             values = [g.to_string(mode) for g in self.generics if g.name]
             if mode == 2:
-                values += [f"-{g.to_string(mode)}" for g in self.generics if g.name]
+                values += [f"-{g.to_string(mode)}" for g in self.hidden_generics if g.name]
             name = self.name
             if mode == 0:
                 name = self.cache.rev(name)
@@ -1080,7 +1080,23 @@ class StrLiteral(Literal):
         return copy.copy(self)
 
     def to_string(self, mode: int):
-        return f"'{self.value!r}'" if mode < 2 else f"Literal['{self.value!r}']"
+        # TODO: use value!r after cpp equality pass
+        escapes = {
+            7: "\\a",
+            8: "\\b",
+            12: "\\f",
+            10: "\\n",
+            13: "\\r",
+            9: "\\t",
+            11: "\\v",
+            39: "\\'",
+            92: "\\\\",
+        }
+        value = "".join(
+            escapes.get(c, f"\\x{c:x}" if c < 32 or c >= 127 else chr(c))
+            for c in self.value.encode("utf-8", errors="surrogateescape")
+        )
+        return f"'{value}'" if mode < 2 else f"Literal['{value}']"
 
     def get_static_expr(self) -> ast.Expr:
         return ast.StringExpr(value=self.value)
@@ -1116,7 +1132,7 @@ class BoolLiteral(Literal):
         return copy.copy(self)
 
     def to_string(self, mode: int):
-        return f"{self.value}'" if mode < 2 else f"Literal[{self.value}]"
+        return f"{self.value}" if mode < 2 else f"Literal[{self.value}]"
 
     def get_static_expr(self) -> ast.Expr:
         return ast.BoolExpr(self.value)
@@ -1198,7 +1214,7 @@ class Function(Class):
                 ctx.cache[g.id] = t.type
         return Function(
             self.ast,
-            [g.instantiate(level, ctx) for g in self.func_generics],
+            func_generics,
             None if self.func_parent is None else self.func_parent.instantiate(level, ctx),
             name=self.name,
             generics=[g.instantiate(level, ctx) for g in self.generics],
@@ -1282,7 +1298,7 @@ class Function(Class):
         # Important: return type does not have to be realized.
         if mode == 2:
             assert ret, "function return type is null"
-            values.append(f"ret={ret.to_string(mode)}")
+            values.append(f"RET={ret.to_string(mode)}")
         if mode < 2 or self.ast is None:
             for arg in self:
                 values.append(arg.to_string(mode))
@@ -1304,13 +1320,14 @@ class Function(Class):
         return name if not merged else f"{name}[{merged}]"
 
     def realized_name(self):
-        generic_values = [g.realized_name() for g in self.func_generics if g.name]
+        generic_values = ",".join(g.realized_name() for g in self.func_generics if g.name)
         arg_values = []
         for arg in self.generics[0].type.require_cls.generics:
             arg_values.append(
                 arg.type.realized_name() if isinstance(arg.type, Function) else arg.realized_name()
             )
-        values = ",".join(arg_values + generic_values)
+        arguments = ",".join(arg_values)
+        values = arguments if not generic_values else f"{arguments},{generic_values}"
         parent = "" if self.func_parent is None else f"{self.func_parent.realized_name()}:"
         suffix = "" if not values else f"[{values}]"
         return f"{parent}{self.func_name}{suffix}"

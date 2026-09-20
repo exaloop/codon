@@ -14,11 +14,12 @@ def parse(
         assert tree
         return tree
 
-    if file:
-        with open(file) as f:
-            gen = tokenize.generate_tokens(f)
+    with ast.Node.creation_context(ast.Node.SrcInfo(file or "")):
+        if file:
+            with open(file) as f:
+                gen = tokenize.generate_tokens(f)
+                return helper(gen)
+        else:
+            assert code
+            gen = tokenize.generate_tokens([l + "\n" for l in code.split("\n")])
             return helper(gen)
-    else:
-        assert code
-        gen = tokenize.generate_tokens([l + "\n" for l in code.split("\n")])
-        return helper(gen)

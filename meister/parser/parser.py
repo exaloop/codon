@@ -63,10 +63,12 @@ class CodonParser(Parser):
         mark = self._mark()
         tok = self._tokenizer.peek()
         start_lineno, start_col_offset = tok.start
-        if (self.fstring_start()) and (b := self._loop0_1(),) and (self.fstring_end()):
+        if (a := self.fstring_start()) and (b := self._loop0_1(),) and (self.fstring_end()):
+            a = Codon.unwrap(a)
             tok = self._tokenizer.get_last_non_whitespace_token()
             end_lineno, end_col_offset = tok.end
-            return ast.StringExpr(
+            return self.make_fstring(
+                a,
                 b,
                 lineno=start_lineno,
                 col_offset=start_col_offset,
@@ -74,6 +76,7 @@ class CodonParser(Parser):
                 end_col_offset=end_col_offset,
             )
         self._reset(mark)
+        a = None
         b = None
         return None
 
@@ -1501,7 +1504,7 @@ class CodonParser(Parser):
         mark = self._mark()
         if (self._loop0_49(),) and (n := self.expect_type(tokenize.Tokens.NEWLINE)):
             n = Codon.unwrap(n)
-            return n.line
+            return self.preserve_llvm_line(n)
         self._reset(mark)
         n = None
         return None

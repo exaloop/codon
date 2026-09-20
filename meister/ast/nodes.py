@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import copy
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import TYPE_CHECKING
 
 from ..bridge import CODON, Any, Codon, Dict, Enum, Iterator, List, Set, Tuple, cast, dataclass
@@ -74,6 +76,18 @@ class Attr(Enum):
 class Node:
     """Base class for parser AST nodes."""
 
+    _creation_context = ContextVar("ast_creation_context", default=None)
+
+    @staticmethod
+    @contextmanager
+    def creation_context(ctx):
+        """Supply the metadata added by C++ TypecheckVisitor::N to generated nodes."""
+        token = Node._creation_context.set(ctx)
+        try:
+            yield
+        finally:
+            Node._creation_context.reset(token)
+
     @dataclass
     class SrcInfo:
         file: str = ""
@@ -99,13 +113,28 @@ class Node:
         end_lineno=0,
         end_col_offset=0,
     ):
+        ctx = Node._creation_context.get()
+        if ctx is not None and info is None and not (lineno or end_lineno):
+            info = ctx if isinstance(ctx, Node.SrcInfo) else ctx.info
+        source_file = ""
+        if ctx is not None:
+            source_info = ctx if isinstance(ctx, Node.SrcInfo) else ctx.info
+            source_file = source_info.file
         self.info = (
-            Node.SrcInfo("", lineno, col_offset, end_lineno, end_col_offset)
+            Node.SrcInfo(
+                source_file,
+                lineno,
+                col_offset + 1 if lineno else col_offset,
+                end_lineno,
+                end_col_offset + 1 if end_lineno else end_col_offset,
+            )
             if info is None
             else (info.info if isinstance(info, Node) else info)
         )
         self.attributes = {} if attributes is None else attributes
         self.cache = cache
+        if ctx is not None and isinstance(self, Stmt) and getattr(ctx, "time", 0):
+            self.attributes.setdefault(Attr.ExprTime, ctx.time)
 
     def validate(self):
         pass
@@ -151,8 +180,14 @@ class Node:
         memo[id(self)] = result
         clean = Node._CODON_CLEAN in memo
         for key, value in self.__dict__.items():
-            if key in ("type", "expected_type"):
+            if isinstance(self, Expr) and key in ("type", "expected_type"):
                 setattr(result, key, None if clean else value)
+            elif isinstance(self, StringExpr) and key == "strings" and clean:
+                del memo[Node._CODON_CLEAN]
+                try:
+                    setattr(result, key, copy.deepcopy(value, memo))
+                finally:
+                    memo[Node._CODON_CLEAN] = True
             elif key == "done":
                 setattr(result, key, False if clean else value)
             elif key in ("cache", "orig"):
@@ -239,7 +274,7 @@ class Expr(Node):
 
     @property
     def cls(self) -> types.Class | None:
-        return self.type if isinstance(self.type, types.Class) else None
+        return self.type.cls if self.type else None
 
 
 @dataclass(init=False)
@@ -320,7 +355,9 @@ class IntExpr(Expr):
 
     def __init__(self, value: int | str, suffix: str = "", **kwargs):
         super().__init__(**kwargs)
+        self.value = ""
         self.suffix = suffix
+        self.int_value = None
         if isinstance(value, int):
             self.int_value = value
             self.value = str(self.int_value)
@@ -381,7 +418,9 @@ class FloatExpr(Expr):
     ):
         super().__init__(**kwargs)
 
+        self.value = ""
         self.suffix = suffix
+        self.float_value = None
         if isinstance(value, float):
             self.float_value = value
             self.value = f"{self.float_value:g}"
@@ -454,8 +493,8 @@ class StringExpr(Expr):
             self.strings = [StringExpr.String(value=value, prefix=prefix)]
         else:
             self.strings = value
-        self.prefix = self.strings[0].prefix if len(self.strings) == 1 else ""
         self.value = self.strings[0].value if len(self.strings) == 1 else ""
+        self.prefix = self.strings[0].prefix if len(self.strings) == 1 else ""
 
     def __iter__(self) -> Iterator[String]:
         yield from self.strings
@@ -488,9 +527,12 @@ class StarExpr(Expr):
 
 
 @dataclass(init=False)
-class KeywordStarExpr(StarExpr):
-    def __init__(self, **kwargs):
+class KeywordStarExpr(Expr):
+    expr: Expr
+
+    def __init__(self, expr: Expr, **kwargs):
         super().__init__(**kwargs)
+        self.expr = expr
 
 
 @dataclass(init=False)
@@ -696,8 +738,8 @@ class CallExpr(Expr, ItemIterator):
 
         def __init__(self, value: Expr, name: str = "", **kwargs):
             super().__init__(**kwargs)
-            self.value = value
             self.name = name
+            self.value = value
             if self.info == Node.SrcInfo():
                 self.info = self.value.info
 
@@ -721,7 +763,7 @@ class CallExpr(Expr, ItemIterator):
         if items:
             for i in items:
                 if isinstance(i, CallExpr.Arg):
-                    self.items.append(i)
+                    self.items.append(CallExpr.Arg(i.value, name=i.name, info=i.info))
                 elif isinstance(i, Expr):
                     self.items.append(CallExpr.Arg(i))
                 else:
@@ -909,8 +951,15 @@ class SuiteStmt(Stmt, ItemIterator):
     @staticmethod
     def wrap(stmt: Stmt | None):
         if stmt is None:
-            return SuiteStmt()
-        return stmt if isinstance(stmt, SuiteStmt) else SuiteStmt(stmt, info=stmt)
+            return None
+        if isinstance(stmt, SuiteStmt):
+            return stmt
+        # SuiteStmt::wrap uses Cache::NS rather than TypecheckVisitor::N, so the
+        # wrapper copies the wrapped statement's source but not the visitor's
+        # generated-statement metadata.
+        # TODO: remove!
+        with Node.creation_context(None):
+            return SuiteStmt(stmt, info=stmt)
 
 
 @dataclass(init=False)
@@ -1144,7 +1193,7 @@ class ImportStmt(Stmt):
     - from .(dots...)from import what (as as)
     """
 
-    what: Expr
+    what: Expr | None = None
     from_expr: Expr | None = None
     # Function argument types for C imports.
     args: List[Param]
@@ -1158,8 +1207,8 @@ class ImportStmt(Stmt):
 
     def __init__(
         self,
-        what: Expr,
         from_expr: Expr | None = None,
+        what: Expr | None = None,
         args: List[Param] | None = None,
         ret: Expr | None = None,
         as_: str = "",
@@ -1194,15 +1243,8 @@ class ImportStmt(Stmt):
                     head = head.expr
                 if head and not isinstance(head, IdExpr):
                     raise NodeError(head, "expected identifier")
-                # ``import package.member`` stores the dotted module path in
-                # ``what``.  Its components are identifiers just like the
-                # ``from`` expression, so accept a dotted expression here.
-                if self.what:
-                    what = self.what
-                    while isinstance(what, DotExpr):
-                        what = what.expr
-                    if not isinstance(what, IdExpr):
-                        raise NodeError(self.what, "expected identifier")
+                if self.what and not isinstance(self.what, IdExpr):
+                    raise NodeError(self.what, "expected identifier")
                 if self.args or self.ret:
                     raise NodeError(
                         self,
@@ -1374,7 +1416,9 @@ class FunctionStmt(Stmt, ItemIterator):
     def get_signature(self):
         """A function signature that consists of generics and arguments in a S-expression form."""
         if not self.signature:
-            self.signature = ":".join("-" if p.type is None else dump(p.type) for p in self.items)
+            self.signature = ":".join(
+                "-" if p.type is None else _expression_string(p.type) for p in self.items
+            )
         return self.signature
 
     def get_star_arg(self) -> int:
@@ -1701,6 +1745,77 @@ def get_docstring(suite) -> str:
             return ""
 
 
+def _expression_string(node: Expr) -> str:
+    """Format an expression like C++ Expr::toString(), for function signatures."""
+    # TODO: really remove this thing
+
+    def wrap(body):
+        if node.done:
+            body = "*" + body
+        if node.type and not node.done:
+            typ = node.type.to_string(2).replace("\\", "\\\\").replace('"', '\\"')
+            body += f' #:type "{typ}"'
+        return f"({body})"
+
+    def combine(items):
+        return " ".join(_expression_string(item) for item in items if item)
+
+    match node:
+        case IdExpr(value=value):
+            return f"'{value}" if not node.type else wrap(f"'{value}")
+        case NoneExpr():
+            return wrap("none")
+        case BoolExpr(value=value):
+            return wrap(f"bool {int(value)}")
+        case IntExpr(value=value, suffix=suffix):
+            suffix = "" if not suffix else f' #:suffix "{suffix}"'
+            return wrap(f"int {value}{suffix}")
+        case FloatExpr(value=value, suffix=suffix):
+            suffix = "" if not suffix else f' #:suffix "{suffix}"'
+            return wrap(f"float {value}{suffix}")
+        case StarExpr(expr=expr):
+            return wrap(f"star {_expression_string(expr)}")
+        case KeywordStarExpr(expr=expr):
+            return wrap(f"kwstar {_expression_string(expr)}")
+        case TupleExpr(items=items):
+            return wrap(f"tuple {combine(items)}")
+        case ListExpr(items=items):
+            return wrap("list" + (f" {combine(items)}" if items else ""))
+        case SetExpr(items=items):
+            return wrap("set" + (f" {combine(items)}" if items else ""))
+        case DictExpr(items=items):
+            return wrap("dict" + (f" {combine(items)}" if items else ""))
+        case IfExpr(cond=cond, ifexpr=ifexpr, elsexpr=elsexpr):
+            return wrap(
+                f"if-expr {_expression_string(cond)} {_expression_string(ifexpr)} "
+                f"{_expression_string(elsexpr)}"
+            )
+        case UnaryExpr(op=op, expr=expr):
+            return wrap(f'unary "{op}" {_expression_string(expr)}')
+        case BinaryExpr(lexpr=left, op=op, rexpr=right, in_place=in_place):
+            suffix = " #:in-place" if in_place else ""
+            return wrap(
+                f'binary "{op}" {_expression_string(left)} {_expression_string(right)}{suffix}'
+            )
+        case IndexExpr(expr=expr, index=index):
+            return wrap(f"index {_expression_string(expr)} {_expression_string(index)}")
+        case DotExpr(expr=expr, member=member):
+            return wrap(f"dot {_expression_string(expr)} '{member}")
+        case SliceExpr(start=start, stop=stop, step=step):
+            values = ""
+            if start:
+                values += f" #:start {_expression_string(start)}"
+            if stop:
+                values += f" #:end {_expression_string(stop)}"
+            if step:
+                values += f" #:step {_expression_string(step)}"
+            return wrap("slice" + values)
+        case InstantiateExpr(expr=expr, items=items):
+            return wrap(f"instantiate {_expression_string(expr)} {combine(items)}")
+        case _:
+            return str(node)
+
+
 def _quote_dump_string(value):
     use_double = "'" in value and '"' not in value
     delimiter = '"' if use_double else "'"
@@ -1776,7 +1891,21 @@ def dump(
     from ..bridge import class_name
     from .types import Type
 
+    active = set()
+
     def _format(node, level=0):
+        if not isinstance(node, Expr):
+            return _format_node(node, level)
+        key = id(node)
+        if key in active:
+            return "", True
+        active.add(key)
+        try:
+            return _format_node(node, level)
+        finally:
+            active.remove(key)
+
+    def _format_node(node, level=0):
         if indent:
             level += 1
 
@@ -1800,6 +1929,12 @@ def dump(
             for key, val in node.attributes.items():
                 if isinstance(val, bool) and val:
                     attrs.append(key.name)
+                elif isinstance(val, dict):
+                    items = ", ".join(
+                        f"{_quote_dump_string(str(name))}: {_quote_dump_string(str(value))}"
+                        for name, value in sorted(val.items())
+                    )
+                    attrs.append(f"{key.name}=KeyValueAttribute(attributes={{{items}}})")
                 else:
                     value, simple = _format(val, level + 2)
                     allsimple = allsimple and simple
@@ -1814,7 +1949,7 @@ def dump(
             return "", True
 
         if isinstance(node, Type):
-            return node.to_string(mode=2)
+            return node.to_string(mode=2), True
         elif isinstance(node, SuiteStmt):
             if not node.items:
                 return "", True

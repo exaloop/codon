@@ -220,11 +220,10 @@ def typecheck_for(self: TypeVisitor, node: ast.ForStmt) -> ast.Stmt:
     base.loops.append(Base.LoopData(break_var=break_var))
     try:
         if not var.has(ast.Attr.ExprDominated) and not var.has(ast.Attr.ExprDominatedUsed):
-            var.type = var.type or utils.instantiate_unbound(self.ctx)
             self.ctx.add_item(
                 utils.get_unmangled_name(self.ctx, var.value),
                 self.ctx.generate_canonical_name(var.value),
-                var.type,
+                var.type or utils.instantiate_unbound(self.ctx),
                 self.ctx.time,
             )
         elif var.has(ast.Attr.ExprDominatedUsed):

@@ -129,6 +129,13 @@ V *in(std::unordered_map<K, V> &m, const U &item) {
 bool in(const std::string &m, const std::string &item);
 bool in(const std::string &m, char item);
 
+template <typename K, typename V>
+std::vector<std::pair<K, V>> sorted_view(const std::unordered_map<K, V> &map) {
+  std::vector<std::pair<K, V>> sorted_keys(map.begin(), map.end());
+  std::ranges::sort(sorted_keys, {}, &std::pair<K, V>::first);
+  return sorted_keys;
+}
+
 /// AST utilities
 
 template <typename T> T clone(const T &t, bool clean = false) { return t.clone(clean); }

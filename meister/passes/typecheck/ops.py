@@ -81,11 +81,11 @@ def typecheck_binary(self: TypeVisitor, node: ast.BinaryExpr) -> ast.Expr:
     left_kind = node.lexpr.type.static_kind
     if not node.lexpr.type.is_runtime and node.op in {"&&", "||"}:
         truth = False
-        if b := node.lexpr.type.bool:
+        if (b := node.lexpr.type.bool) is not None:
             truth = b
-        elif s := node.lexpr.type.str:
+        elif (s := node.lexpr.type.str) is not None:
             truth = bool(s)
-        elif i := node.lexpr.type.int:
+        elif (i := node.lexpr.type.int) is not None:
             truth = bool(i)
         else:
             assert node.type.unbound
@@ -407,11 +407,11 @@ def typecheck_index(self: TypeVisitor, node: ast.IndexExpr) -> ast.Expr:
     # IndexExpr[TupleExpr[i1, ..., iN]] for N > 1
     items = list(node.index.items) if isinstance(node.index, ast.TupleExpr) else [node.index]
     is_tuple = isinstance(node.index, ast.TupleExpr)
+    orig_index = node.index.clone()
     for idx, item in enumerate(items):
         if utils.is_type_expr(node.expr) and isinstance(item, ast.ListExpr):
             item = ast.InstantiateExpr(ast.IdExpr(ast.types.Stdlib.Tuple), items=list(item.items))
         items[idx] = self.visit_expr(item)
-    orig_index = node.index.clone()
     if utils.is_type_expr(node.expr):
         # Special case: `A[[A, B], C]` -> `A[Tuple[A, B], C]` (e.g., in `Function[...]`)
         return self.visit_expr(ast.InstantiateExpr(node.expr, items=items))
