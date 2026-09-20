@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <dirent.h>
 #include <fcntl.h>
 #include <fstream>
@@ -27,6 +28,7 @@
 #include "codon/util/common.h"
 
 #include "gtest/gtest.h"
+#include "llvm/Support/Signals.h"
 
 using namespace codon;
 using namespace std;
@@ -614,7 +616,12 @@ INSTANTIATE_TEST_SUITE_P(
 
 // clang-format on
 
+TEST(CrashDiagnosticsDeathTest, ReportsAbortStack) {
+  EXPECT_DEATH(std::abort(), "0x[0-9a-f]+");
+}
+
 int main(int argc, char *argv[]) {
+  llvm::sys::PrintStackTraceOnErrorSignal(argv[0], true);
   argv0 = ast::Filesystem::executable_path(argv[0]);
   testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
