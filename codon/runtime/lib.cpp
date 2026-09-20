@@ -214,6 +214,14 @@ extern "C" int dladdr(void *address, seq_dl_info *info) {
   info->dli_reserved = nullptr;
   return 1;
 }
+
+// MSVC exposes hypotf only as an inline wrapper in <math.h>, so there is no
+// linkable symbol for the JIT to resolve when codon's complex64 code calls it
+// (test/stdlib/cmath_test.codon). Provide a real one; CMake exports it under
+// the plain "hypotf" name via /EXPORT:hypotf=seq_win_hypotf.
+extern "C" float seq_win_hypotf(float x, float y) {
+  return static_cast<float>(hypot(static_cast<double>(x), static_cast<double>(y)));
+}
 #endif
 
 /*

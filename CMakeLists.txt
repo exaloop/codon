@@ -258,10 +258,11 @@ elseif(WIN32)
             -Wl,/INCLUDE:BZ2_bzopen
             -Wl,/EXPORT:BZ2_bzopen -Wl,/EXPORT:BZ2_bzclose -Wl,/EXPORT:BZ2_bzread
             -Wl,/EXPORT:BZ2_bzwrite -Wl,/EXPORT:BZ2_bzflush -Wl,/EXPORT:BZ2_bzerror
-            # hypotf is a static wrapper in the UCRT import lib rather than a
-            # ucrtbase.dll export, so the JIT cannot resolve it for complex64
-            # (test/stdlib/cmath_test.codon). Pull it in and export it.
-            -Wl,/INCLUDE:hypotf -Wl,/EXPORT:hypotf)
+            # hypotf exists only as an inline wrapper in MSVC's <math.h>, so there is
+            # no symbol the JIT can resolve for complex64 math
+            # (test/stdlib/cmath_test.codon). Export codonrt's own implementation
+            # under the plain name.
+            -Wl,/EXPORT:hypotf=seq_win_hypotf)
 else()
   add_dependencies(codonrt openblas_64)
 

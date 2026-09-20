@@ -4,6 +4,13 @@
 # "corrupt patch" on Windows (autocrlf would otherwise convert them to CRLF).
 *.patch text eol=lf
 
+# scripts/unicode_tables.py hashes these inputs and the generator scripts, and
+# refuses to unpack the tables if any of them differ. autocrlf would rewrite
+# them as CRLF on Windows, changing the bytes and breaking the build with
+# "changed; regenerate and repack the Unicode tables".
+scripts/unicode/*.json text eol=lf
+scripts/*.py text eol=lf
+
 *.png binary
 *.jpg binary
 *.jpeg binary
