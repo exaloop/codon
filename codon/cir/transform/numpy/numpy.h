@@ -154,6 +154,7 @@ struct CodegenContext {
   SeriesFlow *series;
   BodiedFunc *func;
   std::unordered_map<NumPyExpr *, Var *> vars;
+  std::unordered_map<NumPyExpr *, Var *> layouts;
   NumPyPrimitiveTypes &T;
 
   CodegenContext(Module *M, SeriesFlow *series, BodiedFunc *func,
@@ -348,7 +349,10 @@ struct NumPyOptimizationUnit {
   std::vector<std::pair<NumPyExpr *, Value *>> leaves;
   /// AssignInstr in which RHS is represented by this expression, or null if none
   AssignInstr *assign;
+  std::vector<std::pair<AssignInstr *, NumPyExpr *>> validationOrder;
+  std::unordered_map<AssignInstr *, SeriesFlow *> validationFlows;
 
+  void codegenValidation(CodegenContext &context, bool atDefinitions);
   bool optimize(NumPyPrimitiveTypes &T, analyze::module::SideEffectResult *sideEffects);
 };
 

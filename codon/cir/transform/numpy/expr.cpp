@@ -553,9 +553,27 @@ Value *NumPyExpr::codegenBroadcasts(CodegenContext &C) {
 Var *NumPyExpr::codegenLayout(CodegenContext &C) {
   if (isLeaf())
     return C.vars.at(this);
+  auto found = C.layouts.find(this);
+  if (found != C.layouts.end())
+    return found->second;
   auto *M = C.M;
   auto *baseType = type.getIRBaseType(C.T);
   std::vector<Value *> operands;
+  if (op == NP_OP_MATMUL || op == NP_OP_TRANSPOSE) {
+    operands.push_back(M->Nr<VarValue>(lhs->codegenLayout(C)));
+    if (rhs)
+      operands.push_back(M->Nr<VarValue>(rhs->codegenLayout(C)));
+    std::vector<Type *> operandTypes;
+    for (auto *operand : operands)
+      operandTypes.push_back(operand->getType());
+    auto *layoutFunc = M->getOrRealizeFunc(
+        op == NP_OP_MATMUL ? "_matmul_layout" : "_transpose", operandTypes,
+        op == NP_OP_MATMUL ? std::vector<Generic>{baseType} : std::vector<Generic>{},
+        FUSION_MODULE);
+    seqassertn(layoutFunc, "layout func not found for {}", opstring());
+    return C.layouts[this] =
+               util::makeVar(util::call(layoutFunc, operands), C.series, C.func);
+  }
   if (op == NP_OP_WHERE) {
     std::vector<Type *> operandTypes;
     for (auto *operand : {lhs.get(), rhs.get(), third.get()}) {
@@ -566,7 +584,8 @@ Var *NumPyExpr::codegenLayout(CodegenContext &C) {
     auto *layoutFunc =
         M->getOrRealizeFunc("_where_layout", operandTypes, {baseType}, FUSION_MODULE);
     seqassertn(layoutFunc, "where layout func not found");
-    return util::makeVar(util::call(layoutFunc, operands), C.series, C.func);
+    return C.layouts[this] =
+               util::makeVar(util::call(layoutFunc, operands), C.series, C.func);
   }
   if (lhs && lhs->type.isArray())
     operands.push_back(M->Nr<VarValue>(lhs->codegenLayout(C)));
@@ -588,7 +607,8 @@ Var *NumPyExpr::codegenLayout(CodegenContext &C) {
         M->getOrRealizeFunc("_layout", {arrays->getType()}, {baseType}, FUSION_MODULE);
   }
   seqassertn(layoutFunc, "fusion layout func not found for {}", opstring());
-  return util::makeVar(util::call(layoutFunc, operands), C.series, C.func);
+  return C.layouts[this] =
+             util::makeVar(util::call(layoutFunc, operands), C.series, C.func);
 }
 
 // Build a scalar callback for one element, then let a stdlib loop helper handle
@@ -691,7 +711,7 @@ Var *NumPyExpr::codegenFusedEval(CodegenContext &C, Var *destination) {
     loopTypes.push_back(initial->getType());
     loopGenerics = {baseType, type.getIRBaseType(T), opstring()};
   }
-  bool needsLayout = false;
+  bool needsLayout = !destination && C.layouts.count(element) != 0;
   element->apply([&](NumPyExpr &expr) {
     if (expr.op == NP_OP_WHERE ||
         (expr.type.ndim > 1 && (expr.op == NP_OP_CAST || expr.op == NP_OP_ZEROS_LIKE ||

@@ -1061,6 +1061,8 @@ bool isBasicIndexType(Type *type, NumPyPrimitiveTypes &types) {
 
 bool isSafeFusionLeaf(Value *value, NumPyPrimitiveTypes &types,
                       analyze::module::SideEffectResult *sideEffects) {
+  if (hasLifetimeTag(value, "numpy.validation"))
+    return true;
   if (!sideEffects->hasSideEffect(value))
     return true;
   auto *call = cast<CallInstr>(value);
@@ -1226,6 +1228,32 @@ bool hasOwnedResult(const NumPyExpr &expr) {
   }
 }
 
+void NumPyOptimizationUnit::codegenValidation(CodegenContext &context,
+                                              bool atDefinitions) {
+  auto *series = context.series;
+  util::CloneVisitor clone(context.M);
+  bool ownsResult = hasOwnedResult(*expr) && !expr->isReduction();
+  for (auto &step : validationOrder) {
+    context.series = series;
+    if (atDefinitions && step.first && step.first != assign) {
+      auto &flow = validationFlows[step.first];
+      if (!flow)
+        flow = context.M->Nr<SeriesFlow>();
+      context.series = flow;
+    }
+    auto *element = step.second;
+    if (element->isLeaf()) {
+      auto *variable = util::makeVar(clone.clone(element->val), context.series, func);
+      context.vars.emplace(element, variable);
+      if (ownsResult && !element->ownedLastUse)
+        setLifetimeTag(context.series->back(), "numpy.lifetime.input");
+    } else if (element->type.isArray() && !element->isReduction()) {
+      element->codegenLayout(context);
+    }
+  }
+  context.series = series;
+}
+
 bool NumPyOptimizationUnit::optimize(NumPyPrimitiveTypes &T,
                                      analyze::module::SideEffectResult *sideEffects) {
   bool reduction = expr->isReduction();
@@ -1269,19 +1297,9 @@ bool NumPyOptimizationUnit::optimize(NumPyPrimitiveTypes &T,
   auto *M = value->getModule();
   auto *series = M->Nr<SeriesFlow>();
   CodegenContext C(M, series, func, T);
-  util::CloneVisitor cv(M);
   bool ownsResult = hasOwnedResult(*expr) && !reduction;
 
-  // Bind leaves once in their recorded evaluation order; every generated path
-  // uses these bindings rather than reevaluating the original operands.
-  for (auto &p : leaves) {
-    auto *var = util::makeVar(cv.clone(p.second), series, func);
-    // The lifetime pass may follow borrowed bindings, but must not reclaim leaves
-    // whose storage this expression already reuses or frees.
-    if (ownsResult && !p.first->ownedLastUse)
-      setLifetimeTag(series->back(), "numpy.lifetime.input");
-    C.vars.emplace(p.first, var);
-  }
+  codegenValidation(C, true);
 
   if (reduction) {
     expr->lhs->apply([&](NumPyExpr &element) {
@@ -1439,9 +1457,7 @@ struct DestinationExpression {
     auto *series = module->Nr<SeriesFlow>();
     CodegenContext context(module, series, unit.func, types);
     util::CloneVisitor clone(module);
-    for (auto &leaf : unit.leaves)
-      context.vars.emplace(leaf.first,
-                           util::makeVar(clone.clone(leaf.second), series, unit.func));
+    unit.codegenValidation(context, false);
     auto *output = util::makeVar(clone.clone(destination), series, unit.func);
     XLOG("-> destination fuse at {}:\n{}", unit.value->getSrcInfo(), unit.expr->str());
     auto *result = isMatmulAdd(*unit.expr)
@@ -1546,6 +1562,35 @@ struct ExtractArrayExpressions : public util::Operator {
   }
 };
 
+using ValidationOrder = std::vector<std::pair<Value *, AssignInstr *>>;
+
+ValidationOrder getValidationOrder(NumPyOptimizationUnit &unit) {
+  std::unordered_set<Value *> nodes;
+  unit.expr->apply([&](NumPyExpr &element) { nodes.insert(element.val); });
+  ValidationOrder order;
+  std::unordered_set<Value *> visited;
+  std::function<void(Value *)> visit = [&](Value *value) {
+    if (!visited.insert(value).second)
+      return;
+    for (auto *child : value->getUsedValues())
+      visit(child);
+    if (nodes.count(value))
+      order.emplace_back(value, unit.assign);
+  };
+  visit(unit.value);
+  return order;
+}
+
+void setValidationOrder(NumPyOptimizationUnit &unit, const ValidationOrder &order) {
+  std::unordered_map<Value *, NumPyExpr *> nodes;
+  unit.expr->apply([&](NumPyExpr &element) { nodes.emplace(element.val, &element); });
+  for (auto &step : order) {
+    auto found = nodes.find(step.first);
+    if (found != nodes.end())
+      unit.validationOrder.emplace_back(step.second, found->second);
+  }
+}
+
 struct NumPyFunctionExpressions : ExtractArrayExpressions {
   struct Expression {
     NumPyOptimizationUnit *unit;
@@ -1559,11 +1604,19 @@ struct NumPyFunctionExpressions : ExtractArrayExpressions {
                            analyze::module::SideEffectResult *sideEffects)
       : ExtractArrayExpressions(func, rd, cfg, sideEffects) {
     func->accept(*this);
+    for (auto &destination : destinations)
+      setValidationOrder(destination.unit, getValidationOrder(destination.unit));
+    ValidationOrder order;
+    for (auto &unit : exprs) {
+      auto steps = getValidationOrder(unit);
+      order.insert(order.end(), steps.begin(), steps.end());
+    }
     auto forwarding = getForwardingDAGs(func, rd, cfg, sideEffects, exprs);
     for (auto &dag : forwarding) {
       Expression expression;
       expression.unit =
           doForwarding(dag, expression.assignments, &expression.substitutions);
+      setValidationOrder(*expression.unit, order);
       expressions.push_back(std::move(expression));
     }
   }
@@ -2037,6 +2090,7 @@ void NumPyInlinePass::run(Module *module) {
     Value *value = nullptr;
     unsigned size = 0;
     bool directBindings = false;
+    std::vector<Var *> locals;
   };
   std::unordered_map<id_t, InlineTemplate> templates;
   auto *analysis = getAnalysisResult<NumPyExpressionResult>(expressionsKey);
@@ -2130,7 +2184,67 @@ void NumPyInlinePass::run(Module *module) {
                         isA<IntConst>(element.val) || isA<FloatConst>(element.val) ||
                         isA<BoolConst>(element.val);
     });
-    return {value, check.size, directBindings};
+    std::vector<Value *> originalOrder, collapsedOrder;
+    for (auto &step : unit->validationOrder)
+      if (!step.second->isLeaf())
+        originalOrder.push_back(step.second->val);
+    NumPyExpr *firstLeaf = nullptr;
+    std::unordered_map<Value *, NumPyExpr *> nodes;
+    unit->expr->apply(
+        [&](NumPyExpr &element) { nodes.emplace(element.val, &element); });
+    std::unordered_map<Value *, Value *> substitutions(expression.substitutions.begin(),
+                                                       expression.substitutions.end());
+    std::unordered_set<Value *> visited;
+    std::function<void(Value *)> collectOrder = [&](Value *current) {
+      auto substitution = substitutions.find(current);
+      if (substitution != substitutions.end())
+        current = substitution->second;
+      if (!visited.insert(current).second)
+        return;
+      for (auto *child : current->getUsedValues())
+        collectOrder(child);
+      auto found = nodes.find(current);
+      if (found == nodes.end())
+        return;
+      if (!found->second->isLeaf())
+        collapsedOrder.push_back(current);
+      else if (!firstLeaf)
+        firstLeaf = found->second;
+    };
+    collectOrder(unit->value);
+    std::vector<Var *> locals;
+    if (originalOrder != collapsedOrder) {
+      if (!directBindings || !firstLeaf)
+        return {};
+      auto *validation = module->Nr<SeriesFlow>();
+      CodegenContext context(module, validation, callee, extracted->types);
+      unit->codegenValidation(context, false);
+      util::CloneVisitor checkedClone(module);
+      for (auto &entry : context.vars) {
+        locals.push_back(entry.second);
+        checkedClone.forceRemap<Value>(entry.first->val,
+                                       module->Nr<VarValue>(entry.second));
+      }
+      for (auto &entry : context.layouts)
+        locals.push_back(entry.second);
+      auto *checkedLeaf = module->Nr<FlowInstr>(
+          validation, module->Nr<VarValue>(context.vars.at(firstLeaf)));
+      setLifetimeTag(checkedLeaf, "numpy.validation");
+      checkedClone.forceRemap<Value>(firstLeaf->val, checkedLeaf);
+      for (auto &substitution : expression.substitutions)
+        checkedClone.forceRemap(substitution.first,
+                                checkedClone.clone(substitution.second));
+      value = checkedClone.clone(unit->value);
+      struct Count : util::Operator {
+        unsigned size = 0;
+        void preHook(Node *) override { ++size; }
+      } count;
+      value->accept(count);
+      if (count.size > 128)
+        return {};
+      check.size = count.size;
+    }
+    return {value, check.size, directBindings, std::move(locals)};
   };
 
   struct Prepare : util::Operator {
@@ -2172,6 +2286,8 @@ void NumPyInlinePass::run(Module *module) {
       const auto &prepared = found->second;
       auto *module = call->getModule();
       util::CloneVisitor clone(module);
+      for (auto *local : prepared.locals)
+        parent->push_back(clone.forceClone(local));
       auto *bindings = module->Nr<SeriesFlow>();
       bool directBindings = prepared.directBindings;
       // Substitute only stable local reads directly. Otherwise bind every actual
@@ -2227,8 +2343,12 @@ void NumPyFusionPass::visit(BodiedFunc *func) {
     if (e->optimize(extracted->types, se)) {
       // Remove producer assignments only after their replacement was emitted;
       // rejected candidates must retain the original computation and lifetime.
-      for (auto *a : expression.assignments)
-        a->replaceAll(func->getModule()->Nr<SeriesFlow>());
+      for (auto *a : expression.assignments) {
+        auto found = e->validationFlows.find(a);
+        a->replaceAll(found != e->validationFlows.end()
+                          ? found->second
+                          : func->getModule()->Nr<SeriesFlow>());
+      }
     }
   }
 }

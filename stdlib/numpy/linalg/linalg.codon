@@ -2797,6 +2797,30 @@ def _check_out(out, ans_shape, dtype: type):
     if out.shape != ans_shape:
         raise ValueError("'out' array has incorrect shape")
 
+def _matmul_shape(left, right):
+    left_rank: Literal[int] = static.len(left)
+    right_rank: Literal[int] = static.len(right)
+    if left_rank == 0:
+        compile_error("first argument is 0-dimensional; must be at least 1-d")
+    if right_rank == 0:
+        compile_error("second argument is 0-dimensional; must be at least 1-d")
+    if left_rank == 1 and right_rank == 1:
+        if left != right:
+            raise ValueError("matmul: vectors have different lengths")
+        return ()
+    left_matrix = (1,) + left if left_rank == 1 else left
+    right_matrix = right + (1,) if right_rank == 1 else right
+    if left_matrix[-1] != right_matrix[-2]:
+        raise ValueError("matmul: last dimension of first argument does not "
+                         "match second-to-last dimension of second argument")
+    batch = broadcast_shapes(left_matrix[:-2], right_matrix[:-2])
+    if left_rank == 1:
+        return batch + (right_matrix[-1],)
+    elif right_rank == 1:
+        return batch + (left_matrix[-2],)
+    else:
+        return batch + (left_matrix[-2], right_matrix[-1])
+
 def _matmul_ufunc(x1, x2, out = None, dtype: type = NoneType):
     if not isinstance(x1, ndarray) or not isinstance(x2, ndarray):
         y1 = asarray(x1)
@@ -2811,15 +2835,8 @@ def _matmul_ufunc(x1, x2, out = None, dtype: type = NoneType):
     if dtype is NoneType:
         return _matmul_ufunc(x1, x2, out=out, dtype=type(coerce(T1, T2)))
 
-    if x1d == 0:
-        compile_error("first argument is 0-dimensional; must be at least 1-d")
-
-    if x2d == 0:
-        compile_error("second argument is 0-dimensional; must be at least 1-d")
-
+    ans_shape = _matmul_shape(x1.shape, x2.shape)
     if x1d == 1 and x2d == 1:
-        if x1.shape != x2.shape:
-            raise ValueError("matmul: vectors have different lengths")
         op = zero(dtype)
         _dot(x1.data, x1.strides[0], x2.data, x2.strides[0], __ptr__(op), x1.size)
         return op
@@ -2833,34 +2850,6 @@ def _matmul_ufunc(x1, x2, out = None, dtype: type = NoneType):
         y2 = x2.reshape((-1, 1))
     else:
         y2 = x2
-
-    y1s = y1.shape
-    y2s = y2.shape
-    y1d: Literal[int] = y1.ndim
-    y2d: Literal[int] = y2.ndim
-
-    base1s = y1s[:-2]
-    base2s = y2s[:-2]
-    mat1s = y1s[-2:]
-    mat2s = y2s[-2:]
-
-    m = mat1s[0]
-    k = mat1s[1]
-    n = mat2s[1]
-
-    if k != mat2s[0]:
-        raise ValueError("matmul: last dimension of first argument does not "
-                         "match second-to-last dimension of second argument")
-
-    ans_base = broadcast_shapes(base1s, base2s)
-    if x1d == 1 and x2d == 1:
-        ans_shape = ans_base
-    elif x1d == 1:
-        ans_shape = ans_base + (mat2s[1],)
-    elif x2d == 1:
-        ans_shape = ans_base + (mat1s[0],)
-    else:
-        ans_shape = ans_base + (mat1s[0], mat2s[1])
 
     if out is None:
         ans = zeros(ans_shape, dtype=dtype)

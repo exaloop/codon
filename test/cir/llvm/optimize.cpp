@@ -603,24 +603,36 @@ def helper_large(values):
 def helper_nested(values):
   return helper_chain(values) + 2
 
+def helper_reordered(values):
+  first = values + 1
+  second = values * 2
+  return second + first
+
+def helper_reordered_matmul(left, right, other_left, other_right):
+  first = left + right
+  second = other_left @ other_right
+  return second + first
+
 def helper_recursive(values: np.ndarray[float, 1]) -> np.ndarray[float, 1]:
   return helper_recursive(values) + 1
 )";
         auto accepted =
-            std::vector<std::string>({"chain", "rebind", "mean", "where", "nested"});
+            std::vector<std::string>({"chain", "rebind", "mean", "where", "nested",
+                                      "reordered", "reordered_matmul"});
         auto rejected =
             std::vector<std::string>({"shared", "uncovered", "effect", "reduction",
                                       "alias", "kept", "branch", "large", "recursive"});
         std::vector<std::string> cases = accepted;
         cases.insert(cases.end(), rejected.begin(), rejected.end());
         for (const auto &name : cases) {
-          auto arguments = name == "uncovered" ? "values, values"
-                           : name == "branch"  ? "values, condition"
-                                               : "values";
-          code +=
-              "\n@export\ndef probe_" + name +
-              "(values: np.ndarray[float, 1], condition: bool):\n    return helper_" +
-              name + "(" + arguments + ") + 2\n";
+          auto arguments = name == "reordered_matmul" ? "values, values, values, values"
+                           : name == "uncovered"      ? "values, values"
+                           : name == "branch"         ? "values, condition"
+                                                      : "values";
+          auto rank = name == "reordered_matmul" ? "2" : "1";
+          code += "\n@export\ndef probe_" + name + "(values: np.ndarray[float, " +
+                  rank + "], condition: bool):\n    return helper_" + name + "(" +
+                  arguments + ") + 2\n";
         }
         code += "\ndef helper_depth_0(values):\n    return values + 1\n";
         for (int depth = 1; depth <= 20; ++depth)
@@ -707,6 +719,15 @@ def staged_rebind(values):
 def fused_staged_rebind(values: np.ndarray[float, 1]):
   return staged_rebind(values) + 2.0
 
+def staged_reordered(left, right):
+  first = left + right
+  second = left * right
+  return second + first
+
+@export
+def fused_staged_reordered(left: np.ndarray[float, 1], right: np.ndarray[float, 1]):
+  return staged_reordered(left, right) + 3.0
+
 def staged_mean(values):
   squared = values * values
   result = np.mean(squared + 1.0)
@@ -757,6 +778,10 @@ def fused_complex_grid(left: np.ndarray[float, 2], right: np.ndarray[float, 2]):
 @export
 def fused_masked_square(values: np.ndarray[complex, 1], other: np.ndarray[complex, 1], mask: np.ndarray[bool, 1]):
   return values[mask] ** 2 + other[mask]
+
+@export
+def masked_gather_reference(values: np.ndarray[complex, 1], mask: np.ndarray[bool, 1]):
+  return values[mask]
 
 @export
 def fused_sum(values: np.ndarray[float, 1]):
@@ -950,11 +975,12 @@ def destination_reference(values: np.ndarray[float, 2]):
           }
           return allocations;
         };
-        for (auto name : {"fused_helper", "fused_staged_helper", "fused_staged_rebind",
-                          "fused_copy_array", "fused_cast_array", "fused_filled_array",
-                          "fused_axis_sum", "fused_axis_any", "fused_axis_min",
-                          "fused_axis_keepdims", "fused_slices",
-                          "fused_scalar_coefficients", "fused_complex_grid"}) {
+        for (auto name :
+             {"fused_helper", "fused_staged_helper", "fused_staged_rebind",
+              "fused_staged_reordered", "fused_copy_array", "fused_cast_array",
+              "fused_filled_array", "fused_axis_sum", "fused_axis_any",
+              "fused_axis_min", "fused_axis_keepdims", "fused_slices",
+              "fused_scalar_coefficients", "fused_complex_grid"}) {
           auto *function = module->getFunction(name);
           ASSERT_NE(nullptr, function);
           auto allocations = allocationCount(function);
@@ -964,7 +990,6 @@ def destination_reference(values: np.ndarray[float, 2]):
         }
         auto *masked = module->getFunction("fused_masked_square");
         ASSERT_NE(nullptr, masked);
-        EXPECT_EQ(2, allocationCount(masked));
         auto *forwarded = module->getFunction("forwarded_axis_sum");
         auto *reference = module->getFunction("axis_sum_reference");
         ASSERT_NE(nullptr, forwarded);
@@ -990,6 +1015,13 @@ def destination_reference(values: np.ndarray[float, 2]):
               return count;
             };
         auto *clipped = module->getFunction("fused_clip");
+        auto *gather = module->getFunction("masked_gather_reference");
+        ASSERT_NE(nullptr, gather);
+        auto expectedMasked = 2 * reachableAllocations(gather) + 1;
+        if (reachableAllocations(masked) != expectedMasked)
+          llvm::errs() << "Masked allocations: " << reachableAllocations(masked)
+                       << ", expected: " << expectedMasked << '\n';
+        EXPECT_EQ(expectedMasked, reachableAllocations(masked));
         ASSERT_NE(nullptr, clipped);
         EXPECT_EQ(2, reachableAllocations(clipped));
         auto *where = module->getFunction("fused_where");

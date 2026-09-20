@@ -540,50 +540,11 @@ def _broadcast(sh1, sh2):
         return bc_same(sh1, sh2)
 
 def _matmul_shape(x1, x2):
-    x1d: Literal[int] = static.len(x1)
-    x2d: Literal[int] = static.len(x2)
+    from .linalg.linalg import _matmul_shape as matmul_shape
+    return matmul_shape(x1, x2)
 
-    if x1d == 0:
-        return x2
-
-    if x2d == 0:
-        return x1
-
-    if x1d == 1:
-        y1 =  (1,) + x1
-    else:
-        y1 = x1
-
-    if x2d == 1:
-        y2 = x2 + (1,)
-    else:
-        y2 = x2
-
-    y1d: Literal[int] = static.len(y1)
-    y2d: Literal[int] = static.len(y2)
-
-    base1s = y1[:-2]
-    base2s = y2[:-2]
-    mat1s = y1[-2:]
-    mat2s = y2[-2:]
-
-    m = mat1s[0]
-    k = mat1s[1]
-    n = mat2s[1]
-
-    if k != mat2s[0]:
-        raise ValueError("matmul: last dimension of first argument does not "
-                         "match second-to-last dimension of second argument")
-
-    ans_base = _broadcast(base1s, base2s)
-    if x1d == 1 and x2d == 1:
-        return ans_base
-    elif x1d == 1:
-        return ans_base + (mat2s[1],)
-    elif x2d == 1:
-        return ans_base + (mat1s[0],)
-    else:
-        return ans_base + (mat1s[0], mat2s[1])
+def _matmul_layout(left, right, dtype: type):
+    return ndarray(_matmul_shape(left.shape, right.shape), Ptr[dtype]())
 
 def _matmul_add_fallback(left, right, bias, output, mode: Literal[int]):
     from .linalg.linalg import _matmul_ufunc

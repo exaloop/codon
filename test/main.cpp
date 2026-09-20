@@ -10,6 +10,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <sys/resource.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <tuple>
@@ -258,6 +259,23 @@ public:
     auto fn = [this]() {
       auto file = getFilename(get<0>(GetParam()));
       bool debug = get<1>(GetParam());
+      auto *diagnosticFilter = std::getenv("CODON_TEST_DIAGNOSTICS");
+      bool diagnostics =
+          diagnosticFilter && file.find(diagnosticFilter) != string::npos;
+      auto reportPhase = [&](const char *phase) {
+        if (!diagnostics)
+          return;
+        struct rusage usage = {};
+        getrusage(RUSAGE_SELF, &usage);
+        auto peakKiB = usage.ru_maxrss;
+#ifdef __APPLE__
+        peakKiB /= 1024;
+#endif
+        fprintf(stderr, "[codon-test] %s mode=%s pid=%ld phase=%s peak_rss_kib=%ld\n",
+                file.c_str(), debug ? "debug" : "release", long(getpid()), phase,
+                long(peakKiB));
+        fflush(stderr);
+      };
       auto code = get<3>(GetParam());
       auto startLine = get<4>(GetParam());
       int testFlags = 1 + get<5>(GetParam());
@@ -271,6 +289,7 @@ public:
       options->pynum = pyNumerics;
 
       auto compiler = std::make_unique<Compiler>(*options);
+      reportPhase("parse");
       // make sure we abort() on runtime error
       llvm::handleAllErrors(code.empty()
                                 ? compiler->parseFile(file, testFlags)
@@ -296,10 +315,13 @@ public:
                                 ir::analyze::dataflow::DominatorAnalysis::KEY});
       pm->registerPass(std::make_unique<EscapeValidator>(capKey), /*insertBefore=*/"",
                        {capKey});
+      reportPhase("compile");
       llvm::cantFail(compiler->compile());
 
+      reportPhase("execute");
       if (run)
         compiler->getLLVMVisitor()->run({file});
+      reportPhase("complete");
       fflush(stdout);
     };
 
@@ -319,9 +341,39 @@ public:
       GC_atfork_parent();
       int status = -1;
       close(out_pipe[1]);
-      assert(waitpid(pid, &status, 0) == pid);
+      struct rusage usage = {};
+      assert(wait4(pid, &status, 0, &usage) == pid);
       read(out_pipe[0], buf.data(), buf.size() - 1);
       close(out_pipe[0]);
+      auto *diagnosticFilter = std::getenv("CODON_TEST_DIAGNOSTICS");
+      bool diagnostics =
+          diagnosticFilter && get<0>(GetParam()).find(diagnosticFilter) != string::npos;
+      if (!WIFEXITED(status) || diagnostics) {
+        auto peakKiB = usage.ru_maxrss;
+#ifdef __APPLE__
+        peakKiB /= 1024;
+#endif
+        fprintf(stderr,
+                "[codon-test] %s mode=%s pid=%ld wait_status=%d "
+                "peak_rss_kib=%ld user_seconds=%ld system_seconds=%ld\n",
+                get<0>(GetParam()).c_str(), get<1>(GetParam()) ? "debug" : "release",
+                long(pid), status, long(peakKiB), long(usage.ru_utime.tv_sec),
+                long(usage.ru_stime.tv_sec));
+#ifdef __linux__
+        if (!WIFEXITED(status)) {
+          for (auto path :
+               {"/proc/meminfo", "/sys/fs/cgroup/memory.events",
+                "/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory.peak",
+                "/sys/fs/cgroup/memory.current", "/sys/fs/cgroup/memory/memory.failcnt",
+                "/sys/fs/cgroup/memory/memory.max_usage_in_bytes",
+                "/sys/fs/cgroup/memory/memory.limit_in_bytes"}) {
+            std::ifstream input(path);
+            if (input)
+              std::cerr << "[codon-test] " << path << '\n' << input.rdbuf() << '\n';
+          }
+        }
+#endif
+      }
       return status;
     }
     return -1;
