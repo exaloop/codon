@@ -15,6 +15,12 @@
 #include <fmt/format.h>
 #include <fmt/ostream.h>
 
+#ifdef _WIN32
+// POSIX provides a global `id_t` (via <sys/types.h>) that some headers reference
+// unqualified (e.g. std::hash specializations); Windows has none, so supply it.
+using id_t = std::int64_t;
+#endif
+
 namespace codon {
 namespace ir {
 

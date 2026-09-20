@@ -353,6 +353,11 @@ def lcm(*args):
 
 @pure
 def frexp(x: float) -> Tuple[float, int]:
+    # Non-finite inputs: C frexp leaves the exponent (and on some libc's, e.g.
+    # MSVC, the mantissa) unspecified. Match CPython: frexp(±inf)=(±inf,0),
+    # frexp(nan)=(nan,0). (No-op on glibc, which already returns these.)
+    if not isfinite(x):
+        return (x, 0)
     tmp = i32(0)
     res = _C.frexp(float(x), __ptr__(tmp))
     return (res, int(tmp))

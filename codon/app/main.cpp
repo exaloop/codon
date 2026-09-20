@@ -1,5 +1,46 @@
 // Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
+#if defined(_WIN32) && !defined(CODON_CLI_IN_COMPILER)
+// On Windows, LLVM is statically linked into both codon.exe and codonc.dll, so
+// each binary owns a separate llvm::cl CommandLine registry. The CLI driver
+// below must therefore be compiled INTO codonc (CODON_CLI_IN_COMPILER), where
+// the cl::opt flag globals it parses live; codon.exe is this thin shim that
+// forwards to it. `jupyter` mode stays exe-side since it depends on
+// codon_jupyter, not on codonc's compile flags.
+#include <string>
+#include <vector>
+
+#include "codon/util/jupyter.h"
+#include "llvm/Support/CommandLine.h"
+
+extern "C" int codon_cli_main(int argc, const char **argv);
+
+namespace {
+int jupyterMode(const std::vector<const char *> &args) {
+  llvm::cl::list<std::string> plugins("plugin",
+                                      llvm::cl::desc("Load specified plugin"));
+  llvm::cl::opt<std::string> input(llvm::cl::Positional,
+                                   llvm::cl::desc("<connection file>"),
+                                   llvm::cl::init("connection.json"));
+  llvm::cl::ParseCommandLineOptions(args.size(), args.data());
+  return codon::startJupyterKernel(args[0], plugins, input);
+}
+} // namespace
+
+int main(int argc, const char **argv) {
+  if (argc > 1 && std::string(argv[1]) == "jupyter") {
+    std::vector<const char *> args{argv[0]};
+    for (int i = 2; i < argc; i++)
+      args.push_back(argv[i]);
+    std::string argv0 = std::string(argv[0]) + " jupyter";
+    args[0] = argv0.data();
+    return jupyterMode(args);
+  }
+  return codon_cli_main(argc, argv);
+}
+
+#else // full CLI driver (compiled into codonc on Windows, into codon.exe elsewhere)
+
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -18,7 +59,9 @@
 #include "codon/compiler/options.h"
 #include "codon/parser/common.h"
 #include "codon/util/common.h"
+#ifndef CODON_CLI_IN_COMPILER
 #include "codon/util/jupyter.h"
+#endif
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileSystem.h"
 
@@ -422,6 +465,9 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
   return EXIT_SUCCESS;
 }
 
+#ifndef CODON_CLI_IN_COMPILER
+// When the driver is compiled into codonc, `jupyter` mode is handled by the
+// codon.exe shim above, keeping codonc independent of codon_jupyter.
 int jupyterMode(const std::vector<const char *> &args) {
   llvm::cl::list<std::string> plugins("plugin",
                                       llvm::cl::desc("Load specified plugin"));
@@ -432,6 +478,7 @@ int jupyterMode(const std::vector<const char *> &args) {
   int code = codon::startJupyterKernel(args[0], plugins, input);
   return code;
 }
+#endif // CODON_CLI_IN_COMPILER
 
 void showCommandsAndExit() {
   codon::compilationError("Available commands: codon <run|build|doc>");
@@ -450,7 +497,11 @@ int otherMode(const std::vector<const char *> &args) {
   return EXIT_SUCCESS;
 }
 
+#ifdef CODON_CLI_IN_COMPILER
+extern "C" int codon_cli_main(int argc, const char **argv) {
+#else
 int main(int argc, const char **argv) {
+#endif
   if (argc < 2)
     showCommandsAndExit();
 
@@ -479,9 +530,13 @@ int main(int argc, const char **argv) {
     args[0] = argv0.data();
     return jitMode(args);
   }
+#ifndef CODON_CLI_IN_COMPILER
   if (mode == "jupyter") {
     args[0] = argv0.data();
     return jupyterMode(args);
   }
+#endif
   return otherMode({argv, argv + argc});
 }
+
+#endif // _WIN32 shim
