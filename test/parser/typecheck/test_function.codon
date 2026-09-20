@@ -831,7 +831,7 @@ def foo(x, a=[]):
 foo(1.1)
 #: [1.1]
 foo(2)
-#: [1.1, 2]
+#: [1.1, 2.0]
 
 
 #%% fn_defaults_err,barebones

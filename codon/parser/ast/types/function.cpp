@@ -15,6 +15,13 @@ FuncType::FuncType(const ClassType *baseType, FunctionStmt *ast,
     : ClassType(baseType), ast(ast), funcGenerics(std::move(funcGenerics)),
       funcParent(std::move(funcParent)) {}
 
+// Instantiation/generalization produce a private temporary base. Take its storage
+// instead of copying its generic names and shared pointers into the function type.
+FuncType::FuncType(ClassType &&baseType, FunctionStmt *ast,
+                   std::vector<Generic> funcGenerics, TypePtr funcParent)
+    : ClassType(std::move(baseType)), ast(ast), funcGenerics(std::move(funcGenerics)),
+      funcParent(std::move(funcParent)) {}
+
 int FuncType::unify(Type *typ, Unification *us) {
   if (this == typ)
     return 0;
@@ -43,18 +50,20 @@ int FuncType::unify(Type *typ, Unification *us) {
 
 TypePtr FuncType::generalize(int atLevel) const {
   std::vector<Generic> fg;
+  fg.reserve(funcGenerics.size());
   for (auto &t : funcGenerics)
     fg.push_back(t.generalize(atLevel));
   auto p = funcParent ? funcParent->generalize(atLevel) : nullptr;
 
   auto r = std::static_pointer_cast<ClassType>(this->ClassType::generalize(atLevel));
-  auto t = std::make_shared<FuncType>(r->getClass(), ast, fg, p);
+  auto t = std::make_shared<FuncType>(std::move(*r), ast, std::move(fg), std::move(p));
   return t;
 }
 
 TypePtr FuncType::instantiate(int atLevel, int *unboundCount,
                               std::unordered_map<int, TypePtr> *cache) const {
   std::vector<Generic> fg;
+  fg.reserve(funcGenerics.size());
   for (auto &t : funcGenerics) {
     fg.push_back(t.instantiate(atLevel, unboundCount, cache));
     if (cache && fg.back().type) {
@@ -65,7 +74,7 @@ TypePtr FuncType::instantiate(int atLevel, int *unboundCount,
   auto p = funcParent ? funcParent->instantiate(atLevel, unboundCount, cache) : nullptr;
   auto r = std::static_pointer_cast<ClassType>(
       this->ClassType::instantiate(atLevel, unboundCount, cache));
-  auto t = std::make_shared<FuncType>(r->getClass(), ast, fg, p);
+  auto t = std::make_shared<FuncType>(std::move(*r), ast, std::move(fg), std::move(p));
   return t;
 }
 

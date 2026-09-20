@@ -16,6 +16,16 @@
 
 namespace codon {
 
+namespace {
+std::error_code releaseMappedMemory(llvm::sys::MemoryBlock &block) {
+  if (block.allocatedSize()) {
+    auto *start = static_cast<char *>(block.base());
+    seq_gc_remove_roots(start, start + block.allocatedSize());
+  }
+  return llvm::sys::Memory::releaseMappedMemory(block);
+}
+} // namespace
+
 class BoehmGCJITLinkMemoryManager::IPInFlightAlloc
     : public llvm::jitlink::JITLinkMemoryManager::InFlightAlloc {
 public:
@@ -43,7 +53,7 @@ public:
     }
 
     // Release the finalize segments slab.
-    if (auto EC = llvm::sys::Memory::releaseMappedMemory(FinalizationSegments)) {
+    if (auto EC = releaseMappedMemory(FinalizationSegments)) {
       OnFinalized(llvm::errorCodeToError(EC));
       return;
     }
@@ -55,9 +65,9 @@ public:
 
   void abandon(OnAbandonedFunction OnAbandoned) override {
     llvm::Error Err = llvm::Error::success();
-    if (auto EC = llvm::sys::Memory::releaseMappedMemory(FinalizationSegments))
+    if (auto EC = releaseMappedMemory(FinalizationSegments))
       Err = llvm::joinErrors(std::move(Err), llvm::errorCodeToError(EC));
-    if (auto EC = llvm::sys::Memory::releaseMappedMemory(StandardSegments))
+    if (auto EC = releaseMappedMemory(StandardSegments))
       Err = llvm::joinErrors(std::move(Err), llvm::errorCodeToError(EC));
     OnAbandoned(std::move(Err));
   }
@@ -250,6 +260,10 @@ void BoehmGCJITLinkMemoryManager::allocate(const llvm::jitlink::JITLinkDylib *JD
   }
 
   if (auto Err = BL.apply()) {
+    if (auto EC = releaseMappedMemory(FinalizeSegsMem))
+      Err = llvm::joinErrors(std::move(Err), llvm::errorCodeToError(EC));
+    if (auto EC = releaseMappedMemory(StandardSegsMem))
+      Err = llvm::joinErrors(std::move(Err), llvm::errorCodeToError(EC));
     OnAllocated(std::move(Err));
     return;
   }
@@ -288,7 +302,7 @@ void BoehmGCJITLinkMemoryManager::deallocate(std::vector<FinalizedAlloc> Allocs,
     }
 
     /// Release the standard segments slab.
-    if (auto EC = llvm::sys::Memory::releaseMappedMemory(StandardSegments))
+    if (auto EC = releaseMappedMemory(StandardSegments))
       DeallocErr = llvm::joinErrors(std::move(DeallocErr), llvm::errorCodeToError(EC));
 
     DeallocActionsList.pop_back();

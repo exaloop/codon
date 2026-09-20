@@ -244,8 +244,7 @@ class EventLoop:
         return self._call_soon(item, return_handle=True)
 
     def call_soon_threadsafe(self, callback, *args):
-        with self._lock:
-            return self.call_soon(callback, *args)
+        return self.call_soon(callback, *args)
 
     def _call_later(self, work: WorkItem, delay: float, return_handle: Literal[bool] = False):
         timer = Timer(work, self.time() + delay)

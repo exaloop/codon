@@ -183,7 +183,7 @@ std::string StringExpr::getValue() const {
   return strings[0].value;
 }
 bool StringExpr::isSimple() const {
-  return strings.size() == 1 && strings[0].prefix.empty();
+  return strings.size() == 1 && (strings[0].prefix.empty() || strings[0].prefix == "b");
 }
 
 IdExpr::IdExpr(std::string value) : AcceptorExtend(), value(std::move(value)) {}

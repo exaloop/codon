@@ -13,6 +13,22 @@ on:
       - develop
 
 jobs:
+  unicode_tables:
+    name: Verify Unicode Tables
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14.3'
+      - name: Verify bundle and regeneration
+        run: |
+          python scripts/unicode/test_tables.py
+          python scripts/unicode_tables.py verify
+          python scripts/unicode_tables.py fetch --ucd-dir build/unicode-16.0.0
+          python scripts/unicode_tables.py regenerate --ucd-dir build/unicode-16.0.0 --output-dir build/unicode-check
+          python scripts/unicode_tables.py check --input-dir build/unicode-check
+
   create_release:
     name: GitHub Release
     runs-on: ubuntu-latest
@@ -44,7 +60,7 @@ jobs:
             arch: darwin-arm64
     runs-on: ${{ matrix.os }}
     name: Build Codon
-    needs: create_release
+    needs: [create_release, unicode_tables]
     permissions:
       contents: write
       id-token: write

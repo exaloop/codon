@@ -1,5 +1,9 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
+"""
+Refer to [`internal.gpu`](@internal.gpu) for full functionality.
+"""
+
 from internal.gpu import *
 
 cuda_init()

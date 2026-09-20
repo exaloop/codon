@@ -1,9 +1,181 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
+import internal.static as static
+import internal.gc as gc
+
 _MAX: Literal[int] = 0x7FFFFFFFFFFFFFFF
 
+
+def _bytes_hex_value(value: u8) -> int:
+    if u8(0x30) <= value <= u8(0x39):
+        return int(value) - 0x30
+    if u8(0x41) <= value <= u8(0x46):
+        return int(value) - 0x41 + 10
+    if u8(0x61) <= value <= u8(0x66):
+        return int(value) - 0x61 + 10
+    return -1
+
+
+def _bytes_fromhex_whitespace(value: u8) -> bool:
+    return (
+        value == u8(0x09)
+        or value == u8(0x0A)
+        or value == u8(0x0B)
+        or value == u8(0x0C)
+        or value == u8(0x0D)
+        or value == u8(0x20)
+    )
+
 @extend
-class str:
+class bytes:
+    @__internal__
+    def __new__(p: Ptr[u8], l: int) -> bytes:
+        pass
+
+    @overload
+    def __new__() -> bytes:
+        return bytes(Ptr[u8](), 0)
+
+    @overload
+    def __new__(what) -> bytes:
+        return what.__bytes__()
+
+    @overload
+    def __new__(what: bytes) -> bytes:
+        return what
+
+    def __new__(what: str, encoding: str, errors: str = "strict") -> bytes:
+        return what.encode(encoding, errors)
+
+    def decode(self, encoding: str = "utf-8", errors: str = "strict") -> str:
+        return str(self, encoding, errors)
+
+    def __str__(self) -> str:
+        return self.__repr__()
+
+    def __bytes__(self) -> bytes:
+        return self
+
+    def __len__(self) -> int:
+        return self._len
+
+    def __bool__(self) -> bool:
+        return self._len != 0
+
+    def __copy__(self) -> bytes:
+        return self
+
+    def __deepcopy__(self) -> bytes:
+        return self
+
+    def __ptrcopy__(self) -> bytes:
+        n = self._len
+        p = cobj(n)
+        bytes.memcpy(p, self._ptr, n)
+        return bytes(p, n)
+
+    @llvm
+    def memcpy(dest: Ptr[u8], src: Ptr[u8], len: int) -> None:
+        declare void @llvm.memcpy.p0i8.p0i8.i64(ptr %dest, ptr %src, i64 %len, i32 %align, i1 %isvolatile)
+        call void @llvm.memcpy.p0i8.p0i8.i64(ptr %dest, ptr %src, i64 %len, i32 0, i1 false)
+        ret {} {}
+
+    @llvm
+    def memmove(dest: Ptr[u8], src: Ptr[u8], len: int) -> None:
+        declare void @llvm.memmove.p0i8.p0i8.i64(ptr %dest, ptr %src, i64 %len, i32 %align, i1 %isvolatile)
+        call void @llvm.memmove.p0i8.p0i8.i64(ptr %dest, ptr %src, i64 %len, i32 0, i1 false)
+        ret {} {}
+
+    @llvm
+    def memset(dest: Ptr[u8], val: u8, len: int) -> None:
+        declare void @llvm.memset.p0i8.i64(ptr %dest, i8 %val, i64 %len, i32 %align, i1 %isvolatile)
+        call void @llvm.memset.p0i8.i64(ptr %dest, i8 %val, i64 %len, i32 0, i1 false)
+        ret {} {}
+
+    def __add__(self, other: bytes) -> bytes:
+        len1 = self._len
+        len2 = other._len
+        len3 = len1 + len2
+        p = Ptr[u8](len3)
+        bytes.memcpy(p, self._ptr, len1)
+        bytes.memcpy(p + len1, other._ptr, len2)
+        return bytes(p, len3)
+
+    def c_str(self) -> cobj:
+        n = self.__len__()
+        p = cobj(n + 1)
+        bytes.memcpy(p, self._ptr, n)
+        p[n] = u8(0)
+        return p
+
+    def from_ptr(t: cobj) -> bytes:
+        n = _C.strlen(t)
+        p = Ptr[u8](n)
+        bytes.memcpy(p, t, n)
+        return bytes(p, n)
+
+    def __eq__(self, other: bytes) -> bool:
+        if self._len != other._len:
+            return False
+        i = 0
+        while i < self._len:
+            if self._ptr[i] != other._ptr[i]:
+                return False
+            i += 1
+        return True
+
+    def __match__(self, obj: bytes) -> bool:
+        return self.__eq__(obj)
+
+    def __ne__(self, other: bytes) -> bool:
+        return not self.__eq__(other)
+
+    def cat(*args) -> bytes:
+        total = 0
+        if (
+            static.len(args) == 1
+            and hasattr(args[0], "__iter__")
+            and hasattr(args[0], "__len__")
+        ):
+            for s in args[0]:
+                if not isinstance(s, bytes):
+                    compile_error("not a string")
+                total += s._len
+            p = cobj(total)
+            n = 0
+            for s in args[0]:
+                bytes.memcpy(p + n, s._ptr, s._len)
+                n += s._len
+            return bytes(p, total)
+        elif static.len(args) == 1 and hasattr(args[0], "__iter__"):
+            sz = 10
+            p = cobj(sz)
+            n = 0
+            for s in args[0]:
+                if not isinstance(s, bytes):
+                    compile_error("not a string")
+                if n + s._len > sz:
+                    sz = 1 + 3 * (n + s._len).cdiv(2)
+                    pp = cobj(sz)
+                    bytes.memcpy(pp, p, n)
+                    p = pp
+                bytes.memcpy(p + n, s._ptr, s._len)
+                n += s._len
+            return bytes(p, n)
+        else:
+            for i in static.range(static.len(args)):
+                s = args[i]
+                if not isinstance(s, bytes):
+                    compile_error("not bytes")
+                total += s._len
+            p = cobj(total)
+            n = 0
+            for i in static.range(static.len(args)):
+                s = args[i]
+                bytes.memcpy(p + n, s._ptr, s._len)
+                n += s._len
+            return bytes(p, total)
+
     # Magic methods
 
     def __hash__(self) -> int:
@@ -15,107 +187,129 @@ class str:
             i += 1
         return h
 
-    def __lt__(self, other: str) -> bool:
+    def __lt__(self, other: bytes) -> bool:
         return self._cmp(other) < 0
 
-    def __le__(self, other: str) -> bool:
+    def __le__(self, other: bytes) -> bool:
         return self._cmp(other) <= 0
 
-    def __gt__(self, other: str) -> bool:
+    def __gt__(self, other: bytes) -> bool:
         return self._cmp(other) > 0
 
-    def __ge__(self, other: str) -> bool:
+    def __ge__(self, other: bytes) -> bool:
         return self._cmp(other) >= 0
 
     def __repr__(self) -> str:
-        v = _strbuf(len(self) + 2)
-
-        q, qe = "'", "\\'"
-        found_single = False
+        q = 0x27
+        single_quotes = 0
         found_double = False
+        size = 3  # b and two quotes
         for c in self:
-            if c == "'":
-                found_single = True
-            elif c == '"':
+            if c == 0x27:
+                single_quotes += 1
+            elif c == 0x22:
                 found_double = True
 
-        if found_single and not found_double:
-            q, qe = '"', '\\"'
-
-        v.append(q)
-        for c in self:
-            d = c
-            if c == "\n":
-                d = "\\n"
-            elif c == "\r":
-                d = "\\r"
-            elif c == "\t":
-                d = "\\t"
-            elif c == "\\":
-                d = "\\\\"
-            elif c == q:
-                d = qe
+            if (
+                c == 0x09
+                or c == 0x0A
+                or c == 0x0D
+                or c == 0x5C
+                or c == q
+            ):
+                size += 2
+            elif 0x20 <= c <= 0x7E:
+                size += 1
             else:
-                b = int(c._ptr[0])
-                if not (32 <= b <= 126):
-                    h = "0123456789abcdef"
-                    v.append("\\x")
-                    v.append(h[b.cdiv(16)])
-                    v.append(h[b.cmod(16)])
-                    d = ""
-            if d:
-                v.append(d)
-        v.append(q)
-        return v.__str__()
+                size += 4
 
-    def __getitem__(self, idx: int) -> str:
+        if single_quotes > 0 and not found_double:
+            q = 0x22
+            size -= single_quotes
+
+        p = Ptr[u8](size)
+        n = 0
+        p[n] = u8(0x62)  # b
+        n += 1
+        p[n] = u8(q)
+        n += 1
+        for c in self:
+            if c == 0x09:
+                p[n], p[n + 1] = u8(0x5C), u8(0x74)
+                n += 2
+            elif c == 0x0A:
+                p[n], p[n + 1] = u8(0x5C), u8(0x6E)
+                n += 2
+            elif c == 0x0D:
+                p[n], p[n + 1] = u8(0x5C), u8(0x72)
+                n += 2
+            elif c == 0x5C or c == q:
+                p[n], p[n + 1] = u8(0x5C), u8(c)
+                n += 2
+            elif 0x20 <= c <= 0x7E:
+                p[n] = u8(c)
+                n += 1
+            else:
+                p[n], p[n + 1] = u8(0x5C), u8(0x78)
+                p[n + 2] = u8(0x30 + c.cdiv(16) if c.cdiv(16) < 10 else 0x61 + c.cdiv(16) - 10)
+                p[n + 3] = u8(0x30 + c.cmod(16) if c.cmod(16) < 10 else 0x61 + c.cmod(16) - 10)
+                n += 4
+        p[n] = u8(q)
+        return str(bytes(p, n + 1), "ascii")
+
+    def __getitem__(self, idx: int) -> int:
         if idx < 0:
             idx += len(self)
         if not (0 <= idx < len(self)):
-            raise IndexError("string index out of range")
-        return str(self._ptr + idx, 1)
+            raise IndexError("index out of range")
+        return int(self._ptr[idx])
 
-    def __getitem__(self, s: Slice) -> str:
+    def __getitem__(self, s: Slice) -> bytes:
         if s.start is None and s.stop is None and s.step is None:
             return self.__copy__()
         elif s.step is None:
             start, stop, step, length = s.adjust_indices(len(self))
-            return str(self._ptr + start, length)
+            return bytes(self._ptr + start, length)
         else:
             start, stop, step, length = s.adjust_indices(len(self))
             return self._make_from_range(start, stop, step, length)
 
-    def _make_from_range(self, start: int, stop: int, step: int, length: int) -> str:
+    def _make_from_range(self, start: int, stop: int, step: int, length: int) -> bytes:
         p = Ptr[u8](length)
         j = 0
         for i in range(start, stop, step):
             p[j] = self._ptr[i]
             j += 1
-        return str(p, length)
+        return bytes(p, length)
 
-    def __iter__(self) -> Generator[str]:
+    def __iter__(self) -> Generator[int]:
         i = 0
         n = len(self)
         while i < n:
-            yield str(self._ptr + i, 1)
+            yield int(self._ptr[i])
             i += 1
 
-    def __reversed__(self) -> Generator[str]:
+    def __reversed__(self) -> Generator[int]:
         i = len(self) - 1
         while i >= 0:
-            yield str(self._ptr + i, 1)
+            yield int(self._ptr[i])
             i -= 1
 
-    def __mul__(self, x: int) -> str:
+    def __mul__(self, x: int) -> bytes:
+        if x <= 0:
+            return bytes()
         total = x * self._len
         p = Ptr[u8](total)
         n = 0
         for _ in range(x):
-            str.memcpy(p + n, self._ptr, self._len)
+            bytes.memcpy(p + n, self._ptr, self._len)
             n += self._len
-        return str(p, total)
+        return bytes(p, total)
 
-    def _cmp(self, other: str) -> int:
+    def __rmul__(self, x: int) -> bytes:
+        return self * x
+
+    def _cmp(self, other: bytes) -> int:
         n = min(self._len, other._len)
         i = 0
         while i < n:
@@ -129,8 +323,8 @@ class str:
 import algorithms.strings as algorithms
 
 @extend
-class str:
-    def __contains__(self, pattern: str) -> bool:
+class bytes:
+    def __contains__(self, pattern: bytes) -> bool:
         return self.find(pattern) >= 0
 
     # Helper methods
@@ -159,34 +353,154 @@ class str:
     def _tolower(a: u8) -> u8:
         return u8(int(_C.tolower(i32(int(a)))))
 
-    def _slice(self, i: int, j: int) -> str:
-        return str(self._ptr + i, j - i)
+    def _slice(self, i: int, j: int) -> bytes:
+        return bytes(self._ptr + i, j - i)
 
-    def _at(self, i: int) -> str:
-        return str(self._ptr + i, 1)
+    def _at(self, i: int) -> int:
+        return int(self._ptr[i])
 
-    def join(self, l: Generator[str]) -> str:
-        buf = _strbuf()
-        if len(self) == 0:
-            for a in l:
-                buf.append(a)
-        else:
-            first = True
-            for a in l:
-                if first:
-                    first = False
-                else:
-                    buf.append(self)
-                buf.append(a)
-        return buf.__str__()
+    @staticmethod
+    def _fromhex(value: bytes) -> bytes:
+        p = Ptr[u8](len(value).cdiv(2))
+        i = 0
+        n = 0
+        while i < len(value):
+            while i < len(value) and _bytes_fromhex_whitespace(value._ptr[i]):
+                i += 1
+            if i == len(value):
+                break
 
-    def join(self, l: List[str]) -> str:
+            high = _bytes_hex_value(value._ptr[i])
+            if high < 0:
+                raise ValueError(
+                    f"non-hexadecimal number found in fromhex() arg at position {i}"
+                )
+            i += 1
+            if i == len(value):
+                raise ValueError(
+                    "fromhex() arg must contain an even number of hexadecimal digits"
+                )
+
+            low = _bytes_hex_value(value._ptr[i])
+            if low < 0:
+                raise ValueError(
+                    f"non-hexadecimal number found in fromhex() arg at position {i}"
+                )
+            p[n] = u8((high << 4) | low)
+            n += 1
+            i += 1
+        return bytes(p, n)
+
+    @staticmethod
+    def fromhex(value) -> bytes:
+        return bytes._fromhex(bytes(value))
+
+    @staticmethod
+    def fromhex(value: str) -> bytes:
+        for i in range(len(value)):
+            if ord(value[i]) > 0x7F:
+                raise ValueError(
+                    f"non-hexadecimal number found in fromhex() arg at position {i}"
+                )
+        return bytes._fromhex(bytes(value, "ascii"))
+
+    @staticmethod
+    def fromhex(value: bytes) -> bytes:
+        return bytes._fromhex(value)
+
+    def _hex(self, separator: int, bytes_per_sep: int) -> str:
+        group = abs(bytes_per_sep)
+        separator_count = 0
+        if group > 0 and len(self) > 1:
+            separator_count = (len(self) - 1).cdiv(group)
+
+        p = Ptr[u8](2 * len(self) + separator_count)
+        j = 0
+        for i in range(len(self)):
+            if i > 0 and group > 0:
+                separate = (
+                    bytes_per_sep > 0 and (len(self) - i).cmod(group) == 0
+                ) or (
+                    bytes_per_sep < 0 and i.cmod(group) == 0
+                )
+                if separate:
+                    p[j] = u8(separator)
+                    j += 1
+
+            value = int(self._ptr[i])
+            high = value >> 4
+            low = value & 0x0F
+            p[j] = u8(0x30 + high if high < 10 else 0x61 + high - 10)
+            p[j + 1] = u8(0x30 + low if low < 10 else 0x61 + low - 10)
+            j += 2
+        return str(bytes(p, j), "ascii")
+
+    def hex(self) -> str:
+        return self._hex(0, 0)
+
+    def hex(self, sep: str, bytes_per_sep: int = 1) -> str:
+        if len(sep) != 1:
+            raise ValueError("sep must be length 1")
+        separator = ord(sep)
+        if separator > 0x7F:
+            raise ValueError("sep must be ASCII")
+        return self._hex(separator, bytes_per_sep)
+
+    def hex(self, sep: bytes, bytes_per_sep: int = 1) -> str:
+        if len(sep) != 1:
+            raise ValueError("sep must be length 1")
+        if sep[0] > 0x7F:
+            raise ValueError("sep must be ASCII")
+        return self._hex(sep[0], bytes_per_sep)
+
+    @staticmethod
+    def maketrans(source, replacement) -> bytes:
+        source: bytes = bytes(source)
+        replacement: bytes = bytes(replacement)
+        if len(source) != len(replacement):
+            raise ValueError("maketrans arguments must have same length")
+
+        p = Ptr[u8](256)
+        for i in range(256):
+            p[i] = u8(i)
+        for i in range(len(source)):
+            p[int(source._ptr[i])] = replacement._ptr[i]
+        return bytes(p, 256)
+
+    def join(self, l: Generator[bytes]) -> bytes:
+        capacity = 16
+        data = Ptr[u8](capacity)
+        length = 0
+        first = True
+
+        for value in l:
+            separator_length = 0 if first else len(self)
+            required = length + separator_length + len(value)
+
+            if required > capacity:
+                old_capacity = capacity
+                while capacity < required:
+                    capacity *= 2
+                data = gc.realloc(data, capacity, old_capacity)
+
+            if not first:
+                bytes.memcpy(data + length, self._ptr, separator_length)
+                length += separator_length
+            else:
+                first = False
+
+            bytes.memcpy(data + length, value._ptr, len(value))
+            length += len(value)
+
+        return bytes(data, length)
+
+    def join(self, l: List[bytes]) -> bytes:
         if len(l) == 0:
-            return ""
+            return bytes()
         if len(l) == 1:
             return l[0]
         if len(self) == 0:
-            return str.cat(l)
+            return bytes.cat(l)
 
         # compute length
         n = 0
@@ -202,21 +516,21 @@ class str:
         r = 0
         i = 0
         while i < len(l):
-            str.memcpy(p + r, l[i]._ptr, len(l[i]))
+            bytes.memcpy(p + r, l[i]._ptr, len(l[i]))
             r += len(l[i])
             if i < len(l) - 1:
-                str.memcpy(p + r, self._ptr, len(self))
+                bytes.memcpy(p + r, self._ptr, len(self))
                 r += len(self)
             i += 1
 
-        return str(p, n)
+        return bytes(p, n)
 
     def isdigit(self) -> bool:
         if len(self) == 0:
             return False
 
         for i in range(len(self)):
-            if not str._isdigit(self._ptr[i]):
+            if not bytes._isdigit(self._ptr[i]):
                 return False
         return True
 
@@ -229,12 +543,12 @@ class str:
 
         # For single character strings
         if len(self) == 1:
-            return str._islower(self._ptr[0])
+            return bytes._islower(self._ptr[0])
 
         for i in range(len(self)):
-            if str._isupper(self._ptr[i]):
+            if bytes._isupper(self._ptr[i]):
                 return False
-            elif not cased and str._islower(self._ptr[i]):
+            elif not cased and bytes._islower(self._ptr[i]):
                 cased = True
         return cased
 
@@ -247,12 +561,12 @@ class str:
 
         # For single character strings
         if len(self) == 1:
-            return str._isupper(self._ptr[0])
+            return bytes._isupper(self._ptr[0])
 
         for i in range(len(self)):
-            if str._islower(self._ptr[i]):
+            if bytes._islower(self._ptr[i]):
                 return False
-            elif not cased and str._isupper(self._ptr[i]):
+            elif not cased and bytes._isupper(self._ptr[i]):
                 cased = True
         return cased
 
@@ -261,7 +575,7 @@ class str:
             return False
 
         for i in range(len(self)):
-            if not str._isalnum(self._ptr[i]):
+            if not bytes._isalnum(self._ptr[i]):
                 return False
         return True
 
@@ -270,7 +584,7 @@ class str:
             return False
 
         for i in range(len(self)):
-            if not str._isalpha(self._ptr[i]):
+            if not bytes._isalpha(self._ptr[i]):
                 return False
         return True
 
@@ -279,7 +593,7 @@ class str:
             return False
 
         for i in range(len(self)):
-            if not str._isspace(self._ptr[i]):
+            if not bytes._isspace(self._ptr[i]):
                 return False
         return True
 
@@ -291,17 +605,17 @@ class str:
 
         # For single character strings
         if len(self) == 1:
-            return str._isupper(self._ptr[0])
+            return bytes._isupper(self._ptr[0])
 
         cased = False
         prev_is_cased = False
         for i in range(len(self)):
-            if str._isupper(self._ptr[i]):
+            if bytes._isupper(self._ptr[i]):
                 if prev_is_cased:
                     return False
                 prev_is_cased = True
                 cased = True
-            elif str._islower(self._ptr[i]):
+            elif bytes._islower(self._ptr[i]):
                 if not prev_is_cased:
                     return False
                 prev_is_cased = True
@@ -310,15 +624,15 @@ class str:
                 prev_is_cased = False
         return cased
 
-    def capitalize(self) -> str:
+    def capitalize(self) -> bytes:
         n = len(self)
         if n > 0:
             p = Ptr[u8](n)
-            p[0] = str._toupper(self._ptr[0])
+            p[0] = bytes._toupper(self._ptr[0])
             for i in range(1, n):
-                p[i] = str._tolower(self._ptr[i])
-            return str(p, n)
-        return ""
+                p[i] = bytes._tolower(self._ptr[i])
+            return bytes(p, n)
+        return bytes()
 
     def isdecimal(self) -> bool:
         if len(self) == 0:
@@ -330,25 +644,25 @@ class str:
                 return False
         return True
 
-    def lower(self) -> str:
+    def lower(self) -> bytes:
         # Empty string
         n = len(self)
         if n == 0:
-            return ""
+            return bytes()
         p = Ptr[u8](n)
         for i in range(n):
-            p[i] = str._tolower(self._ptr[i])
-        return str(p, n)
+            p[i] = bytes._tolower(self._ptr[i])
+        return bytes(p, n)
 
-    def upper(self) -> str:
+    def upper(self) -> bytes:
         # Empty string
         n = len(self)
         if n == 0:
-            return ""
+            return bytes()
         p = Ptr[u8](n)
         for i in range(n):
-            p[i] = str._toupper(self._ptr[i])
-        return str(p, n)
+            p[i] = bytes._toupper(self._ptr[i])
+        return bytes(p, n)
 
     def isascii(self) -> bool:
         for i in range(len(self)):
@@ -356,51 +670,51 @@ class str:
                 return False
         return True
 
-    def casefold(self) -> str:
+    def casefold(self) -> bytes:
         return self.lower()
 
-    def swapcase(self) -> str:
+    def swapcase(self) -> bytes:
         # Empty string
         n = len(self)
         if n == 0:
-            return ""
+            return bytes()
         p = Ptr[u8](n)
         for i in range(n):
-            if str._islower(self._ptr[i]):
-                p[i] = str._toupper(self._ptr[i])
-            elif str._isupper(self._ptr[i]):
-                p[i] = str._tolower(self._ptr[i])
+            if bytes._islower(self._ptr[i]):
+                p[i] = bytes._toupper(self._ptr[i])
+            elif bytes._isupper(self._ptr[i]):
+                p[i] = bytes._tolower(self._ptr[i])
             else:
                 p[i] = self._ptr[i]
-        return str(p, n)
+        return bytes(p, n)
 
-    def title(self) -> str:
+    def title(self) -> bytes:
         prev_is_cased = False
 
         n = len(self)
         if n == 0:
-            return ""
+            return bytes()
 
         p = Ptr[u8](n)
         for i in range(n):
-            if str._islower(self._ptr[i]):
+            if bytes._islower(self._ptr[i]):
                 # lowercase to uppercase
                 if not prev_is_cased:
-                    p[i] = str._toupper(self._ptr[i])
+                    p[i] = bytes._toupper(self._ptr[i])
                 else:
                     p[i] = self._ptr[i]
                 prev_is_cased = True
-            elif str._isupper(self._ptr[i]):
+            elif bytes._isupper(self._ptr[i]):
                 # uppercase to lowercase
                 if prev_is_cased:
-                    p[i] = str._tolower(self._ptr[i])
+                    p[i] = bytes._tolower(self._ptr[i])
                 else:
                     p[i] = self._ptr[i]
                 prev_is_cased = True
             else:
                 p[i] = self._ptr[i]
                 prev_is_cased = False
-        return str(p, n)
+        return bytes(p, n)
 
     def isnumeric(self) -> bool:
         return self.isdecimal()
@@ -408,7 +722,7 @@ class str:
     def _build(*args):
         total = 0
         for t in args:
-            if isinstance(t, str):
+            if isinstance(t, bytes):
                 total += len(t)
             else:
                 total += len(t[0]) * t[1]
@@ -416,32 +730,32 @@ class str:
         i = 0
 
         for t in args:
-            if isinstance(t, str):
-                str.memcpy(p + i, t._ptr, t._len)
+            if isinstance(t, bytes):
+                bytes.memcpy(p + i, t._ptr, t._len)
                 i += t._len
             else:
                 s, n = t
                 for _ in range(n):
-                    str.memcpy(p + i, s._ptr, s._len)
+                    bytes.memcpy(p + i, s._ptr, s._len)
                     i += s._len
 
-        return str(p, total)
+        return bytes(p, total)
 
-    def ljust(self, width: int, fillchar: str = " ") -> str:
+    def ljust(self, width: int, fillchar: bytes = b" ") -> bytes:
         if len(fillchar) != 1:
             raise ValueError("The fill character must be exactly one character long")
         if width <= len(self):
             return self
-        return str._build(self, (fillchar, width - len(self)))
+        return bytes._build(self, (fillchar, width - len(self)))
 
-    def rjust(self, width: int, fillchar: str = " ") -> str:
+    def rjust(self, width: int, fillchar: bytes = b" ") -> bytes:
         if len(fillchar) != 1:
             raise ValueError("The fill character must be exactly one character long")
         if width <= len(self):
             return self
-        return str._build((fillchar, width - len(self)), self)
+        return bytes._build((fillchar, width - len(self)), self)
 
-    def center(self, width: int, fillchar: str = " ") -> str:
+    def center(self, width: int, fillchar: bytes = b" ") -> bytes:
         if len(fillchar) != 1:
             raise ValueError("The fill character must be exactly one character long")
         if width <= len(self):
@@ -450,9 +764,9 @@ class str:
         pad = width - len(self)
         left_pad = pad.cdiv(2)
         right_pad = width - len(self) - left_pad
-        return str._build((fillchar, left_pad), self, (fillchar, right_pad))
+        return bytes._build((fillchar, left_pad), self, (fillchar, right_pad))
 
-    def zfill(self, width: int) -> str:
+    def zfill(self, width: int) -> bytes:
         if len(self) >= width:
             return self
 
@@ -460,7 +774,7 @@ class str:
         minus = u8(45)  # -
         zero = u8(48)   # 0
 
-        zf = self.rjust(width, '0')
+        zf = self.rjust(width, b'0')
         fill = width - len(self)
         p = zf._ptr
 
@@ -470,14 +784,14 @@ class str:
 
         return zf
 
-    def count(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
+    def count(self, sub: bytes, start: int = 0, end: Optional[int] = None) -> int:
         end: int = end if end is not None else len(self)
         start, end = self._correct_indices(start, end)
         if end - start < len(sub):
             return 0
         return algorithms.count(self._slice(start, end), sub)
 
-    def find(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
+    def find(self, sub: bytes, start: int = 0, end: Optional[int] = None) -> int:
         end: int = end if end is not None else len(self)
         start, end = self._correct_indices(start, end)
         if end - start < len(sub):
@@ -485,7 +799,7 @@ class str:
         pos = algorithms.find(self._slice(start, end), sub)
         return pos if pos < 0 else pos + start
 
-    def rfind(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
+    def rfind(self, sub: bytes, start: int = 0, end: Optional[int] = None) -> int:
         end: int = end if end is not None else len(self)
         start, end = self._correct_indices(start, end)
         if end - start < len(sub):
@@ -500,16 +814,16 @@ class str:
 
         # is not a letter or _
         first = self._at(0)
-        if not first.isalpha():
-            if first != "_":
+        if not bytes._isalpha(u8(first)):
+            if first != 0x5F:
                 return False
 
-        if first.isalpha() or first == "_":
+        if bytes._isalpha(u8(first)) or first == 0x5F:
             for i in range(1, len(self)):
                 ith = self._at(i)
-                if not ith.isalpha():
-                    if not ith.isdecimal():
-                        if ith != "_":
+                if not bytes._isalpha(u8(ith)):
+                    if not (0x30 <= ith <= 0x39):
+                        if ith != 0x5F:
                             return False
 
         return True
@@ -520,53 +834,58 @@ class str:
                 return False
         return True
 
-    def _has_char(self, chars: str) -> bool:
+    def _has_char(self, chars: bytes) -> bool:
         s = self._at(0)
-        if chars:
-            for c in chars:
-                if s == c:
-                    return True
-            return False
-        else:
-            return s.isspace()
+        for c in chars:
+            if s == c:
+                return True
+        return False
 
-    def lstrip(self, chars: str = "") -> str:
+    def lstrip(self, chars: Optional[bytes] = None) -> bytes:
         i = 0
-        while i < len(self) and self._at(i)._has_char(chars):
-            i += 1
+        if chars is None:
+            while i < len(self) and bytes._isspace(self._ptr[i]):
+                i += 1
+        else:
+            while i < len(self) and bytes(self._ptr + i, 1)._has_char(chars):
+                i += 1
         return self._slice(i, len(self))
 
-    def rstrip(self, chars: str = "") -> str:
+    def rstrip(self, chars: Optional[bytes] = None) -> bytes:
         i = len(self) - 1
-        while i >= 0 and self._at(i)._has_char(chars):
-            i -= 1
+        if chars is None:
+            while i >= 0 and bytes._isspace(self._ptr[i]):
+                i -= 1
+        else:
+            while i >= 0 and bytes(self._ptr + i, 1)._has_char(chars):
+                i -= 1
         return self._slice(0, i + 1)
 
-    def strip(self, chars: str = "") -> str:
+    def strip(self, chars: Optional[bytes] = None) -> bytes:
         return self.lstrip(chars).rstrip(chars)
 
-    def partition(self, sep: str) -> Tuple[str, str, str]:
+    def partition(self, sep: bytes) -> Tuple[bytes, bytes, bytes]:
         if not sep:
             raise ValueError("empty separator")
         pos = algorithms.find(self, sep)
         if pos < 0:
-            return self, "", ""
+            return self, bytes(), bytes()
         return self._slice(0, pos), sep, self._slice(pos + len(sep), len(self))
 
-    def rpartition(self, sep: str) -> Tuple[str, str, str]: # XXX
+    def rpartition(self, sep: bytes) -> Tuple[bytes, bytes, bytes]: # XXX
         if not sep:
             raise ValueError("empty separator")
         pos = algorithms.rfind(self, sep)
         if pos < 0:
-            return "", "", self
+            return bytes(), bytes(), self
         return self._slice(0, pos), sep, self._slice(pos + len(sep), len(self))
 
-    def split(self, sep: Optional[str] = None, maxsplit: int = -1) -> List[str]:
+    def split(self, sep: Optional[bytes] = None, maxsplit: int = -1) -> List[bytes]:
         if sep is None:
             return self._split_whitespace(
                 maxsplit if maxsplit >= 0 else _MAX
             )
-        sep: str = sep
+        sep: bytes = sep
 
         if len(sep) == 0:
             raise ValueError("empty separator")
@@ -578,7 +897,7 @@ class str:
         MAX_PREALLOC = 12
         maxsplit = maxsplit if maxsplit >= 0 else _MAX
         prealloc_size = MAX_PREALLOC if maxsplit >= MAX_PREALLOC else maxsplit + 1
-        v = List[str](capacity=prealloc_size)
+        v = List[bytes](capacity=prealloc_size)
         i = 0
         j = 0
         n = len(self)
@@ -595,12 +914,12 @@ class str:
         v.append(self._slice(i, n))
         return v
 
-    def rsplit(self, sep: Optional[str] = None, maxsplit: int = -1) -> List[str]:
+    def rsplit(self, sep: Optional[bytes] = None, maxsplit: int = -1) -> List[bytes]:
         if sep is None:
             return self._rsplit_whitespace(
                 maxsplit if maxsplit >= 0 else _MAX
             )
-        sep: str = sep
+        sep: bytes = sep
 
         if len(sep) == 0:
             raise ValueError("empty separator")
@@ -612,7 +931,7 @@ class str:
         MAX_PREALLOC = 12
         maxsplit = maxsplit if maxsplit >= 0 else _MAX
         prealloc_size = MAX_PREALLOC if maxsplit >= MAX_PREALLOC else maxsplit + 1
-        v = List[str](capacity=prealloc_size)
+        v = List[bytes](capacity=prealloc_size)
         i = 0
         j = len(self)
         n = j
@@ -629,7 +948,7 @@ class str:
         v.reverse()
         return v
 
-    def splitlines(self, keepends: bool = False) -> List[str]:
+    def splitlines(self, keepends: bool = False) -> List[bytes]:
         v = []
         i = 0
         j = 0
@@ -661,7 +980,7 @@ class str:
         return v
 
     def startswith(
-        self, prefix: str, start: int = 0, end: Optional[int] = None
+        self, prefix: bytes, start: int = 0, end: Optional[int] = None
     ) -> bool:
         end: int = end if end is not None else len(self)
         if end < 0:
@@ -683,7 +1002,7 @@ class str:
 
         return prefix == self._slice(start, start + len(prefix))
 
-    def endswith(self, suffix: str, start: int = 0, end: Optional[int] = None) -> bool:
+    def endswith(self, suffix: bytes, start: int = 0, end: Optional[int] = None) -> bool:
         end: int = end if end is not None else len(self)
         if end < 0:
             end += len(self)
@@ -709,24 +1028,36 @@ class str:
 
         return suffix == self._slice(start, start + len(suffix))
 
-    def index(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
+    def removeprefix(self, prefix) -> bytes:
+        prefix: bytes = bytes(prefix)
+        if self.startswith(prefix):
+            return self._slice(len(prefix), len(self))
+        return self
+
+    def removesuffix(self, suffix) -> bytes:
+        suffix: bytes = bytes(suffix)
+        if self.endswith(suffix):
+            return self._slice(0, len(self) - len(suffix))
+        return self
+
+    def index(self, sub: bytes, start: int = 0, end: Optional[int] = None) -> int:
         i = self.find(sub, start, end)
         if i == -1:
             raise ValueError("substring not found")
         else:
             return i
 
-    def rindex(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
+    def rindex(self, sub: bytes, start: int = 0, end: Optional[int] = None) -> int:
         i = self.rfind(sub, start, end)
         if i == -1:
             raise ValueError("substring not found")
         else:
             return i
 
-    def replace(self, old: str, new: str, maxcount: int = -1) -> str:
+    def replace(self, old: bytes, new: bytes, maxcount: int = -1) -> bytes:
         return self._replace(old, new, maxcount)
 
-    def expandtabs(self, tabsize: int = 8) -> str:
+    def expandtabs(self, tabsize: int = 8) -> bytes:
         i = 0
         j = 0
         p = self._ptr
@@ -787,9 +1118,12 @@ class str:
                     j = 0
             p += 1
 
-        return str(u, u_len)
+        return bytes(u, u_len)
 
-    def translate(self, map) -> str:
+    def translate(self, map) -> bytes:
+        if hasattr(map, "__bytes__"):
+            return self.translate(bytes(map))
+
         n = len(self)
         m = 0
 
@@ -810,13 +1144,31 @@ class str:
             if key in map:
                 val = map[key]
                 if val is not None:
-                    str.memcpy(q, val._ptr, len(val))
+                    bytes.memcpy(q, val._ptr, len(val))
                     q += len(val)
             else:
                 q[0] = self._ptr[i]
                 q += 1
 
-        return str(p, m)
+        return bytes(p, m)
+
+    def translate(self, table: bytes, delete: bytes = b"") -> bytes:
+        if len(table) != 256:
+            raise ValueError("translation table must be 256 characters long")
+
+        deleted = Ptr[u8](256)
+        bytes.memset(deleted, u8(0), 256)
+        for value in delete:
+            deleted[value] = u8(1)
+
+        p = Ptr[u8](len(self))
+        n = 0
+        for i in range(len(self)):
+            value = int(self._ptr[i])
+            if deleted[value] == u8(0):
+                p[n] = table._ptr[value]
+                n += 1
+        return bytes(p, n)
 
 
     # Internal helpers
@@ -838,54 +1190,54 @@ class str:
 
         return (start, end)
 
-    def _split_whitespace(self, maxcount: int) -> List[str]:
+    def _split_whitespace(self, maxcount: int) -> List[bytes]:
         PREALLOC_MAX = 12
-        l = List[str](PREALLOC_MAX if maxcount >= PREALLOC_MAX else maxcount + 1)
+        l = List[bytes](PREALLOC_MAX if maxcount >= PREALLOC_MAX else maxcount + 1)
 
         str_len = len(self)
         i = 0
         j = 0
         while maxcount > 0:
             maxcount -= 1
-            while i < str_len and str._isspace(self._ptr[i]):
+            while i < str_len and bytes._isspace(self._ptr[i]):
                 i += 1
             if i == str_len:
                 break
             j = i
             i += 1
-            while i < str_len and not str._isspace(self._ptr[i]):
+            while i < str_len and not bytes._isspace(self._ptr[i]):
                 i += 1
             l.append(self._slice(j, i))
 
         if i < str_len:
-            while i < str_len and str._isspace(self._ptr[i]):
+            while i < str_len and bytes._isspace(self._ptr[i]):
                 i += 1
             if i != str_len:
                 l.append(self._slice(i, str_len))
 
         return l
 
-    def _rsplit_whitespace(self, maxcount: int) -> List[str]:
+    def _rsplit_whitespace(self, maxcount: int) -> List[bytes]:
         PREALLOC_MAX = 12
-        l = List[str](PREALLOC_MAX if maxcount >= PREALLOC_MAX else maxcount + 1)
+        l = List[bytes](PREALLOC_MAX if maxcount >= PREALLOC_MAX else maxcount + 1)
 
         str_len = len(self)
         i = str_len - 1
         j = str_len - 1
         while maxcount > 0:
             maxcount -= 1
-            while i >= 0 and str._isspace(self._ptr[i]):
+            while i >= 0 and bytes._isspace(self._ptr[i]):
                 i -= 1
             if i < 0:
                 break
             j = i
             i -= 1
-            while i >= 0 and not str._isspace(self._ptr[i]):
+            while i >= 0 and not bytes._isspace(self._ptr[i]):
                 i -= 1
             l.append(self._slice(i + 1, j + 1))
 
         if i >= 0:
-            while i >= 0 and str._isspace(self._ptr[i]):
+            while i >= 0 and bytes._isspace(self._ptr[i]):
                 i -= 1
             if i >= 0:
                 l.append(self._slice(0, i + 1))
@@ -893,9 +1245,9 @@ class str:
         l.reverse()
         return l
 
-    def _split_char(self, char: u8, maxcount: int) -> List[str]:
+    def _split_char(self, char: u8, maxcount: int) -> List[bytes]:
         PREALLOC_MAX = 12
-        l = List[str](PREALLOC_MAX if maxcount >= PREALLOC_MAX else maxcount + 1)
+        l = List[bytes](PREALLOC_MAX if maxcount >= PREALLOC_MAX else maxcount + 1)
 
         str_len = len(self)
         i = 0
@@ -911,9 +1263,9 @@ class str:
         l.append(self._slice(j, str_len))
         return l
 
-    def _rsplit_char(self, char: u8, maxcount: int) -> List[str]:
+    def _rsplit_char(self, char: u8, maxcount: int) -> List[bytes]:
         PREALLOC_MAX = 12
-        l = List[str](PREALLOC_MAX if maxcount >= PREALLOC_MAX else maxcount + 1)
+        l = List[bytes](PREALLOC_MAX if maxcount >= PREALLOC_MAX else maxcount + 1)
 
         str_len = len(self)
         i = str_len - 1
@@ -939,7 +1291,7 @@ class str:
         end = start + len(self)
 
         while True:
-            start = str(start, end - start)._findchar(c)
+            start = bytes(start, end - start)._findchar(c)
             if not start:
                 break
             count += 1
@@ -948,7 +1300,7 @@ class str:
             start += 1
         return count
 
-    def _replace_interleave(self, to: str, maxcount: int):
+    def _replace_interleave(self, to: bytes, maxcount: int):
         self_s = self._ptr
         self_len = len(self)
         to_len = len(to)
@@ -970,7 +1322,7 @@ class str:
         result_s0 = result_s
 
         if to_len > 1:
-            str.memcpy(result_s, to_s, to_len)
+            bytes.memcpy(result_s, to_s, to_len)
             result_s += to_len
             count -= 1
 
@@ -978,7 +1330,7 @@ class str:
                 result_s[0] = self_s[0]
                 result_s += 1
                 self_s += 1
-                str.memcpy(result_s, to_s, to_len)
+                bytes.memcpy(result_s, to_s, to_len)
                 result_s += to_len
                 i += 1
         else:
@@ -994,8 +1346,8 @@ class str:
                 result_s += to_len
                 i += 1
 
-        str.memcpy(result_s, self_s, self_len - i)
-        return str(result_s0, result_len)
+        bytes.memcpy(result_s, self_s, self_len - i)
+        return bytes(result_s0, result_len)
 
     def _replace_delete_single_character(self, from_c: u8, maxcount: int):
         self_len = len(self)
@@ -1014,17 +1366,17 @@ class str:
         end = self_s + self_len
         while count > 0:
             count -= 1
-            nxt = str(start, end - start)._findchar(from_c)
+            nxt = bytes(start, end - start)._findchar(from_c)
             if not nxt:
                 break
-            str.memcpy(result_s, start, nxt - start)
+            bytes.memcpy(result_s, start, nxt - start)
             result_s += nxt - start
             start = nxt + 1
 
-        str.memcpy(result_s, start, end - start)
-        return str(result_s0, result_len)
+        bytes.memcpy(result_s, start, end - start)
+        return bytes(result_s0, result_len)
 
-    def _replace_delete_substring(self, from_s: str, maxcount: int):
+    def _replace_delete_substring(self, from_s: bytes, maxcount: int):
         self_len = len(self)
         self_s = self._ptr
         from_len = len(from_s)
@@ -1042,16 +1394,16 @@ class str:
         end = self_s + self_len
         while count > 0:
             count -= 1
-            offset = algorithms.find(str(start, end - start), from_s)
+            offset = algorithms.find(bytes(start, end - start), from_s)
             if offset == -1:
                 break
             nxt = start + offset
-            str.memcpy(result_s, start, nxt - start)
+            bytes.memcpy(result_s, start, nxt - start)
             result_s += nxt - start
             start = nxt + from_len
 
-        str.memcpy(result_s, start, end - start)
-        return str(result_s0, result_len)
+        bytes.memcpy(result_s, start, end - start)
+        return bytes(result_s0, result_len)
 
     def _replace_single_character_in_place(self, from_c: u8, to_c: u8, maxcount: int):
         self_s = self._ptr
@@ -1062,7 +1414,7 @@ class str:
             return self
 
         result_s = Ptr[u8](self_len)
-        str.memcpy(result_s, self_s, self_len)
+        bytes.memcpy(result_s, self_s, self_len)
 
         start = result_s + (nxt - self_s)
         start[0] = to_c
@@ -1072,15 +1424,15 @@ class str:
 
         while maxcount > 0:
             maxcount -= 1
-            nxt = str(start, end - start)._findchar(from_c)
+            nxt = bytes(start, end - start)._findchar(from_c)
             if not nxt:
                 break
             nxt[0] = to_c
             start = nxt + 1
 
-        return str(result_s, self_len)
+        return bytes(result_s, self_len)
 
-    def _replace_substring_in_place(self, from_s: str, to: str, maxcount: int):
+    def _replace_substring_in_place(self, from_s: bytes, to: bytes, maxcount: int):
         self_s = self._ptr
         self_len = len(self)
         from_len = len(from_s)
@@ -1091,25 +1443,25 @@ class str:
             return self
 
         result_s = Ptr[u8](self_len)
-        str.memcpy(result_s, self_s, self_len)
+        bytes.memcpy(result_s, self_s, self_len)
 
         start = result_s + offset
-        str.memcpy(start, to_s, from_len)
+        bytes.memcpy(start, to_s, from_len)
         start += from_len
         end = result_s + self_len
         maxcount -= 1
 
         while maxcount > 0:
             maxcount -= 1
-            offset = algorithms.find(str(start, end - start), from_s)
+            offset = algorithms.find(bytes(start, end - start), from_s)
             if offset == -1:
                 break
-            str.memcpy(start + offset, to_s, from_len)
+            bytes.memcpy(start + offset, to_s, from_len)
             start += offset + from_len
 
-        return str(result_s, self_len)
+        return bytes(result_s, self_len)
 
-    def _replace_single_character(self, from_c: u8, to_s: str, maxcount: int):
+    def _replace_single_character(self, from_c: u8, to_s: bytes, maxcount: int):
         self_s = self._ptr
         self_len = len(self)
         to_len = len(to_s)
@@ -1130,25 +1482,25 @@ class str:
         end = self_s + self_len
         while count > 0:
             count -= 1
-            nxt = str(start, end - start)._findchar(from_c)
+            nxt = bytes(start, end - start)._findchar(from_c)
             if not nxt:
                 break
 
             if nxt == start:
-                str.memcpy(result_s, to_s._ptr, to_len)
+                bytes.memcpy(result_s, to_s._ptr, to_len)
                 result_s += to_len
                 start += 1
             else:
-                str.memcpy(result_s, start, nxt - start)
+                bytes.memcpy(result_s, start, nxt - start)
                 result_s += (nxt - start)
-                str.memcpy(result_s, to_s._ptr, to_len)
+                bytes.memcpy(result_s, to_s._ptr, to_len)
                 result_s += to_len
                 start = nxt + 1
 
-        str.memcpy(result_s, start, end - start)
-        return str(result_s0, result_len)
+        bytes.memcpy(result_s, start, end - start)
+        return bytes(result_s0, result_len)
 
-    def _replace_substring(self, from_s: str, to_s: str, maxcount: int):
+    def _replace_substring(self, from_s: bytes, to_s: bytes, maxcount: int):
         self_s = self._ptr
         self_len = len(self)
         from_len = len(from_s)
@@ -1170,26 +1522,26 @@ class str:
         end = self_s + self_len
         while count > 0:
             count -= 1
-            offset = algorithms.find(str(start, end - start), from_s)
+            offset = algorithms.find(bytes(start, end - start), from_s)
             if offset == -1:
                 break
 
             nxt = start + offset
             if nxt == start:
-                str.memcpy(result_s, to_s._ptr, to_len)
+                bytes.memcpy(result_s, to_s._ptr, to_len)
                 result_s += to_len
                 start += from_len
             else:
-                str.memcpy(result_s, start, nxt - start)
+                bytes.memcpy(result_s, start, nxt - start)
                 result_s += (nxt - start)
-                str.memcpy(result_s, to_s._ptr, to_len)
+                bytes.memcpy(result_s, to_s._ptr, to_len)
                 result_s += to_len
                 start = nxt + from_len
 
-        str.memcpy(result_s, start, end - start)
-        return str(result_s0, result_len)
+        bytes.memcpy(result_s, start, end - start)
+        return bytes(result_s0, result_len)
 
-    def _replace(self, from_s: str, to_s: str, maxcount: int):
+    def _replace(self, from_s: bytes, to_s: bytes, maxcount: int):
         self_len = len(self)
         from_len = len(from_s)
         to_len = len(to_s)

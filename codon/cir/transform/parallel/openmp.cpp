@@ -739,6 +739,11 @@ struct ParallelLoopTemplateReplacer : public LoopTemplateReplacer {
 
       auto *M = parent->getModule();
       auto *extras = util::getVar(v->front());
+      auto *series = M->Nr<SeriesFlow>();
+      for (auto &info : sharedInfo) {
+        if (info.reduction)
+          info.local = util::makeVar(M->Nr<VarValue>(info.local), series, parent);
+      }
       auto *reductionTuple = getReductionTuple();
       auto *reducer = makeReductionFunc();
       auto *lck = locks.getMainLock(M);
@@ -756,7 +761,6 @@ struct ParallelLoopTemplateReplacer : public LoopTemplateReplacer {
           {reductionLocRef->getType(), gtid->getType(), lckPtrType}, {}, ompModule);
       seqassertn(reduceNoWaitEnd, "end reduce nowait function not found");
 
-      auto *series = M->Nr<SeriesFlow>();
       auto *tupleVal = util::makeVar(reductionTuple, series, parent);
       auto *reduceCode =
           util::call(reduceNoWait,

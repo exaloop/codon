@@ -226,6 +226,9 @@ public:
   void visit(const StringConst *v) override {
     fmt::print(os, FMT_STRING("\"{}\""), escapeString(v->getVal()));
   }
+  void visit(const BytesConst *v) override {
+    fmt::print(os, FMT_STRING("b\"{}\""), escapeString(v->getVal()));
+  }
   void visit(const dsl::CustomConst *v) override { v->doFormat(os); }
 
   void visit(const AssignInstr *v) override {

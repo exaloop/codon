@@ -136,6 +136,6 @@ except PyError as e:
 
 #%% python_directive
 ## codon: auto_python=1
-import json
-s = json.dumps({'6': 7, '4': 5})
-print(s.__class__.__name__, s)  #: pyobj {"6": 7, "4": 5}
+import _operator
+result = _operator.add(6, 7)
+print(result.__class__.__name__, result)  #: pyobj 13

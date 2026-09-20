@@ -9,6 +9,7 @@
 
 #include "codon/cir/pyextension.h"
 #include "codon/cir/util/irtools.h"
+#include "codon/compiler/compiler.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
 #include "codon/parser/match.h"
@@ -90,7 +91,7 @@ Stmt *TypecheckVisitor::apply(
                       ctx->scope.back().stmts.end());
   suite->items.push_back(n);
 
-  if (cast<SuiteStmt>(n))
+  if (cast<SuiteStmt>(n) && !cache->compiler->getOptions()->pyext)
     tv.prepareVTables();
 
   if (!ctx->cache->errors.empty())
@@ -135,7 +136,12 @@ void TypecheckVisitor::loadStdLibrary(
   if (auto err = ScopingVisitor::apply(stdlib->cache, core))
     throw exc::ParserException(std::move(err));
   auto tv = TypecheckVisitor(stdlib, preamble);
-  core = tv.inferTypes(core, true);
+  if (auto n = tv.inferTypes(core, true)) {
+    core = n;
+  } else {
+    auto errors = tv.findTypecheckErrors(core);
+    throw exc::ParserException(errors);
+  }
   preamble->addStmt(core);
 
   // 2. Load early compile-time defines (for standard library)
@@ -167,7 +173,12 @@ void TypecheckVisitor::loadStdLibrary(
   if (auto err = ScopingVisitor::apply(stdlib->cache, std, &stdlib->globalShadows))
     throw exc::ParserException(std::move(err));
   tv = TypecheckVisitor(stdlib, preamble);
-  std = tv.inferTypes(std, true);
+  if (auto n = tv.inferTypes(std, true)) {
+    std = n;
+  } else {
+    auto errors = tv.findTypecheckErrors(std);
+    throw exc::ParserException(errors);
+  }
   preamble->addStmt(std);
   stdlib->isStdlibLoading = false;
 }
@@ -477,7 +488,7 @@ int TypecheckVisitor::canCall(types::FuncType *fn, const std::vector<CallArg> &a
   }
 
   std::vector<std::pair<types::Type *, size_t>> reordered;
-  auto niGenerics = fn->ast->getNonInferrableGenerics();
+  const auto &niGenerics = fn->ast->getNonInferrableGenerics();
   auto score = reorderNamedArgs(
       fn, args,
       [&](int s, int k, const std::vector<std::vector<int>> &slots, bool _) {
@@ -601,8 +612,9 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
                               bool allowUnwrap, bool isEllipsis) {
   auto expectedClass = expectedType->getClass();
   auto exprClass = exprType->getClass();
-  auto doArgWrap = !callee || !callee->ast->hasFunctionAttribute(getMangledFunc(
-                                  "std.internal.attributes", "no_argument_wrap"));
+  static const auto noArgumentWrap =
+      getMangledFunc("std.internal.attributes", "no_argument_wrap");
+  auto doArgWrap = !callee || !callee->ast->hasFunctionAttribute(noArgumentWrap);
   if (!doArgWrap)
     return {true, expectedType ? expectedType->shared_from_this() : nullptr, nullptr};
 
@@ -1009,10 +1021,11 @@ TypecheckVisitor::extractNamedTuple(Expr *expr) {
 
 std::vector<Cache::Class::ClassField>
 TypecheckVisitor::getClassFields(types::ClassType *t) const {
-  auto f = getClass(t->name)->fields;
+  // Tuple has MAX_TUPLE fields; copy only the requested prefix, not the whole table.
+  const auto &f = getClass(t->name)->fields;
   if (t->is(TYPE_TUPLE))
-    f = std::vector<Cache::Class::ClassField>(f.begin(),
-                                              f.begin() + t->generics.size());
+    return std::vector<Cache::Class::ClassField>(f.begin(),
+                                                 f.begin() + t->generics.size());
   return f;
 }
 

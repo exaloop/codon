@@ -153,11 +153,13 @@ int ClassType::unify(Type *typ, Unification *us) {
 
 TypePtr ClassType::generalize(int atLevel) const {
   std::vector<Generic> g, hg;
+  g.reserve(generics.size());
+  hg.reserve(hiddenGenerics.size());
   for (auto &t : generics)
     g.push_back(t.generalize(atLevel));
   for (auto &t : hiddenGenerics)
     hg.push_back(t.generalize(atLevel));
-  auto c = std::make_shared<ClassType>(cache, name, g, hg);
+  auto c = std::make_shared<ClassType>(cache, name, std::move(g), std::move(hg));
   c->isTuple = isTuple;
   c->setSrcInfo(getSrcInfo());
   return c;
@@ -166,11 +168,13 @@ TypePtr ClassType::generalize(int atLevel) const {
 TypePtr ClassType::instantiate(int atLevel, int *unboundCount,
                                std::unordered_map<int, TypePtr> *cache) const {
   std::vector<Generic> g, hg;
+  g.reserve(generics.size());
+  hg.reserve(hiddenGenerics.size());
   for (auto &t : generics)
     g.push_back(t.instantiate(atLevel, unboundCount, cache));
   for (auto &t : hiddenGenerics)
     hg.push_back(t.instantiate(atLevel, unboundCount, cache));
-  auto c = std::make_shared<ClassType>(this->cache, name, g, hg);
+  auto c = std::make_shared<ClassType>(this->cache, name, std::move(g), std::move(hg));
   c->isTuple = isTuple;
   c->setSrcInfo(getSrcInfo());
   return c;

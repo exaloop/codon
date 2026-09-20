@@ -33,6 +33,8 @@ public:
       const ClassType *baseType, FunctionStmt *ast,
       std::vector<ClassType::Generic> funcGenerics = std::vector<ClassType::Generic>(),
       TypePtr funcParent = nullptr);
+  FuncType(ClassType &&baseType, FunctionStmt *ast,
+           std::vector<ClassType::Generic> funcGenerics, TypePtr funcParent);
 
 public:
   int unify(Type *typ, Unification *undo) override;

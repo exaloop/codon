@@ -129,6 +129,21 @@ print fx(2) #: 3
 fxx: Function[[int], int] = foo
 print fxx(3) #: 4
 
+#%% index_union_annotation_revisit,barebones
+class IndexUnionA:
+    pass
+
+class IndexUnionB:
+    pass
+
+class IndexUnionTemplate[T]:
+    pass
+
+def index_union_arg(t: Union[IndexUnionTemplate[IndexUnionA], IndexUnionTemplate[IndexUnionB]]):
+    print("ok")
+
+index_union_arg(IndexUnionTemplate[IndexUnionA]())  #: ok
+
 #%% index_special,barebones
 class Foo:
     def __getitem__(self, foo):

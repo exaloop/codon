@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <cstdlib>
 #include <fmt/args.h>
 #include <utility>
@@ -40,6 +41,8 @@ const std::string INLINE_ATTR =
     ast::getMangledFunc("std.internal.attributes", "inline");
 const std::string NOINLINE_ATTR =
     ast::getMangledFunc("std.internal.attributes", "noinline");
+const std::string LLVM_MEMORY_NONE_ATTR =
+    ast::getMangledFunc("std.internal.attributes", "llvm_memory_none");
 const std::string GPU_KERNEL_ATTR = ast::getMangledFunc("std.internal.gpu", "kernel");
 
 const std::string MAIN_UNCLASH = ".main.unclash";
@@ -141,8 +144,8 @@ void LLVMVisitor::registerGlobal(const Var *var) {
     insertFunc(f, makeLLVMFunction(f));
   } else {
     auto *llvmType = getLLVMType(var->getType());
-    if (llvmType->isVoidTy()) {
-      insertVar(var, getDummyVoidValue());
+    if (!isStorableType(llvmType)) {
+      insertVar(var, getDummyValue(llvmType));
     } else {
       bool external = var->isExternal();
       bool tls = var->isThreadLocal();
@@ -250,12 +253,16 @@ llvm::Function *LLVMVisitor::getFunc(const Func *func) {
 
 std::unique_ptr<llvm::Module> LLVMVisitor::makeModule(llvm::LLVMContext &context,
                                                       const SrcInfo *src) {
+  std::string err;
   auto builder = llvm::EngineBuilder();
-  builder.setMArch(llvm::codegen::getMArch());
-  builder.setMCPU(llvm::codegen::getCPUStr());
-  builder.setMAttrs(llvm::codegen::getFeatureList());
-
+  builder.setErrorStr(&err);
+  builder.setMArch(options->march);
+  builder.setMCPU(options->mcpu);
+  builder.setMAttrs(options->mattrs);
   auto target = builder.selectTarget();
+  if (!target) {
+    compilationError(err.empty() ? "could not select LLVM target" : err);
+  }
   auto M = std::make_unique<llvm::Module>("codon", context);
   M->setTargetTriple(target->getTargetTriple().str());
   M->setDataLayout(target->createDataLayout());
@@ -396,7 +403,8 @@ void LLVMVisitor::writeToObjectFile(const std::string &filename, bool pic,
     compilationError(err.message());
   auto *os = &out->os();
 
-  auto machine = getTargetMachine(M.get(), /*setFunctionAttributes=*/false, pic);
+  auto machine =
+      getTargetMachine(M.get(), options, /*setFunctionAttributes=*/false, pic);
   auto *mmiwp = new llvm::MachineModuleInfoWrapperPass(machine.get());
   llvm::legacy::PassManager pm;
 
@@ -704,43 +712,9 @@ llvm::Function *LLVMVisitor::createPyTryCatchWrapper(llvm::Function *func) {
                                        (uint64_t)seq_exc_offset());
   auto *loadedExc = B->CreateLoad(B->getPtrTy(), excVal);
 
-  auto *strType = llvm::StructType::get(B->getPtrTy(), B->getInt64Ty());
-  auto *excHeader =
-      llvm::StructType::get(strType, strType, strType, B->getInt64Ty(), B->getInt64Ty(),
-                            B->getPtrTy(), B->getPtrTy());
-  auto *header = B->CreateLoad(excHeader, B->CreateLoad(B->getPtrTy(), loadedExc));
-  auto *msg = B->CreateExtractValue(header, 0);
-  auto *msgPtr = B->CreateExtractValue(msg, 0);
-  auto *msgLen = B->CreateExtractValue(msg, 1);
-  auto *pyType = B->CreateExtractValue(header, 5);
-
-  // copy msg into new null-terminated buffer
-  auto alloc = makeAllocFunc(/*atomic=*/true);
-  auto *buf = B->CreateCall(alloc, B->CreateAdd(msgLen, B->getInt64(1)));
-  B->CreateMemCpy(buf, {}, msgPtr, {}, msgLen);
-  auto *last = B->CreateInBoundsGEP(B->getInt8Ty(), buf, msgLen);
-  B->CreateStore(B->getInt8(0), last);
-
-  auto *pyErrSetString = llvm::cast<llvm::Function>(
-      M->getOrInsertFunction("PyErr_SetString", B->getVoidTy(), B->getPtrTy(),
-                             B->getPtrTy())
-          .getCallee());
-
-  const std::string pyExcRuntimeErrorName = "PyExc_RuntimeError";
-  llvm::Value *pyExcRuntimeError = M->getNamedValue(pyExcRuntimeErrorName);
-  if (!pyExcRuntimeError) {
-    auto *pyExcRuntimeErrorVar = new llvm::GlobalVariable(
-        *M, B->getPtrTy(), /*isConstant=*/false, llvm::GlobalValue::ExternalLinkage,
-        /*Initializer=*/nullptr, pyExcRuntimeErrorName);
-    pyExcRuntimeErrorVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
-    pyExcRuntimeError = pyExcRuntimeErrorVar;
-  }
-  pyExcRuntimeError = B->CreateLoad(B->getPtrTy(), pyExcRuntimeError);
-
-  auto *havePyType =
-      B->CreateICmpNE(pyType, llvm::ConstantPointerNull::get(B->getPtrTy()));
-  B->CreateCall(pyErrSetString,
-                {B->CreateSelect(havePyType, pyType, pyExcRuntimeError), buf});
+  B->CreateCall(
+      M->getOrInsertFunction("seq_set_python_exception", B->getVoidTy(), B->getPtrTy()),
+      {loadedExc});
 
   auto *retType = wrap->getReturnType();
   if (retType == B->getInt32Ty()) {
@@ -1918,6 +1892,8 @@ void LLVMVisitor::visit(const ExternalFunc *x) {
   coro = {};
   func->setDoesNotThrow();
   func->setWillReturn();
+  if (util::hasAttribute(x, LLVM_MEMORY_NONE_ATTR))
+    func->setDoesNotAccessMemory();
 }
 
 namespace {
@@ -2146,21 +2122,27 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
   auto argIter = func->arg_begin();
   for (auto varIter = x->arg_begin(); varIter != x->arg_end(); ++varIter) {
     const Var *var = *varIter;
-    auto *storage = B->CreateAlloca(getLLVMType(var->getType()));
-    B->CreateStore(argIter, storage);
+    auto *llvmType = getLLVMType(var->getType());
+    llvm::Value *storage = nullptr;
+    storage = B->CreateAlloca(llvmType);
     insertVar(var, storage);
+    if (isStorableType(llvmType)) {
+      B->CreateStore(argIter, storage);
+    }
 
     // debug info
-    auto *srcInfo = getSrcInfo(var);
-    auto *file = db.getFile(srcInfo->file);
-    auto *scope = func->getSubprogram();
-    auto *debugVar = db.builder->createParameterVariable(
-        scope, getDebugNameForVariable(var), argIdx, file, srcInfo->line,
-        getDIType(var->getType()), options->debug);
-    db.builder->insertDeclare(
-        storage, debugVar, db.builder->createExpression(),
-        llvm::DILocation::get(*context, srcInfo->line, srcInfo->col, scope),
-        entryBlock);
+    if (storage) {
+      auto *srcInfo = getSrcInfo(var);
+      auto *file = db.getFile(srcInfo->file);
+      auto *scope = func->getSubprogram();
+      auto *debugVar = db.builder->createParameterVariable(
+          scope, getDebugNameForVariable(var), argIdx, file, srcInfo->line,
+          getDIType(var->getType()), options->debug);
+      db.builder->insertDeclare(
+          storage, debugVar, db.builder->createExpression(),
+          llvm::DILocation::get(*context, srcInfo->line, srcInfo->col, scope),
+          entryBlock);
+    }
 
     ++argIter;
     ++argIdx;
@@ -2169,7 +2151,7 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
   for (auto *var : *x) {
     auto *llvmType = getLLVMType(var->getType());
     if (llvmType->isVoidTy()) {
-      insertVar(var, getDummyVoidValue());
+      insertVar(var, getDummyValue(llvmType));
     } else {
       auto *storage = B->CreateAlloca(llvmType);
       insertVar(var, storage);
@@ -2291,10 +2273,15 @@ void LLVMVisitor::visit(const VarValue *x) {
   } else {
     auto *varPtr = getVar(x->getVar());
     seqassertn(varPtr, "{} value not found", *x);
+    auto *llvmType = getLLVMType(x->getType());
+    if (!isStorableType(llvmType)) {
+      value = getDummyValue(llvmType);
+      return;
+    }
     B->SetInsertPoint(block);
     if (x->getVar()->isThreadLocal())
       varPtr = B->CreateThreadLocalAddress(varPtr);
-    value = B->CreateLoad(getLLVMType(x->getType()), varPtr);
+    value = B->CreateLoad(llvmType, varPtr);
   }
 }
 
@@ -2336,6 +2323,16 @@ void LLVMVisitor::visit(const PointerValue *x) {
   }
 
   value = B->CreateInBoundsGEP(getLLVMType(x->getVar()->getType()), var, gepIndices);
+}
+
+bool LLVMVisitor::isStorableType(llvm::Type *type) {
+  return !type->isVoidTy() && M->getDataLayout().getTypeAllocSize(type) != 0;
+}
+
+llvm::Value *LLVMVisitor::getDummyValue(llvm::Type *type) {
+  if (type->isVoidTy())
+    return getDummyVoidValue();
+  return llvm::UndefValue::get(type);
 }
 
 /*
@@ -2648,19 +2645,106 @@ void LLVMVisitor::visit(const BoolConst *x) {
 
 void LLVMVisitor::visit(const StringConst *x) {
   B->SetInsertPoint(block);
-  std::string s = x->getVal();
-  auto *strVar =
-      new llvm::GlobalVariable(*M, llvm::ArrayType::get(B->getInt8Ty(), s.length() + 1),
-                               /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
-                               llvm::ConstantDataArray::getString(*context, s), ".str");
+  const auto &utf8 = x->getVal();
+  std::vector<uint32_t> codepoints;
+  codepoints.reserve(utf8.size());
+  uint32_t maxchar = 0;
+
+  for (size_t pos = 0; pos < utf8.size();) {
+    auto byte = static_cast<uint8_t>(utf8[pos]);
+    uint32_t codepoint = 0;
+    size_t width = 0;
+
+    if (byte < 0x80) {
+      codepoint = byte;
+      width = 1;
+    } else if (byte >= 0xC2 && byte <= 0xDF) {
+      codepoint = byte & 0x1F;
+      width = 2;
+    } else if (byte >= 0xE0 && byte <= 0xEF) {
+      codepoint = byte & 0x0F;
+      width = 3;
+    } else if (byte >= 0xF0 && byte <= 0xF4) {
+      codepoint = byte & 0x07;
+      width = 4;
+    } else {
+      seqassertn(false, "invalid UTF-8 string constant: {:x}", byte);
+    }
+
+    seqassertn(pos + width <= utf8.size(), "truncated UTF-8 string constant");
+    for (size_t i = 1; i < width; ++i) {
+      auto continuation = static_cast<uint8_t>(utf8[pos + i]);
+      seqassertn((continuation & 0xC0) == 0x80, "invalid UTF-8 string constant");
+      codepoint = (codepoint << 6) | (continuation & 0x3F);
+    }
+
+    seqassertn((width == 1 || codepoint >= 0x80) &&
+                   (width != 3 || codepoint >= 0x800) &&
+                   (width != 4 || codepoint >= 0x10000) && codepoint <= 0x10FFFF,
+               "invalid UTF-8 string constant");
+
+    codepoints.push_back(codepoint);
+    maxchar = std::max(maxchar, codepoint);
+    pos += width;
+  }
+
+  unsigned kind = 0;
+  llvm::IntegerType *elementType = B->getInt8Ty();
+  if (maxchar > 0xFFFF) {
+    kind = 3;
+    elementType = B->getInt32Ty();
+  } else if (maxchar > 0xFF) {
+    kind = 2;
+    elementType = B->getInt16Ty();
+  } else if (maxchar > 0x7F) {
+    kind = 1;
+  }
+
+  std::vector<llvm::Constant *> elements;
+  elements.reserve(codepoints.size() + 1);
+  for (auto codepoint : codepoints)
+    elements.push_back(llvm::ConstantInt::get(elementType, codepoint));
+  elements.push_back(llvm::ConstantInt::get(elementType, 0));
+
+  auto *arrayType = llvm::ArrayType::get(elementType, elements.size());
+  auto *strVar = new llvm::GlobalVariable(
+      *M, arrayType, /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
+      llvm::ConstantArray::get(arrayType, elements), ".str");
   strVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
   auto *strType = llvm::StructType::get(B->getPtrTy(), B->getInt64Ty());
   auto *ptr = B->CreateBitCast(strVar, B->getPtrTy());
-  auto *len = B->getInt64(s.length());
+
+  constexpr int LENGTH_BITS = 56;
+  seqassertn(codepoints.size() < (1ULL << LENGTH_BITS), "string constant too large");
+
+  auto *meta = B->getInt64(codepoints.size() | (uint64_t(kind) << LENGTH_BITS));
   llvm::Value *str = llvm::UndefValue::get(strType);
   str = B->CreateInsertValue(str, ptr, 0);
-  str = B->CreateInsertValue(str, len, 1);
+  str = B->CreateInsertValue(str, meta, 1);
   value = str;
+}
+
+void LLVMVisitor::visit(const BytesConst *x) {
+  B->SetInsertPoint(block);
+  const auto &bytes = x->getVal();
+  std::vector<llvm::Constant *> elements;
+  elements.reserve(bytes.size() + 1);
+  for (auto byte : bytes)
+    elements.push_back(B->getInt8(static_cast<uint8_t>(byte)));
+  elements.push_back(B->getInt8(0));
+
+  auto *arrayType = llvm::ArrayType::get(B->getInt8Ty(), elements.size());
+  auto *bytesVar = new llvm::GlobalVariable(
+      *M, arrayType, /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
+      llvm::ConstantArray::get(arrayType, elements), ".bytes");
+  bytesVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+
+  auto *bytesType = llvm::StructType::get(B->getPtrTy(), B->getInt64Ty());
+  auto *ptr = B->CreateBitCast(bytesVar, B->getPtrTy());
+  llvm::Value *bytesValue = llvm::UndefValue::get(bytesType);
+  bytesValue = B->CreateInsertValue(bytesValue, ptr, 0);
+  bytesValue = B->CreateInsertValue(bytesValue, B->getInt64(bytes.size()), 1);
+  value = bytesValue;
 }
 
 void LLVMVisitor::visit(const dsl::CustomConst *x) {
@@ -2764,7 +2848,7 @@ void LLVMVisitor::visit(const ForFlow *x) {
   auto *done = B->CreateCall(coroDone, iter);
   B->CreateCondBr(done, cleanupBlock, bodyBlock);
 
-  if (!loopVarType->isVoidTy()) {
+  if (isStorableType(loopVarType)) {
     B->SetInsertPoint(bodyBlock);
     auto *alignment =
         B->getInt32(M->getDataLayout().getPrefTypeAlign(loopVarType).value());
@@ -3440,7 +3524,7 @@ void LLVMVisitor::visit(const AssignInstr *x) {
   auto *var = getVar(x->getLhs());
   seqassertn(var, "could not find {} var", *x->getLhs());
   process(x->getRhs());
-  if (var != getDummyVoidValue()) {
+  if (isStorableType(getLLVMType(x->getLhs()->getType()))) {
     B->SetInsertPoint(block);
     if (x->getLhs()->isThreadLocal())
       var = B->CreateThreadLocalAddress(var);
@@ -3547,11 +3631,24 @@ void LLVMVisitor::visit(const CallInstr *x) {
             bv.first, llvm::Attribute::get(*context, llvm::Attribute::ByVal, bv.second));
     }
     B->SetInsertPoint(block);
+    auto *winResultType = getLLVMType(x->getType());
+    if (!isStorableType(winResultType)) {
+      value = getDummyValue(winResultType);
+      return;
+    }
     value = sret ? (llvm::Value *)B->CreateLoad(retType, sretSlot) : result;
     return;
   }
 
-  value = call({funcType, f}, args);
+  auto *callResult = call({funcType, f}, args);
+
+  auto *resultType = getLLVMType(x->getType());
+  if (!isStorableType(resultType)) {
+    value = getDummyValue(resultType);
+    return;
+  }
+
+  value = callResult;
 }
 
 void LLVMVisitor::visit(const TypePropertyInstr *x) {

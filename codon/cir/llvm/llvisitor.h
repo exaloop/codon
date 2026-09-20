@@ -228,6 +228,8 @@ private:
     funcs.emplace(func->getId(), x);
   }
   llvm::Value *getDummyVoidValue() { return llvm::ConstantTokenNone::get(*context); }
+  bool isStorableType(llvm::Type *type);
+  llvm::Value *getDummyValue(llvm::Type *type);
   llvm::DISubprogram *getDISubprogramForFunc(const Func *x);
   void clearLLVMData();
 
@@ -395,6 +397,7 @@ public:
   void visit(const FloatConst *) override;
   void visit(const BoolConst *) override;
   void visit(const StringConst *) override;
+  void visit(const BytesConst *) override;
   void visit(const dsl::CustomConst *) override;
 
   void visit(const SeriesFlow *) override;

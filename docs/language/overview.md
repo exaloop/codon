@@ -32,9 +32,10 @@ about how we plan to close some of these gaps in the future.
   However Codon does support larger integers via `Int[N]` where
   `N` is the bit width.
 
-- **Strings:** Codon currently uses ASCII strings unlike
+- <strike>**Strings:** Codon currently uses ASCII strings unlike
   Python's unicode strings. Unicode strings are planned for
-  Codon 1.0.
+  Codon 1.0.</strike> Codon now supports unicode strings for 1-to-1
+  compatibility with Python.
 
 - <strike>**Dictionaries:** Codon's dictionary type does not preserve
   insertion order, unlike Python's as of 3.6.</strike> Codon now uses

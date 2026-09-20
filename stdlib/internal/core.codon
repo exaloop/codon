@@ -138,6 +138,12 @@ class pyobj:
 @__internal__
 class str:
     _ptr: Ptr[u8]
+    _meta: int
+
+@tuple
+@__internal__
+class bytes:
+    _ptr: Ptr[u8]
     _len: int
 
 @tuple

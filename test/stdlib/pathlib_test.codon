@@ -1,0 +1,485 @@
+from pathlib import Path
+from pathlib import _as_uri
+from internal.gc import sizeof
+import os
+import internal.static as static
+
+@tuple
+class StringPath:
+    value: str
+
+    def __fspath__(self) -> str:
+        return self.value
+
+
+class StatefulPath:
+    value: str
+    calls: int
+
+    def __init__(self, value: str):
+        self.value = value
+        self.calls = 0
+
+    def __str__(self) -> str:
+        return "not-the-path"
+
+    def __fspath__(self) -> str:
+        self.calls += 1
+        return self.value
+
+
+@test
+def test_lexical():
+    assert sizeof(Path) == sizeof(str)
+    assert not hasattr(Path, "__iter__")
+    assert not hasattr(Path, "__getitem__")
+    source = StatefulPath("a/b")
+    snapshot = Path(source)
+    assert snapshot == Path("a/b") and source.calls == 1
+    source.value = "c"
+    assert snapshot == Path("a/b")
+    assert Path("a").joinpath(source) == Path("a/c") and source.calls == 2
+    pattern = StatefulPath("a/**")
+    assert snapshot.full_match(pattern) and pattern.calls == 1
+    assert Path(StringPath("a"), StringPath("b")) == Path("a/b")
+    assert Path("a") / StringPath("b") == Path("a/b")
+    assert Path("a/b").relative_to(StringPath("a")) == Path("b")
+    assert Path("a/b.txt").match(StringPath("*.txt"))
+    assert _as_uri("C:/foo:bar", "C:") == "file:///C:/foo%3Abar"
+    assert _as_uri("C:/a b/#%", "C:") == "file:///C:/a%20b/%23%25"
+    assert _as_uri("//server/share/a:b", "\\\\server\\share") == "file://server/share/a%3Ab"
+    assert _as_uri("//server/share/caf\u00e9 #:%", "\\\\server\\share") == "file://server/share/caf%C3%A9%20%23%3A%25"
+    assert _as_uri("//?/C:/a:b", "\\\\?\\C:") == "file://%3F/C%3A/a%3Ab"
+    assert str(Path()) == "." and Path("") == Path(".")
+    assert str(Path("a//./b/")) == os.path.join("a", "b")
+    segments = tuple("part" for index in static.range(32))
+    assert str(Path(*segments)) == os.sep.join(list(segments))
+    repeated = StatefulPath("part")
+    assert Path(repeated, repeated, repeated) == Path("part/part/part")
+    assert repeated.calls == 3
+    assert Path("a", "", "./b//", "../c") == Path("a/b/../c")
+    assert Path(Path("a"), "b") == Path("a") / "b"
+    assert "a" / Path("b") == Path("a/b")
+    assert Path("a").joinpath("b", Path("c")) == Path("a/b/c")
+    assert Path("a") != "a"
+    assert os.fspath(Path("a")) == "a"
+    assert os.fspath("a") == "a" and os.fspath(b"a") == b"a"
+    assert len({Path("a/b"), Path("a//./b")}) == 1
+    assert sorted([Path("b"), Path("a")]) == [Path("a"), Path("b")]
+    assert Path("a/b").parts == ("a", "b")
+    assert Path(".").parts == ()
+    assert Path("a/b").parent == Path("a")
+    assert Path("a").parent == Path(".") and Path(".").parent == Path(".")
+    assert Path("a/b").parents == (Path("a"), Path("."))
+    assert Path("a/b").parents[-1] == Path(".")
+    assert Path("archive.tar.gz").suffix == ".gz"
+    assert Path("archive.tar.gz").suffixes == [".tar", ".gz"]
+    assert Path(".profile").suffix == "" and Path(".profile").suffixes == []
+    assert Path("name.").suffix == "."
+    assert Path("..").suffix == "" and Path("...").suffix == ""
+    assert Path("a/archive.tar.gz").stem == "archive.tar"
+    assert Path("a/file.txt").with_name("other") == Path("a/other")
+    assert Path("a/file.txt").with_stem("other") == Path("a/other.txt")
+    assert Path("a/file.txt").with_suffix(".md") == Path("a/file.md")
+    assert Path("a/file.txt").with_suffix("") == Path("a/file")
+    assert Path("a/b").relative_to("a") == Path("b")
+    assert Path("a").relative_to("a") == Path(".")
+    assert Path("a/b").relative_to("a/c", walk_up=True) == Path("../b")
+    assert not Path("ab").is_relative_to("a")
+    assert Path("a/b.txt").match("*.txt")
+    assert Path("a/b.txt").match("a/?.[t]xt")
+    assert Path("a/b.txt").match("[!a]*/b.txt") == False
+    assert Path("a/b.txt").match("a/[a-c].txt")
+    assert not Path("a/b.txt").match("a/[z-a].txt")
+    assert Path("a/B.TXT").match("*.txt", case_sensitive=False)
+    assert not Path("a/B.TXT").match("*.txt", case_sensitive=True)
+    for character in ["\u0130", "\u0131", "\u017f", "\u212a"]:
+        assert Path(character).match("[A-Z]", case_sensitive=False)
+    assert Path("\u03c2").match("\u03c3", case_sensitive=False)
+    assert Path("K").match("[\u212a-\u212a]", case_sensitive=False)
+    assert Path("b").match("[a--b]")
+    assert not Path("-").match("[a--b]")
+    for pattern in ["[a--!]", "[a-!!]", "[b-a!]"]:
+        for sensitive in [True, False]:
+            assert Path("a").full_match(pattern, case_sensitive=sensitive)
+            assert Path("!").full_match(pattern, case_sensitive=sensitive)
+    assert not Path("!").full_match("[!b-a!]")
+    for lower, upper in [("a", "z"), ("\u03b1", "\u03c9")]:
+        pattern = "[Q" + upper + "-" + (lower + upper + "-") * 128 + lower + "!]"
+        assert Path("Q").full_match(pattern)
+        assert Path("!").full_match(pattern)
+        assert Path("q").full_match(pattern, case_sensitive=False)
+        assert not Path(lower).full_match(pattern)
+        assert not Path(upper).full_match(pattern)
+        assert Path(lower).full_match("[!" + pattern[1:])
+        assert not Path("!").full_match("[!" + pattern[1:])
+    assert not Path("a/b/c").match("a/**")
+    assert Path("a/b/c").full_match("a/**")
+    assert Path("a/b/c").full_match("**/c")
+    assert not Path("a/b/c").full_match("*/c")
+    assert Path("raw-" + chr(0xDCFF)).match("raw-?")
+    assert Path("raw-" + chr(0xDCFF)).match("raw-" + chr(0xDCFF))
+    assert Path("caf\u00e9").match("caf?")
+    for name in ["", ".", "a/b"]:
+        try:
+            Path("file").with_name(name)
+            assert False
+        except ValueError:
+            pass
+    try:
+        Path("a").relative_to("b")
+        assert False
+    except ValueError:
+        pass
+    if static.platform() != "win32":
+        ordered = [Path("/"), Path("//"), Path("//a/b"), Path("/a/b"), Path("."), Path(".."), Path("a")]
+        assert sorted(ordered[::-1]) == ordered
+        for index in range(len(ordered) - 1):
+            assert ordered[index] < ordered[index + 1]
+            assert ordered[index] <= ordered[index + 1]
+            assert ordered[index + 1] > ordered[index]
+            assert ordered[index + 1] >= ordered[index]
+        assert Path("//a///b").anchor == "//"
+        assert Path("///a").root == "/"
+        assert Path("/a/b").parts == ("/", "a", "b")
+        assert Path("/").name == "" and Path("/").parent == Path("/")
+        assert Path("/").parents == ()
+        assert Path("/a/../b").is_absolute()
+        assert Path("a", "/b") == Path("/b")
+        assert not Path("/a").is_relative_to(".")
+        assert Path("/a b/#%").as_uri() == "file:///a%20b/%23%25"
+        assert Path("a\\b").as_posix() == "a\\b"
+        assert Path("//a/b").full_match("/**")
+        assert not Path("/a").full_match("[!]]/[!z-a]")
+        assert Path("//b").full_match("[!z-a]/[!]]")
+    else:
+        assert Path("C:/a/b").drive == "C:"
+        assert Path("C:/a/b").anchor == "C:\\"
+        assert Path("C:/a/b").as_posix() == "C:/a/b"
+        assert Path("C:/a") == Path("c:/A")
+        assert not Path("C:a").is_absolute()
+        assert not Path("/a").is_absolute()
+        assert Path("//server/share/a b:stream").as_uri() == "file://server/share/a%20b%3Astream"
+        for anchor in ["//server/share/", "//?/C:/", "//?/UNC/server/share/"]:
+            base = Path(anchor)
+            child = base / "one" / "two"
+            assert child.parent == base / "one"
+            assert child.parents[-1] == base
+            assert child.relative_to(base) == Path("one/two")
+            assert child.relative_to(base / "other", walk_up=True) == Path("../one/two")
+            assert child.absolute() == child
+            assert base.parent == base
+
+
+@test
+def test_filesystem():
+    root = Path("build", "pathlib-test-" + str(os.getpid()))
+    root.mkdir()
+    file = root / "file.txt"
+    binary = root / "binary"
+    moved = root / "moved"
+    hard = root / "hard"
+    link = root / "link"
+    nested = root / "nested" / "child"
+    try:
+        assert root.is_dir() and root.exists()
+        assert not file.exists() and not file.is_file()
+        assert file.write_text("caf\u00e9\n") == 5
+        assert file.read_text() == "caf\u00e9\n"
+        assert file.read_bytes() == b"caf\xc3\xa9\n"
+        assert binary.write_bytes(b"\0\xff\n") == 3
+        assert binary.read_bytes() == b"\0\xff\n"
+        with file.open("a") as stream:
+            stream.write("tail")
+        with binary.open("rb") as stream:
+            assert type(stream.read()) is bytes
+        with file.open() as stream:
+            assert stream.read() == "caf\u00e9\ntail"
+        with open(file) as stream:
+            assert stream.read() == "caf\u00e9\ntail"
+        with open(binary, "rb") as stream:
+            assert stream.read() == b"\0\xff\n"
+        assert file.stat().st_size == 10
+        assert file.is_file() and not file.is_dir() and not file.is_symlink()
+        assert not file.is_socket() and not file.is_fifo()
+        assert not file.is_block_device() and not file.is_char_device()
+        file.touch()
+        assert file.read_text() == "caf\u00e9\ntail"
+        try:
+            file.touch(exist_ok=False)
+            assert False
+        except OSError:
+            pass
+        hard.hardlink_to(file)
+        assert hard.samefile(file) and hard.stat().st_ino == file.stat().st_ino
+        assert file.rename(moved) == moved
+        assert not file.exists() and moved.is_file()
+        assert moved.replace(file) == file
+        file.chmod(0o600)
+        nested.mkdir(parents=True)
+        nested.mkdir(parents=True, exist_ok=True)
+        root.mkdir(exist_ok=True)
+        assert nested.is_dir()
+        assert sorted(entry.name for entry in root.iterdir()) == ["binary", "file.txt", "hard", "nested"]
+        assert Path.cwd() == Path(os.getcwd())
+        assert file.absolute().is_absolute()
+        assert Path("a/../b").absolute() == Path.cwd() / "a/../b"
+        assert file.resolve() == Path(os.path.realpath(str(file)))
+        assert file.resolve(strict=True) == file.resolve()
+        if static.platform() != "win32":
+            assert Path("/").is_mount() and not file.is_mount()
+            link.symlink_to(file.name)
+            assert link.is_symlink() and link.is_file()
+            assert not link.is_file(follow_symlinks=False)
+            assert link.readlink() == Path(file.name)
+            assert link.samefile(file) and link.resolve() == file.resolve()
+            assert link.lstat().st_mode & 0o170000 == 0o120000
+            file.chmod(0o640)
+            try:
+                file.chmod(0o600, follow_symlinks=False)
+            except OSError as error:
+                assert static.platform() != "darwin"
+                assert error.errno == 95 or error.errno == 38
+                assert file.stat().st_mode & 0o777 == 0o640
+                print("SKIP: chmod without following symlinks is unsupported by the platform")
+            else:
+                assert file.stat().st_mode & 0o777 == 0o600
+            file.chmod(0o600)
+            for use_lchmod in [False, True]:
+                try:
+                    if use_lchmod:
+                        link.lchmod(0o400)
+                    else:
+                        link.chmod(0o400, follow_symlinks=False)
+                except OSError as error:
+                    assert static.platform() != "darwin"
+                    assert error.errno == 95 or error.errno == 38
+                assert file.stat().st_mode & 0o777 == 0o600
+            link.chmod(0o640)
+            assert file.stat().st_mode & 0o777 == 0o640
+            file.unlink()
+            assert not link.exists() and link.exists(follow_symlinks=False)
+            link.unlink()
+        file.unlink(missing_ok=True)
+        file.unlink(missing_ok=True)
+        try:
+            file.unlink()
+            assert False
+        except OSError as error:
+            assert error.errno == 2
+        file.touch()
+        assert file.read_bytes() == b""
+        try:
+            root.unlink(missing_ok=True)
+            assert False
+        except OSError:
+            pass
+    finally:
+        for entry in [link, file, binary, moved, hard]:
+            entry.unlink(missing_ok=True)
+        if nested.exists():
+            nested.rmdir()
+        if nested.parent.exists():
+            nested.parent.rmdir()
+        root.rmdir()
+
+
+@test
+def test_mutation_failures():
+    root = Path("build", "pathlib-mutations-" + str(os.getpid()))
+    root.mkdir()
+    file = root / "file"
+    destination = root / "destination"
+    directory = root / "directory"
+    try:
+        file.write_text("original")
+        directory.mkdir()
+        (directory / "child").touch()
+        for parents in [False, True]:
+            try:
+                file.mkdir(parents=parents, exist_ok=True)
+                assert False
+            except OSError:
+                pass
+            try:
+                (file / "child").mkdir(parents=parents)
+                assert False
+            except OSError:
+                pass
+            assert file.read_text() == "original"
+        try:
+            directory.rmdir()
+            assert False
+        except OSError:
+            pass
+        assert (directory / "child").is_file()
+        try:
+            (root / "missing" / "file").touch()
+            assert False
+        except OSError as error:
+            assert error.errno == 2
+        assert not (root / "missing").exists()
+        try:
+            (file / "child").unlink(missing_ok=True)
+            assert False
+        except OSError:
+            pass
+        try:
+            file.replace(directory)
+            assert False
+        except OSError:
+            pass
+        assert file.read_text() == "original" and directory.is_dir()
+        destination.write_text("overwritten")
+        assert file.replace(destination) == destination
+        assert not file.exists() and destination.read_text() == "original"
+        try:
+            with destination.open("x") as stream:
+                assert False
+        except OSError as error:
+            assert isinstance(error, IOError)
+            assert error.errno == 17 and error.filename == str(destination)
+        assert destination.read_text() == "original"
+        if static.platform() != "win32":
+            link = root / "link"
+            link.symlink_to("target")
+            try:
+                link.touch(exist_ok=False)
+                assert False
+            except OSError as error:
+                assert error.errno == 17
+            assert not (root / "target").exists() and link.is_symlink()
+            link.touch()
+            assert (root / "target").is_file() and link.is_symlink()
+            link.write_text("through link")
+            assert (root / "target").read_text() == "through link"
+            link.unlink()
+            assert (root / "target").read_text() == "through link"
+            link.symlink_to("directory", target_is_directory=True)
+            link.mkdir(exist_ok=True)
+            assert link.is_symlink()
+            link.unlink()
+            file.write_text("replacement")
+            assert file.rename(destination) == destination
+            assert destination.read_text() == "replacement"
+    finally:
+        for current, directories, files in root.walk(top_down=False):
+            for name in files:
+                (current / name).unlink()
+            current.rmdir()
+
+
+@test
+def test_traversal():
+    root = Path("build", "pathlib-walk-" + str(os.getpid()))
+    root.mkdir()
+    try:
+        (root / "one" / "deep").mkdir(parents=True)
+        (root / "two").mkdir()
+        for name in ["a.txt", ".hidden", "one/b.txt", "one/deep/c.txt", "two/d.py"]:
+            (root / name).touch()
+        assert sorted(path.name for path in root.glob("*.txt")) == ["a.txt"]
+        assert sorted(path.name for path in root.glob(".*")) == [".hidden"]
+        assert sorted(path.name for path in root.glob("*/")) == ["one", "two"]
+        assert sorted(path.name for path in root.glob("one/?.txt")) == ["b.txt"]
+        assert sorted(path.name for path in root.rglob("*.txt")) == ["a.txt", "b.txt", "c.txt"]
+        assert len(list(root.glob("**"))) == 9
+        assert len(list(root.glob("**/**/c.txt"))) == 1
+        assert sorted(path.relative_to(root).as_posix() for path in root.rglob("")) == [".", "one", "one/deep", "two"]
+        pattern = StatefulPath("*.txt")
+        assert len(list(root.rglob(pattern))) == 3 and pattern.calls == 1
+        assert list((root / "missing").glob("*")) == []
+        assert list((root / "a.txt").glob("*")) == []
+        for base in [root, root / "missing", root / "a.txt"]:
+            for pattern in ["", ".", "./", "././"]:
+                try:
+                    list(base.glob(pattern))
+                    assert False
+                except ValueError:
+                    pass
+            try:
+                list(base.glob(str(root.absolute())))
+                assert False
+            except NotImplementedError:
+                pass
+            try:
+                list(base.rglob(str(root.absolute())))
+                assert False
+            except NotImplementedError:
+                pass
+        seen: List[str] = []
+        for directory, directories, files in root.walk():
+            seen.append(directory.name)
+            if directory == root:
+                directories.remove("one")
+        assert seen == [root.name, "two"]
+        visited: List[Path] = []
+        for current, directories, files in root.walk():
+            visited.append(current)
+            if current == root:
+                directories.clear()
+        assert visited == [root]
+        visited.clear()
+        for current, directories, files in root.walk(top_down=False):
+            visited.append(current)
+            directories.clear()
+        assert len(visited) == 4 and visited[-1] == root
+        bottom = list(root.walk(top_down=False))
+        assert bottom[-1][0] == root and len(bottom) == 4
+        errors: List[str] = []
+        def on_error(error):
+            errors.append(unwrap(error.filename))
+        assert list((root / "missing").walk(on_error=on_error)) == []
+        assert errors == [str(root / "missing")]
+        def reject_error(error):
+            raise ValueError("walk callback")
+        try:
+            list((root / "missing").walk(on_error=reject_error))
+            assert False
+        except ValueError as error:
+            assert error.message == "walk callback"
+        invalid = root / "nul\0name"
+        for use_callback in [False, True]:
+            try:
+                if use_callback:
+                    list(invalid.walk(on_error=on_error))
+                else:
+                    list(invalid.walk())
+                assert False
+            except ValueError as error:
+                assert error.message.startswith("embedded null")
+        assert errors == [str(root / "missing")]
+        for recursive in [False, True]:
+            try:
+                if recursive:
+                    list(invalid.rglob("*"))
+                else:
+                    list(invalid.glob("*"))
+                assert False
+            except ValueError as error:
+                assert error.message.startswith("embedded null")
+        if static.platform() != "win32":
+            alias = root / "alias"
+            alias.symlink_to(StringPath("one"), target_is_directory=True)
+            assert len(list(root.rglob(StringPath("*.txt")))) == 3
+            assert len(list(root.rglob(StringPath("*.txt"), recurse_symlinks=True))) == 5
+            assert len(list(root.glob("**/", recurse_symlinks=True))) == 6
+            assert len(list(root.walk(follow_symlinks=True))) == 6
+            assert len(list(root.walk(top_down=False, follow_symlinks=True))) == 6
+            alias.unlink()
+            (root / "loop").symlink_to(".", target_is_directory=True)
+            assert len(list(root.rglob("*.txt"))) == 3
+            assert len(list(root.glob("loop/*.txt"))) == 1
+            walked = list(root.walk())
+            assert "loop" in walked[0][2] and len(walked) == 4
+    finally:
+        for directory, directories, files in root.walk(top_down=False):
+            for name in files:
+                (directory / name).unlink()
+            directory.rmdir()
+
+
+test_lexical()
+test_filesystem()
+test_mutation_failures()
+test_traversal()

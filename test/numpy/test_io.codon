@@ -360,7 +360,7 @@ def test_loadtxt_comments_byte():
     TextIO = '# comment\n1,2,3,5\n'
     with open(data, "w") as fh:
         fh.write(TextIO)
-    x = np.loadtxt(data, dtype=int, delimiter=',', comments=b'#')
+    x = np.loadtxt(data, dtype=int, delimiter=b',', comments=b'#')
     a = np.array([1, 2, 3, 5], int)
     assert np.array_equal(x.reshape(-1), a)
 
@@ -577,7 +577,7 @@ test_gft_skip_footer()
 # def test_header(self): TODO
 # def test_auto_dtype(self): TODO
 
-@test
+# TODO: Enable when genfromtxt supports dtype=None.
 def test_auto_dtype_uniform():
     # Tests whether the output dtype can be uniformized
     data = test_dir + '/data_50.txt'
@@ -587,8 +587,6 @@ def test_auto_dtype_uniform():
     test = np.genfromtxt(data, dtype=None)
     control = np.array([[1, 2, 3, 4], [5, 6, 7, 8]], dtype=None)
     assert np.array_equal(test, control)
-
-# test_auto_dtype_uniform()
 
 # def test_fancy_dtype(self): TODO
 # def test_names_overwrite(self): TODO
@@ -713,7 +711,7 @@ test_gft_usecols()
 @test
 def test_usecols_with_integer():
     # Test usecols with an integer
-    TextIO = b"1 2 3\n4 5 6"
+    TextIO = "1 2 3\n4 5 6"
     data = test_dir + '/data_79.txt'
     with open(data, "w") as f:
         f.write(TextIO)
@@ -762,7 +760,7 @@ test_usecols_with_integer()
 @test
 def test_filling_values():
     # Test missing values
-    TextIO = b"1, 2, 3\n1, , 5\n0, 6, \n"
+    TextIO = "1, 2, 3\n1, , 5\n0, 6, \n"
     data = test_dir + '/data_113.txt'
     with open(data, "w") as f:
         f.write(TextIO)
@@ -842,7 +840,7 @@ def test_gft_from_gzip():
     for sep in linesep:
         f = f"{test_dir}/data_{i}.gz"
         data = '0 1 2' + sep + '3 4 5'
-        with gzip.open(f, mode='w') as g:
+        with gzip.open(f, mode='wt') as g:
             g.write(data)
         i += 1
 
@@ -928,8 +926,10 @@ def test_save_load_memmap_readwrite():
     b = np.load(path, dtype=int, ndim=2, mmap_mode='r+')
     a[0][0] = 5
     b[0][0] = 5
-    data = np.load(path)
+    data = np.load(path, dtype=int, ndim=2)
     assert np.array_equal(data, a)
+
+test_save_load_memmap_readwrite()
 
 # def test_savez_load(): Not yet implemented
 
@@ -1211,22 +1211,147 @@ def test_empty_delimiter():
 
 test_empty_delimiter()
 
-# Testcase fails
+# Unicode and native bytes
+
+@test
+def test_save_load_binary():
+    path = test_dir + "/unicode_npio.npy"
+    expected = np.array([1, 2, 3, 4], dtype=i32)
+    np.save(path, expected)
+    result = np.load(path, dtype=i32)
+    assert np.array_equal(result, expected)
+
+test_save_load_binary()
+
+@test
+def test_raw_binary_io():
+    path = test_dir + "/unicode_npio.bin"
+    expected = np.array([0x1020304, -7, 42], dtype=i32)
+    expected.tofile(path)
+    result = np.fromfile(path, dtype=i32)
+    assert np.array_equal(result, expected)
+
+    raw = bytes(expected.data.as_byte(), expected.nbytes)
+    result = np.fromstring(raw, dtype=i32)
+    assert np.array_equal(result, expected)
+
+    result = np.fromstring(
+        bytes(expected.data.as_byte(), expected.nbytes), dtype=i32
+    )
+    assert np.array_equal(result, expected)
+
+    handle_path = test_dir + "/unicode_npio_handle.bin"
+    with open(handle_path, "wb") as output:
+        expected.tofile(output)
+    with open(handle_path, "rb") as input:
+        result = np.fromfile(input, dtype=i32)
+    assert np.array_equal(result, expected)
+
+    text_path = test_dir + "/unicode_npio_handle.txt"
+    with open(text_path, "w") as output:
+        expected.tofile(output, sep="§")
+    with open(text_path, "r") as input:
+        result = np.fromfile(input, dtype=i32, sep="§")
+    assert np.array_equal(result, expected)
+
+test_raw_binary_io()
+
+@test
+def test_writable_memmap():
+    path = test_dir + "/unicode_npio_memmap.bin"
+    mapped = np.memmap(path, dtype=i32, mode="w+", shape=(3,))
+    mapped[:] = np.array([7, 8, 9], dtype=i32)
+    result = np.fromfile(path, dtype=i32)
+    assert np.array_equal(result, np.array([7, 8, 9], dtype=i32))
+
+test_writable_memmap()
+
+@test
+def test_text_fromfile_unicode_separator():
+    path = test_dir + "/unicode_npio_fromfile.txt"
+    with open(path, "w") as output:
+        output.write("1§2§3")
+
+    result = np.fromfile(path, dtype=int, sep="§")
+    assert np.array_equal(result, np.array([1, 2, 3], dtype=int))
+
+test_text_fromfile_unicode_separator()
+
+def codepoint_length(value: str) -> int:
+    return len(value)
+
+@test
+def test_loadtxt_utf8_fields():
+    path = test_dir + "/unicode_npio_loadtxt.txt"
+    with open(path, "w") as output:
+        output.write("café,Ω\n")
+
+    result = np.loadtxt(
+        path,
+        dtype=int,
+        delimiter=",",
+        converters=codepoint_length,
+    )
+    assert np.array_equal(result.reshape(-1), np.array([4, 1], dtype=int))
+
+test_loadtxt_utf8_fields()
+
+@test
+def test_loadtxt_utf8_whitespace_fields():
+    path = test_dir + "/unicode_npio_loadtxt_whitespace.txt"
+    with open(path, "w") as output:
+        output.write("càfé 9\n")
+
+    result = np.loadtxt(
+        path,
+        dtype=int,
+        converters=codepoint_length,
+    )
+    assert np.array_equal(result.reshape(-1), np.array([4, 1], dtype=int))
+
+test_loadtxt_utf8_whitespace_fields()
+
+@test
+def test_genfromtxt_wide_string_lines():
+    result = np.genfromtxt(
+        ["café§Ωλignored\n"],
+        dtype=int,
+        delimiter="§",
+        comments="λ",
+        converters=codepoint_length,
+    )
+    assert np.array_equal(result.reshape(-1), np.array([4, 1], dtype=int))
+
+test_genfromtxt_wide_string_lines()
+
+@test
+def test_genfromtxt_empty_first_field():
+    result = np.genfromtxt(
+        [",2\n"],
+        dtype=int,
+        delimiter=",",
+        filling_values=1,
+    )
+    assert np.array_equal(result.reshape(-1), np.array([1, 2], dtype=int))
+
+test_genfromtxt_empty_first_field()
+
 @test
 def test_gzip_load():
     values = np.array([1, 2, 3, 4, 5])
     a = np.array(values, dtype=float)
 
     s = test_dir + '/data_130.gz'
-    f = gzip.open(s, mode="w")
+    f = gzip.open(s, mode="wb")
 
     np.save(f, a)
     f.close()
-    f = gzip.open(s, mode="r")
+    f = gzip.open(s, mode="rb")
     g = np.load(f, dtype=float, ndim=1)
+    f.close()
     assert np.array_equal(g, a)
 
-# test_gzip_load()
+test_gzip_load()
 
 # def test_gzip_loadtxt(): Not yet implemented
 # def test_gzip_loadtxt_from_string(): Not yet implemented
@@ -1247,7 +1372,7 @@ def test_gft_from_bz2():
     for sep in linesep:
         f = f"{test_dir}/data_{i}.bz2"
         data = '0 1 2' + sep + '3 4 5'
-        with bz2.open(f, mode='w') as b:
+        with bz2.open(f, mode='wt') as b:
             b.write(data)
         i += 1
 
@@ -1256,21 +1381,21 @@ def test_gft_from_bz2():
 
 test_gft_from_bz2()
 
-# Testcase fails
 @test
 def test_bz2_load():
     values = np.array([1, 2, 3, 4, 5])
     a = np.array(values, dtype=float)
 
     s = test_dir + '/data_140.bz2'
-    f = bz2.open(s, mode="w")
+    f = bz2.open(s, mode="wb")
     np.save(f, a)
     f.close()
-    f = bz2.open(s, mode="r")
+    f = bz2.open(s, mode="rb")
     g = np.load(f, dtype=float)
+    f.close()
     assert np.array_equal(g, a)
 
-# test_bz2_load()
+test_bz2_load()
 
 @test
 def test_save_load_int32_1d_v1():
@@ -1546,7 +1671,7 @@ def test_load_corrupted_file_v1():
     filename = test_dir + "/binary_corrupted_file_v1.npy"
     try:
         with open(filename, 'wb') as f:
-            f.write('corrupted_data')
+            f.write(b'corrupted_data')
         np.load(filename)
         assert False
     except ValueError:
@@ -1561,8 +1686,8 @@ def test_load_version_mismatch_v1():
     np.save(filename, array)
     try:
         with open(filename, 'rb+') as f:
-            f.seek(0, 6)
-            f.write('\x00\x00')  # Change the version to 0
+            f.seek(6, 0)
+            f.write(b'\x00\x00')  # Change the version to 0
         np.load(filename)
         assert False
     except ValueError:
@@ -1608,12 +1733,12 @@ def test_load_incorrect_save_v1():
     filename = test_dir + "/binary_incorrect_save_v1.npy"
     # Save a partial array
     with open(filename, 'wb') as f:
-        f.write("\x93NUMPY")
-        f.write("\x01\x00\x00\x00")
-        f.write("\x00\x00\x00\x00")
-        f.write("\x00\x00\x00\x00\x00\x00\x00\x00")
-        f.write("\x00")
-        f.write("\x00")
+        f.write(b"\x93NUMPY")
+        f.write(b"\x01\x00\x00\x00")
+        f.write(b"\x00\x00\x00\x00")
+        f.write(b"\x00\x00\x00\x00\x00\x00\x00\x00")
+        f.write(b"\x00")
+        f.write(b"\x00")
     try:
         np.load(filename)
         assert False

@@ -143,7 +143,7 @@ class X[T]:
     def __str__(self):
         return f'X({self.a},{self.b},{self.c},{self.d})'
 x = X[float](c=0)
-print x #: X(4,0,0,oops)
+print x #: X(4,0,0.0,oops)
 y = X(c='darius',a=5)
 print y #: X(5,0,darius,oops)
 
@@ -397,7 +397,7 @@ print(f.x, f.y, f.__class__.__name__) #: ['s'] (1, 's') Foo[List[str],Tuple[int,
 f.foo(1.1)
 #: [1.1]
 l = f.foo(2)
-#: [1.1, 2]
+#: [1.1, 2.0]
 assert l == [1.1, 2]
 
 b = f.nloc(5)

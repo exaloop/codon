@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.14)
 project(
   Codon
-  VERSION "0.19.6"
+  VERSION "0.20.2"
   HOMEPAGE_URL "https://github.com/exaloop/codon"
   DESCRIPTION "high-performance, extensible Python compiler")
-set(CODON_JIT_PYTHON_VERSION "0.4.6")
+set(CODON_JIT_PYTHON_VERSION "0.5.2")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.h.in"
                "${PROJECT_SOURCE_DIR}/codon/config/config.h")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.py.in"
@@ -15,7 +15,6 @@ if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.24.0")
 endif()
 
 set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   set(CMAKE_CXX_FLAGS
       "${CMAKE_CXX_FLAGS} -pedantic -fvisibility-inlines-hidden -Wno-return-type-c-linkage -Wno-gnu-zero-variadic-macro-arguments -Wno-deprecated-declarations"
@@ -23,7 +22,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 else()
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-return-type")
 endif()
-set(CMAKE_CXX_FLAGS_DEBUG "-g")
+set(CMAKE_CXX_FLAGS_DEBUG "-O1 -g")
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fno-limit-debug-info")
 endif()
@@ -63,12 +62,7 @@ endif()
 include(${CMAKE_SOURCE_DIR}/cmake/deps.cmake)
 include(${CMAKE_SOURCE_DIR}/cmake/CMakeRC.cmake)
 
-set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
-if(APPLE)
-  set(CMAKE_INSTALL_RPATH "@loader_path;@loader_path/../lib/codon")
-else()
-  set(CMAKE_INSTALL_RPATH "$ORIGIN:$ORIGIN/../lib/codon")
-endif()
+include(${CMAKE_SOURCE_DIR}/cmake/UnicodeTables.cmake)
 
 add_executable(peg2cpp codon/util/peg2cpp.cpp)
 target_include_directories(peg2cpp PRIVATE ${peglib_SOURCE_DIR})
@@ -271,64 +265,14 @@ elseif(WIN32)
 else()
   add_dependencies(codonrt openblas_64)
 
-  # Make sure compiler-rt symbols are visible
-  set(LLVM_OBJCOPY "${LLVM_BINARY_DIR}/bin/llvm-objcopy")
-  if(NOT EXISTS "${LLVM_OBJCOPY}")
-    find_program(LLVM_OBJCOPY
-      NAMES llvm-objcopy objcopy
-      REQUIRED
-    )
-  endif()
-  set(COMPILER_RT_DEFAULT "${CMAKE_BINARY_DIR}/libclang_rt.builtins.default.a")
-  set(COMPILER_RT_DEFAULT_VIS_SYMBOLS
-    __truncdfhf2
-    __truncdfbf2
-    __truncdfsf2
-    __truncsfbf2
-    __truncsfhf2
-    __trunctfdf2
-    __trunctfbf2
-    __trunctfhf2
-    __trunctfsf2
-    __truncxfbf2
-    __trunctfxf2
-    __trunchfbf2
-    __truncxfhf2
-    __extendbfsf2
-    __extendsfdf2
-    __extendhfsf2
-    __extenddftf2
-    __extendhftf2
-    __extendsftf2
-    __extendhfxf2
-    __extendxftf2
-  )
-  set(COMPILER_RT_OBJCOPY_ARGS)
-  foreach(SYM IN LISTS COMPILER_RT_DEFAULT_VIS_SYMBOLS)
-    list(APPEND COMPILER_RT_OBJCOPY_ARGS
-      "--set-symbol-visibility=${SYM}=default")
-  endforeach()
-  add_custom_command(
-    OUTPUT "${COMPILER_RT_DEFAULT}"
-    COMMAND ${CMAKE_COMMAND} -E copy
-            "${COMPILER_RT_LIB}"
-            "${COMPILER_RT_DEFAULT}"
-    COMMAND "${LLVM_OBJCOPY}"
-            ${COMPILER_RT_OBJCOPY_ARGS}
-            "${COMPILER_RT_DEFAULT}"
-    DEPENDS "${COMPILER_RT_LIB}"
-    VERBATIM
-  )
-  add_custom_target(compiler_rt_default_visibility
-    DEPENDS "${COMPILER_RT_DEFAULT}")
-  add_dependencies(codonrt compiler_rt_default_visibility)
-
+  # compiler-rt must be built with COMPILER_RT_BUILTINS_HIDE_SYMBOLS=OFF
+  # so helpers referenced only by JIT-generated code remain exported.
   target_link_libraries(
     codonrt
     PRIVATE -Wl,--whole-archive $<TARGET_FILE:zlibstatic> $<TARGET_FILE:gc>
             $<TARGET_FILE:bz2> $<TARGET_FILE:liblzma> $<TARGET_FILE:re2>
             $<TARGET_FILE:openblas_64> $<TARGET_FILE:hwy> $<TARGET_FILE:hwy_contrib>
-            ${COMPILER_RT_DEFAULT} -Wl,--no-whole-archive)
+            ${COMPILER_RT_LIB} -Wl,--no-whole-archive)
 endif()
 if(ASAN)
   target_compile_options(
@@ -434,6 +378,7 @@ set(CODON_HPPFILES
   codon/cir/transform/parallel/schedule.h
   codon/cir/transform/pass.h
   codon/cir/transform/pythonic/dict.h
+  codon/cir/transform/pythonic/format.h
   codon/cir/transform/pythonic/generator.h
   codon/cir/transform/pythonic/io.h
   codon/cir/transform/pythonic/list.h
@@ -543,6 +488,7 @@ set(CODON_CPPFILES
   codon/cir/transform/parallel/schedule.cpp
   codon/cir/transform/pass.cpp
   codon/cir/transform/pythonic/dict.cpp
+  codon/cir/transform/pythonic/format.cpp
   codon/cir/transform/pythonic/generator.cpp
   codon/cir/transform/pythonic/io.cpp
   codon/cir/transform/pythonic/list.cpp
@@ -633,7 +579,9 @@ cmrc_add_resource_library(
   NAMESPACE codon
   ${CODON_STDLIB_RESOURCES}
 )
+cmrc_add_resources(codon-stdlib WHENCE "${CMAKE_BINARY_DIR}" ${CODON_UNICODE_GENERATED_FILES})
 set_property(TARGET codon-stdlib PROPERTY POSITION_INDEPENDENT_CODE ON)
+add_dependencies(codon-stdlib unicode_data)
 
 if(WIN32)
   target_link_libraries(codonc PRIVATE ${LLVM_LIBS} fmt codonrt codon-stdlib)
@@ -739,7 +687,9 @@ set(CODON_TEST_CPPFILES
     test/cir/flow.cpp
     test/cir/func.cpp
     test/cir/instr.cpp
+    test/cir/llvm/optimize.cpp
     test/cir/module.cpp
+    test/cir/transform/format.cpp
     test/cir/transform/manager.cpp
     test/cir/type.cpp
     test/cir/util/matching.cpp
@@ -782,6 +732,30 @@ endif()
 target_compile_definitions(codon_test
                            PRIVATE TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test")
 
+if(APPLE)
+  set_target_properties(
+    codonrt codonc codon_jupyter
+    PROPERTIES
+      INSTALL_RPATH "@loader_path"
+  )
+  set_target_properties(
+    codon
+    PROPERTIES
+      INSTALL_RPATH "@loader_path/../lib/codon"
+  )
+else()
+  set_target_properties(
+    codonrt codonc codon_jupyter
+    PROPERTIES
+      INSTALL_RPATH "$ORIGIN"
+  )
+  set_target_properties(
+    codon
+    PROPERTIES
+      INSTALL_RPATH "$ORIGIN/../lib/codon"
+  )
+endif()
+
 install(TARGETS codonrt codonc codon_jupyter DESTINATION lib/codon)
 if(WIN32)
   # libomp.dll for runtime (JIT + AOT exes), libomp.lib so AOT `codon build` of @par
@@ -810,6 +784,11 @@ install(DIRECTORY ${CMAKE_BINARY_DIR}/include/codon DESTINATION include)
 install(DIRECTORY ${LLVM_INCLUDE_DIRS}/llvm DESTINATION include)
 install(DIRECTORY ${LLVM_INCLUDE_DIRS}/llvm-c DESTINATION include)
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/stdlib DESTINATION lib/codon)
+foreach(unicode_file IN LISTS CODON_UNICODE_GENERATED_FILES)
+  file(RELATIVE_PATH unicode_relative "${CMAKE_BINARY_DIR}" "${unicode_file}")
+  get_filename_component(unicode_directory "${unicode_relative}" DIRECTORY)
+  install(FILES "${unicode_file}" DESTINATION "lib/codon/${unicode_directory}")
+endforeach()
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/jit/ DESTINATION python)
 install(DIRECTORY DESTINATION lib/codon/plugins)
 

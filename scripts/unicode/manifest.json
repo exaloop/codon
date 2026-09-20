@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "unicode_version": "16.0.0",
+  "archive": "tables-16.0.0.tar.gz",
+  "sha256": "28c67851b80e5728893786830a03e4023067e143e97c3d1b825adfe59f2712cd",
+  "generators": {
+    "scripts/unicode/inputs.json": "4f994e6e8d6d0ff508e36708f6da60423ee97494489b544986a5753d17eb217a",
+    "scripts/unicode_tables.py": "45d7f62328a8724ebc6833328e54b43dea7ff413b3177b7e7b79b5edd3346513",
+    "scripts/generate_unicode_data.py": "d061ef033019df4eee455222cecc88575c21876461e3dd14891520d9dbf79bb6",
+    "scripts/generate_unicode_normalization_data.py": "124ea31a3c493e4eeaea01e658553860b258585e3615ba1950a86edadfc1f3f2",
+    "scripts/generate_single_byte_codecs.py": "a282b2d6bf4cba43f275efcd85aaa905cc18b4bd7215c04b236d2c7c4e77825e",
+    "scripts/generate_float_dtoa_tables.py": "284afa4ac4a2c631ec0a5fa268476d693ec44db82e4fa4bea93295ca5131d45a"
+  },
+  "files": {
+    "internal/unicode/generated/properties.codon": {
+      "sha256": "efd83c99643c1626dc96849e21523a89c61c478e720d869d68090ad35244f8ef",
+      "size": 453400
+    },
+    "internal/unicode/generated/single_byte_codecs.codon": {
+      "sha256": "d7052b8ec9d2db0f89014f6ab2662c759e97ba6d0ff1619896c944f2fd093489",
+      "size": 22871
+    },
+    "internal/unicode/generated/normalization.codon": {
+      "sha256": "dce2987ad6ba8b5718c31d0bc409cbceedc603ccb839fe124133142efd29d3d9",
+      "size": 724116
+    },
+    "internal/unicode/generated/metadata.codon": {
+      "sha256": "a1f3aab1c93533bd606185c8589ff1a1851709060c04cb9f2b8b2cfd5ef9147f",
+      "size": 1165843
+    },
+    "internal/unicode/generated/names.codon": {
+      "sha256": "000dcea0cd8e57e828f22a2bc3e44b186dda6595daacb6de3b22129b1ccf4f5b",
+      "size": 3142395
+    },
+    "internal/numeric/generated/float_dtoa_tables.codon": {
+      "sha256": "99d470c38983f4f30e082727b064c3372c1140d5b4d82f8d3c05fa86d2852299",
+      "size": 31954
+    }
+  }
+}

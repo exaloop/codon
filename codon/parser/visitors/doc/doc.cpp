@@ -115,6 +115,9 @@ std::shared_ptr<json> DocVisitor::apply(const std::string &argv0,
   shared->modules[""]->add("__windows__", std::make_shared<int>(shared->itemID++));
   shared->modules[""]->add("__dict_unordered__",
                            std::make_shared<int>(shared->itemID++));
+  for (const auto *name : {"__codon_version_major__", "__codon_version_minor__",
+                           "__codon_version_micro__"})
+    shared->modules[""]->add(name, std::make_shared<int>(shared->itemID++));
 
   auto j = std::make_shared<json>(std::unordered_map<std::string, std::string>{
       {"name", "type"}, {"kind", "class"}, {"type", "type"}});

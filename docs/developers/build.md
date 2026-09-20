@@ -39,6 +39,12 @@ installation to avoid clashes with the system LLVM.
 
 ## Build
 
+Python 3.8+ is required to verify and unpack the bundled standard-library tables.
+This step is offline and does not depend on Python's Unicode database version.
+Generated tables live in the build tree and are embedded and installed automatically.
+See the [table maintenance guide](https://github.com/exaloop/codon/blob/master/scripts/unicode/README.md)
+for the separate, version-pinned regeneration workflow.
+
 Codon requires `libgfortran`, the parent directory of which must be specified via the
 `CODON_SYSTEM_LIBRARIES` environment variable. For example, on macOS, with a
 `brew`-installed `libgfortran` (obtainable via `brew install gcc`):

@@ -1,0 +1,47 @@
+# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
+
+import internal.static as static
+
+@tuple
+class _Status:
+    errno: int
+    winerror: int
+    message: str
+    kind: int
+
+    def __bool__(self) -> bool:
+        return self.errno != 0 or self.winerror != 0 or self.kind != 0
+
+    def raise_error(self, operation: str, filename: Optional[str] = None,
+                    filename2: Optional[str] = None):
+        if not self:
+            return
+        if self.kind == 1:
+            raise ValueError(self.message)
+        if self.kind == 2:
+            raise OverflowError(self.message)
+        if static.platform() == "win32":
+            if self.winerror and not self.message:
+                import os._win32 as native
+                native._winerror(operation, u32(self.winerror), filename, filename2)
+        message = self.message
+        if not message and self.errno:
+            from C import strerror(i32) -> cobj
+            message = str.from_ptr(strerror(i32(self.errno)))
+        code: Optional[int] = self.errno if self.errno else None
+        windows_code: Optional[int] = self.winerror if self.winerror else None
+        raise OSError(code, message if message else operation, filename,
+                      windows_code, filename2)
+
+def _status(errno: int = 0, winerror: int = 0, message: str = "", kind: int = 0) -> _Status:
+    return _Status(errno, winerror, message, kind)
+
+def _path_status(path: str, windows: bool = False) -> _Status:
+    if "\0" in path:
+        return _status(message="embedded null character" if windows else "embedded null byte", kind=1)
+    if not windows:
+        for character in path:
+            code = ord(character)
+            if 0xD800 <= code <= 0xDFFF and not 0xDC80 <= code <= 0xDCFF:
+                return _status(message="surrogates not allowed", kind=1)
+    return _status()

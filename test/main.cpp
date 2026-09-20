@@ -463,7 +463,9 @@ TEST_P(SeqTest, Run) {
     status = runInChildProcess();
   if (!WIFEXITED(status))
     std::cerr << result() << std::endl;
-  ASSERT_TRUE(WIFEXITED(status));
+  ASSERT_TRUE(WIFEXITED(status))
+      << "child wait status: " << status
+      << ", signal: " << (WIFSIGNALED(status) ? WTERMSIG(status) : 0);
 
   string output = result();
 
@@ -583,11 +585,13 @@ INSTANTIATE_TEST_SUITE_P(
       testing::Values(
         "stdlib/llvm_test.codon",
         "stdlib/str_test.codon",
+        "stdlib/bytearray_test.codon",
         "stdlib/re_test.codon",
         "stdlib/math_test.codon",
         "stdlib/cmath_test.codon",
         "stdlib/datetime_test.codon",
         "stdlib/itertools_test.codon",
+        "stdlib/json_test.codon",
         "stdlib/bisect_test.codon",
         "stdlib/random_test.codon",
         "stdlib/statistics_test.codon",
@@ -595,6 +599,13 @@ INSTANTIATE_TEST_SUITE_P(
         "stdlib/heapq_test.codon",
         "stdlib/operator_test.codon",
         "stdlib/asyncio_test.codon",
+        "stdlib/io_test.codon",
+        "stdlib/sys_test.codon",
+        "stdlib/os_test.codon",
+        "stdlib/pathlib_test.codon",
+        "stdlib/ntpath_test.codon",
+        "stdlib/win32_os_test.codon",
+        "stdlib/unicode_test.codon",
         "python/pybridge.codon"
       ),
       testing::Values(true, false),
@@ -633,6 +644,7 @@ INSTANTIATE_TEST_SUITE_P(
             "transform/escapes.codon",
             "transform/folding.codon",
             "transform/for_lowering.codon",
+            "transform/format.codon",
             "transform/io_opt.codon",
             "transform/inlining.codon",
             "transform/list_opt.codon",

@@ -14,36 +14,49 @@ static llvm::codegen::RegisterCodeGenFlags CFG;
 
 namespace codon {
 namespace ir {
+namespace {
+std::string getFeaturesStr(const std::vector<std::string> &mattrs) {
+  llvm::SubtargetFeatures features;
+  for (const auto &mattr : mattrs)
+    features.AddFeature(mattr);
+  return features.getString();
+}
+} // namespace
 
 std::unique_ptr<llvm::TargetMachine>
 getTargetMachine(llvm::Triple triple, llvm::StringRef cpuStr,
-                 llvm::StringRef featuresStr, const llvm::TargetOptions &options,
-                 bool pic) {
+                 llvm::StringRef featuresStr, const llvm::TargetOptions &targetOptions,
+                 llvm::StringRef march, bool pic) {
   std::string err;
-  const llvm::Target *target =
-      llvm::TargetRegistry::lookupTarget(llvm::codegen::getMArch(), triple, err);
+  const llvm::Target *target = llvm::TargetRegistry::lookupTarget(march, triple, err);
 
   if (!target)
     return nullptr;
 
-  return std::unique_ptr<llvm::TargetMachine>(target->createTargetMachine(
-      triple.getTriple(), cpuStr, featuresStr, options,
+  auto *tm = target->createTargetMachine(
+      triple.getTriple(), cpuStr, featuresStr, targetOptions,
       pic ? llvm::Reloc::Model::PIC_ : llvm::codegen::getExplicitRelocModel(),
-      llvm::codegen::getExplicitCodeModel(), llvm::CodeGenOptLevel::Aggressive));
+      llvm::codegen::getExplicitCodeModel(), llvm::CodeGenOptLevel::Aggressive);
+  if (!tm)
+    compilationError("could not create LLVM target machine");
+  return std::unique_ptr<llvm::TargetMachine>(tm);
 }
 
-std::unique_ptr<llvm::TargetMachine>
-getTargetMachine(llvm::Module *module, bool setFunctionAttributes, bool pic) {
+std::unique_ptr<llvm::TargetMachine> getTargetMachine(llvm::Module *module,
+                                                      Options *options,
+                                                      bool setFunctionAttributes,
+                                                      bool pic) {
   llvm::Triple moduleTriple(module->getTargetTriple());
   std::string cpuStr, featuresStr;
-  const llvm::TargetOptions options =
+  const llvm::TargetOptions targetOptions =
       llvm::codegen::InitTargetOptionsFromCodeGenFlags(moduleTriple);
   llvm::TargetLibraryInfoImpl tlii(moduleTriple);
 
   if (moduleTriple.getArch()) {
-    cpuStr = llvm::codegen::getCPUStr();
-    featuresStr = llvm::codegen::getFeaturesStr();
-    auto machine = getTargetMachine(moduleTriple, cpuStr, featuresStr, options);
+    cpuStr = options->mcpu;
+    featuresStr = getFeaturesStr(options->mattrs);
+    auto machine = getTargetMachine(moduleTriple, cpuStr, featuresStr, targetOptions,
+                                    options->march, pic);
     if (setFunctionAttributes)
       llvm::codegen::setFunctionAttributes(cpuStr, featuresStr, *module);
     return machine;
@@ -410,25 +423,38 @@ struct AllocInfo {
         anySubLoopContains(ai) || inIrreducibleCycle(ai))
       return false;
 
-    // Need to track insertvalue/extractvalue to make this effective.
-    // This maps each "insertvalue" of the pointer (or derived value)
-    // to a list of indices at which it is inserted (usually there will
-    // be just one).
-    SmallDenseMap<Instruction *, SmallVector<ArrayRef<unsigned>, 1>> inserts;
+    // Track the aggregate field paths that can contain the allocation. An empty path
+    // means that the value itself is derived from the allocation.
+    using IndexPath = SmallVector<unsigned, 2>;
+    using IndexPaths = SmallVector<IndexPath, 2>;
+    SmallDenseMap<Instruction *, IndexPaths> provenance;
 
     std::deque<Instruction *> worklist;
-    SmallSet<Instruction *, 20> visited;
-    auto add_to_worklist = [&](Instruction *instr) {
-      if (!visited.contains(instr)) {
-        visited.insert(instr);
+    SmallSet<Instruction *, 20> pending;
+    auto addProvenance = [&](Instruction *instr, ArrayRef<unsigned> path) {
+      auto &paths = provenance[instr];
+      if (llvm::find(paths, path) != paths.end())
+        return;
+      paths.emplace_back(path.begin(), path.end());
+      if (!pending.contains(instr)) {
+        pending.insert(instr);
         worklist.push_front(instr);
       }
     };
-    add_to_worklist(ai);
+    auto propagate = [&](Instruction *dest, Instruction *source) {
+      for (const auto &path : provenance[source])
+        addProvenance(dest, path);
+    };
+    auto startsWith = [](ArrayRef<unsigned> path, ArrayRef<unsigned> prefix) {
+      return path.size() >= prefix.size() &&
+             std::equal(prefix.begin(), prefix.end(), path.begin());
+    };
+    addProvenance(ai, {});
 
     do {
       Instruction *pi = worklist.back();
       worklist.pop_back();
+      pending.erase(pi);
 
       for (User *u : pi->users()) {
         Instruction *instr = cast<Instruction>(u);
@@ -443,7 +469,13 @@ struct AllocInfo {
         case Instruction::PHI:
           if (instr->getParent() == loop.getHeader())
             return false;
-          LLVM_FALLTHROUGH;
+          propagate(instr, pi);
+          continue;
+
+        case Instruction::Select:
+        case Instruction::Freeze:
+          propagate(instr, pi);
+          continue;
 
         case Instruction::PtrToInt:
         case Instruction::IntToPtr:
@@ -451,56 +483,40 @@ struct AllocInfo {
         case Instruction::Sub:
         case Instruction::AddrSpaceCast:
         case Instruction::BitCast:
-        case Instruction::GetElementPtr:
-          add_to_worklist(instr);
+        case Instruction::GetElementPtr: {
+          for (const auto &path : provenance[pi]) {
+            if (!path.empty())
+              return false;
+          }
+          addProvenance(instr, {});
           continue;
+        }
 
         case Instruction::InsertValue: {
-          auto *op0 = instr->getOperand(0);
-          auto *op1 = instr->getOperand(1);
-          if (isa<InsertValueInst>(op0) || isa<FreezeInst>(op0) ||
-              isa<UndefValue>(op0)) {
-            // Add for this insertvalue
-            if (op1 == pi) {
-              auto *insertValueInst = cast<InsertValueInst>(instr);
-              inserts[instr].push_back(insertValueInst->getIndices());
-            }
-            // Add for previous insertvalue
-            if (auto *instrOp = dyn_cast<Instruction>(op0)) {
-              auto it = inserts.find(instrOp);
-              if (it != inserts.end())
-                inserts[instr].append(it->second);
+          auto *insert = cast<InsertValueInst>(instr);
+          auto indices = insert->getIndices();
+          if (insert->getAggregateOperand() == pi) {
+            for (const auto &path : provenance[pi]) {
+              if (!startsWith(path, indices))
+                addProvenance(instr, path);
             }
           }
-          add_to_worklist(instr);
+          if (insert->getInsertedValueOperand() == pi) {
+            for (const auto &path : provenance[pi]) {
+              IndexPath result(indices.begin(), indices.end());
+              result.append(path);
+              addProvenance(instr, result);
+            }
+          }
           continue;
         }
 
         case Instruction::ExtractValue: {
-          auto *extractValueInst = cast<ExtractValueInst>(instr);
-          auto it = inserts.end();
-          if (auto *instrOp = dyn_cast<Instruction>(instr->getOperand(0)))
-            it = inserts.find(instrOp);
-          if (it != inserts.end()) {
-            for (auto &indices : it->second) {
-              if (indices == extractValueInst->getIndices()) {
-                add_to_worklist(instr);
-                break;
-              }
-            }
-          } else {
-            add_to_worklist(instr);
+          auto indices = cast<ExtractValueInst>(instr)->getIndices();
+          for (const auto &path : provenance[pi]) {
+            if (startsWith(path, indices))
+              addProvenance(instr, ArrayRef<unsigned>(path).drop_front(indices.size()));
           }
-          continue;
-        }
-
-        case Instruction::Freeze: {
-          if (auto *instrOp = dyn_cast<Instruction>(instr->getOperand(0))) {
-            auto it = inserts.find(instrOp);
-            if (it != inserts.end())
-              inserts[instr] = it->second;
-          }
-          add_to_worklist(instr);
           continue;
         }
 
@@ -531,7 +547,7 @@ struct AllocInfo {
               continue;
             case Intrinsic::launder_invariant_group:
             case Intrinsic::strip_invariant_group:
-              add_to_worklist(instr);
+              addProvenance(instr, {});
               continue;
             }
           }
@@ -542,6 +558,13 @@ struct AllocInfo {
               if (call->getArgOperand(i) != pi)
                 continue;
 
+              // Aggregate arguments containing the pointer need interprocedural
+              // field-sensitive capture information, which LLVM does not provide.
+              for (const auto &path : provenance[pi]) {
+                if (!path.empty())
+                  return false;
+              }
+
               // byval is okay because callee sees a copy.
               if (call->paramHasAttr(i, llvm::Attribute::ByVal))
                 continue;
@@ -550,16 +573,11 @@ struct AllocInfo {
               if (call->getType()->isPointerTy())
                 return false;
 
-              auto ME = call->getMemoryEffects();
-              bool readsOnly = !llvm::isModSet(ME.getModRef());
-              bool onlyArgMem = call->onlyAccessesArgMemory();
-
-              // If the pointer may be captured, only allow read-only calls.
-              if (!call->paramHasAttr(i, llvm::Attribute::NoCapture) && !readsOnly)
-                return false;
-
-              // Writes through argmem are okay, but writes elsewhere are not.
-              if (!onlyArgMem && llvm::isModSet(ME.getModRef()))
+              // Reusing the allocation is safe only if the call can neither
+              // retain nor free it. Read-only does not imply either property.
+              bool noFree = call->hasFnAttr(llvm::Attribute::NoFree) ||
+                            call->paramHasAttr(i, llvm::Attribute::NoFree);
+              if (!call->paramHasAttr(i, llvm::Attribute::NoCapture) || !noFree)
                 return false;
             }
           }
@@ -764,6 +782,7 @@ struct AllocationHoister : public llvm::PassInfoMixin<AllocationHoister> {
         B.SetInsertPointPastAllocas(parent);
         auto *cache = B.CreateAlloca(ptr);
         cache->setName("alloc_hoist.cache");
+        B.SetInsertPoint(terminator);
         B.CreateStore(llvm::ConstantPointerNull::get(ptr), cache);
         B.SetInsertPoint(ins);
         auto *cachedAlloc = B.CreateLoad(ptr, cache);
@@ -1016,6 +1035,72 @@ struct CoroBranchSimplifier : public llvm::PassInfoMixin<CoroBranchSimplifier> {
   }
 };
 
+struct OpenMPThreadIdOptimizer : public llvm::PassInfoMixin<OpenMPThreadIdOptimizer> {
+  llvm::PreservedAnalyses run(llvm::Function &function,
+                              llvm::FunctionAnalysisManager &) {
+    if (!function.hasLocalLinkage() || function.use_empty() || function.arg_size() < 2)
+      return llvm::PreservedAnalyses::all();
+
+    bool forkCallback = function.getArg(0)->getType()->isPointerTy() &&
+                        function.getArg(1)->getType()->isPointerTy();
+    bool taskCallback = function.getArg(0)->getType()->isIntegerTy(32) &&
+                        function.getArg(1)->getType()->isPointerTy();
+    if (!forkCallback && !taskCallback)
+      return llvm::PreservedAnalyses::all();
+
+    for (auto &use : function.uses()) {
+      auto *call = llvm::dyn_cast<llvm::CallBase>(use.getUser());
+      auto *callee = call ? call->getCalledFunction() : nullptr;
+      if (!callee || !call->isArgOperand(&use))
+        return llvm::PreservedAnalyses::all();
+      if (forkCallback) {
+        if (callee->getName() != "__kmpc_fork_call" || call->getArgOperandNo(&use) != 2)
+          return llvm::PreservedAnalyses::all();
+      } else {
+        if (callee->getName() != "__kmpc_omp_task_alloc" ||
+            call->getArgOperandNo(&use) != 5)
+          return llvm::PreservedAnalyses::all();
+        auto *flags = llvm::dyn_cast<llvm::ConstantInt>(call->getArgOperand(2));
+        if (!flags || !(flags->getZExtValue() & 1))
+          return llvm::PreservedAnalyses::all();
+      }
+    }
+
+    llvm::SmallVector<llvm::CallInst *, 8> globalQueries, teamQueries;
+    for (auto &block : function) {
+      for (auto &instruction : block) {
+        auto *call = llvm::dyn_cast<llvm::CallInst>(&instruction);
+        auto *callee = call ? call->getCalledFunction() : nullptr;
+        if (!callee || !call->getType()->isIntegerTy(32))
+          continue;
+        if (callee->getName() == "__kmpc_global_thread_num" && call->arg_size() == 1)
+          globalQueries.push_back(call);
+        else if (forkCallback && callee->getName() == "omp_get_thread_num" &&
+                 call->arg_empty())
+          teamQueries.push_back(call);
+      }
+    }
+    if (globalQueries.empty() && teamQueries.empty())
+      return llvm::PreservedAnalyses::all();
+
+    llvm::IRBuilder<> builder(&*function.getEntryBlock().getFirstInsertionPt());
+    auto replaceQueries = [&](auto &queries, unsigned argument, const char *name) {
+      if (queries.empty())
+        return;
+      llvm::Value *threadId = function.getArg(argument);
+      if (forkCallback)
+        threadId = builder.CreateLoad(builder.getInt32Ty(), threadId, name);
+      for (auto *query : queries) {
+        query->replaceAllUsesWith(threadId);
+        query->eraseFromParent();
+      }
+    };
+    replaceQueries(globalQueries, 0, "omp.gtid");
+    replaceQueries(teamQueries, 1, "omp.btid");
+    return llvm::PreservedAnalyses::none();
+  }
+};
+
 void registerCodonLLVMOptimizationPasses(llvm::PassBuilder &pb, PluginManager *plugins,
                                          Options *options) {
   pb.registerLateLoopOptimizationsEPCallback(
@@ -1027,6 +1112,7 @@ void registerCodonLLVMOptimizationPasses(llvm::PassBuilder &pb, PluginManager *p
   pb.registerPeepholeEPCallback(
       [=](llvm::FunctionPassManager &pm, llvm::OptimizationLevel opt) {
         if (opt.isOptimizingForSpeed()) {
+          pm.addPass(OpenMPThreadIdOptimizer());
           pm.addPass(AllocationRemover());
           pm.addPass(llvm::LoopSimplifyPass());
           pm.addPass(llvm::LCSSAPass());
@@ -1057,7 +1143,7 @@ void runLLVMOptimizationPasses(llvm::Module *module, PluginManager *plugins,
   llvm::CGSCCAnalysisManager cgam;
   llvm::ModuleAnalysisManager mam;
   auto machine = options->native
-                     ? getTargetMachine(module, /*setFunctionAttributes=*/true)
+                     ? getTargetMachine(module, options, /*setFunctionAttributes=*/true)
                      : std::unique_ptr<llvm::TargetMachine>();
   llvm::PassBuilder pb(machine.get());
 
