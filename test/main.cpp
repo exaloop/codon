@@ -19,6 +19,9 @@
 // macros can't clobber LLVM identifiers like min/max or GDI's PASSTHROUGH.)
 #define WIFEXITED(s) (true)
 #define WEXITSTATUS(s) (s)
+// Windows has no signals, so a child can never be reported as signal-terminated.
+#define WIFSIGNALED(s) (false)
+#define WTERMSIG(s) (0)
 #else
 #include <dirent.h>
 #include <fcntl.h>

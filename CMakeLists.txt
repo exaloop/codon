@@ -262,7 +262,12 @@ elseif(WIN32)
             # no symbol the JIT can resolve for complex64 math
             # (test/stdlib/cmath_test.codon). Export codonrt's own implementation
             # under the plain name.
-            -Wl,/EXPORT:hypotf=seq_win_hypotf)
+            -Wl,/EXPORT:hypotf=seq_win_hypotf
+            # test/types.cpp and test/stdlib/json_test.codon call GC_gcollect
+            # directly. It comes from the static gc archive, which
+            # WINDOWS_EXPORT_ALL_SYMBOLS does not re-export, so expose it here and
+            # keep everything on codonrt's single GC instance.
+            -Wl,/INCLUDE:GC_gcollect -Wl,/EXPORT:GC_gcollect)
 else()
   add_dependencies(codonrt openblas_64)
 
