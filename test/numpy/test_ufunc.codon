@@ -1,5 +1,28 @@
 import numpy as np
 
+@noinline
+def standalone_absolute(array):
+    return np.absolute(array)
+
+def check_complex_absolute_strides(dtype: type):
+    values = np.array([[3+4j, 5+12j], [8+15j, 7+24j]], dtype=dtype)
+    expected = np.array([[5., 13.], [17., 25.]])
+    for array in (values, values.copy(order='F'), values[::-1, ::-1],
+                  values[:, ::2], values[:0, :]):
+        reference = np.sqrt(array.real * array.real + array.imag * array.imag)
+        assert np.allclose(standalone_absolute(array), reference)
+        output = np.empty(array.shape, dtype=array.real.dtype)
+        np.absolute(array, out=output)
+        assert np.allclose(output, reference)
+    assert np.array_equal(standalone_absolute(values), expected)
+
+@test
+def test_complex_absolute_strides():
+    check_complex_absolute_strides(np.complex64)
+    check_complex_absolute_strides(np.complex128)
+
+test_complex_absolute_strides()
+
 @test
 def test_add_at_repeated_indices_scalar_b():
     a = np.zeros((5,), dtype=float)

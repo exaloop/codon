@@ -36,9 +36,10 @@ def _apply_vectorized_loop_unary(arr, out, func: Literal[str]):
     arr = routines.broadcast_to(arr, shape)
 
     if arr._contig_match(out):
-        s = util.sizeof(out.dtype)
-        util.call_vectorized_loop(arr.data, s, Ptr[arr.dtype](), 0, out.data,
-                                  s, out.size, func)
+        input_stride = util.sizeof(arr.dtype)
+        output_stride = util.sizeof(out.dtype)
+        util.call_vectorized_loop(arr.data, input_stride, Ptr[arr.dtype](), 0,
+                                  out.data, output_stride, out.size, func)
     else:
         # Find smallest stride to use in vectorized loop
         arr_strides = arr.strides

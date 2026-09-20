@@ -2,6 +2,7 @@
 
 #include "codon/cir/llvm/llvisitor.h"
 #include "codon/cir/llvm/optimize.h"
+#include "codon/cir/transform/numpy/numpy.h"
 #include "codon/compiler/compiler.h"
 #include "codon/compiler/options.h"
 
@@ -259,6 +260,32 @@ TEST(LLVMOptimizationTest, RemovesUnusedStandardStreamInitialization) {
   EXPECT_EQ(1, definitions);
 }
 
+TEST(LLVMOptimizationTest, RequiresKnownNumpyOwnership) {
+  using ir::transform::numpy::hasOwnedResult;
+  using ir::transform::numpy::NumPyExpr;
+  using ir::transform::numpy::NumPyType;
+  auto owns = [](NumPyExpr::Op op, bool array = true) {
+    NumPyType type(array ? NumPyType::NP_TYPE_ARR_F64 : NumPyType::NP_TYPE_F64,
+                   array ? 1 : 0);
+    NumPyExpr expression(type, nullptr, op, std::make_unique<NumPyExpr>(type, nullptr));
+    return hasOwnedResult(expression);
+  };
+  for (auto op : {NumPyExpr::NP_OP_NEG, NumPyExpr::NP_OP_ADD, NumPyExpr::NP_OP_EXP,
+                  NumPyExpr::NP_OP_MATMUL, NumPyExpr::NP_OP_ZEROS_LIKE,
+                  NumPyExpr::NP_OP_ONES_LIKE, NumPyExpr::NP_OP_SUM,
+                  NumPyExpr::NP_OP_PROD, NumPyExpr::NP_OP_ANY, NumPyExpr::NP_OP_ALL,
+                  NumPyExpr::NP_OP_AMIN, NumPyExpr::NP_OP_AMAX}) {
+    EXPECT_TRUE(owns(op));
+    EXPECT_FALSE(owns(op, false));
+  }
+  for (auto op : {NumPyExpr::NP_OP_NONE, NumPyExpr::NP_OP_POS, NumPyExpr::NP_OP_CONJ,
+                  NumPyExpr::NP_OP_TRANSPOSE, NumPyExpr::NP_OP_CAST,
+                  static_cast<NumPyExpr::Op>(NumPyExpr::NP_OP_AMAX + 1)})
+    EXPECT_FALSE(owns(op));
+  NumPyExpr leaf(NumPyType(NumPyType::NP_TYPE_ARR_F64, 1), nullptr);
+  EXPECT_FALSE(hasOwnedResult(leaf));
+}
+
 TEST(LLVMOptimizationTest, ReleasesNumpyUpdateTemporaries) {
   ASSERT_EXIT(
       {
@@ -364,6 +391,58 @@ def retain_transferred(values: np.ndarray[float, 1]):
     temporary = np.exp(values)
     total = temporary.sum()
     return temporary / total
+
+@export
+def release_masked_update(values: np.ndarray[complex, 1], mask: np.ndarray[bool, 1]):
+  values[mask] = values[mask] ** 2 + values[mask]
+
+@export
+def release_gather(values: np.ndarray[float, 1], mask: np.ndarray[bool, 1], output: np.ndarray[float, 1]):
+  temporary = values[mask]
+  output[:] = temporary
+
+@export
+def retain_gather_view(values: np.ndarray[float, 1], mask: np.ndarray[bool, 1], output: np.ndarray[float, 1]):
+  temporary = values[mask]
+  view = temporary[:]
+  output[:] = temporary
+  return view
+
+@export
+def replace_filtered(values: np.ndarray[float, 1], count: int):
+  for iteration in range(count):
+    if not len(values):
+      break
+    np.ones(values.shape)
+    np.multiply(values, 1., values)
+    mask = values > iteration
+    np.logical_not(mask, mask)
+    np.logical_not(mask, mask)
+    values = values[mask]
+  return values
+
+@export
+def retain_filtered_alias(values: np.ndarray[float, 1], count: int):
+  saved = []
+  for iteration in range(count):
+    saved.append(values[:])
+    values = values[values > iteration]
+  return saved
+
+@export
+def replace_filtered_pair(left: np.ndarray[float, 1], right: np.ndarray[float, 1], mask: np.ndarray[bool, 1], count: int):
+  for iteration in range(count):
+    left, right = left[mask], right[mask]
+  return left, right
+
+@export
+def retain_filtered_tuple(values: np.ndarray[float, 1], mask: np.ndarray[bool, 1], count: int):
+  saved = []
+  for iteration in range(count):
+    pair = values[mask], values[mask]
+    values = pair[0]
+    saved.append(pair)
+  return saved
 )");
         auto countReleases = [&](llvm::StringRef name) {
           int releases = 0;
@@ -387,7 +466,7 @@ def retain_transferred(values: np.ndarray[float, 1]):
         EXPECT_EQ(countReleases("retain_view"), 0);
         EXPECT_EQ(countReleases("retain_unknown"), 0);
         EXPECT_EQ(countReleases("retain_borrowed"), 0);
-        EXPECT_EQ(countReleases("retain_loop_carried"), 0);
+        EXPECT_GE(countReleases("retain_loop_carried"), 1);
         EXPECT_EQ(countReleases("retain_container"), 0);
         EXPECT_EQ(countReleases("retain_inplace_result"), 0);
         EXPECT_EQ(countReleases("retain_pointer"), 0);
@@ -396,6 +475,16 @@ def retain_transferred(values: np.ndarray[float, 1]):
         EXPECT_EQ(countReleases("release_reassigned_update"), 2);
         EXPECT_EQ(countReleases("retain_conjugate"), 0);
         EXPECT_EQ(countReleases("retain_transferred"), 0);
+        EXPECT_GE(countReleases("release_masked_update"), 2);
+        EXPECT_EQ(countReleases("release_gather"), 1);
+        EXPECT_EQ(countReleases("retain_gather_view"), 0);
+        EXPECT_GE(countReleases("replace_filtered"), 1);
+        EXPECT_EQ(countReleases("retain_filtered_alias"), 0);
+        if (countReleases("replace_filtered_pair") < 2)
+          llvm::errs() << "Filtered pair releases: "
+                       << countReleases("replace_filtered_pair") << '\n';
+        EXPECT_GE(countReleases("replace_filtered_pair"), 2);
+        EXPECT_EQ(countReleases("retain_filtered_tuple"), 0);
         std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
       },
       testing::ExitedWithCode(EXIT_SUCCESS), "");
@@ -500,6 +589,14 @@ def fused_clip(values: np.ndarray[float, 2]):
 @export
 def fused_scalar_coefficients(values: np.ndarray[float, 2], dx: float, dy: float):
   return (values[1:, :-1] / (2 * dx) + values[:-1, 1:] * (1 / dy)) / (2 * (dx ** 2 + dy ** 2))
+
+@export
+def fused_complex_grid(left: np.ndarray[float, 2], right: np.ndarray[float, 2]):
+  return left + right * 1j
+
+@export
+def fused_masked_square(values: np.ndarray[complex, 1], other: np.ndarray[complex, 1], mask: np.ndarray[bool, 1]):
+  return values[mask] ** 2 + other[mask]
 
 @export
 def fused_sum(values: np.ndarray[float, 1]):
@@ -631,6 +728,22 @@ def last_use_reference(values: np.ndarray[np.float32, 4]):
   return temporary, total
 
 @export
+def last_use_alias_mutation(values: np.ndarray[np.float32, 4]):
+  temporary = np.exp(values)
+  alias = temporary
+  total = temporary.sum()
+  alias[0, 0, 0, 0] = np.float32(123.)
+  return temporary / total
+
+@export
+def last_use_view_mutation(values: np.ndarray[np.float32, 4]):
+  temporary = np.exp(values)
+  view = temporary[::-1]
+  total = temporary.sum()
+  view[0, 0, 0, 0] = np.float32(123.)
+  return temporary / total
+
+@export
 def destination_slice(values: np.ndarray[float, 2]):
   out = np.empty_like(values)
   out[:] = values * values + 1.0
@@ -664,7 +777,7 @@ def destination_reference(values: np.ndarray[float, 2]):
         for (auto name : {"fused_helper", "fused_copy_array", "fused_cast_array",
                           "fused_filled_array", "fused_axis_sum", "fused_axis_any",
                           "fused_axis_min", "fused_axis_keepdims", "fused_slices",
-                          "fused_scalar_coefficients"}) {
+                          "fused_scalar_coefficients", "fused_complex_grid"}) {
           auto *function = module->getFunction(name);
           ASSERT_NE(nullptr, function);
           auto allocations = allocationCount(function);
@@ -672,6 +785,9 @@ def destination_reference(values: np.ndarray[float, 2]):
             function->print(llvm::errs());
           EXPECT_EQ(1, allocations) << name;
         }
+        auto *masked = module->getFunction("fused_masked_square");
+        ASSERT_NE(nullptr, masked);
+        EXPECT_EQ(2, allocationCount(masked));
         auto *forwarded = module->getFunction("forwarded_axis_sum");
         auto *reference = module->getFunction("axis_sum_reference");
         ASSERT_NE(nullptr, forwarded);
@@ -749,6 +865,16 @@ def destination_reference(values: np.ndarray[float, 2]):
         }
         EXPECT_GT(lastUseReferenceAllocations, 0);
         EXPECT_EQ(lastUseReferenceAllocations, lastUseAllocations);
+        for (auto name : {"last_use_alias_mutation", "last_use_view_mutation"}) {
+          auto *mutated = module->getFunction(name);
+          ASSERT_NE(nullptr, mutated);
+          auto allocations = reachableAllocations(mutated);
+          if (allocations <= lastUseReferenceAllocations)
+            llvm::errs() << name << ": " << allocations
+                         << " allocation sites; reference: "
+                         << lastUseReferenceAllocations << '\n';
+          EXPECT_GT(allocations, lastUseReferenceAllocations) << name;
+        }
         auto *unfused = module->getFunction("unfused_helper");
         ASSERT_NE(nullptr, unfused);
         bool keptCall = false;

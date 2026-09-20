@@ -455,9 +455,9 @@ getForwardingDAGs(BodiedFunc *func, RD *rd, CFG *cfg, SE *se,
   dags.erase(std::remove_if(dags.begin(), dags.end(),
                             [&](ForwardingDAG &dag) { return hasCycle(dag, exprs); }),
              dags.end());
-  // Transfer ownership separately from expression forwarding. A freeable leaf
-  // permits reuse or release at the consumer, but keeps the source computation
-  // at its original evaluation point and adds no forwarding edge.
+  // Transfer ownership separately from expression forwarding. An ownedLastUse leaf
+  // proves ownership and no subsequent alias access, permitting reuse or release
+  // without moving the source computation or adding a forwarding edge.
   for (auto &component : dags) {
     auto *root = getForwardingRoot(component);
     auto *block = cfg->getBlock(root->value);
@@ -483,7 +483,7 @@ getForwardingDAGs(BodiedFunc *func, RD *rd, CFG *cfg, SE *se,
                 canForwardVariable(source.assign, element.val, func, rd)) ||
                (entry.first == root &&
                 canReuseAfterReads(source, element, *root, exprs, cfg, rd, se))))
-            element.freeable = true;
+            element.ownedLastUse = true;
         });
       }
     }

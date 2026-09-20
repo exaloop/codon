@@ -241,19 +241,19 @@ struct NumPyExpr {
   } op;
   std::unique_ptr<NumPyExpr> lhs;
   std::unique_ptr<NumPyExpr> rhs;
-  bool freeable;
+  bool ownedLastUse;
 
   NumPyExpr(NumPyType type, Value *val)
-      : type(std::move(type)), val(val), op(NP_OP_NONE), lhs(), rhs(), freeable(false) {
-  }
+      : type(std::move(type)), val(val), op(NP_OP_NONE), lhs(), rhs(),
+        ownedLastUse(false) {}
   NumPyExpr(NumPyType type, Value *val, NumPyExpr::Op op,
             std::unique_ptr<NumPyExpr> lhs)
       : type(std::move(type)), val(val), op(op), lhs(std::move(lhs)), rhs(),
-        freeable(false) {}
+        ownedLastUse(false) {}
   NumPyExpr(NumPyType type, Value *val, NumPyExpr::Op op,
             std::unique_ptr<NumPyExpr> lhs, std::unique_ptr<NumPyExpr> rhs)
       : type(std::move(type)), val(val), op(op), lhs(std::move(lhs)),
-        rhs(std::move(rhs)), freeable(false) {}
+        rhs(std::move(rhs)), ownedLastUse(false) {}
 
   static std::unique_ptr<NumPyExpr>
   parse(Value *v, std::vector<std::pair<NumPyExpr *, Value *>> &leaves,

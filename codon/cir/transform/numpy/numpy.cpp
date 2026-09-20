@@ -66,6 +66,38 @@ bool isNoneType(Type *t, NumPyPrimitiveTypes &T) {
   return t && (t->is(T.none) || t->is(T.optnone));
 }
 
+bool isCopyIndexType(Type *type, NumPyPrimitiveTypes &types) {
+  auto index = NumPyType::get(type, types);
+  if (index.isArray())
+    return index.ndim > 0 && (index.dtype == NumPyType::NP_TYPE_ARR_BOOL ||
+                              index.dtype == NumPyType::NP_TYPE_ARR_I64);
+  if (type->getName().rfind("Tuple[", 0) != 0)
+    return false;
+  bool hasArray = false;
+  for (const auto &generic : type->getGenerics()) {
+    if (!generic.isType())
+      return false;
+    auto *element = generic.getTypeValue();
+    if (element->is(types.i64))
+      continue;
+    if (!isArrayType(element) || !isCopyIndexType(element, types))
+      return false;
+    hasArray = true;
+  }
+  return hasArray;
+}
+
+bool isOwnedIndex(Value *value, NumPyPrimitiveTypes &types) {
+  auto *call = cast<CallInstr>(value);
+  auto *callee = call ? util::getFunc(call->getCallee()) : nullptr;
+  return callee && isArrayType(callee->getParentType()) &&
+         callee->getUnmangledName() == Module::GETITEM_MAGIC_NAME &&
+         call->numArgs() == 2 && NumPyType::get(value->getType(), types).isArray() &&
+         NumPyType::get(call->front()->getType(), types).isArray() &&
+         NumPyType::get(call->front()->getType(), types).ndim > 0 &&
+         isCopyIndexType(call->back()->getType(), types);
+}
+
 bool hasLifetimeTag(const Value *value, const std::string &tag) {
   auto *attributes = value->getAttribute<KeyValueAttribute>();
   return attributes && attributes->has(tag);
@@ -854,7 +886,7 @@ Var *codegenMatmulAdd(NumPyExpr &expr, CodegenContext &context,
   seqassertn(helper, "matmul-add func not found");
   auto *result = util::makeVar(util::call(helper, args), context.series, context.func);
   expr.apply([&](NumPyExpr &leaf) {
-    if (leaf.isLeaf() && leaf.freeable) {
+    if (leaf.isLeaf() && leaf.ownedLastUse) {
       auto *value = module->Nr<VarValue>(context.vars.at(&leaf));
       auto *free =
           module->getOrRealizeFunc("_free", {value->getType()}, {}, FUSION_MODULE);
@@ -884,7 +916,7 @@ Var *optimizeHelper(NumPyOptimizationUnit &unit, NumPyExpr *expr, CodegenContext
       XLOG("-> BLAS matmul-add fuse:\n{}", e.str());
       auto *result = codegenMatmulAdd(e, C);
       NumPyExpr replacement(e.type, M->Nr<VarValue>(result));
-      replacement.freeable = true;
+      replacement.ownedLastUse = true;
       e.replace(replacement);
       C.vars[&e] = result;
       return;
@@ -899,7 +931,7 @@ Var *optimizeHelper(NumPyOptimizationUnit &unit, NumPyExpr *expr, CodegenContext
                                 C.series, C.func);
       C.vars[&e] = var;
       NumPyExpr replacement(e.type, M->Nr<VarValue>(var));
-      replacement.freeable = e.lhs->freeable;
+      replacement.ownedLastUse = e.lhs->ownedLastUse;
       e.replace(replacement);
     }
 
@@ -913,8 +945,10 @@ Var *optimizeHelper(NumPyOptimizationUnit &unit, NumPyExpr *expr, CodegenContext
           util::call(matmulFunc, {M->Nr<VarValue>(lv), M->Nr<VarValue>(rv)}), C.series,
           C.func);
 
-      bool lfreeable = e.lhs->type.isArray() && (e.lhs->freeable || !e.lhs->isLeaf());
-      bool rfreeable = e.rhs->type.isArray() && (e.rhs->freeable || !e.rhs->isLeaf());
+      bool lfreeable =
+          e.lhs->type.isArray() && (e.lhs->ownedLastUse || !e.lhs->isLeaf());
+      bool rfreeable =
+          e.rhs->type.isArray() && (e.rhs->ownedLastUse || !e.rhs->isLeaf());
 
       if (lfreeable)
         series->push_back(freeArray(lv));
@@ -923,7 +957,7 @@ Var *optimizeHelper(NumPyOptimizationUnit &unit, NumPyExpr *expr, CodegenContext
 
       C.vars[&e] = var;
       NumPyExpr replacement(e.type, M->Nr<VarValue>(var));
-      replacement.freeable = true;
+      replacement.ownedLastUse = true;
       e.replace(replacement);
     }
   });
@@ -973,7 +1007,7 @@ Var *optimizeHelper(NumPyOptimizationUnit &unit, NumPyExpr *expr, CodegenContext
       if (result) {
         NumPyExpr tmp(e.type, M->Nr<VarValue>(result));
         e.replace(tmp);
-        e.freeable = true;
+        e.ownedLastUse = true;
         C.vars[&e] = result;
         changed = true;
       }
@@ -1018,15 +1052,23 @@ bool isSafeFusionLeaf(Value *value, NumPyPrimitiveTypes &types,
       "__mul__",      "__rmul__",      "__truediv__", "__rtruediv__",
       "__floordiv__", "__rfloordiv__", "__mod__",     "__rmod__",
       "__pow__",      "__rpow__",      "__neg__",     "__pos__"};
-  bool safeRead = scalarType && !scalarType.isArray() && scalarOperations.count(name) &&
+  bool complexConstructor =
+      name == "__new__" && (scalarType.dtype == NumPyType::NP_TYPE_C64 ||
+                            scalarType.dtype == NumPyType::NP_TYPE_C128);
+  bool safeRead = scalarType && !scalarType.isArray() &&
+                  (scalarOperations.count(name) || complexConstructor) &&
                   std::all_of(call->begin(), call->end(), [&](Value *argument) {
                     auto type = NumPyType::get(argument->getType(), types);
                     return type && !type.isArray();
                   });
+  safeRead |= call->numArgs() == 1 &&
+              callee->getName().rfind("Int.__suffix_j__:", 0) == 0 &&
+              call->front()->getType()->is(types.i64);
   safeRead |= arrayMethod && name == Module::GETITEM_MAGIC_NAME &&
               call->numArgs() == 2 &&
               NumPyType::get(call->front()->getType(), types).isArray() &&
-              isBasicIndexType(call->back()->getType(), types);
+              (isBasicIndexType(call->back()->getType(), types) ||
+               isCopyIndexType(call->back()->getType(), types));
   if (name == "clip" && call->numArgs() == 4 &&
       (arrayMethod ||
        callee->getName().rfind(ast::getMangledFunc("std.numpy.routines", "clip") + "[",
@@ -1064,17 +1106,94 @@ bool hasOwnedResult(const NumPyExpr &expr) {
   if (!expr.type.isArray() || expr.isLeaf())
     return false;
   switch (expr.op) {
-  case NumPyExpr::NP_OP_TRANSPOSE:
-  case NumPyExpr::NP_OP_POS:
-  case NumPyExpr::NP_OP_CONJ:
-    return false;
+  case NumPyExpr::NP_OP_NEG:
+  case NumPyExpr::NP_OP_INVERT:
+  case NumPyExpr::NP_OP_ABS:
+  case NumPyExpr::NP_OP_ADD:
+  case NumPyExpr::NP_OP_SUB:
+  case NumPyExpr::NP_OP_MUL:
+  case NumPyExpr::NP_OP_MATMUL:
+  case NumPyExpr::NP_OP_TRUE_DIV:
+  case NumPyExpr::NP_OP_FLOOR_DIV:
+  case NumPyExpr::NP_OP_MOD:
+  case NumPyExpr::NP_OP_FMOD:
+  case NumPyExpr::NP_OP_POW:
+  case NumPyExpr::NP_OP_LSHIFT:
+  case NumPyExpr::NP_OP_RSHIFT:
+  case NumPyExpr::NP_OP_AND:
+  case NumPyExpr::NP_OP_OR:
+  case NumPyExpr::NP_OP_XOR:
+  case NumPyExpr::NP_OP_LOGICAL_AND:
+  case NumPyExpr::NP_OP_LOGICAL_OR:
+  case NumPyExpr::NP_OP_LOGICAL_XOR:
+  case NumPyExpr::NP_OP_EQ:
+  case NumPyExpr::NP_OP_NE:
+  case NumPyExpr::NP_OP_LT:
+  case NumPyExpr::NP_OP_LE:
+  case NumPyExpr::NP_OP_GT:
+  case NumPyExpr::NP_OP_GE:
+  case NumPyExpr::NP_OP_MIN:
+  case NumPyExpr::NP_OP_MAX:
+  case NumPyExpr::NP_OP_FMIN:
+  case NumPyExpr::NP_OP_FMAX:
+  case NumPyExpr::NP_OP_SIN:
+  case NumPyExpr::NP_OP_COS:
+  case NumPyExpr::NP_OP_TAN:
+  case NumPyExpr::NP_OP_ARCSIN:
+  case NumPyExpr::NP_OP_ARCCOS:
+  case NumPyExpr::NP_OP_ARCTAN:
+  case NumPyExpr::NP_OP_ARCTAN2:
+  case NumPyExpr::NP_OP_HYPOT:
+  case NumPyExpr::NP_OP_SINH:
+  case NumPyExpr::NP_OP_COSH:
+  case NumPyExpr::NP_OP_TANH:
+  case NumPyExpr::NP_OP_ARCSINH:
+  case NumPyExpr::NP_OP_ARCCOSH:
+  case NumPyExpr::NP_OP_ARCTANH:
+  case NumPyExpr::NP_OP_EXP:
+  case NumPyExpr::NP_OP_EXP2:
+  case NumPyExpr::NP_OP_LOG:
+  case NumPyExpr::NP_OP_LOG2:
+  case NumPyExpr::NP_OP_LOG10:
+  case NumPyExpr::NP_OP_EXPM1:
+  case NumPyExpr::NP_OP_LOG1P:
+  case NumPyExpr::NP_OP_SQRT:
+  case NumPyExpr::NP_OP_SQUARE:
+  case NumPyExpr::NP_OP_CBRT:
+  case NumPyExpr::NP_OP_LOGADDEXP:
+  case NumPyExpr::NP_OP_LOGADDEXP2:
+  case NumPyExpr::NP_OP_RECIPROCAL:
+  case NumPyExpr::NP_OP_RINT:
+  case NumPyExpr::NP_OP_FLOOR:
+  case NumPyExpr::NP_OP_CEIL:
+  case NumPyExpr::NP_OP_TRUNC:
+  case NumPyExpr::NP_OP_ISNAN:
+  case NumPyExpr::NP_OP_ISINF:
+  case NumPyExpr::NP_OP_ISFINITE:
+  case NumPyExpr::NP_OP_SIGN:
+  case NumPyExpr::NP_OP_SIGNBIT:
+  case NumPyExpr::NP_OP_COPYSIGN:
+  case NumPyExpr::NP_OP_SPACING:
+  case NumPyExpr::NP_OP_NEXTAFTER:
+  case NumPyExpr::NP_OP_DEG2RAD:
+  case NumPyExpr::NP_OP_RAD2DEG:
+  case NumPyExpr::NP_OP_HEAVISIDE:
+  case NumPyExpr::NP_OP_ZEROS_LIKE:
+  case NumPyExpr::NP_OP_ONES_LIKE:
+  case NumPyExpr::NP_OP_SUM:
+  case NumPyExpr::NP_OP_PROD:
+  case NumPyExpr::NP_OP_ANY:
+  case NumPyExpr::NP_OP_ALL:
+  case NumPyExpr::NP_OP_AMIN:
+  case NumPyExpr::NP_OP_AMAX:
+    return true;
   case NumPyExpr::NP_OP_CAST: {
     auto *call = cast<CallInstr>(expr.val);
     return call && (call->numArgs() == 2 || (isA<BoolConst>(call->back()) &&
                                              cast<BoolConst>(call->back())->getVal()));
   }
   default:
-    return true;
+    return false;
   }
 }
 
@@ -1082,8 +1201,11 @@ bool NumPyOptimizationUnit::optimize(NumPyPrimitiveTypes &T,
                                      analyze::module::SideEffectResult *sideEffects) {
   bool reduction = expr->isReduction();
   bool ownedLeaf = false;
-  expr->apply(
-      [&](NumPyExpr &element) { ownedLeaf |= element.isLeaf() && element.freeable; });
+  expr->apply([&](NumPyExpr &element) {
+    if (!expr->isLeaf() && element.isLeaf() && isOwnedIndex(element.val, T))
+      element.ownedLastUse = true;
+    ownedLeaf |= element.isLeaf() && element.ownedLastUse;
+  });
   if ((!expr->type.isArray() && !reduction) ||
       (expr->depth() <= 2 && (reduction || !ownedLeaf)) ||
       hasUFuncArgumentEffects(*expr, sideEffects))
@@ -1125,7 +1247,7 @@ bool NumPyOptimizationUnit::optimize(NumPyPrimitiveTypes &T,
   // uses these bindings rather than reevaluating the original operands.
   for (auto &p : leaves) {
     auto *var = util::makeVar(cv.clone(p.second), series, func);
-    if (ownsResult && !p.first->freeable)
+    if (ownsResult && !p.first->ownedLastUse)
       setLifetimeTag(series->back(), "numpy.lifetime.input");
     C.vars.emplace(p.first, var);
   }
@@ -1405,6 +1527,8 @@ bool ownsArrayResult(Value *value, NumPyPrimitiveTypes &types) {
     return false;
   if (hasLifetimeTag(value, "numpy.lifetime.owned"))
     return true;
+  if (isOwnedIndex(value, types))
+    return true;
   std::vector<std::pair<NumPyExpr *, Value *>> leaves;
   auto expression = parse(value, leaves, types);
   return expression && hasOwnedResult(*expression);
@@ -1417,7 +1541,8 @@ bool isArrayUpdate(CallInstr *call, NumPyPrimitiveTypes &types) {
     return false;
   const auto name = callee->getUnmangledName();
   if (name == Module::SETITEM_MAGIC_NAME && call->numArgs() == 3)
-    return isBasicIndexType((*std::next(call->begin()))->getType(), types);
+    return isBasicIndexType((*std::next(call->begin()))->getType(), types) ||
+           isCopyIndexType((*std::next(call->begin()))->getType(), types);
   static const std::unordered_set<std::string> updates = {
       "__iadd__",      "__isub__", "__imul__",    "__itruediv__",
       "__ifloordiv__", "__imod__", "__ipow__",    "__iand__",
@@ -1439,6 +1564,12 @@ void NumPyLifetimePass::visit(BodiedFunc *func) {
       AssignInstr *assignment;
       SeriesFlow *series;
     };
+    struct Replacement {
+      AssignInstr *assignment;
+      bool owned;
+      bool inLoop;
+      bool safe;
+    };
     struct Use {
       Value *value;
       std::vector<Node *> parents;
@@ -1446,12 +1577,31 @@ void NumPyLifetimePass::visit(BodiedFunc *func) {
     };
     NumPyPrimitiveTypes types;
     std::vector<Definition> candidates;
+    std::unordered_map<id_t, std::vector<Replacement>> replacements;
     std::unordered_map<id_t, std::vector<Use>> uses;
 
     explicit LocalLifetime(BodiedFunc *func) : types(func->getModule()) {}
 
     void handle(AssignInstr *assignment) override {
       auto *series = depth() ? getParent<SeriesFlow>() : nullptr;
+      if (NumPyType::get(assignment->getLhs()->getType(), types).isArray()) {
+        bool safe = series && !assignment->getLhs()->isGlobal();
+        bool inLoop = false;
+        for (auto parentIt = parent_begin(); parentIt != parent_end(); ++parentIt) {
+          auto *parent = *parentIt;
+          auto *value = cast<Value>(parent);
+          safe &= !isA<TryCatchFlow>(parent) &&
+                  !(value && hasLifetimeTag(value, "numpy.lifetime.expression"));
+          if (auto *loop = cast<ForFlow>(parent))
+            safe &= !loop->isParallel();
+          if (auto *loop = cast<ImperativeForFlow>(parent))
+            safe &= !loop->isParallel();
+          inLoop |= isA<ForFlow>(parent) || isA<ImperativeForFlow>(parent) ||
+                    isA<WhileFlow>(parent);
+        }
+        replacements[assignment->getLhs()->getId()].push_back(
+            {assignment, ownsArrayResult(assignment->getRhs(), types), inLoop, safe});
+      }
       if (!series || assignment->getLhs()->isGlobal() ||
           !ownsArrayResult(assignment->getRhs(), types))
         return;
@@ -1462,6 +1612,45 @@ void NumPyLifetimePass::visit(BodiedFunc *func) {
           return;
       }
       candidates.push_back({assignment, series});
+    }
+
+    bool safeReplacementRead(const Use &use) {
+      for (auto *parent : use.parents)
+        if (isA<TryCatchFlow>(parent))
+          return false;
+      if (use.safe)
+        return true;
+      auto *read = cast<VarValue>(use.value);
+      auto *parent = use.parents.empty() ? nullptr : use.parents.back();
+      if (!read || !parent)
+        return false;
+      if (auto *result = cast<ReturnInstr>(parent))
+        return result->getValue() == read;
+      auto *call = cast<CallInstr>(parent);
+      auto *callee = call ? util::getFunc(call->getCallee()) : nullptr;
+      auto *result = use.parents.size() >= 2
+                         ? cast<ReturnInstr>(use.parents[use.parents.size() - 2])
+                         : nullptr;
+      if (callee && result && result->getValue() == call &&
+          callee->getUnmangledName() == Module::NEW_MAGIC_NAME &&
+          callee->getParentType() && callee->getParentType()->getName() == "Tuple")
+        return true;
+      if (!callee || call->numArgs() == 0 || call->front() != read)
+        return false;
+      if (call->numArgs() == 1 &&
+          callee->getName().rfind(
+              ast::getMangledFunc("std.internal.builtin", "len") + "[", 0) == 0)
+        return true;
+      if (!isArrayType(callee->getParentType()))
+        return false;
+      static const std::unordered_set<std::string> metadata = {
+          "shape", "strides", "size", "ndim", "itemsize", "nbytes"};
+      if (call->numArgs() == 1 && metadata.count(callee->getUnmangledName()))
+        return true;
+      if (callee->getUnmangledName() == "__len__" && call->numArgs() == 1)
+        return true;
+      return isArrayUpdate(call, types) && use.parents.size() >= 2 &&
+             isA<SeriesFlow>(use.parents[use.parents.size() - 2]);
     }
 
     bool safeRead(VarValue *read) {
@@ -1477,13 +1666,24 @@ void NumPyLifetimePass::visit(BodiedFunc *func) {
         return false;
       if (ownsArrayResult(call, types))
         return true;
+      auto *callee = util::getFunc(call->getCallee());
+      if (callee && isUFuncType(callee->getParentType()) &&
+          callee->getUnmangledName() == "__call__" &&
+          (call->numArgs() == 4 || call->numArgs() == 5) && depth() >= 2 &&
+          getParent<SeriesFlow>(1)) {
+        bool numeric = true;
+        for (auto argument = std::next(call->begin()); argument != call->end();
+             ++argument)
+          numeric &= bool(NumPyType::get((*argument)->getType(), types)) ||
+                     isNoneType((*argument)->getType(), types);
+        if (numeric)
+          return true;
+      }
       if (isArrayUpdate(call, types)) {
-        auto *callee = util::getFunc(call->getCallee());
         return call->back() == read ||
                (callee->getUnmangledName() == Module::SETITEM_MAGIC_NAME &&
-                call->front() == read);
+                (call->front() == read || *std::next(call->begin()) == read));
       }
-      auto *callee = util::getFunc(call->getCallee());
       auto output = NumPyType::get(call->getType(), types);
       return callee && isArrayType(callee->getParentType()) && output &&
              !output.isArray() &&
@@ -1499,13 +1699,115 @@ void NumPyLifetimePass::visit(BodiedFunc *func) {
       auto *read = cast<VarValue>(value);
       bool safe = read && safeRead(read);
       for (auto *variable : value->getUsedVariables()) {
-        if (isArrayType(variable->getType()))
+        if (isArrayType(variable->getType()) ||
+            variable->getType()->getName().rfind("Tuple[", 0) == 0)
           uses[variable->getId()].push_back(
               {value, {parent_begin(), parent_end()}, safe});
       }
     }
   } lifetimes(func);
   func->accept(lifetimes);
+
+  for (auto &entry : lifetimes.replacements) {
+    for (auto &replacement : entry.second) {
+      auto *extract = cast<ExtractInstr>(replacement.assignment->getRhs());
+      auto *read = extract ? cast<VarValue>(extract->getVal()) : nullptr;
+      if (!read || !replacement.safe || definitions->isInvalid(read->getVar()))
+        continue;
+      auto reaching = definitions->getReachingDefinitions(read->getVar(), read);
+      if (reaching.size() != 1 || !reaching.front().known())
+        continue;
+      auto *tupleAssignment = reaching.front().assignment;
+      auto *constructor = cast<CallInstr>(reaching.front().assignee);
+      auto *callee = constructor ? util::getFunc(constructor->getCallee()) : nullptr;
+      auto *tupleType = callee ? cast<RecordType>(callee->getParentType()) : nullptr;
+      if (!tupleType || tupleType->getName() != "Tuple" ||
+          callee->getUnmangledName() != Module::NEW_MAGIC_NAME)
+        continue;
+      auto field =
+          cast<RecordType>(read->getType())->getMemberIndex(extract->getField());
+      if (field < 0 || field >= constructor->numArgs() ||
+          !ownsArrayResult(*(constructor->begin() + field), lifetimes.types))
+        continue;
+      auto *block = graph->getBlock(tupleAssignment);
+      if (!block)
+        continue;
+      bool safe = true;
+      std::unordered_set<std::string> fields;
+      for (const auto &use : lifetimes.uses[read->getVar()->getId()]) {
+        auto definitionsAtUse =
+            definitions->getReachingDefinitions(read->getVar(), use.value);
+        if (std::none_of(definitionsAtUse.begin(), definitionsAtUse.end(),
+                         [&](const auto &definition) {
+                           return definition.assignment == tupleAssignment;
+                         }))
+          continue;
+        auto *member =
+            use.parents.empty() ? nullptr : cast<ExtractInstr>(use.parents.back());
+        auto *assignment = use.parents.size() < 2
+                               ? nullptr
+                               : cast<AssignInstr>(use.parents[use.parents.size() - 2]);
+        bool afterDefinition = false;
+        for (auto *value : *block) {
+          if (value == use.value)
+            break;
+          afterDefinition |= value == tupleAssignment;
+        }
+        if (definitionsAtUse.size() != 1 || !member || !assignment ||
+            assignment->getRhs() != member || use.parents.size() < 3 ||
+            !isA<SeriesFlow>(use.parents[use.parents.size() - 3]) ||
+            graph->getBlock(use.value) != block || !afterDefinition ||
+            !fields.insert(member->getField()).second) {
+          safe = false;
+          break;
+        }
+      }
+      replacement.owned = safe && fields.count(extract->getField());
+    }
+  }
+
+  std::unordered_set<id_t> replacedVariables;
+  auto *body = cast<SeriesFlow>(func->getBody());
+  if (body) {
+    auto *module = func->getModule();
+    for (const auto &entry : lifetimes.replacements) {
+      bool loopOwned = false;
+      bool safe = true;
+      for (const auto &replacement : entry.second) {
+        loopOwned |= replacement.inLoop && replacement.owned;
+        safe &= replacement.safe;
+      }
+      for (const auto &use : lifetimes.uses[entry.first])
+        safe &= lifetimes.safeReplacementRead(use);
+      auto *variable = entry.second.front().assignment->getLhs();
+      if (!loopOwned || !safe || definitions->isInvalid(variable))
+        continue;
+      auto *owned = module->Nr<Var>(module->getBoolType(), false);
+      auto *owner = module->Nr<Var>(variable->getType(), false);
+      func->push_back(owned);
+      func->push_back(owner);
+      body->insert(body->begin(),
+                   module->Nr<AssignInstr>(owned, module->getBool(false)));
+      replacedVariables.insert(entry.first);
+      auto *release =
+          module->getOrRealizeFunc("_free", {variable->getType()}, {}, FUSION_MODULE);
+      seqassertn(release, "NumPy release function not found");
+      for (const auto &replacement : entry.second) {
+        auto *series = module->Nr<SeriesFlow>();
+        auto *result = util::makeVar(replacement.assignment->getRhs(), series, func);
+        series->push_back(module->Nr<IfFlow>(
+            module->Nr<VarValue>(owned),
+            util::series(util::call(release, {module->Nr<VarValue>(owner)}))));
+        if (replacement.owned)
+          series->push_back(
+              module->Nr<AssignInstr>(owner, module->Nr<VarValue>(result)));
+        series->push_back(
+            module->Nr<AssignInstr>(owned, module->getBool(replacement.owned)));
+        replacement.assignment->setRhs(
+            module->Nr<FlowInstr>(series, module->Nr<VarValue>(result)));
+      }
+    }
+  }
 
   std::unordered_map<id_t, size_t> positions;
   for (const auto &candidate : lifetimes.candidates) {
@@ -1520,6 +1822,8 @@ void NumPyLifetimePass::visit(BodiedFunc *func) {
   for (const auto &candidate : lifetimes.candidates) {
     auto *assignment = candidate.assignment;
     auto *variable = assignment->getLhs();
+    if (replacedVariables.count(variable->getId()))
+      continue;
     auto *block = graph->getBlock(assignment);
     if (!block || definitions->isInvalid(variable))
       continue;

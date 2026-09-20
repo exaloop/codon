@@ -210,6 +210,161 @@ def lifetime_transferred(values):
     total = temporary.sum()
     return temporary / total
 
+@noinline
+def masked_update(values, mask, other):
+    values[mask] = values[mask] ** 2 + other[mask]
+
+@noinline
+def gathered_view(values, mask, output):
+    temporary = values[mask]
+    view = temporary[::-1]
+    output[:] = temporary
+    return view
+
+@noinline
+def mutate_mask(mask):
+    mask[:] = False
+    return mask
+
+@test
+def test_masked_ownership():
+    for original in (np.arange(12.).reshape(3, 4).astype(complex),
+                     np.arange(12.).reshape(3, 4).astype(complex).T,
+                     np.arange(12.).reshape(3, 4).astype(complex)[::-1, ::-1]):
+        for mask in (original.real > 5, original.real > 100, original.real >= 0):
+            values = original.copy()
+            other = original + 1j
+            selected = materialize(values[mask])
+            expected = values.copy()
+            expected[mask] = materialize(selected * selected) + materialize(other[mask])
+            masked_update(values, mask, other)
+            assert np.array_equal(values, expected)
+            assert np.array_equal(other, original + 1j)
+            output = np.empty(selected.shape, dtype=complex)
+            escaped = gathered_view(original, mask, output)
+            for repeat in range(16):
+                replacement = np.ones(selected.shape, dtype=complex) * (repeat + 1)
+                assert replacement.size == selected.size
+            assert np.array_equal(escaped, selected[::-1])
+            assert np.array_equal(output, selected)
+    values = np.arange(8.)
+    indices = np.array([6, 1, 6, 0])
+    before = values.copy()
+    values[indices] = values[indices] * 2 + values[indices]
+    assert np.array_equal(values, [0., 3., 2., 3., 4., 5., 18., 7.])
+    assert np.array_equal(indices, [6, 1, 6, 0])
+    assert np.array_equal(before, np.arange(8.))
+    values = np.array([1., 2., 3.])
+    mask = np.array([True, True, True])
+    result = values[mask] ** 2 + mutate_array(values)
+    assert np.array_equal(result, [101., 6., 12.])
+    mask[:] = True
+    try:
+        values[mask] ** 2 + values[mutate_mask(mask)]
+        assert False
+    except ValueError:
+        assert not np.any(mask)
+
+test_masked_ownership()
+
+@noinline
+def filtered_replacement(values, count, stop):
+    for iteration in range(count):
+        if iteration == stop:
+            break
+        if iteration % 2:
+            continue
+        mask = values > iteration
+        values = values[mask]
+    return values
+
+@noinline
+def filtered_aliases(values, count):
+    saved = []
+    for iteration in range(count):
+        saved.append(values[::-1])
+        values = values[values > iteration]
+    return saved
+
+@noinline
+def filtered_exception(values, count):
+    for iteration in range(count):
+        try:
+            values = values[values > iteration]
+            if iteration == 2:
+                raise ValueError('filtered')
+        except ValueError:
+            return values[::-1]
+    return values[::-1]
+
+@noinline
+def filtered_pair(left, right, count):
+    for iteration in range(count):
+        if not len(left):
+            break
+        np.multiply(left, 1., left)
+        mask = left > iteration
+        np.logical_not(mask, mask)
+        np.logical_not(mask, mask)
+        left, right = left[mask], right[mask]
+    return left, right
+
+@noinline
+def retained_filtered_tuple(values, count):
+    saved = []
+    for iteration in range(count):
+        pair = values[values > iteration], values[values > iteration]
+        values = pair[0]
+        saved.append(pair)
+    return saved
+
+@test
+def test_filtered_replacement():
+    for original in (np.arange(16.), np.arange(16.)[::-1], np.arange(32.)[::2], np.arange(0.)):
+        for count in (0, 1, 7):
+            for stop in (-1, 0, 3):
+                snapshot = original.copy()
+                expected = original
+                for iteration in range(count):
+                    if iteration == stop:
+                        break
+                    if iteration % 2:
+                        continue
+                    expected = materialize(expected[expected > iteration])
+                result = filtered_replacement(original, count, stop)
+                for repeat in range(32):
+                    replacement = np.ones(original.shape) * repeat
+                    assert replacement.size == original.size
+                assert np.array_equal(result, expected)
+                assert np.array_equal(original, snapshot)
+            saved = filtered_aliases(original, count)
+            expected = original
+            for iteration in range(count):
+                assert np.array_equal(saved[iteration], expected[::-1])
+                expected = materialize(expected[expected > iteration])
+            expected = original
+            for iteration in range(min(count, 3)):
+                expected = materialize(expected[expected > iteration])
+            assert np.array_equal(filtered_exception(original, count), expected[::-1])
+            left, right = filtered_pair(original.copy(), original.copy() + 10., count)
+            saved = retained_filtered_tuple(original, count)
+            expected = original
+            for iteration in range(count):
+                expected = materialize(expected[expected > iteration])
+                assert np.array_equal(saved[iteration][0], expected)
+                assert np.array_equal(saved[iteration][1], expected)
+            for repeat in range(32):
+                replacement = np.ones(original.shape) * repeat
+                assert replacement.size == original.size
+            assert np.array_equal(left, expected)
+            assert np.array_equal(right, expected + 10.)
+    matrix = np.arange(12.).reshape(3, 4)
+    rows, columns = np.array([2, 0, 2]), np.array([3, 1, 0])
+    assert np.array_equal(matrix[rows, columns] ** 2 + matrix[rows, columns], [132., 2., 72.])
+    assert np.array_equal(matrix[rows, 1] * 2 + matrix[rows, 1], [27., 3., 27.])
+
+test_filtered_replacement()
+
 @test
 def test_prompt_release():
     for original in (np.arange(17.), np.arange(34.)[::2], np.arange(17.)[::-1], np.arange(0.)):
@@ -1106,6 +1261,60 @@ def last_use_escaped(values):
     retain_temporary(temporary)
     total = temporary.sum(axis=1, keepdims=True)
     return temporary / total
+
+@noinline
+def last_use_alias_mutation(values):
+    temporary = np.exp(values)
+    alias = temporary
+    total = temporary.sum(axis=1, keepdims=True)
+    alias[0, :] = 123.
+    return temporary / total
+
+@noinline
+def last_use_view_mutation(values):
+    temporary = np.exp(values)
+    view = temporary[::-1]
+    total = temporary.sum(axis=1, keepdims=True)
+    view[0, :] = 123.
+    return temporary / total
+
+@noinline
+def mutate_last_use_alias(values):
+    values[0, :] = 123.
+
+@noinline
+def last_use_indirect_mutation(values):
+    temporary = np.exp(values)
+    alias = temporary[::-1]
+    total = temporary.sum(axis=1, keepdims=True)
+    mutate_last_use_alias(alias)
+    return temporary / total
+
+def check_last_use_mutation(dtype: type):
+    for rows, columns in ((1, 1), (3, 17), (5, 129)):
+        values = np.linspace(-2., 2., rows * columns, dtype=dtype).reshape(rows, columns)
+        for array in (values, values.copy(order='F'), values[::-1, ::-1],
+                      values[:, ::2], values[:, :0]):
+            snapshot = array.copy()
+            exponential = materialize(np.exp(array))
+            total = materialize(exponential.sum(axis=1, keepdims=True))
+            mutated = materialize(np.exp(array))
+            mutated[0, :] = 123.
+            expected = materialize(mutated / total)
+            check_axis_result(last_use_alias_mutation(array), expected)
+            mutated = materialize(np.exp(array))
+            mutated[-1, :] = 123.
+            expected = materialize(mutated / total)
+            check_axis_result(last_use_view_mutation(array), expected)
+            check_axis_result(last_use_indirect_mutation(array), expected)
+            assert np.array_equal(array, snapshot)
+
+@test
+def test_last_use_mutation():
+    check_last_use_mutation(np.float32)
+    check_last_use_mutation(np.float64)
+
+test_last_use_mutation()
 
 @test
 def test_last_use_normalization():

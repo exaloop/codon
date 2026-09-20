@@ -98,14 +98,14 @@ void NumPyExpr::replace(NumPyExpr &e) {
   op = e.op;
   lhs = std::move(e.lhs);
   rhs = std::move(e.rhs);
-  freeable = e.freeable;
+  ownedLastUse = e.ownedLastUse;
 
   e.type = {};
   e.val = nullptr;
   e.op = NP_OP_NONE;
   e.lhs = {};
   e.rhs = {};
-  e.freeable = false;
+  e.ownedLastUse = false;
 }
 
 bool NumPyExpr::haveVectorizedLoop() const {
@@ -698,7 +698,7 @@ Var *NumPyExpr::codegenFusedEval(CodegenContext &C, Var *destination) {
 
   // Free temporary arrays
   apply([&](NumPyExpr &e) {
-    if (e.isLeaf() && e.freeable) {
+    if (e.isLeaf() && e.ownedLastUse) {
       auto it = vars.find(&e);
       seqassertn(it != vars.end(), "NumPyExpr not found in vars map (fused eval)");
       auto *var = it->second;
@@ -746,8 +746,8 @@ Var *NumPyExpr::codegenSequentialEval(CodegenContext &C) {
   Var *like = nullptr;
   Value *outShapeVal = nullptr;
 
-  bool lfreeable = lhs && lhs->type.isArray() && (lhs->freeable || !lhs->isLeaf());
-  bool rfreeable = rhs && rhs->type.isArray() && (rhs->freeable || !rhs->isLeaf());
+  bool lfreeable = lhs && lhs->type.isArray() && (lhs->ownedLastUse || !lhs->isLeaf());
+  bool rfreeable = rhs && rhs->type.isArray() && (rhs->ownedLastUse || !rhs->isLeaf());
   bool ltmp = lfreeable && lhs->type.dtype == type.dtype && lhs->type.ndim == type.ndim;
   bool rtmp = rfreeable && rhs->type.dtype == type.dtype && rhs->type.ndim == type.ndim;
 
