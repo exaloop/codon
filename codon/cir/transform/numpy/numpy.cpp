@@ -588,6 +588,8 @@ std::unique_ptr<NumPyExpr> parse(Value *v,
       if ((name == "astype" && c->numArgs() == 3 && isA<BoolConst>(c->back())) ||
           (name == "copy" && c->numArgs() == 2)) {
         auto *order = cast<StringConst>(*std::next(c->begin()));
+        // A same-dtype no-copy cast may return the input itself. Keep it opaque
+        // rather than letting codegen treat a borrowed alias as a fresh temporary.
         bool ownsStorage = name == "copy" || cast<BoolConst>(c->back())->getVal() ||
                            !c->front()->getType()->is(v->getType());
         if (ownsStorage && order &&
@@ -1105,6 +1107,8 @@ bool hasUFuncArgumentEffects(NumPyExpr &expr,
 bool hasOwnedResult(const NumPyExpr &expr) {
   if (!expr.type.isArray() || expr.isLeaf())
     return false;
+  // Allocation provenance only, not last-use permission. Fail closed for views,
+  // identity operations, and new opcodes until their allocation contract is known.
   switch (expr.op) {
   case NumPyExpr::NP_OP_NEG:
   case NumPyExpr::NP_OP_INVERT:
@@ -1247,6 +1251,8 @@ bool NumPyOptimizationUnit::optimize(NumPyPrimitiveTypes &T,
   // uses these bindings rather than reevaluating the original operands.
   for (auto &p : leaves) {
     auto *var = util::makeVar(cv.clone(p.second), series, func);
+    // The lifetime pass may follow borrowed bindings, but must not reclaim leaves
+    // whose storage this expression already reuses or frees.
     if (ownsResult && !p.first->ownedLastUse)
       setLifetimeTag(series->back(), "numpy.lifetime.input");
     C.vars.emplace(p.first, var);
@@ -1552,6 +1558,8 @@ bool isArrayUpdate(CallInstr *call, NumPyPrimitiveTypes &types) {
 } // namespace
 
 void NumPyLifetimePass::visit(BodiedFunc *func) {
+  // Analyze the rewritten IR: fusion may have transferred ownership or introduced
+  // input bindings. Reusing the pre-fusion use graph could schedule a second free.
   auto *result = getAnalysisResult<analyze::dataflow::RDResult>(reachingDefKey);
   auto found = result->results.find(func->getId());
   if (found == result->results.end())
@@ -1624,6 +1632,8 @@ void NumPyLifetimePass::visit(BodiedFunc *func) {
       auto *parent = use.parents.empty() ? nullptr : use.parents.back();
       if (!read || !parent)
         return false;
+      // Returning the current buffer is safe only for replacement cleanup: there
+      // is no later assignment on this path. Ordinary last-use cleanup rejects it.
       if (auto *result = cast<ReturnInstr>(parent))
         return result->getValue() == read;
       auto *call = cast<CallInstr>(parent);
@@ -1658,6 +1668,8 @@ void NumPyLifetimePass::visit(BodiedFunc *func) {
         return false;
       auto *parent = getParent();
       if (auto *assignment = cast<AssignInstr>(parent)) {
+        // Only compiler-generated borrowed input bindings are nonescaping here.
+        // User aliases and leaves already released by fusion must not qualify.
         return assignment->getRhs() == read &&
                hasLifetimeTag(assignment, "numpy.lifetime.input");
       }
@@ -1708,6 +1720,9 @@ void NumPyLifetimePass::visit(BodiedFunc *func) {
   } lifetimes(func);
   func->accept(lifetimes);
 
+  // Tuple unpacking can hide fresh gathered arrays. Transfer a field's ownership
+  // only from a local constructor with one extraction per field and no tuple escape;
+  // otherwise another tuple reader could retain the storage we intend to release.
   for (auto &entry : lifetimes.replacements) {
     for (auto &replacement : entry.second) {
       auto *extract = cast<ExtractInstr>(replacement.assignment->getRhs());
@@ -1766,6 +1781,8 @@ void NumPyLifetimePass::visit(BodiedFunc *func) {
     }
   }
 
+  // Replacement cleanup spans serial iterations; last-use cleanup below stays
+  // within one basic block. A variable must participate in only one protocol.
   std::unordered_set<id_t> replacedVariables;
   auto *body = cast<SeriesFlow>(func->getBody());
   if (body) {
@@ -1794,6 +1811,9 @@ void NumPyLifetimePass::visit(BodiedFunc *func) {
       seqassertn(release, "NumPy release function not found");
       for (const auto &replacement : entry.second) {
         auto *series = module->Nr<SeriesFlow>();
+        // Finish the RHS before freeing the previous buffer: it may read that
+        // buffer or throw. The saved owner is valid only while the flag is true,
+        // so borrowed initial values and unproven replacements are never freed.
         auto *result = util::makeVar(replacement.assignment->getRhs(), series, func);
         series->push_back(module->Nr<IfFlow>(
             module->Nr<VarValue>(owned),
@@ -1819,6 +1839,9 @@ void NumPyLifetimePass::visit(BodiedFunc *func) {
     }
   }
   std::unordered_map<Value *, std::vector<Value *>> insertions;
+  // Release a named allocation only after its last proven nonescaping statement.
+  // Ambiguous definitions, control-flow boundaries, and returned storage retain
+  // GC ownership; this deliberately does not follow arbitrary aliases or views.
   for (const auto &candidate : lifetimes.candidates) {
     auto *assignment = candidate.assignment;
     auto *variable = assignment->getLhs();
@@ -1900,6 +1923,8 @@ void NumPyLifetimePass::visit(BodiedFunc *func) {
       auto *series = module->Nr<SeriesFlow>();
       util::CloneVisitor clone(module);
       std::vector<Value *> arguments;
+      // Preserve receiver/index/RHS evaluation order and retain the exact RHS
+      // allocation. Re-evaluating an argument for cleanup could repeat side effects.
       for (auto *argument : *call) {
         auto *bound = util::makeVar(clone.clone(argument), series, func);
         arguments.push_back(module->Nr<VarValue>(bound));
@@ -1950,6 +1975,8 @@ void NumPyInlinePass::visit(BodiedFunc *func) {
       util::CloneVisitor clone(module);
       auto *bindings = module->Nr<SeriesFlow>();
       bool directBindings = true;
+      // Substitute only stable local reads directly. Otherwise bind every actual
+      // argument once, including unused ones, before evaluating the helper body.
       for (auto *value : *call) {
         auto *read = cast<VarValue>(value);
         directBindings &= read && !read->getVar()->isGlobal();

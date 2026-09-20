@@ -1,4 +1,41 @@
 import numpy as np
+import math
+
+@noinline
+def singleton_arctan2_expression(left, right):
+    return np.arctan2(left, right) + 1.
+
+def check_vectorized_singleton_broadcast(dtype: type):
+    backing = np.full(513, 1000., dtype=dtype)
+    backing[0] = 3.
+    for size in (0, 1, 17, 257):
+        values = np.linspace(0.5, 4., 2 * size, dtype=dtype)
+        for vector in (values[:size], values[:size][::-1], values[::2]):
+            for singleton in (backing[:1], np.array([3.], dtype=dtype)):
+                for left, right in ((vector, singleton), (singleton, vector)):
+                    expected_angle = np.empty_like(vector)
+                    expected_norm = np.empty_like(vector)
+                    for index in range(vector.size):
+                        first = float(left[0] if left.size == 1 else left[index])
+                        second = float(right[0] if right.size == 1 else right[index])
+                        expected_angle[index] = math.atan2(first, second)
+                        expected_norm[index] = math.hypot(first, second)
+                    assert np.allclose(np.arctan2(left, right), expected_angle)
+                    assert np.allclose(np.hypot(left, right), expected_norm)
+                    assert np.allclose(singleton_arctan2_expression(left, right),
+                                       expected_angle + 1.)
+                    output = np.full(2 * vector.size, -1., dtype=dtype)
+                    np.arctan2(left, right, out=output[::2])
+                    assert np.allclose(output[::2], expected_angle)
+                    assert np.all(output[1::2] == -1.)
+    assert backing[0] == 3. and np.all(backing[1:] == 1000.)
+
+@test
+def test_vectorized_singleton_broadcast():
+    check_vectorized_singleton_broadcast(np.float32)
+    check_vectorized_singleton_broadcast(np.float64)
+
+test_vectorized_singleton_broadcast()
 
 @noinline
 def standalone_absolute(array):

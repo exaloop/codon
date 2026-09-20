@@ -696,7 +696,8 @@ Var *NumPyExpr::codegenFusedEval(CodegenContext &C, Var *destination) {
 
   auto *result = util::makeVar(util::call(loopFunc, loopArgs), series, func);
 
-  // Free temporary arrays
+  // Release only after the entire fused loop. Ownership proofs must exclude
+  // duplicate owners: this walks expression leaves, not unique data pointers.
   apply([&](NumPyExpr &e) {
     if (e.isLeaf() && e.ownedLastUse) {
       auto it = vars.find(&e);
@@ -746,6 +747,8 @@ Var *NumPyExpr::codegenSequentialEval(CodegenContext &C) {
   Var *like = nullptr;
   Value *outShapeVal = nullptr;
 
+  // Ownership permits release; matching dtype/rank and the shape checks below
+  // additionally permit reuse. Borrowed leaves remain read-only even at last use.
   bool lfreeable = lhs && lhs->type.isArray() && (lhs->ownedLastUse || !lhs->isLeaf());
   bool rfreeable = rhs && rhs->type.isArray() && (rhs->ownedLastUse || !rhs->isLeaf());
   bool ltmp = lfreeable && lhs->type.dtype == type.dtype && lhs->type.ndim == type.ndim;

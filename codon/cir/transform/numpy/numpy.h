@@ -47,6 +47,7 @@ public:
   void visit(BodiedFunc *f) override;
 };
 
+/// Release proven-owned, nonescaping arrays after fusion, using fresh use analysis.
 class NumPyLifetimePass : public OperatorPass {
   std::string reachingDefKey;
 
@@ -241,6 +242,9 @@ struct NumPyExpr {
   } op;
   std::unique_ptr<NumPyExpr> lhs;
   std::unique_ptr<NumPyExpr> rhs;
+  /// A leaf owns storage that this consumer may reuse or release. Requires no
+  /// remaining alias access, not just allocation provenance; repeated references
+  /// must not independently acquire this permission for the same allocation.
   bool ownedLastUse;
 
   NumPyExpr(NumPyType type, Value *val)

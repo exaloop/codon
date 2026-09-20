@@ -640,6 +640,9 @@ class ndarray[dtype, ndim: Literal[int]]:
             elif static.len(shape) == 1:
                 n = shape[0]
 
+                # Collapse only exact pointer-and-stride aliases. The resulting
+                # two-pointer loop exposes in-place updates to vectorization;
+                # equal base pointers alone do not prove identical element access.
                 if alias and static.len(ptrs) == 3:
                     if type(ptrs[0]) is type(ptrs[1]):
                         if ptrs[0] == ptrs[1] and strides[0] == strides[1]:
@@ -892,6 +895,9 @@ class ndarray[dtype, ndim: Literal[int]]:
 
         alloc_tuple = util.zero(alloc)
 
+        # Planning shares broadcasting/layout rules with execution, but neither
+        # allocates nor invokes the callback. Axis reductions need preserve_shape
+        # so axis numbers still refer to the original dimensions after planning.
         if plan:
             if static.len(alloc_tuple) != 0:
                 compile_error("iteration plans cannot allocate arrays")

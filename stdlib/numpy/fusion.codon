@@ -72,6 +72,8 @@ def _loop_into(arrays, func, extra, output):
     return output
 
 def _layout(arrays, dtype: type):
+    # Plan the materialized result without allocating it. Input strides are bytes;
+    # the planner's u8 output prototype supplies strides in output elements.
     shape, strides, bases, output_strides = ndarray._loop(
         arrays, None, plan=True, preserve_shape=True)
     return ndarray(shape, tuple(stride * util.sizeof(dtype) for stride in output_strides),
@@ -198,6 +200,8 @@ def _fold_expr(plan, func, extra, position, count, dtype: type,
 
 def _sum_expr(plan, func, extra, position, count, element_dtype: type, dtype: type):
     from .reductions import _pairwise_sum
+    # Match the ordinary reducer's split/alignment and round each expression value
+    # to element_dtype before accumulation, without materializing the whole array.
     COMPLEX: Literal[bool] = element_dtype is complex or element_dtype is complex64
     BLOCK: Literal[int] = 64 if COMPLEX else 128
     ALIGN: Literal[int] = 3 if COMPLEX else 7
@@ -213,6 +217,8 @@ def _sum_expr(plan, func, extra, position, count, element_dtype: type, dtype: ty
         return left + right
 
 def _reduction_plan(shape, strides, bases, output_strides):
+    # Select the traversal of the would-be materialized result, not that of an
+    # arbitrary input. Changing this order also changes floating-point reduction.
     rank: Literal[int] = static.len(shape)
     count = util.count(shape)
     cc, fc = ndarray(shape, output_strides, Ptr[u8]())._contig
@@ -420,6 +426,8 @@ def _loop_reduce_axis(arrays, func, extra, initial, layout, axis,
         reduced_shape, retained_shape = _axis_partition(shape, axes)
         reduced_layout, retained_layout = _axis_partition(layout.strides, axes)
         partitions = tuple(_axis_partition(stride, axes) for stride in strides)
+        # Keep this gradual-vs-slice choice aligned with reductions._reduce.
+        # Stride sign controls traversal direction, not which axis is fastest.
         min_reduced_stride = -1
         min_retained_stride = -1
         for stride in reduced_layout:
@@ -575,6 +583,8 @@ def _matmul_add_fallback(left, right, bias, output, mode: Literal[int]):
         return output
 
 def _matmul_add(left, right, bias, output=None, mode: Literal[int] = 0):
+    # The compiler proves output/input disjointness (or exact output/bias identity).
+    # Runtime guards handle sizes and layouts; they are not a general alias check.
     from .linalg.linalg import _gemv, _matmul_matrixmatrix, _is_blasable2d, BLAS_MAXSIZE
     product_shape = _matmul_shape(left.shape, right.shape)
     shape = _broadcast(product_shape, bias.shape)
@@ -647,6 +657,8 @@ def _free(x):
     util.free(x.data)
 
 def _free_copy_source(source, result):
+    # Layout-aware copy/cast helpers can return the source; only a distinct result
+    # ends the source allocation's lifetime.
     if source.data.as_byte() != result.data.as_byte():
         util.free(source.data)
 
@@ -703,12 +715,12 @@ def _apply_vectorized_loop_binary(arr1, arr2, out, func: Literal[str]):
     if arr1.ndim == 0:
         st1 = 0
     else:
-        st1 = arr1.strides[0]
+        st1 = 0 if arr1.shape[0] == 1 else arr1.strides[0]
 
     if arr2.ndim == 0:
         st2 = 0
     else:
-        st2 = arr2.strides[0]
+        st2 = 0 if arr2.shape[0] == 1 else arr2.strides[0]
 
     if out.ndim == 1:
         util.call_vectorized_loop(arr1.data, st1, arr2.data,

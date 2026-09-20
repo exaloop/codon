@@ -77,12 +77,12 @@ def _apply_vectorized_loop_binary(arr1, arr2, out, func: Literal[str]):
     if arr1.ndim == 0:
         st1 = 0
     else:
-        st1 = arr1.strides[0]
+        st1 = 0 if arr1.shape[0] == 1 else arr1.strides[0]
 
     if arr2.ndim == 0:
         st2 = 0
     else:
-        st2 = arr2.strides[0]
+        st2 = 0 if arr2.shape[0] == 1 else arr2.strides[0]
 
     if out.ndim == 1:
         util.call_vectorized_loop(arr1.data, st1, arr2.data, st2, out.data,

@@ -132,6 +132,8 @@ bool canForwardExpression(NumPyOptimizationUnit *expr, Value *target,
   auto *end = cfg->getBlock(target);
   seqassertn(start, "start CFG block not found");
   seqassertn(end, "end CFG block not found");
+  // A consumer must not run again without reexecuting its producer. Single-use
+  // syntax alone does not prove this when the consumer is inside a loop.
   std::unordered_set<CFBlock *> visited;
   std::vector<CFBlock *> pending(end->successors_begin(), end->successors_end());
   while (!pending.empty()) {
@@ -148,6 +150,8 @@ bool canForwardExpression(NumPyOptimizationUnit *expr, Value *target,
   bool ok = true;
   bool reached = false;
 
+  // Every path must reach the consumer, or forwarding could suppress an eager
+  // shape error. Also reject cycles and intervening writes/effects.
   std::function<void(CFBlock *, std::vector<CFBlock *> &)> dfs =
       [&](CFBlock *curr, std::vector<CFBlock *> &path) {
         if (!ok)
@@ -159,6 +163,8 @@ bool canForwardExpression(NumPyOptimizationUnit *expr, Value *target,
                                              path))
             ok = false;
         } else {
+          if (curr->successors_begin() == curr->successors_end())
+            ok = false;
           for (auto it = curr->successors_begin(); it != curr->successors_end(); ++it) {
             if (std::find(path.begin(), path.end(), *it) != path.end()) {
               ok = false;
@@ -184,8 +190,8 @@ bool canForwardVariable(AssignInstr *assign, Value *destination, BodiedFunc *fun
   if (reaching.size() != 1 || reaching[0].assignment->getId() != assign->getId())
     return false;
 
-  // Check 2: There should be no other uses of the variable that the given assignment
-  // reaches.
+  // Check 2: There should be no other uses reached by this assignment. These are
+  // individual references, so even repeated operands in one consumer disqualify it.
   std::vector<Value *> uses;
   GetAllUses gu(var, uses);
   func->accept(gu);
@@ -203,8 +209,8 @@ bool canForwardVariable(AssignInstr *assign, Value *destination, BodiedFunc *fun
 }
 
 // Edges point from a consumer to a producer that can replace one of its leaves.
-// Reaching definitions establish single-use; CFG and effect checks establish
-// that moving the producer to the consumer cannot change observable behavior.
+// Reaching definitions establish single-use; CFG/effect checks require the consumer
+// on every path and reject intervening writes before moving the producer.
 ForwardingDAG buildForwardingDAG(BodiedFunc *func, RD *rd, CFG *cfg, SE *se,
                                  std::vector<NumPyOptimizationUnit> &exprs) {
   std::unordered_map<id_t, NumPyExpr *> parsedValues;
@@ -431,6 +437,8 @@ bool canReuseAfterReads(NumPyOptimizationUnit &source, NumPyExpr &destination,
   if (completedReads.empty())
     return false;
 
+  // Alias/view creation is also a use. Reject it even if the alias is not returned:
+  // it could mutate or retain the allocation without reading this variable again.
   std::vector<Value *> uses;
   GetAllUses collect(var, uses);
   consumer.func->accept(collect);
