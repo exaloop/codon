@@ -27,8 +27,8 @@
 #include "codon/parser/common.h"
 #include "codon/util/common.h"
 
-#include "gtest/gtest.h"
 #include "llvm/Support/Signals.h"
+#include "gtest/gtest.h"
 
 using namespace codon;
 using namespace std;

@@ -3178,10 +3178,11 @@ def where(condition, x, y):
     x = asarray(x)
     y = asarray(y)
     T = type(util.coerce(x.dtype, y.dtype))
+    bshape = broadcast_shapes(condition.shape, x.shape, y.shape)
 
     if condition._contig_match(x) and condition._contig_match(y):
         cc, fc = condition._contig
-        ans = empty(condition.shape, dtype=T, order=('C' if cc else 'F'))
+        ans = empty(bshape, dtype=T, order=('C' if cc else 'F'))
 
         sz = condition.size
         pc = condition.data
@@ -3197,7 +3198,6 @@ def where(condition, x, y):
 
         return ans
     else:
-        bshape = broadcast_shapes(condition.shape, x.shape, y.shape)
         ans = empty(bshape, dtype=T)
 
         for idx in util.multirange(bshape):

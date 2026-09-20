@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "codon/cir/analyze/analysis.h"
 #include "codon/cir/analyze/dataflow/reaching.h"
 #include "codon/cir/analyze/module/global_vars.h"
 #include "codon/cir/analyze/module/side_effect.h"
@@ -18,18 +19,34 @@ namespace transform {
 namespace numpy {
 extern const std::string FUSION_MODULE;
 
-class NumPyInlinePass : public OperatorPass {
+class NumPyExpressionAnalysis : public analyze::Analysis {
+  std::string reachingDefKey;
+  std::string sideEffectsKey;
+
 public:
   static const std::string KEY;
+  NumPyExpressionAnalysis(const std::string &reachingDefKey,
+                          const std::string &sideEffectsKey)
+      : reachingDefKey(reachingDefKey), sideEffectsKey(sideEffectsKey) {}
   std::string getKey() const override { return KEY; }
-  void visit(BodiedFunc *func) override;
+  std::unique_ptr<analyze::Result> run(const Module *module) override;
+};
+
+class NumPyInlinePass : public OperatorPass {
+  std::string expressionsKey;
+
+public:
+  static const std::string KEY;
+  explicit NumPyInlinePass(const std::string &expressionsKey)
+      : expressionsKey(expressionsKey) {}
+  std::string getKey() const override { return KEY; }
+  void run(Module *module) override;
 };
 
 /// NumPy operator fusion pass.
 class NumPyFusionPass : public OperatorPass {
 private:
-  /// Key of the reaching definition analysis
-  std::string reachingDefKey;
+  std::string expressionsKey;
   /// Key of the side effect analysis
   std::string sideEffectsKey;
 
@@ -37,10 +54,10 @@ public:
   static const std::string KEY;
 
   /// Constructs a NumPy fusion pass.
-  /// @param reachingDefKey the reaching definition analysis' key
+  /// @param expressionsKey the expression analysis' key
   /// @param sideEffectsKey side effect analysis' key
-  NumPyFusionPass(const std::string &reachingDefKey, const std::string &sideEffectsKey)
-      : OperatorPass(), reachingDefKey(reachingDefKey), sideEffectsKey(sideEffectsKey) {
+  NumPyFusionPass(const std::string &expressionsKey, const std::string &sideEffectsKey)
+      : OperatorPass(), expressionsKey(expressionsKey), sideEffectsKey(sideEffectsKey) {
   }
 
   std::string getKey() const override { return KEY; }
@@ -233,7 +250,9 @@ struct NumPyExpr {
     NP_OP_CAST,
     NP_OP_ZEROS_LIKE,
     NP_OP_ONES_LIKE,
+    NP_OP_WHERE,
     NP_OP_SUM,
+    NP_OP_MEAN,
     NP_OP_PROD,
     NP_OP_ANY,
     NP_OP_ALL,
@@ -242,6 +261,7 @@ struct NumPyExpr {
   } op;
   std::unique_ptr<NumPyExpr> lhs;
   std::unique_ptr<NumPyExpr> rhs;
+  std::unique_ptr<NumPyExpr> third;
   /// A leaf owns storage that this consumer may reuse or release. Requires no
   /// remaining alias access, not just allocation provenance; repeated references
   /// must not independently acquire this permission for the same allocation.
@@ -255,9 +275,10 @@ struct NumPyExpr {
       : type(std::move(type)), val(val), op(op), lhs(std::move(lhs)), rhs(),
         ownedLastUse(false) {}
   NumPyExpr(NumPyType type, Value *val, NumPyExpr::Op op,
-            std::unique_ptr<NumPyExpr> lhs, std::unique_ptr<NumPyExpr> rhs)
+            std::unique_ptr<NumPyExpr> lhs, std::unique_ptr<NumPyExpr> rhs,
+            std::unique_ptr<NumPyExpr> third = nullptr)
       : type(std::move(type)), val(val), op(op), lhs(std::move(lhs)),
-        rhs(std::move(rhs)), ownedLastUse(false) {}
+        rhs(std::move(rhs)), third(std::move(third)), ownedLastUse(false) {}
 
   static std::unique_ptr<NumPyExpr>
   parse(Value *v, std::vector<std::pair<NumPyExpr *, Value *>> &leaves,
@@ -274,17 +295,22 @@ struct NumPyExpr {
   friend std::ostream &operator<<(std::ostream &os, NumPyExpr const &expr);
   std::string str() const;
 
-  bool isLeaf() const { return !lhs && !rhs; }
+  bool isLeaf() const { return !lhs && !rhs && !third; }
   bool isReduction() const {
-    return op == NP_OP_SUM || op == NP_OP_PROD || op == NP_OP_ANY || op == NP_OP_ALL ||
-           op == NP_OP_AMIN || op == NP_OP_AMAX;
+    return op == NP_OP_SUM || op == NP_OP_MEAN || op == NP_OP_PROD || op == NP_OP_ANY ||
+           op == NP_OP_ALL || op == NP_OP_AMIN || op == NP_OP_AMAX;
   }
 
   int depth() const {
-    return std::max(lhs ? lhs->depth() : 0, rhs ? rhs->depth() : 0) + 1;
+    return std::max({lhs ? lhs->depth() : 0, rhs ? rhs->depth() : 0,
+                     third ? third->depth() : 0}) +
+           1;
   }
 
-  int nodes() const { return (lhs ? lhs->nodes() : 0) + (rhs ? rhs->nodes() : 0) + 1; }
+  int nodes() const {
+    return (lhs ? lhs->nodes() : 0) + (rhs ? rhs->nodes() : 0) +
+           (third ? third->nodes() : 0) + 1;
+  }
 
   void apply(std::function<void(NumPyExpr &)> f);
 
@@ -338,8 +364,9 @@ struct Forwarding {
 using ForwardingDAG =
     std::unordered_map<NumPyOptimizationUnit *, std::vector<Forwarding>>;
 
-NumPyOptimizationUnit *doForwarding(ForwardingDAG &dag,
-                                    std::vector<AssignInstr *> &assignsToDelete);
+NumPyOptimizationUnit *
+doForwarding(ForwardingDAG &dag, std::vector<AssignInstr *> &assignsToDelete,
+             std::vector<std::pair<Value *, Value *>> *substitutions = nullptr);
 
 std::vector<ForwardingDAG> getForwardingDAGs(BodiedFunc *func,
                                              analyze::dataflow::RDInspector *rd,

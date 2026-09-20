@@ -523,20 +523,30 @@ std::unique_ptr<NumPyExpr> parse(Value *v,
       auto name = function->getUnmangledName();
       static const std::unordered_map<std::string, NumPyExpr::Op> reductions = {
           {"sum", NumPyExpr::NP_OP_SUM},   {"prod", NumPyExpr::NP_OP_PROD},
-          {"any", NumPyExpr::NP_OP_ANY},   {"all", NumPyExpr::NP_OP_ALL},
-          {"min", NumPyExpr::NP_OP_AMIN},  {"max", NumPyExpr::NP_OP_AMAX},
-          {"amin", NumPyExpr::NP_OP_AMIN}, {"amax", NumPyExpr::NP_OP_AMAX}};
+          {"mean", NumPyExpr::NP_OP_MEAN}, {"any", NumPyExpr::NP_OP_ANY},
+          {"all", NumPyExpr::NP_OP_ALL},   {"min", NumPyExpr::NP_OP_AMIN},
+          {"max", NumPyExpr::NP_OP_AMAX},  {"amin", NumPyExpr::NP_OP_AMIN},
+          {"amax", NumPyExpr::NP_OP_AMAX}};
       auto found = reductions.find(name);
       bool logical = name == "any" || name == "all";
+      bool mean = name == "mean";
       bool extrema = name == "min" || name == "max" || name == "amin" || name == "amax";
-      unsigned expectedArgs = logical ? 4 : extrema ? 6 : 5;
+      unsigned expectedArgs = (logical || mean) ? 4 : extrema ? 6 : 5;
       if (found != reductions.end() && call->numArgs() == expectedArgs &&
           (isArrayType(function->getParentType()) ||
            function->getName().rfind(
                ast::getMangledFunc("std.numpy.reductions", name) + "[", 0) == 0)) {
+        if (mean) {
+          auto generics = function->getType()->getGenerics();
+          if (generics.empty() || !generics[0].isType())
+            return {};
+          auto *dtype = generics[0].getTypeValue();
+          if (!dtype->is(T.none) && !dtype->is(type.getIRBaseType(T)))
+            return {};
+        }
         std::vector<Value *> args(call->begin(), call->end());
         auto noValue = ast::getMangledClass("std.numpy.util", "_NoValue");
-        auto *initialValue = logical ? nullptr : args[extrema ? 4 : 3];
+        auto *initialValue = (logical || mean) ? nullptr : args[extrema ? 4 : 3];
         bool hasInitial = initialValue && initialValue->getType()->getName() != noValue;
         if (isNoneType(args[2]->getType(), T) &&
             args.back()->getType()->getName() == noValue &&
@@ -563,6 +573,19 @@ std::unique_ptr<NumPyExpr> parse(Value *v,
 
   if (auto *c = cast<CallInstr>(v)) {
     auto *f = util::getFunc(c->getCallee());
+
+    if (f && c->numArgs() == 3 &&
+        f->getName().rfind(ast::getMangledFunc("std.numpy.routines", "where") + "[",
+                           0) == 0) {
+      auto condition = parse(c->front(), leaves, T);
+      auto onTrue = parse(*std::next(c->begin()), leaves, T);
+      auto onFalse = parse(c->back(), leaves, T);
+      if (!condition || !onTrue || !onFalse)
+        return {};
+      return std::make_unique<NumPyExpr>(type, v, NumPyExpr::NP_OP_WHERE,
+                                         std::move(condition), std::move(onTrue),
+                                         std::move(onFalse));
+    }
 
     if (f && c->numArgs() == 2 && isArrayType(c->front()->getType())) {
       auto name = f->getUnmangledName();
@@ -1184,7 +1207,9 @@ bool hasOwnedResult(const NumPyExpr &expr) {
   case NumPyExpr::NP_OP_HEAVISIDE:
   case NumPyExpr::NP_OP_ZEROS_LIKE:
   case NumPyExpr::NP_OP_ONES_LIKE:
+  case NumPyExpr::NP_OP_WHERE:
   case NumPyExpr::NP_OP_SUM:
+  case NumPyExpr::NP_OP_MEAN:
   case NumPyExpr::NP_OP_PROD:
   case NumPyExpr::NP_OP_ANY:
   case NumPyExpr::NP_OP_ALL:
@@ -1520,6 +1545,71 @@ struct ExtractArrayExpressions : public util::Operator {
     }
   }
 };
+
+struct NumPyFunctionExpressions : ExtractArrayExpressions {
+  struct Expression {
+    NumPyOptimizationUnit *unit;
+    std::vector<AssignInstr *> assignments;
+    std::vector<std::pair<Value *, Value *>> substitutions;
+  };
+  std::vector<Expression> expressions;
+
+  NumPyFunctionExpressions(BodiedFunc *func, analyze::dataflow::RDInspector *rd,
+                           analyze::dataflow::CFGraph *cfg,
+                           analyze::module::SideEffectResult *sideEffects)
+      : ExtractArrayExpressions(func, rd, cfg, sideEffects) {
+    func->accept(*this);
+    auto forwarding = getForwardingDAGs(func, rd, cfg, sideEffects, exprs);
+    for (auto &dag : forwarding) {
+      Expression expression;
+      expression.unit =
+          doForwarding(dag, expression.assignments, &expression.substitutions);
+      expressions.push_back(std::move(expression));
+    }
+  }
+};
+
+struct NumPyExpressionResult : analyze::Result {
+  analyze::dataflow::RDResult *reaching;
+  analyze::module::SideEffectResult *sideEffects;
+  std::unordered_map<id_t, std::unique_ptr<NumPyFunctionExpressions>> functions;
+
+  NumPyExpressionResult(analyze::dataflow::RDResult *reaching,
+                        analyze::module::SideEffectResult *sideEffects)
+      : reaching(reaching), sideEffects(sideEffects) {}
+
+  NumPyFunctionExpressions *get(BodiedFunc *func) {
+    auto found = functions.find(func->getId());
+    if (found != functions.end())
+      return found->second.get();
+    auto definitions = reaching->results.find(func->getId());
+    if (definitions == reaching->results.end())
+      return nullptr;
+    auto *cfg = reaching->cfgResult->graphs.at(func->getId()).get();
+    auto result = std::make_unique<NumPyFunctionExpressions>(
+        func, definitions->second.get(), cfg, sideEffects);
+    auto *ptr = result.get();
+    functions.emplace(func->getId(), std::move(result));
+    return ptr;
+  }
+
+  std::unique_ptr<NumPyFunctionExpressions> take(BodiedFunc *func) {
+    if (!get(func))
+      return nullptr;
+    auto found = functions.find(func->getId());
+    auto result = std::move(found->second);
+    functions.erase(found);
+    return result;
+  }
+};
+
+const std::string NumPyExpressionAnalysis::KEY = "core-numpy-expressions";
+
+std::unique_ptr<analyze::Result> NumPyExpressionAnalysis::run(const Module *) {
+  return std::make_unique<NumPyExpressionResult>(
+      getAnalysisResult<analyze::dataflow::RDResult>(reachingDefKey),
+      getAnalysisResult<analyze::module::SideEffectResult>(sideEffectsKey));
+}
 
 const std::string NumPyFusionPass::KEY = "core-numpy-fusion";
 
@@ -1942,50 +2032,153 @@ void NumPyLifetimePass::visit(BodiedFunc *func) {
   func->accept(release);
 }
 
-// Open bounded, single-expression user helpers so the fusion parser can see
-// through calls without requiring general-purpose inlining of the NumPy library.
-void NumPyInlinePass::visit(BodiedFunc *func) {
+void NumPyInlinePass::run(Module *module) {
+  struct InlineTemplate {
+    Value *value = nullptr;
+    unsigned size = 0;
+    bool directBindings = false;
+  };
+  std::unordered_map<id_t, InlineTemplate> templates;
+  auto *analysis = getAnalysisResult<NumPyExpressionResult>(expressionsKey);
+
+  auto prepare = [&](BodiedFunc *callee) -> InlineTemplate {
+    auto *body = cast<SeriesFlow>(callee->getBody());
+    if (!body || callee->isGenerator() || callee->isAsync() ||
+        callee->getName().rfind("std.numpy.", 0) == 0 ||
+        util::hasAttribute(callee,
+                           ast::getMangledFunc("std.internal.attributes", "noinline")))
+      return {};
+    std::vector<Value *> statements;
+    std::function<void(SeriesFlow *)> flatten = [&](SeriesFlow *series) {
+      for (auto *statement : *series) {
+        if (auto *nested = cast<SeriesFlow>(statement))
+          flatten(nested);
+        else
+          statements.push_back(statement);
+      }
+    };
+    flatten(body);
+    if (statements.empty() || statements.size() > 17)
+      return {};
+    auto *returned = cast<ReturnInstr>(statements.back());
+    if (!returned || !returned->getValue())
+      return {};
+    for (auto *statement : statements) {
+      if (statement == returned)
+        continue;
+      auto *assignment = cast<AssignInstr>(statement);
+      if (!assignment || assignment->getLhs()->isGlobal())
+        return {};
+    }
+    auto *extracted = analysis->get(callee);
+    if (!extracted || !extracted->destinations.empty() ||
+        extracted->expressions.size() != 1)
+      return {};
+    auto &expression = extracted->expressions.front();
+    auto *unit = expression.unit;
+    if (unit->expr->nodes() > 16 ||
+        (!expression.substitutions.empty() &&
+         hasUFuncArgumentEffects(*unit->expr, extracted->sideEffects)))
+      return {};
+    if (unit->value != returned->getValue()) {
+      auto *read = cast<VarValue>(returned->getValue());
+      if (!read || !unit->assign || read->getVar() != unit->assign->getLhs())
+        return {};
+      auto definitions = extracted->rd->getReachingDefinitions(read->getVar(), read);
+      if (definitions.size() != 1 || definitions[0].assignment != unit->assign)
+        return {};
+    }
+    std::unordered_set<Value *> covered(expression.assignments.begin(),
+                                        expression.assignments.end());
+    if (unit->assign)
+      covered.insert(unit->assign);
+    covered.insert(returned);
+    if (covered.size() != statements.size() ||
+        !std::all_of(statements.begin(), statements.end(),
+                     [&](Value *statement) { return covered.count(statement); }))
+      return {};
+    util::CloneVisitor clone(module);
+    for (auto &substitution : expression.substitutions)
+      clone.forceRemap(substitution.first, clone.clone(substitution.second));
+    auto *value = clone.clone(unit->value);
+    struct CheckTemplate : util::Operator {
+      std::unordered_set<Var *> parameters;
+      unsigned size = 0;
+      bool valid = true;
+      explicit CheckTemplate(BodiedFunc *callee)
+          : parameters(callee->arg_begin(), callee->arg_end()) {}
+      void preHook(Node *node) override {
+        ++size;
+        if (isA<Flow>(node) || isA<FlowInstr>(node) || isA<AssignInstr>(node) ||
+            isA<PointerValue>(node))
+          valid = false;
+        for (auto *variable : node->getUsedVariables())
+          if (!variable->isGlobal() && !isA<Func>(variable) &&
+              !parameters.count(variable))
+            valid = false;
+      }
+    } check(callee);
+    value->accept(check);
+    if (!check.valid || check.size > 128)
+      return {};
+    bool directBindings = true;
+    unit->expr->apply([&](NumPyExpr &element) {
+      if (!element.isLeaf())
+        return;
+      auto *read = cast<VarValue>(element.val);
+      directBindings &= (read && !read->getVar()->isGlobal()) ||
+                        isA<IntConst>(element.val) || isA<FloatConst>(element.val) ||
+                        isA<BoolConst>(element.val);
+    });
+    return {value, check.size, directBindings};
+  };
+
+  struct Prepare : util::Operator {
+    std::function<void(BodiedFunc *)> prepare;
+    explicit Prepare(std::function<void(BodiedFunc *)> prepare)
+        : prepare(std::move(prepare)) {}
+    void handle(CallInstr *call) override {
+      if (auto *callee = cast<BodiedFunc>(util::getFunc(call->getCallee())))
+        prepare(callee);
+    }
+  } collect([&](BodiedFunc *callee) {
+    if (!templates.count(callee->getId()))
+      templates.emplace(callee->getId(), prepare(callee));
+  });
+  module->accept(collect);
+
   struct Inliner : public util::Operator {
     BodiedFunc *parent;
-    NumPyPrimitiveTypes types;
+    const std::unordered_map<id_t, InlineTemplate> &templates;
+    std::unordered_set<id_t> active;
     unsigned remaining = 16;
+    unsigned budget = 256;
 
-    explicit Inliner(BodiedFunc *parent) : parent(parent), types(parent->getModule()) {}
+    Inliner(BodiedFunc *parent,
+            const std::unordered_map<id_t, InlineTemplate> &templates)
+        : parent(parent), templates(templates), active{parent->getId()} {}
 
     void handle(CallInstr *call) override {
-      if (!remaining || !isArrayType(call->getType()))
+      if (!remaining)
         return;
       auto *callee = cast<BodiedFunc>(util::getFunc(call->getCallee()));
-      if (!callee || callee == parent ||
-          callee->getName().rfind("std.numpy.", 0) == 0 ||
-          util::hasAttribute(
-              callee, ast::getMangledFunc("std.internal.attributes", "noinline")))
+      if (!callee || active.count(callee->getId()))
         return;
-      auto *body = cast<SeriesFlow>(callee->getBody());
-      if (!body || std::distance(body->begin(), body->end()) != 1)
+      auto found = templates.find(callee->getId());
+      if (found == templates.end() || !found->second.value ||
+          found->second.size > budget ||
+          call->numArgs() != std::distance(callee->arg_begin(), callee->arg_end()))
         return;
-      auto *result = cast<ReturnInstr>(body->front());
-      if (!result || !result->getValue())
-        return;
-      std::vector<std::pair<NumPyExpr *, Value *>> leaves;
-      auto expression = parse(result->getValue(), leaves, types);
-      if (!expression || expression->isLeaf() || expression->nodes() > 16)
-        return;
+      const auto &prepared = found->second;
       auto *module = call->getModule();
       util::CloneVisitor clone(module);
       auto *bindings = module->Nr<SeriesFlow>();
-      bool directBindings = true;
+      bool directBindings = prepared.directBindings;
       // Substitute only stable local reads directly. Otherwise bind every actual
       // argument once, including unused ones, before evaluating the helper body.
       for (auto *value : *call) {
         auto *read = cast<VarValue>(value);
         directBindings &= read && !read->getVar()->isGlobal();
-      }
-      for (auto &leaf : leaves) {
-        auto *read = cast<VarValue>(leaf.second);
-        directBindings &= (read && !read->getVar()->isGlobal()) ||
-                          isA<IntConst>(leaf.second) || isA<FloatConst>(leaf.second) ||
-                          isA<BoolConst>(leaf.second);
       }
       auto argument = callee->arg_begin();
       for (auto *value : *call) {
@@ -1997,41 +2190,44 @@ void NumPyInlinePass::visit(BodiedFunc *func) {
           bindings->push_back(module->Nr<AssignInstr>(variable, value));
         }
       }
-      for (auto *variable : *callee)
-        parent->push_back(clone.forceClone(variable));
-      auto *replacement = clone.clone(result->getValue());
+      auto *replacement = clone.clone(prepared.value);
       if (!directBindings)
         replacement = module->Nr<FlowInstr>(bindings, replacement);
-      call->replaceAll(replacement);
       --remaining;
+      budget -= prepared.size;
+      active.insert(callee->getId());
+      replacement->accept(*this);
+      active.erase(callee->getId());
+      call->replaceAll(replacement);
     }
-  } inliner(func);
-  func->accept(inliner);
+  };
+  struct InlineFunctions : util::Operator {
+    const std::unordered_map<id_t, InlineTemplate> &templates;
+    explicit InlineFunctions(const std::unordered_map<id_t, InlineTemplate> &templates)
+        : templates(templates) {}
+    void visit(BodiedFunc *func) override {
+      Inliner inliner(func, templates);
+      func->accept(inliner);
+    }
+  } inliner(templates);
+  module->accept(inliner);
 }
 
 void NumPyFusionPass::visit(BodiedFunc *func) {
-  auto *rdres = getAnalysisResult<analyze::dataflow::RDResult>(reachingDefKey);
-  auto it = rdres->results.find(func->getId());
-  if (it == rdres->results.end())
+  auto *expressions = getAnalysisResult<NumPyExpressionResult>(expressionsKey);
+  auto extracted = expressions->take(func);
+  if (!extracted)
     return;
-  auto *rd = it->second.get();
   auto *se = getAnalysisResult<analyze::module::SideEffectResult>(sideEffectsKey);
-  auto *cfg = rdres->cfgResult->graphs.find(func->getId())->second.get();
-  ExtractArrayExpressions extractor(func, rd, cfg, se);
-  func->accept(extractor);
-  if (extractor.exprs.empty() && extractor.destinations.empty())
-    return;
-  auto fwd = getForwardingDAGs(func, rd, cfg, se, extractor.exprs);
-  for (auto &destination : extractor.destinations)
-    destination.optimize(extractor.types);
+  for (auto &destination : extracted->destinations)
+    destination.optimize(extracted->types);
 
-  for (auto &dag : fwd) {
-    std::vector<AssignInstr *> assignsToDelete;
-    auto *e = doForwarding(dag, assignsToDelete);
-    if (e->optimize(extractor.types, se)) {
+  for (auto &expression : extracted->expressions) {
+    auto *e = expression.unit;
+    if (e->optimize(extracted->types, se)) {
       // Remove producer assignments only after their replacement was emitted;
       // rejected candidates must retain the original computation and lifetime.
-      for (auto *a : assignsToDelete)
+      for (auto *a : expression.assignments)
         a->replaceAll(func->getModule()->Nr<SeriesFlow>());
     }
   }

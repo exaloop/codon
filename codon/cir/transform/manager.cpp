@@ -196,16 +196,19 @@ void PassManager::registerStandardPasses() {
                              capKey,
                              /*globalAssignmentHasSideEffects=*/false),
                          {capKey});
-    registerPass(std::make_unique<numpy::NumPyInlinePass>(),
-                 /*insertBefore=*/"", {},
+    auto numpyKey = registerAnalysis(
+        std::make_unique<numpy::NumPyExpressionAnalysis>(rdKey, seKey2),
+        {rdKey, seKey2});
+    registerPass(std::make_unique<numpy::NumPyInlinePass>(numpyKey),
+                 /*insertBefore=*/"", {numpyKey},
                  {seKey1, seKey2, rdKey, cfgKey, globalKey, capKey});
     registerPass(
         std::make_unique<folding::FoldingPassGroup>(
             seKey1, rdKey, globalKey, /*repeat=*/5, /*runGlobalDemoton=*/false),
         /*insertBefore=*/"", {seKey1, rdKey, globalKey},
         {seKey1, rdKey, cfgKey, globalKey, capKey});
-    registerPass(std::make_unique<numpy::NumPyFusionPass>(rdKey, seKey2),
-                 /*insertBefore=*/"", {rdKey, seKey2},
+    registerPass(std::make_unique<numpy::NumPyFusionPass>(numpyKey, seKey2),
+                 /*insertBefore=*/"", {numpyKey, seKey2},
                  {seKey1, rdKey, cfgKey, globalKey, capKey});
     registerPass(std::make_unique<numpy::NumPyLifetimePass>(rdKey),
                  /*insertBefore=*/"", {rdKey},

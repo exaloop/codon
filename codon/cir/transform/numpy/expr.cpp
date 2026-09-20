@@ -98,6 +98,7 @@ void NumPyExpr::replace(NumPyExpr &e) {
   op = e.op;
   lhs = std::move(e.lhs);
   rhs = std::move(e.rhs);
+  third = std::move(e.third);
   ownedLastUse = e.ownedLastUse;
 
   e.type = {};
@@ -105,6 +106,7 @@ void NumPyExpr::replace(NumPyExpr &e) {
   e.op = NP_OP_NONE;
   e.lhs = {};
   e.rhs = {};
+  e.third = {};
   e.ownedLastUse = false;
 }
 
@@ -139,7 +141,9 @@ int64_t NumPyExpr::opcost() const {
   case NP_OP_CAST:
   case NP_OP_ZEROS_LIKE:
   case NP_OP_ONES_LIKE:
+  case NP_OP_WHERE:
   case NP_OP_SUM:
+  case NP_OP_MEAN:
   case NP_OP_PROD:
   case NP_OP_ANY:
   case NP_OP_ALL:
@@ -358,6 +362,13 @@ int64_t NumPyExpr::cost() const {
     c += cr;
   }
 
+  if (third) {
+    auto thirdCost = third->cost();
+    if (thirdCost == -1)
+      return -1;
+    c += thirdCost;
+  }
+
   return c;
 }
 
@@ -442,7 +453,9 @@ std::string NumPyExpr::opstring() const {
       {NP_OP_CAST, "cast"},
       {NP_OP_ZEROS_LIKE, "zeros_like"},
       {NP_OP_ONES_LIKE, "ones_like"},
+      {NP_OP_WHERE, "where"},
       {NP_OP_SUM, "sum"},
+      {NP_OP_MEAN, "mean"},
       {NP_OP_PROD, "prod"},
       {NP_OP_ANY, "any"},
       {NP_OP_ALL, "all"},
@@ -476,6 +489,8 @@ void NumPyExpr::dump(std::ostream &os, int level, int &leafId) const {
     lhs->dump(os, level + 1, leafId);
   if (rhs)
     rhs->dump(os, level + 1, leafId);
+  if (third)
+    third->dump(os, level + 1, leafId);
 }
 
 std::ostream &operator<<(std::ostream &os, NumPyExpr const &expr) {
@@ -496,6 +511,8 @@ void NumPyExpr::apply(std::function<void(NumPyExpr &)> f) {
     lhs->apply(f);
   if (rhs)
     rhs->apply(f);
+  if (third)
+    third->apply(f);
 }
 
 Value *NumPyExpr::codegenBroadcasts(CodegenContext &C) {
@@ -539,6 +556,18 @@ Var *NumPyExpr::codegenLayout(CodegenContext &C) {
   auto *M = C.M;
   auto *baseType = type.getIRBaseType(C.T);
   std::vector<Value *> operands;
+  if (op == NP_OP_WHERE) {
+    std::vector<Type *> operandTypes;
+    for (auto *operand : {lhs.get(), rhs.get(), third.get()}) {
+      auto *layout = operand->codegenLayout(C);
+      operands.push_back(M->Nr<VarValue>(layout));
+      operandTypes.push_back(layout->getType());
+    }
+    auto *layoutFunc =
+        M->getOrRealizeFunc("_where_layout", operandTypes, {baseType}, FUSION_MODULE);
+    seqassertn(layoutFunc, "where layout func not found");
+    return util::makeVar(util::call(layoutFunc, operands), C.series, C.func);
+  }
   if (lhs && lhs->type.isArray())
     operands.push_back(M->Nr<VarValue>(lhs->codegenLayout(C)));
   if (rhs && rhs->type.isArray())
@@ -652,7 +681,11 @@ Var *NumPyExpr::codegenFusedEval(CodegenContext &C, Var *destination) {
     Value *initial = nullptr;
     if (rhs)
       initial = M->Nr<VarValue>(vars.at(rhs.get()));
-    else
+    else if (op == NP_OP_MEAN) {
+      auto *castFunc = M->getOrRealizeFunc("_cast", {M->getIntType()},
+                                           {type.getIRBaseType(T)}, FUSION_MODULE);
+      initial = util::call(castFunc, {M->getInt(0)});
+    } else
       initial = util::makeTuple({}, M);
     loopArgs.push_back(initial);
     loopTypes.push_back(initial->getType());
@@ -660,8 +693,9 @@ Var *NumPyExpr::codegenFusedEval(CodegenContext &C, Var *destination) {
   }
   bool needsLayout = false;
   element->apply([&](NumPyExpr &expr) {
-    if (expr.type.ndim > 1 && (expr.op == NP_OP_CAST || expr.op == NP_OP_ZEROS_LIKE ||
-                               expr.op == NP_OP_ONES_LIKE))
+    if (expr.op == NP_OP_WHERE ||
+        (expr.type.ndim > 1 && (expr.op == NP_OP_CAST || expr.op == NP_OP_ZEROS_LIKE ||
+                                expr.op == NP_OP_ONES_LIKE)))
       needsLayout = true;
   });
   // Dispatch this callback to an allocating loop, a reduction, or a destination
@@ -753,6 +787,22 @@ Var *NumPyExpr::codegenSequentialEval(CodegenContext &C) {
   bool rfreeable = rhs && rhs->type.isArray() && (rhs->ownedLastUse || !rhs->isLeaf());
   bool ltmp = lfreeable && lhs->type.dtype == type.dtype && lhs->type.ndim == type.ndim;
   bool rtmp = rfreeable && rhs->type.dtype == type.dtype && rhs->type.ndim == type.ndim;
+
+  if (op == NP_OP_WHERE) {
+    auto *thirdValue = third->codegenSequentialEval(C);
+    auto *call = cast<CallInstr>(val);
+    auto *result = util::makeVar(util::call(util::getFunc(call->getCallee()),
+                                            {M->Nr<VarValue>(lv), M->Nr<VarValue>(rv),
+                                             M->Nr<VarValue>(thirdValue)}),
+                                 series, func);
+    if (lfreeable)
+      series->push_back(freeArray(lv));
+    if (rfreeable)
+      series->push_back(freeArray(rv));
+    if (third->type.isArray() && (third->ownedLastUse || !third->isLeaf()))
+      series->push_back(freeArray(thirdValue));
+    return result;
+  }
 
   if (type.ndim > 1 &&
       (op == NP_OP_CAST || op == NP_OP_ZEROS_LIKE || op == NP_OP_ONES_LIKE)) {
@@ -1105,6 +1155,15 @@ Value *NumPyExpr::codegenScalarExpr(
   Value *lv = lhs ? lhs->codegenScalarExpr(C, args, scalarMap, scalars) : nullptr;
   Value *rv = rhs ? rhs->codegenScalarExpr(C, args, scalarMap, scalars) : nullptr;
   auto name = "_" + opstring();
+
+  if (op == NP_OP_WHERE) {
+    auto *thirdValue = third->codegenScalarExpr(C, args, scalarMap, scalars);
+    auto *select =
+        M->getOrRealizeFunc(name, {lv->getType(), rv->getType(), thirdValue->getType()},
+                            {type.getIRBaseType(T)}, FUSION_MODULE);
+    seqassertn(select, "where scalar func not found");
+    return util::call(select, {lv, rv, thirdValue});
+  }
 
   if (lv && rv) {
     auto *t = type.getIRBaseType(T);

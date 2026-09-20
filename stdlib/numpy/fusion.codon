@@ -13,6 +13,10 @@ def _cast(x, dtype: type):
     return util.cast(x, dtype)
 
 @inline
+def _where(condition, on_true, on_false, dtype: type):
+    return util.cast(on_true, dtype) if bool(condition) else util.cast(on_false, dtype)
+
+@inline
 def _zeros_like(value, dtype: type):
     return dtype(0)
 
@@ -92,6 +96,23 @@ def _producer_layout(prototype, copy: bool, dtype: type, operation: Literal[str]
                        fcontig=order == 'F' or ((order == 'A' or order == 'K') and fc))
     else:
         return _empty_like(prototype, dtype, order, prototype.shape, False)
+
+def _where_layout(condition, on_true, on_false, dtype: type):
+    from .routines import broadcast_shapes
+
+    def prototype(value):
+        if isinstance(value, ndarray):
+            return value
+        else:
+            return ndarray((), Ptr[type(value)]())
+
+    condition = prototype(condition)
+    on_true = prototype(on_true)
+    on_false = prototype(on_false)
+    shape = broadcast_shapes(condition.shape, on_true.shape, on_false.shape)
+    if condition._contig_match(on_true) and condition._contig_match(on_false):
+        return ndarray(shape, Ptr[dtype](), fcontig=not condition._contig[0])
+    return ndarray(shape, Ptr[dtype]())
 
 def _loop_alloc_layout(arrays, func, extra, layout, dtype: type):
     if layout.data != Ptr[dtype]():
@@ -279,6 +300,12 @@ def _loop_reduce_impl(arrays, func, extra, initial, element_dtype: type, dtype: 
 def _reduce_expr_plan(plan, batch, func, extra, initial, element_dtype: type,
                        dtype: type, operation: Literal[str]):
     count = util.count(plan[0])
+    if operation == 'mean':
+        from .reductions import MeanRedux
+        reducer = MeanRedux[dtype]()
+        reducer.total = _reduce_expr_plan(plan, batch, func, extra, dtype(),
+                                          element_dtype, dtype, 'sum')
+        return reducer.result(count)
     position = __array__[int](static.len(plan[0]))
     for axis in static.range(static.len(plan[0])):
         position[axis] = 0
@@ -348,7 +375,7 @@ def _axis_gradual_expr(output, reduced_shape, partitions, bases, func, extra,
         func, extra, position, initial = context
         destination = pointers[0]
         item = util.cast(func(*pointers[1:], extra), type(destination[0]))
-        if operation == 'sum':
+        if operation == 'sum' or operation == 'mean':
             destination[0] += item
         elif operation == 'prod':
             destination[0] *= item
@@ -379,6 +406,12 @@ def _axis_gradual_expr(output, reduced_shape, partitions, bases, func, extra,
         ndarray._loop((output,) + inputs, accept, broadcast='none', check=False,
                       extra=(func, extra, position, initial))
         position += 1
+    if operation == 'mean':
+        from .reductions import MeanRedux
+        reducer = MeanRedux[output.dtype]()
+        count = util.count(reduced_shape)
+        for index in range(output.size):
+            output.data[index] = reducer.gradual_result(output.data[index], count)
 
 def _axis_slice_plan(shape, strides, bases, layout, operation: Literal[str]):
     if static.len(shape) == 0:

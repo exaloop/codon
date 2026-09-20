@@ -356,17 +356,20 @@ bool hasCycle(ForwardingDAG &dag, std::vector<NumPyOptimizationUnit> &exprs) {
 
 void doForwardingHelper(ForwardingDAG &dag, NumPyOptimizationUnit *curr,
                         std::unordered_set<NumPyOptimizationUnit *> &done,
-                        std::vector<AssignInstr *> &assignsToDelete) {
+                        std::vector<AssignInstr *> &assignsToDelete,
+                        std::vector<std::pair<Value *, Value *>> *substitutions) {
   if (done.count(curr))
     return;
 
   auto forwardings = dag[curr];
   for (auto &fwd : forwardings) {
-    doForwardingHelper(dag, fwd.src, done, assignsToDelete);
+    doForwardingHelper(dag, fwd.src, done, assignsToDelete, substitutions);
     // Note that order of leaves here doesn't matter since they're guaranteed to have no
     // side effects based on forwarding checks.
     fwd.dst->leaves.insert(fwd.dst->leaves.end(), fwd.src->leaves.begin(),
                            fwd.src->leaves.end());
+    if (substitutions)
+      substitutions->emplace_back(fwd.dstLeaf->val, fwd.src->value);
     fwd.dstLeaf->replace(*fwd.src->expr);
     assignsToDelete.push_back(fwd.src->assign);
   }
@@ -499,12 +502,13 @@ getForwardingDAGs(BodiedFunc *func, RD *rd, CFG *cfg, SE *se,
   return dags;
 }
 
-NumPyOptimizationUnit *doForwarding(ForwardingDAG &dag,
-                                    std::vector<AssignInstr *> &assignsToDelete) {
+NumPyOptimizationUnit *
+doForwarding(ForwardingDAG &dag, std::vector<AssignInstr *> &assignsToDelete,
+             std::vector<std::pair<Value *, Value *>> *substitutions) {
   seqassertn(!dag.empty(), "empty forwarding DAG encountered");
   std::unordered_set<NumPyOptimizationUnit *> done;
   for (auto &e : dag) {
-    doForwardingHelper(dag, e.first, done, assignsToDelete);
+    doForwardingHelper(dag, e.first, done, assignsToDelete, substitutions);
   }
 
   return getForwardingRoot(dag);

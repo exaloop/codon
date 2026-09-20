@@ -2,7 +2,9 @@
 
 #include "codon/cir/llvm/llvisitor.h"
 #include "codon/cir/llvm/optimize.h"
+#include "codon/cir/transform/manager.h"
 #include "codon/cir/transform/numpy/numpy.h"
+#include "codon/cir/util/irtools.h"
 #include "codon/compiler/compiler.h"
 #include "codon/compiler/options.h"
 
@@ -535,6 +537,137 @@ def dot_reversed(left: np.ndarray[float, 1], right: np.ndarray[float, 1]):
       testing::ExitedWithCode(EXIT_SUCCESS), "");
 }
 
+TEST(LLVMOptimizationTest, InlinesOnlyCoveredNumpyHelpers) {
+  ASSERT_EXIT(
+      {
+        auto options = Options::getDefault("build/codon_test");
+        options->debug = false;
+        options->standalone = true;
+        Compiler compiler(*options);
+        std::string code = R"(
+import numpy as np
+
+def helper_chain(values):
+  squared = values * values
+  shifted = squared + 1
+  return shifted
+
+def helper_rebind(values):
+  values = values + 1
+  return values * 2
+
+def helper_mean(values):
+  squared = values * values
+  total = np.mean(squared)
+  return total
+
+def helper_where(values):
+  condition = values > 0
+  selected = np.where(condition, values * 2, values + 1)
+  return selected
+
+def helper_shared(values):
+  temporary = values + 1
+  return temporary * temporary
+
+def helper_uncovered(values, other):
+  unused = values + other
+  return values * 2
+
+def helper_effect(values):
+  temporary = values + 1
+  print('retained')
+  return temporary * 2
+
+def helper_reduction(values):
+  total = values.mean()
+  return values - total
+
+def helper_alias(values):
+  alias = values
+  return alias + 1
+
+@noinline
+def helper_kept(values):
+  temporary = values + 1
+  return temporary * 2
+
+def helper_branch(values, condition):
+  if condition:
+    return values + 1
+  return values * 2
+
+def helper_large(values):
+  return values + 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9
+
+def helper_nested(values):
+  return helper_chain(values) + 2
+
+def helper_recursive(values: np.ndarray[float, 1]) -> np.ndarray[float, 1]:
+  return helper_recursive(values) + 1
+)";
+        auto accepted =
+            std::vector<std::string>({"chain", "rebind", "mean", "where", "nested"});
+        auto rejected =
+            std::vector<std::string>({"shared", "uncovered", "effect", "reduction",
+                                      "alias", "kept", "branch", "large", "recursive"});
+        std::vector<std::string> cases = accepted;
+        cases.insert(cases.end(), rejected.begin(), rejected.end());
+        for (const auto &name : cases) {
+          auto arguments = name == "uncovered" ? "values, values"
+                           : name == "branch"  ? "values, condition"
+                                               : "values";
+          code +=
+              "\n@export\ndef probe_" + name +
+              "(values: np.ndarray[float, 1], condition: bool):\n    return helper_" +
+              name + "(" + arguments + ") + 2\n";
+        }
+        code += "\ndef helper_depth_0(values):\n    return values + 1\n";
+        for (int depth = 1; depth <= 20; ++depth)
+          code += "\ndef helper_depth_" + std::to_string(depth) +
+                  "(values):\n    return helper_depth_" + std::to_string(depth - 1) +
+                  "(values) + 1\n";
+        code += "\n@export\ndef probe_budget(values: np.ndarray[float, 1]):\n"
+                "    return helper_depth_20(values)\n";
+        llvm::cantFail(compiler.parseCode("numpy_inline_coverage.codon", code));
+        struct Inspect : ir::transform::OperatorPass {
+          std::unordered_set<std::string> callers;
+          std::unordered_set<std::string> retained;
+          std::string getKey() const override { return "test-numpy-inline-coverage"; }
+          void handle(ir::CallInstr *call) override {
+            auto *parent = getParentFunc();
+            auto *callee = ir::util::getFunc(call->getCallee());
+            if (!parent || !callee ||
+                parent->getUnmangledName().rfind("probe_", 0) != 0)
+              return;
+            callers.insert(parent->getUnmangledName());
+            if (callee->getUnmangledName().rfind("helper_", 0) == 0)
+              retained.insert(parent->getUnmangledName());
+          }
+        };
+        auto inspector = std::make_unique<Inspect>();
+        auto *inspection = inspector.get();
+        compiler.getPassManager()->registerPass(std::move(inspector),
+                                                "core-numpy-fusion");
+        llvm::cantFail(compiler.compile());
+        for (const auto &name : cases) {
+          auto caller = "probe_" + name;
+          bool expected =
+              std::find(rejected.begin(), rejected.end(), name) != rejected.end();
+          if (!inspection->callers.count(caller) ||
+              bool(inspection->retained.count(caller)) != expected)
+            llvm::errs() << caller
+                         << ": retained=" << inspection->retained.count(caller)
+                         << ", expected=" << expected << '\n';
+          EXPECT_EQ(1, inspection->callers.count(caller));
+          EXPECT_EQ(expected, bool(inspection->retained.count(caller)));
+        }
+        EXPECT_EQ(1, inspection->retained.count("probe_budget"));
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
 TEST(LLVMOptimizationTest, FusesSingleExpressionArrayHelpers) {
   ASSERT_EXIT(
       {
@@ -555,6 +688,33 @@ def unfused_helper(values: np.ndarray[float, 1]):
 @export
 def fused_helper(values: np.ndarray[float, 1]):
     return square(values) + 1.0
+
+def staged_helper(values):
+  squared = values * values
+  shifted = squared + 1.0
+  return shifted
+
+@export
+def fused_staged_helper(values: np.ndarray[float, 1]):
+  return staged_helper(values) + 2.0
+
+def staged_rebind(values):
+  values = values + 1.0
+  result = values * 2.0
+  return result
+
+@export
+def fused_staged_rebind(values: np.ndarray[float, 1]):
+  return staged_rebind(values) + 2.0
+
+def staged_mean(values):
+  squared = values * values
+  result = np.mean(squared + 1.0)
+  return result
+
+@export
+def fused_staged_mean(values: np.ndarray[float, 1]):
+  return staged_mean(values)
 
 def affine_helper(left, right, bias):
   return left * right + bias
@@ -601,6 +761,22 @@ def fused_masked_square(values: np.ndarray[complex, 1], other: np.ndarray[comple
 @export
 def fused_sum(values: np.ndarray[float, 1]):
     return np.sum(values.astype(np.float32).copy() * 2 + 1.0)
+
+@export
+def fused_mean(values: np.ndarray[float, 1]):
+  return np.mean(values * values + 1)
+
+@export
+def fused_where(values: np.ndarray[float, 1]):
+  return np.where(values > 0, values * 2, values + 1)
+
+@export
+def fused_where_mean(values: np.ndarray[float, 2]):
+  return np.where(values > 0, values * 2, values + 1).mean()
+
+@export
+def fused_axis_mean(values: np.ndarray[float, 2]):
+  return (values + 1).mean(axis=1)
 
 @export
 def fused_prod(values: np.ndarray[int, 1]):
@@ -774,9 +950,10 @@ def destination_reference(values: np.ndarray[float, 2]):
           }
           return allocations;
         };
-        for (auto name : {"fused_helper", "fused_copy_array", "fused_cast_array",
-                          "fused_filled_array", "fused_axis_sum", "fused_axis_any",
-                          "fused_axis_min", "fused_axis_keepdims", "fused_slices",
+        for (auto name : {"fused_helper", "fused_staged_helper", "fused_staged_rebind",
+                          "fused_copy_array", "fused_cast_array", "fused_filled_array",
+                          "fused_axis_sum", "fused_axis_any", "fused_axis_min",
+                          "fused_axis_keepdims", "fused_slices",
                           "fused_scalar_coefficients", "fused_complex_grid"}) {
           auto *function = module->getFunction(name);
           ASSERT_NE(nullptr, function);
@@ -815,6 +992,27 @@ def destination_reference(values: np.ndarray[float, 2]):
         auto *clipped = module->getFunction("fused_clip");
         ASSERT_NE(nullptr, clipped);
         EXPECT_EQ(2, reachableAllocations(clipped));
+        auto *where = module->getFunction("fused_where");
+        ASSERT_NE(nullptr, where);
+        if (reachableAllocations(where) != 1)
+          llvm::errs() << "Where allocations: " << reachableAllocations(where) << '\n';
+        EXPECT_EQ(1, reachableAllocations(where));
+        auto *mean = module->getFunction("fused_mean");
+        auto *whereMean = module->getFunction("fused_where_mean");
+        ASSERT_NE(nullptr, mean);
+        ASSERT_NE(nullptr, whereMean);
+        if (reachableAllocations(mean) || reachableAllocations(whereMean))
+          llvm::errs() << "Mean allocations: " << reachableAllocations(mean)
+                       << ", where mean allocations: "
+                       << reachableAllocations(whereMean) << '\n';
+        EXPECT_EQ(0, reachableAllocations(mean));
+        EXPECT_EQ(0, reachableAllocations(whereMean));
+        auto *axisMean = module->getFunction("fused_axis_mean");
+        ASSERT_NE(nullptr, axisMean);
+        if (reachableAllocations(axisMean) != 1)
+          llvm::errs() << "Axis mean allocations: " << reachableAllocations(axisMean)
+                       << '\n';
+        EXPECT_EQ(1, reachableAllocations(axisMean));
         auto *indexed = module->getFunction("fused_indexed_slices");
         auto *indexedReference = module->getFunction("indexed_slices_reference");
         ASSERT_NE(nullptr, indexed);
@@ -886,11 +1084,12 @@ def destination_reference(values: np.ndarray[float, 2]):
           }
         }
         EXPECT_TRUE(keptCall);
-        for (auto name : {"fused_sum", "fused_prod", "fused_filled", "fused_sum_2d",
-                          "fused_sum_transpose", "fused_sum_3d", "fused_prod_3d",
-                          "fused_any", "fused_all", "fused_min", "fused_max",
-                          "fused_amin", "fused_amax", "fused_producers_2d",
-                          "fused_filled_3d", "fused_cast_4d", "fused_any_producer"}) {
+        for (auto name :
+             {"fused_sum", "fused_staged_mean", "fused_prod", "fused_filled",
+              "fused_sum_2d", "fused_sum_transpose", "fused_sum_3d", "fused_prod_3d",
+              "fused_any", "fused_all", "fused_min", "fused_max", "fused_amin",
+              "fused_amax", "fused_producers_2d", "fused_filled_3d", "fused_cast_4d",
+              "fused_any_producer"}) {
           auto *reduction = module->getFunction(name);
           ASSERT_NE(nullptr, reduction);
           for (auto &block : *reduction) {
