@@ -1,0 +1,148 @@
+import numpy as np
+
+from helpers import effectful_none, events, materialize, mutate_initial
+
+def check_reduction_dtype(dtype: type):
+    for size in (0, 1, 7, 8, 63, 64, 65, 127, 128, 129, 255, 513):
+        array = np.arange(size, dtype=dtype)
+        assert np.sum(array * array + 1) == np.sum(materialize(array * array + 1))
+        assert (array + 1).sum(initial=3) == materialize(array + 1).sum(initial=3)
+        assert np.sum(array[::-2] + 1) == np.sum(materialize(array[::-2] + 1))
+    small = np.array([1, 2, 3], dtype=dtype)
+    assert np.prod(small + 1, initial=2) == np.prod(materialize(small + 1), initial=2)
+    assert (small[:0] + 1).prod() == 1
+
+@test
+def test_fused_reductions():
+    check_reduction_dtype(np.float64)
+    check_reduction_dtype(np.float32)
+    check_reduction_dtype(np.float16)
+    check_reduction_dtype(np.int64)
+    check_reduction_dtype(np.int8)
+    check_reduction_dtype(np.uint8)
+    check_reduction_dtype(np.complex128)
+    check_reduction_dtype(np.complex64)
+
+    array = np.array([1e16, 1., -1e16, 1.] * 257)
+    assert np.sum(array + 0.) == np.sum(materialize(array + 0.))
+    assert np.sum(array + 0., where=True) == np.sum(materialize(array + 0.), where=True)
+    narrow = np.array([120, 125], dtype=np.int8)
+    assert np.sum(narrow + np.int8(10)) == 9
+    assert type(np.sum(narrow + np.int8(10))) is np.int8
+    assert np.sum(narrow + np.int8(10), dtype=np.float64) == -247.
+    assert np.sum(narrow > 122) == 1
+    assert np.sum(narrow + np.array([1], dtype=np.int8)) == -9
+    assert np.sum(narrow[:0] + np.array([1], dtype=np.int8)) == 0
+    try:
+        np.sum(narrow + np.arange(3))
+        assert False
+    except ValueError:
+        pass
+
+    intermediate = array * array
+    assert np.sum(intermediate + 1) == np.sum(materialize(array * array + 1))
+    intermediate = narrow + np.int8(1)
+    total = intermediate.sum()
+    assert total == -9
+    assert np.array_equal(intermediate, [121, 126])
+    matrix = np.arange(12).reshape(3, 4)
+    assert np.array_equal(np.sum(matrix + 1, axis=0), [15, 18, 21, 24])
+    assert np.array_equal(np.sum(narrow + 1, keepdims=True), [-9])
+    mutable = np.array([1, 2, 3])
+    assert np.sum(mutable + 1, initial=mutate_initial(mutable)) == 11
+    mutable = np.array([1, 2, 3])
+    temporary = mutable + 1
+    mutable[0] = 100
+    assert temporary.sum() == 9
+    scalar = (mutable + 1).sum()
+    assert np.array_equal(scalar + mutable, [208, 110, 111])
+    events.clear()
+    assert np.sum(narrow + 1, axis=effectful_none()) == -9
+    assert events == [7]
+
+def check_multidimensional_reduction(array):
+    got = (array + 1).sum()
+    expected = materialize(array + 1).sum()
+    assert got == expected, (array.shape, array.strides, got, expected)
+    got = np.sum(array * 2 + 1)
+    expected = np.sum(materialize(array * 2 + 1))
+    assert got == expected, (array.shape, array.strides, got, expected)
+    assert np.sum(array > 0) == np.sum(materialize(array > 0))
+
+@test
+def test_multidimensional_reductions():
+    values = np.array([1e16, 1., -1e16, -1.] * 258).reshape(2, 3, 172)
+    check_multidimensional_reduction(values)
+    check_multidimensional_reduction(values.copy(order='F'))
+    check_multidimensional_reduction(values.transpose((1, 2, 0)))
+    check_multidimensional_reduction(values.transpose((2, 0, 1)))
+    check_multidimensional_reduction(values[:, ::-1, ::2])
+    check_multidimensional_reduction(values[:, :0, :])
+    check_multidimensional_reduction(values.reshape(6, 172))
+    check_multidimensional_reduction(values.reshape(6, 172).T)
+    check_multidimensional_reduction(values.reshape(6, 172)[::-1, ::-2])
+    check_multidimensional_reduction(values.reshape(1, 2, 3, 172))
+    check_multidimensional_reduction(values.astype(np.float32))
+    check_multidimensional_reduction(values.astype(np.complex128))
+    integers = np.arange(120).reshape(2, 3, 4, 5)
+    check_multidimensional_reduction(integers.transpose((2, 0, 3, 1)))
+
+    matrix = np.arange(15, dtype=float).reshape(3, 5)
+    assert (matrix.T + 1).sum() == materialize(matrix.T + 1).sum()
+    column = np.array([[1.], [2.], [3.]])
+    row = np.arange(5, dtype=float)
+    assert np.sum(matrix + column + row) == np.sum(materialize(matrix + column + row))
+    assert np.sum(column + row) == np.sum(materialize(column + row))
+    assert np.sum(matrix + np.array(2.)) == np.sum(materialize(matrix + np.array(2.)))
+    assert np.sum(matrix[:0] + row) == 0.
+    try:
+        np.sum(matrix + np.arange(4))
+        assert False
+    except ValueError:
+        pass
+
+    products = (np.arange(120, dtype=float) * 1e-7).reshape(2, 3, 20)
+    for array in (products, products.copy(order='F'), products.transpose((1, 2, 0)),
+                  products[:, ::-1, ::2]):
+        got = (array + 1.).prod(initial=2.)
+        expected = materialize(array + 1.).prod(initial=2.)
+        assert got == expected, (array.shape, array.strides, got, expected)
+    assert (products[:0] + 1.).prod(initial=2.) == 2.
+
+@test
+def test_short_circuit_reduction_loop():
+    from numpy.fusion import _loop_reduce
+
+    def counted(pointer, calls):
+        calls[0] += 1
+        return pointer[0]
+
+    values = np.array([1, 0, 0, 0]).reshape(2, 2)
+    calls = 0
+    assert _loop_reduce((values,), counted, __ptr__(calls), False, int, bool, 'any')
+    assert calls == 1
+    calls = 0
+    assert not _loop_reduce((values,), counted, __ptr__(calls), True, int, bool, 'all')
+    assert calls == 2
+    calls = 0
+    assert not _loop_reduce((values[:0],), counted, __ptr__(calls), False, int, bool, 'any')
+    assert _loop_reduce((values[:0],), counted, __ptr__(calls), True, int, bool, 'all')
+    assert calls == 0
+    strided = np.array([[0, 9, 0], [0, 9, 1]])[:, ::2]
+    calls = 0
+    assert _loop_reduce((strided,), counted, __ptr__(calls), (), int, bool, 'any')
+    assert calls == 4
+    calls = 0
+    assert not _loop_reduce((strided,), counted, __ptr__(calls), (), int, bool, 'all')
+    assert calls == 1
+    strided = np.array([[1, 9, 1], [1, 9, 0]])[:, ::2]
+    calls = 0
+    assert not _loop_reduce((strided,), counted, __ptr__(calls), (), int, bool, 'all')
+    assert calls == 4
+    calls = 0
+    assert not _loop_reduce((strided[:0],), counted, __ptr__(calls), (), int, bool, 'any')
+    assert calls == 0
+
+test_fused_reductions()
+test_multidimensional_reductions()
+test_short_circuit_reduction_loop()

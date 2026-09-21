@@ -1,0 +1,93 @@
+import numpy as np
+
+from helpers import materialize
+
+def ordered_shape_helper(left, right, other_left, other_right):
+    first = left + right
+    second = other_left @ other_right
+    return second + first
+
+def ordered_shape_reflected(left, right, other_left, other_right):
+    first = left + right
+    second = other_left @ other_right
+    return 10 - (second + first)
+
+@noinline
+def ordered_shape_kept(left, right, other_left, other_right):
+    first = left + right
+    second = other_left @ other_right
+    return second + first
+
+@noinline
+def ordered_shape_direct(left, right, other_left, other_right):
+    return (left + right) + (other_left @ other_right)
+
+@noinline
+def ordered_shape_across_statement(left, right, other_left, other_right):
+    first = left + right
+    second = other_left @ other_right
+    return first * 2, second
+
+@noinline
+def ordered_shape_reference(left, right, other_left, other_right):
+    first = materialize(left + right)
+    second = materialize(other_left @ other_right)
+    return second + first
+
+@noinline
+def ordered_shape_before_index(left, right):
+    return (left + right) + left[10]
+
+def check_shape_failure(operation, message, left, right, other_left, other_right):
+    try:
+        operation(left, right, other_left, other_right)
+        assert False, 'missing shape error'
+    except ValueError as error:
+        assert str(error) == message
+
+def check_shape_validation(left, right, other_left, other_right):
+    message = ''
+    try:
+        ordered_shape_reference(left, right, other_left, other_right)
+    except ValueError as error:
+        message = str(error)
+    assert message
+    check_shape_failure(ordered_shape_helper, message, left, right, other_left, other_right)
+    check_shape_failure(ordered_shape_reflected, message, left, right, other_left, other_right)
+    check_shape_failure(ordered_shape_kept, message, left, right, other_left, other_right)
+    check_shape_failure(ordered_shape_direct, message, left, right, other_left, other_right)
+
+@test
+def test_shape_validation_order():
+    left = np.ones((2, 2))
+    incompatible = np.ones((3, 3))
+    other_left = np.ones((2, 3))
+    other_right = np.ones((4, 2))
+    check_shape_validation(left, incompatible, other_left, other_right)
+    check_shape_validation(left, left, other_left, other_right)
+    check_shape_validation(left, incompatible, other_left, np.ones((3, 2)))
+    check_shape_validation(left, left, np.ones((3, 4)), np.ones((4, 3)))
+    check_shape_validation(left, left, np.ones((2, 2, 3)), np.ones((3, 3, 2)))
+    check_shape_validation(left, left, np.ones(3), np.ones((4, 2)))
+    check_shape_validation(left, left, np.ones((2, 3)), np.ones(4))
+    message = 'shape mismatch: objects cannot be broadcast to a single shape'
+    check_shape_failure(ordered_shape_across_statement, message,
+                        left, incompatible, other_left, other_right)
+    try:
+        ordered_shape_before_index(left, incompatible)
+        assert False, 'missing broadcast error before indexing'
+    except ValueError as error:
+        assert str(error) == message
+    for array in (np.arange(6.).reshape(2, 3), np.arange(6.).reshape(2, 3)[:, ::-1],
+                  np.empty((0, 3))):
+        bias = np.ones((1, 3))
+        other_left = np.ones((array.shape[0], 4))
+        other_right = np.ones((4, 3))
+        expected = ordered_shape_reference(array, bias, other_left, other_right)
+        actual = ordered_shape_helper(array, bias, other_left, other_right)
+        assert np.array_equal(actual, expected)
+        assert actual.strides == expected.strides
+        reflected = ordered_shape_reflected(array, bias, other_left, other_right)
+        assert np.array_equal(reflected, 10 - expected)
+
+test_shape_validation_order()

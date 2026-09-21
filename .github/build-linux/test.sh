@@ -22,7 +22,6 @@ fi
 export CODON_PYTHON=$(python ${WORKSPACE}/test/python/find-python-library.py)
 export PYTHONPATH=${WORKSPACE}/test/python
 export CODON_DIR=$(pwd)/codon-deploy-${ARCH}
-export CODON_TEST_DIAGNOSTICS=numpy/test_fusion_extended.codon
 
 echo "=> Unit tests..."
 mkdir -p build  # needed for some tests that write into this directory

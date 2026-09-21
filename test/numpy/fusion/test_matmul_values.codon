@@ -1,0 +1,148 @@
+import numpy as np
+
+from helpers import check_matmul_add_result, materialize, matmul_add, matmul_add_borrowed, matmul_add_reference
+
+@noinline
+def matmul_add_transposed(left, bias, mode: int = 0):
+    if mode == 0:
+        return left @ left.T + bias
+    elif mode == 1:
+        return bias + left @ left.T
+    elif mode == 2:
+        return left @ left.T - bias
+    else:
+        return bias - left @ left.T
+
+@noinline
+def matmul_add_into(left, right, shape, order, mode: int = 0):
+    if mode == 0:
+        output = np.full(shape, left.dtype(3), order=order)
+        output[:] = left @ right + output
+    elif mode == 1:
+        output = np.full(shape, left.dtype(3), order=order)
+        output[:] = output + left @ right
+    elif mode == 2:
+        output = np.full(shape, left.dtype(3), order=order)
+        output[:] = left @ right - output
+    else:
+        output = np.full(shape, left.dtype(3), order=order)
+        output[:] = output - left @ right
+    return output
+
+@noinline
+def matmul_add_out(left, right, shape, order, mode: int = 0):
+    if mode == 0:
+        output = np.full(shape, left.dtype(3), order=order)
+        result = np.add(left @ right, output, out=output)
+    elif mode == 1:
+        output = np.full(shape, left.dtype(3), order=order)
+        result = np.add(output, left @ right, out=output)
+    elif mode == 2:
+        output = np.full(shape, left.dtype(3), order=order)
+        result = np.subtract(left @ right, output, out=output)
+    else:
+        output = np.full(shape, left.dtype(3), order=order)
+        result = np.subtract(output, left @ right, out=output)
+    assert result.data == output.data
+    return output
+
+@noinline
+def matmul_add_self(right, mode: int = 0):
+    if mode == 0:
+        output = np.ones((3, 3))
+        output[:] = output @ right + output
+    elif mode == 1:
+        output = np.ones((3, 3))
+        output[:] = output + output @ right
+    elif mode == 2:
+        output = np.ones((3, 3))
+        output[:] = output @ right - output
+    else:
+        output = np.ones((3, 3))
+        output[:] = output - output @ right
+    return output
+
+@noinline
+def matmul_add_alias(right, mode: int = 0):
+    output = np.ones((3, 3))
+    alias = output.T
+    if mode == 0:
+        output[:] = alias @ right + output
+    elif mode == 1:
+        output[:] = output + alias @ right
+    elif mode == 2:
+        output[:] = alias @ right - output
+    else:
+        output[:] = output - alias @ right
+    return output
+
+def check_matmul_add_dtype(dtype: type, mode: int):
+    matrix = np.arange(12, dtype=dtype).reshape(3, 4) * dtype(0.125)
+    right = np.arange(20, dtype=dtype).reshape(4, 5) * dtype(-0.25)
+    bias = np.arange(15, dtype=dtype).reshape(3, 5)
+    for left in (matrix, matrix.copy(order='F'), matrix[:, ::-1]):
+        for operand in (right, right.copy(order='F'), right[::-1, :]):
+            expected = matmul_add_reference(left, operand, bias, mode)
+            snapshot = bias.copy()
+            result = matmul_add(left, operand, bias, mode)
+            check_matmul_add_result(result, expected)
+            assert result.data != bias.data
+            assert np.array_equal(bias, snapshot)
+            for addend in (bias.copy(order='F'), bias[:, ::-1]):
+                snapshot = addend.copy()
+                result = matmul_add(left, operand, addend, mode)
+                check_matmul_add_result(result, matmul_add_reference(left, operand, addend, mode))
+                assert result.data != addend.data
+                assert np.array_equal(addend, snapshot)
+            for order in ('C', 'F'):
+                expected = matmul_add_reference(left, operand, np.full((3, 5), dtype(3)), mode)
+                check_matmul_add_result(matmul_add_into(left, operand, (3, 5), order, mode), expected)
+                check_matmul_add_result(matmul_add_out(left, operand, (3, 5), order, mode), expected)
+        vector = np.arange(4, dtype=dtype)
+        vector_bias = np.arange(3, dtype=dtype)
+        for operand in (vector, vector[::-1]):
+            check_matmul_add_result(matmul_add(left, operand, vector_bias, mode),
+                                    matmul_add_reference(left, operand, vector_bias, mode))
+            expected = matmul_add_reference(left, operand, np.full(3, dtype(3)), mode)
+            check_matmul_add_result(matmul_add_into(left, operand, (3,), 'C', mode), expected)
+            check_matmul_add_result(matmul_add_out(left, operand, (3,), 'C', mode), expected)
+    for bias in (np.ones(5, dtype=dtype), np.ones((1, 5), dtype=dtype),
+                 np.ones((3, 1), dtype=dtype), np.array(dtype(2))):
+        check_matmul_add_result(matmul_add(matrix, right, bias, mode),
+                    matmul_add_reference(matrix, right, bias, mode))
+    nonsymmetric = np.arange(9, dtype=dtype).reshape(3, 3)
+    check_matmul_add_result(matmul_add_transposed(matrix, nonsymmetric, mode),
+                            matmul_add_reference(matrix, matrix.T, nonsymmetric, mode))
+    for rows, inner, columns in ((0, 4, 5), (3, 0, 5), (3, 4, 0),
+                                  (1, 4, 5), (3, 1, 5), (3, 4, 1)):
+        left = np.ones((rows, inner), dtype=dtype)
+        operand = np.ones((inner, columns), dtype=dtype)
+        bias = np.full((rows, columns), dtype(-0.0))
+        actual = matmul_add(left, operand, bias, mode)
+        expected = matmul_add_reference(left, operand, bias, mode)
+        check_matmul_add_result(actual, expected)
+        assert np.array_equal(np.signbit(actual), np.signbit(expected))
+    check_matmul_add_result(matmul_add(matrix[:1], right, np.ones((3, 5), dtype=dtype), mode),
+                            matmul_add_reference(matrix[:1], right, np.ones((3, 5), dtype=dtype), mode))
+
+@test
+def test_matmul_add_values():
+    right = np.arange(9, dtype=float).reshape(3, 3)
+    for mode in range(4):
+        check_matmul_add_dtype(np.float32, mode)
+        check_matmul_add_dtype(np.float64, mode)
+        expected = matmul_add_reference(np.ones((3, 3)), right, np.ones((3, 3)), mode)
+        check_matmul_add_result(matmul_add_self(right, mode), expected)
+        check_matmul_add_result(matmul_add_alias(right, mode), expected)
+        output = np.ones((3, 3))
+        check_matmul_add_result(matmul_add_borrowed(output, right, output, mode), expected)
+    left = np.arange(12, dtype=np.float32).reshape(3, 4)
+    operand = np.arange(20, dtype=np.float32).reshape(4, 5)
+    bias = np.ones((3, 5), dtype=np.float64)
+    assert np.array_equal(matmul_add(left, operand, bias),
+                          matmul_add_reference(left, operand, bias))
+    integer = np.arange(9).reshape(3, 3)
+    assert np.array_equal(matmul_add(integer, integer, integer),
+                          matmul_add_reference(integer, integer, integer))
+
+test_matmul_add_values()

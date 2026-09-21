@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cstdio>
-#include <cstdlib>
 #include <dirent.h>
 #include <fcntl.h>
 #include <fstream>
@@ -10,7 +9,6 @@
 #include <iostream>
 #include <sstream>
 #include <string>
-#include <sys/resource.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <tuple>
@@ -28,7 +26,6 @@
 #include "codon/parser/common.h"
 #include "codon/util/common.h"
 
-#include "llvm/Support/Signals.h"
 #include "gtest/gtest.h"
 
 using namespace codon;
@@ -259,23 +256,6 @@ public:
     auto fn = [this]() {
       auto file = getFilename(get<0>(GetParam()));
       bool debug = get<1>(GetParam());
-      auto *diagnosticFilter = std::getenv("CODON_TEST_DIAGNOSTICS");
-      bool diagnostics =
-          diagnosticFilter && file.find(diagnosticFilter) != string::npos;
-      auto reportPhase = [&](const char *phase) {
-        if (!diagnostics)
-          return;
-        struct rusage usage = {};
-        getrusage(RUSAGE_SELF, &usage);
-        auto peakKiB = usage.ru_maxrss;
-#ifdef __APPLE__
-        peakKiB /= 1024;
-#endif
-        fprintf(stderr, "[codon-test] %s mode=%s pid=%ld phase=%s peak_rss_kib=%ld\n",
-                file.c_str(), debug ? "debug" : "release", long(getpid()), phase,
-                long(peakKiB));
-        fflush(stderr);
-      };
       auto code = get<3>(GetParam());
       auto startLine = get<4>(GetParam());
       int testFlags = 1 + get<5>(GetParam());
@@ -289,7 +269,6 @@ public:
       options->pynum = pyNumerics;
 
       auto compiler = std::make_unique<Compiler>(*options);
-      reportPhase("parse");
       // make sure we abort() on runtime error
       llvm::handleAllErrors(code.empty()
                                 ? compiler->parseFile(file, testFlags)
@@ -315,13 +294,10 @@ public:
                                 ir::analyze::dataflow::DominatorAnalysis::KEY});
       pm->registerPass(std::make_unique<EscapeValidator>(capKey), /*insertBefore=*/"",
                        {capKey});
-      reportPhase("compile");
       llvm::cantFail(compiler->compile());
 
-      reportPhase("execute");
       if (run)
         compiler->getLLVMVisitor()->run({file});
-      reportPhase("complete");
       fflush(stdout);
     };
 
@@ -341,39 +317,9 @@ public:
       GC_atfork_parent();
       int status = -1;
       close(out_pipe[1]);
-      struct rusage usage = {};
-      assert(wait4(pid, &status, 0, &usage) == pid);
+      assert(waitpid(pid, &status, 0) == pid);
       read(out_pipe[0], buf.data(), buf.size() - 1);
       close(out_pipe[0]);
-      auto *diagnosticFilter = std::getenv("CODON_TEST_DIAGNOSTICS");
-      bool diagnostics =
-          diagnosticFilter && get<0>(GetParam()).find(diagnosticFilter) != string::npos;
-      if (!WIFEXITED(status) || diagnostics) {
-        auto peakKiB = usage.ru_maxrss;
-#ifdef __APPLE__
-        peakKiB /= 1024;
-#endif
-        fprintf(stderr,
-                "[codon-test] %s mode=%s pid=%ld wait_status=%d "
-                "peak_rss_kib=%ld user_seconds=%ld system_seconds=%ld\n",
-                get<0>(GetParam()).c_str(), get<1>(GetParam()) ? "debug" : "release",
-                long(pid), status, long(peakKiB), long(usage.ru_utime.tv_sec),
-                long(usage.ru_stime.tv_sec));
-#ifdef __linux__
-        if (!WIFEXITED(status)) {
-          for (auto path :
-               {"/proc/meminfo", "/sys/fs/cgroup/memory.events",
-                "/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory.peak",
-                "/sys/fs/cgroup/memory.current", "/sys/fs/cgroup/memory/memory.failcnt",
-                "/sys/fs/cgroup/memory/memory.max_usage_in_bytes",
-                "/sys/fs/cgroup/memory/memory.limit_in_bytes"}) {
-            std::ifstream input(path);
-            if (input)
-              std::cerr << "[codon-test] " << path << '\n' << input.rdbuf() << '\n';
-          }
-        }
-#endif
-      }
       return status;
     }
     return -1;
@@ -630,6 +576,40 @@ INSTANTIATE_TEST_SUITE_P(
     NumPyTests, SeqTest,
     testing::Combine(
         testing::Values(
+            "numpy/fusion/test_axis_edges.codon",
+            "numpy/fusion/test_axis_reductions.codon",
+            "numpy/fusion/test_basic.codon",
+            "numpy/fusion/test_broadcasting.codon",
+            "numpy/fusion/test_control_flow.codon",
+            "numpy/fusion/test_destinations.codon",
+            "numpy/fusion/test_div_mod.codon",
+            "numpy/fusion/test_forwarded_reductions.codon",
+            "numpy/fusion/test_forwarding.codon",
+            "numpy/fusion/test_highway_broadcast.codon",
+            "numpy/fusion/test_inlining.codon",
+            "numpy/fusion/test_last_use.codon",
+            "numpy/fusion/test_matmul_special.codon",
+            "numpy/fusion/test_matmul_values.codon",
+            "numpy/fusion/test_mean_where.codon",
+            "numpy/fusion/test_mixed_types.codon",
+            "numpy/fusion/test_ops_complex128.codon",
+            "numpy/fusion/test_ops_complex64.codon",
+            "numpy/fusion/test_ops_float16.codon",
+            "numpy/fusion/test_ops_float32.codon",
+            "numpy/fusion/test_ops_float64.codon",
+            "numpy/fusion/test_ops_int16.codon",
+            "numpy/fusion/test_ops_int32.codon",
+            "numpy/fusion/test_ops_int64.codon",
+            "numpy/fusion/test_ops_int8.codon",
+            "numpy/fusion/test_ops_uint16.codon",
+            "numpy/fusion/test_ops_uint32.codon",
+            "numpy/fusion/test_ops_uint64.codon",
+            "numpy/fusion/test_ops_uint8.codon",
+            "numpy/fusion/test_ownership.codon",
+            "numpy/fusion/test_producers.codon",
+            "numpy/fusion/test_reductions.codon",
+            "numpy/fusion/test_shape_validation.codon",
+            "numpy/fusion/test_truth_reductions.codon",
             "numpy/random_tests/test_mt19937.codon",
             "numpy/random_tests/test_pcg64.codon",
             "numpy/random_tests/test_philox.codon",
@@ -638,8 +618,6 @@ INSTANTIATE_TEST_SUITE_P(
             "numpy/test_elision.codon",
             "numpy/test_fft.codon",
             "numpy/test_functional.codon",
-            // "numpy/test_fusion.codon", // TODO: uses a lot of RAM
-            "numpy/test_fusion_extended.codon",
             "numpy/test_indexing.codon",
             "numpy/test_io.codon",
             "numpy/test_lib.codon",
@@ -668,12 +646,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 // clang-format on
 
-TEST(CrashDiagnosticsDeathTest, ReportsAbortStack) {
-  EXPECT_DEATH(std::abort(), "0x[0-9a-f]+");
-}
-
 int main(int argc, char *argv[]) {
-  llvm::sys::PrintStackTraceOnErrorSignal(argv[0], true);
   argv0 = ast::Filesystem::executable_path(argv[0]);
   testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

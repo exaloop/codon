@@ -1,0 +1,142 @@
+import numpy as np
+
+from helpers import materialize, mutate_array
+
+@test
+def test_array_copies_and_casts():
+    array = np.array([127, 128, 255, 256])
+    assert np.array_equal(array.astype(np.int8) + np.int8(1), [-128, -127, 0, 1])
+    assert np.sum(array.astype(np.int8) + np.int8(1), dtype=int) == -254
+    assert np.array_equal((array + 1).astype(np.float32), [128., 129., 256., 257.])
+    assert np.array_equal(array[::-1].copy() + 1, [257, 256, 129, 128])
+    assert np.array_equal(array.copy(order='F') * 2, array * 2)
+    assert np.array_equal(array.astype(int, copy=False) + 1, array + 1)
+    mutable = np.array([1, 2])
+    assert np.array_equal(mutable.copy() + mutate_array(mutable), [101, 4])
+    fractional = np.array([16777217., 1.1, -1.1])
+    assert np.array_equal(fractional.astype(np.float32).astype(float) + 0.,
+                          materialize(fractional.astype(np.float32)).astype(float))
+    expensive = np.arctan2(np.arctan2(array, array + 1), array + 2).astype(np.float32)
+    expected = materialize(np.arctan2(np.arctan2(array, array + 1), array + 2))
+    assert np.array_equal(expensive, expected.astype(np.float32))
+    independent = (array + 1).copy()
+    independent[0] = 0
+    assert array[0] == 127
+    vector = np.arange(6.)
+    view = vector.astype(float, copy=False).astype(float, copy=False)
+    assert view.data == vector.data
+    view[0] = 123.
+    assert vector[0] == 123.
+    matrix = np.arange(12.).reshape(3, 4) * 0.125
+    snapshot = matrix.copy()
+    result = np.sin(matrix.astype(float, copy=False)) + 1.
+    assert np.array_equal(matrix, snapshot)
+    assert result.data != matrix.data
+    assert np.allclose(result, np.sin(snapshot) + 1.)
+    try:
+        array.astype(float, order='bad') + 1
+        assert False
+    except ValueError:
+        pass
+
+def check_higher_rank_producer_order(array, order: Literal[str]):
+    got = (array + 0.).copy(order=order)
+    expected = materialize(array + 0.).copy(order=order)
+    assert np.array_equal(got, expected)
+    assert got.strides == expected.strides, (order, got.strides, expected.strides)
+    assert ((array.copy(order=order) + 1).sum() ==
+            (materialize(array.copy(order=order)) + 1).sum())
+    got = (array + 0.).astype(np.float32, order=order)
+    expected = materialize(array + 0.).astype(np.float32, order=order)
+    assert np.array_equal(got, expected)
+    assert got.strides == expected.strides, (order, got.strides, expected.strides)
+    assert ((array.astype(np.float32, order=order) + 1).sum() ==
+            (materialize(array.astype(np.float32, order=order)) + 1).sum())
+    assert (array.astype(float, order=order, copy=False).sum() ==
+            materialize(array.astype(float, order=order, copy=False)).sum())
+    got = array.astype(float, order=order, copy=False).astype(
+        float, order=order, copy=False)
+    expected = materialize(array.astype(float, order=order, copy=False)).astype(
+        float, order=order, copy=False)
+    assert got.strides == expected.strides
+    assert np.array_equal(got, expected)
+    if order == 'K' or order == 'A':
+        assert got.data == array.data
+    got = np.zeros_like(array + 1, order=order)
+    expected = np.zeros_like(materialize(array + 1), order=order)
+    assert np.array_equal(got, expected)
+    assert got.strides == expected.strides, (order, got.strides, expected.strides)
+    got = (np.ones_like(array, dtype=np.int8, order=order) +
+           np.zeros_like(array, dtype=np.int8, order=order))
+    expected = (materialize(np.ones_like(array, dtype=np.int8, order=order)) +
+                materialize(np.zeros_like(array, dtype=np.int8, order=order)))
+    assert np.array_equal(got, expected)
+    assert got.strides == expected.strides
+    assert ((np.ones_like(array, order=order) + array).sum() ==
+            (materialize(np.ones_like(array, order=order)) + array).sum())
+    got = np.ones_like(array + 1, order=order)
+    expected = np.ones_like(materialize(array + 1), order=order)
+    assert np.array_equal(got, expected)
+    assert got.strides == expected.strides, (order, got.strides, expected.strides)
+
+@test
+def test_higher_rank_producers():
+    values = np.array([1e16, 1., -1e16, -1.] * 258).reshape(2, 3, 172)
+    for array in (values, values.copy(order='F'), values.transpose((1, 2, 0)),
+                  values[:, ::-1, ::2], values[:, :0, :], values[:, :1, :]):
+        check_higher_rank_producer_order(array, 'C')
+        check_higher_rank_producer_order(array, 'F')
+        check_higher_rank_producer_order(array, 'A')
+        check_higher_rank_producer_order(array, 'K')
+    check_higher_rank_producer_order(values.reshape(6, 172).T, 'C')
+    check_higher_rank_producer_order(values.reshape(2, 3, 4, 43), 'F')
+    assert ((values.copy(order='F') + values.copy(order='C')).sum() ==
+            (materialize(values.copy(order='F')) +
+             materialize(values.copy(order='C'))).sum())
+    matrix = np.arange(12.).reshape(3, 4)
+    row = np.arange(4.)
+    column = np.arange(3.).reshape(3, 1)
+    got = np.ones_like((matrix + column).copy(order='F')) + row
+    expected = materialize(np.ones_like(materialize(matrix + column).copy(order='F'))) + row
+    assert np.array_equal(got, expected)
+    assert got.strides == expected.strides
+    assert ((matrix.astype(np.float32) + column + row).sum() ==
+            materialize(matrix.astype(np.float32) + column + row).sum())
+    narrowed = np.array([127, 128, 255, 256]).reshape(2, 2)
+    assert np.array_equal(narrowed.astype(np.int8) + np.int8(1),
+                          np.array([-128, -127, 0, 1]).reshape(2, 2))
+    fractional = np.array([16777217., 1.1, -1.1, 0.]).reshape(2, 2)
+    assert np.array_equal(fractional.astype(np.float32, order='F').astype(float) + 0.,
+                          materialize(fractional.astype(np.float32, order='F')).astype(float))
+    expensive = np.arctan2(np.arctan2(matrix, matrix + 1), matrix + 2).astype(
+        np.float32, order='F')
+    expected = materialize(np.arctan2(np.arctan2(matrix, matrix + 1), matrix + 2)).astype(
+        np.float32, order='F')
+    assert np.array_equal(expensive, expected)
+    assert expensive.strides == expected.strides
+    independent = (matrix + 1).copy(order='F')
+    independent[0, 0] = 100.
+    assert matrix[0, 0] == 0.
+    try:
+        np.ones_like(matrix + np.ones((2, 4))).sum()
+        assert False
+    except ValueError:
+        pass
+    try:
+        matrix.copy(order='bad') + 1
+        assert False
+    except ValueError:
+        pass
+
+@test
+def test_filled_producers():
+    array = np.array([float('nan'), float('inf'), -2., 0., 3.])
+    assert np.array_equal(np.zeros_like(array) + 1, [1., 1., 1., 1., 1.])
+    assert np.array_equal(np.ones_like(array, dtype=np.int8) + 2, [3, 3, 3, 3, 3])
+    assert np.sum(np.ones_like(array[::-2]) + 2) == 9.
+    assert np.sum(np.ones_like(array[:0]) + 2) == 0.
+    assert np.array_equal(np.ones_like(array) + np.arange(5), [1., 2., 3., 4., 5.])
+
+test_array_copies_and_casts()
+test_higher_rank_producers()
+test_filled_producers()
