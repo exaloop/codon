@@ -383,7 +383,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
   bool hasAst = ast->getSuite() && !ast->hasAttribute(Attr::Internal);
   // Add function arguments
   if (auto b = ast->getAttribute<BindingsAttribute>(Attr::Bindings)) {
-    for (auto &[c, t] : b->captures) {
+    for (const auto &[c, t] : sorted_view(b->captures)) {
       if (t == BindingsAttribute::CaptureType::Global) {
         auto cp = ctx->find(c);
         if (!cp)
@@ -392,7 +392,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
           E(Error::FN_GLOBAL_NOT_FOUND, getSrcInfo(), "global", c);
       }
     }
-    for (const auto [name, canonical] : b->localRenames) {
+    for (const auto &[name, canonical] : sorted_view(b->localRenames)) {
       auto val = ctx->forceFind(canonical);
       ctx->add(name, val);
     }
@@ -436,7 +436,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
   r->type = std::static_pointer_cast<FuncType>(type->shared_from_this());
   r->ir = oldIR;
   if (auto b = ast->getAttribute<BindingsAttribute>(Attr::Bindings))
-    for (const auto &c : b->captures | std::views::keys) {
+    for (const auto &[c, _] : sorted_view(b->captures)) {
       auto h = ctx->find(c);
       r->captures.push_back(h ? h->canonicalName : "");
     }

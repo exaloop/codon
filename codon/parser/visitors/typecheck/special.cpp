@@ -49,7 +49,7 @@ void TypecheckVisitor::prepareVTables() {
 
   fn = getFunction(getMangledMethod("", "RTTIType", "_populate_vtables"));
   fn->ast->suite = generateClassPopulateVTablesAST();
-  auto typ = fn->realizations.begin()->second->getType();
+  auto typ = sorted_view(fn->realizations).front().second->getType();
   typ->ast = fn->ast;
   LOG_REALIZE("[poly] {} : {}", typ->debugString(2), fn->ast->toString(2));
   realizeFunc(typ, true);
@@ -70,7 +70,7 @@ void TypecheckVisitor::prepareVTables() {
 SuiteStmt *TypecheckVisitor::generateClassPopulateVTablesAST() {
   auto suite = N<SuiteStmt>();
   for (const auto &[cls_name, cls] : sorted_view(ctx->cache->classes)) {
-    for (const auto &[r, real] : cls.realizations) {
+    for (const auto &[r, real] : sorted_view(cls.realizations)) {
       if (real->vtable.empty())
         continue;
       LOG_REALIZE("[poly] {} -> {}", r, real->id);
@@ -1180,10 +1180,10 @@ Expr *TypecheckVisitor::transformStaticChildren(CallExpr *expr) {
 
   std::vector<Expr *> tupleItems;
   auto typ = t->getClass();
-  for (auto &n : getClass(typ)->descendants) {
+  for (const auto &n : sorted_view(getClass(typ)->descendants)) {
     if (n == typ->name)
       continue;
-    for (auto &[cn, cr] : getClass(n)->realizations) {
+    for (const auto &[cn, cr] : sorted_view(getClass(n)->realizations)) {
       for (auto &b : cr->bases) {
         if (b->realizedName() == typ->realizedName()) {
           tupleItems.push_back(N<IdExpr>(cr->type->realizedName()));
@@ -1311,7 +1311,7 @@ SuiteStmt *TypecheckVisitor::generateSuperDispatchAST(FuncType *type) {
   }
 
   std::unordered_map<std::string, TypePtr> nextMro;
-  for (auto &n : getClass(typ)->descendants) {
+  for (const auto &n : sorted_view(getClass(typ)->descendants)) {
     auto nc = getClass(n);
     size_t i = 0;
     for (; i < nc->mro.size() - 1; i++) {
@@ -1340,7 +1340,7 @@ SuiteStmt *TypecheckVisitor::generateSuperDispatchAST(FuncType *type) {
       }
     }
   }
-  for (auto &tb : nextMro | std::views::values) {
+  for (const auto &[_, tb] : sorted_view(nextMro)) {
     Stmt *ret = N<ReturnStmt>(N<CallExpr>(
         N<DotExpr>(N<IdExpr>(tb->getClass()->name), attr->value),
         N<CallExpr>(N<IdExpr>(getMangledMethod("", "RTTIType", "_cast")),
@@ -1503,7 +1503,8 @@ TypecheckVisitor::populateStaticVarsLoop(Expr *iter,
   auto typ = extractFuncArgType(fn->getType())->getClass();
   size_t idx = 0;
   if (typ->is(StdlibTypes::TypeWrap)) { // type passed!
-    for (auto &f : getClass(extractClassGeneric(typ))->classVars) {
+    for (const auto &[fieldName, fieldVar] :
+         sorted_view(getClass(extractClassGeneric(typ))->classVars)) {
       std::vector<Stmt *> stmts;
       if (withIdx) {
         stmts.push_back(
@@ -1511,9 +1512,10 @@ TypecheckVisitor::populateStaticVarsLoop(Expr *iter,
                           N<IndexExpr>(N<IdExpr>("Literal"), N<IdExpr>("int"))));
       }
       stmts.push_back(
-          N<AssignStmt>(N<IdExpr>(vars[withIdx]), N<StringExpr>(f.first),
+          N<AssignStmt>(N<IdExpr>(vars[withIdx]), N<StringExpr>(fieldName),
                         N<IndexExpr>(N<IdExpr>("Literal"), N<IdExpr>("str"))));
-      stmts.push_back(N<AssignStmt>(N<IdExpr>(vars[withIdx + 1]), N<IdExpr>(f.second)));
+      stmts.push_back(
+          N<AssignStmt>(N<IdExpr>(vars[withIdx + 1]), N<IdExpr>(fieldVar)));
       auto b = N<SuiteStmt>(stmts);
       block.push_back(b);
       idx++;
@@ -1602,7 +1604,7 @@ TypecheckVisitor::populateStaticMethodsLoop(Expr *iter,
     typ = extractClassGeneric(typ)->getClass();
   std::vector<Stmt *> block;
   size_t idx = 0;
-  for (auto &m : getClass(typ->getClass())->methods | std::views::keys) {
+  for (const auto &[m, _] : sorted_view(getClass(typ->getClass())->methods)) {
     auto b = N<SuiteStmt>(
         N<AssignStmt>(N<IdExpr>(vars[0]), N<StringExpr>(m),
                       N<IndexExpr>(N<IdExpr>("Literal"), N<IdExpr>("str"))));

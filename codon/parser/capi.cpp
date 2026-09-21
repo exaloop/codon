@@ -54,13 +54,10 @@ CodonAstDumpResult parseScopeDump(const std::string &argv0, Parse &&parse,
           {"__py_numerics__", "0"},
           {"__py_extension__", "0"},
           {"__apple__", "1"}};
-      fprintf(stderr, "-- %s\n",
-              (*parsed)->toCodonString(includeAttributes, indent).c_str());
       auto node = codon::ast::TypecheckVisitor::apply(
           compiler->getCache(), *parsed, abspath,
           std::unordered_map<std::string, std::string>{}, earlyDefines, typecheck > 1);
       str = node->toCodonString(includeAttributes, indent);
-      fprintf(stderr, "%s\n", str.c_str());
       str += "\n";
       for (const auto &[_, f] :
            codon::ast::sorted_view(compiler->getCache()->functions)) {

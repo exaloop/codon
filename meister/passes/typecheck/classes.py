@@ -328,7 +328,7 @@ def typecheck_class(self: TypeVisitor, node: ast.ClassStmt) -> ast.Node:
                 "__tuplesize__",
                 "__repr_default__",
             }
-            for name in cls_data.methods:
+            for name in sorted(cls_data.methods):
                 # Current class
                 for mro_idx in range(1, len(cls_data.mro)):
                     base_name = cls_data.mro[mro_idx].name
@@ -337,7 +337,7 @@ def typecheck_class(self: TypeVisitor, node: ast.ClassStmt) -> ast.Node:
                     if name in base_class.methods and name not in not_virtual:
                         cls_data.virtuals.add(name)
                 # Parent class
-                for virtual_name in cls_data.virtuals:
+                for virtual_name in sorted(cls_data.virtuals):
                     for mro_idx in range(1, len(cls_data.mro)):
                         base_class = utils.get_class(self.ctx, cls_data.mro[mro_idx].name)
                         assert base_class
@@ -449,7 +449,7 @@ def parse_base_classes(
             typ.hidden_generics.append(generic)
 
         # Add class variables
-        for var_name, var_canonical in base_data.class_vars.items():
+        for var_name, var_canonical in sorted(base_data.class_vars.items()):
             # Handle class variables. Transform them later to allow self-references
             new_name = f"{canonical_name}.{var_name}"
             new_canonical = self.ctx.generate_canonical_name(new_name)

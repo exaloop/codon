@@ -37,7 +37,7 @@ def typecheck_suite(self: TypeVisitor, node: ast.SuiteStmt) -> ast.Stmt:
     output = []
     if bindings := node.get(ast.Attr.Bindings, scope.Bindings):
         prepended = []
-        for name, binding in bindings.bindings.items():
+        for name, binding in sorted(bindings.bindings.items()):
             prepended.append(ast.AssignStmt(ast.IdExpr(name)))
             if binding.count > 0:
                 prepended.append(
@@ -48,7 +48,7 @@ def typecheck_suite(self: TypeVisitor, node: ast.SuiteStmt) -> ast.Stmt:
         node.erase(ast.Attr.Bindings)
         node.items[0:0] = prepended
     if local_renames := node.get(ast.Attr.LocalRenames, dict[str, str]):
-        for original, renamed in local_renames.items():
+        for original, renamed in sorted(local_renames.items()):
             self.ctx.add(original, self.ctx[renamed])
     try:
         done = True
@@ -69,7 +69,7 @@ def typecheck_suite(self: TypeVisitor, node: ast.SuiteStmt) -> ast.Stmt:
             node.done = True
     finally:
         if local_renames:
-            for original in local_renames:
+            for original in sorted(local_renames):
                 self.ctx.remove(original)
     return node
 

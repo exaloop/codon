@@ -42,7 +42,7 @@ def prepare_vtables(ctx: TypeContext):
     fn_data = utils.get_function(ctx, ast.types.mangle(cls="RTTIType", func="_populate_vtables"))
     assert fn_data and fn_data.ast
     fn_data.ast.suite = generate_class_populate_vtables_ast(ctx)
-    first_realization = next(iter(fn_data.realizations.values()))
+    first_realization = min(fn_data.realizations.items())[1]
     fn_type = first_realization.type
     fn_type.ast = fn_data.ast
     infer.realize_func(ctx, fn_type, force=True)
@@ -428,7 +428,7 @@ def generate_union_dispatch_ast(
                 candidate = ast.DotExpr(candidate, member=attr)
             candidates.append((tag, candidate))
     if len(ret_types) > 1:
-        union_args: List[ast.Expr] = [ast.IdExpr(name) for name in ret_types]
+        union_args: List[ast.Expr] = [ast.IdExpr(name) for name in sorted(ret_types)]
         wrapper = ast.InstantiateExpr(ast.IdExpr(ast.types.mangle("", "Union")), items=union_args)
         for idx, (candidate_tag, candidate) in enumerate(candidates):
             candidates[idx] = (
@@ -1298,12 +1298,12 @@ def transform_static_children(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr
     tuple_items = []
     cls_data = utils.get_class(self.ctx, obj_type)
     assert cls_data
-    for descendant_name in cls_data.descendants:
+    for descendant_name in sorted(cls_data.descendants):
         if descendant_name == obj_type.name:
             continue
         child_data = utils.get_class(self.ctx, descendant_name)
         assert child_data
-        for realization in child_data.realizations.values():
+        for _, realization in sorted(child_data.realizations.items()):
             for base in realization.bases:
                 if base.realized_name() == obj_type.realized_name():
                     tuple_items.append(ast.IdExpr(realization.type.realized_name()))
@@ -1468,7 +1468,7 @@ def generate_super_dispatch_ast(
     next_mro = {}
     cls_data = utils.get_class(ctx, obj_type)
     assert cls_data
-    for child_name in cls_data.descendants:
+    for child_name in sorted(cls_data.descendants):
         child_data = utils.get_class(ctx, child_name)
         assert child_data
         idx = 0
@@ -1489,7 +1489,7 @@ def generate_super_dispatch_ast(
                 if parent == next_type.name:
                     next_mro[child_data.mro[idx].name] = next_type
                     break
-    for next_type in next_mro.values():
+    for _, next_type in sorted(next_mro.items()):
         ret_stmt = ast.ReturnStmt(
             expr=ast.CallExpr(
                 ast.DotExpr(ast.IdExpr(next_type.name), member=attr),
@@ -1692,7 +1692,7 @@ def populate_static_vars_loop(
         obj_type = obj_type[0]
         cls_data = utils.get_class(self.ctx, utils.extract_class_type(self.ctx, obj_type))
         assert cls_data
-        for field_name, field_var in cls_data.class_vars.items():
+        for field_name, field_var in sorted(cls_data.class_vars.items()):
             stmts = []
             if with_idx:
                 stmts.append(
@@ -1819,7 +1819,7 @@ def populate_static_methods_loop(
     cls_data = utils.get_class(self.ctx, realized)
     assert cls_data
     block = []
-    for method_name in cls_data.methods:
+    for method_name in sorted(cls_data.methods):
         block.append(
             ast.SuiteStmt(
                 ast.AssignStmt(

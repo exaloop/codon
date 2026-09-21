@@ -293,7 +293,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     // Mark functions as virtual:
     auto banned = std::set<std::string>{"__init__", "__new__", "__raw__",
                                         "__tuplesize__", "__repr_default__"};
-    for (const auto &method : cls.methods | std::views::keys) {
+    for (const auto &[method, _] : sorted_view(cls.methods)) {
       for (size_t mi = 1; mi < cls.mro.size(); mi++) {
         // ... in the current class
         auto b = cls.mro[mi]->name;
@@ -301,7 +301,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           cls.virtuals.insert(method);
         }
       }
-      for (auto &v : cls.virtuals) {
+      for (const auto &v : sorted_view(cls.virtuals)) {
         for (size_t mi = 1; mi < cls.mro.size(); mi++) {
           // ... and in parent classes
           auto b = cls.mro[mi]->name;
@@ -330,7 +330,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
       LOG_REALIZE("[class] {} -> {:c} / {}", canonicalName, *typ, cls.fields.size());
       for (auto &m : cls.fields)
         LOG_REALIZE("       - member: {}: {:c}", m.name, *(m.type));
-      for (auto &m : cls.methods)
+      for (const auto &m : sorted_view(cls.methods))
         LOG_REALIZE("       - method: {}: {}", m.first, m.second);
       for (auto &m : cls.mro)
         LOG_REALIZE("       - mro: {:c}", *m);
@@ -424,7 +424,7 @@ std::vector<std::shared_ptr<ClassType>> TypecheckVisitor::parseBaseClasses(
     }
 
     // Add class variables
-    for (auto &[varName, varCanonicalName] : cachedCls->classVars) {
+    for (const auto &[varName, varCanonicalName] : sorted_view(cachedCls->classVars)) {
       // Handle class variables. Transform them later to allow self-references
       auto newName = fmt::format("{}.{}", canonicalName, varName);
       auto newCanonicalName = ctx->generateCanonicalName(newName);

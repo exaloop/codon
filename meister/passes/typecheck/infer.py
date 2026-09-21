@@ -354,14 +354,14 @@ def _realize_func_body(
     has_ast = fn_ast.suite is not None and not fn_ast.has(ast.Attr.Internal)
     if bindings := fn_ast.attributes.get(ast.Attr.Bindings):
         assert isinstance(bindings, scope.Bindings)
-        for captured, capture_type in bindings.captures.items():
+        for captured, capture_type in sorted(bindings.captures.items()):
             if capture_type is Bindings.Scope.Global:
                 captured_item = ctx.get(captured)
                 if not captured_item:
                     raise TypecheckError(fn_ast, f"name '{captured}' is not defined")
                 if not captured_item.is_global():
                     raise TypecheckError(fn_ast, f"no binding for global '{captured}' found")
-        for name, canonical in bindings.local_renames.items():
+        for name, canonical in sorted(bindings.local_renames.items()):
             ctx.add(name, ctx[canonical])
 
     arg_idx = 0
@@ -406,7 +406,7 @@ def _realize_func_body(
     realization = cache.FunctionData.Realization(type=typ, ir=old_ir)
     fn_data.realizations[key] = realization
     if bindings:
-        for captured in bindings.captures:
+        for captured in sorted(bindings.captures):
             captured_item = ctx.get(captured)
             realization.captures.append("" if not captured_item else captured_item.canonical)
     # Realizations should always be visible, so add them to the toplevel

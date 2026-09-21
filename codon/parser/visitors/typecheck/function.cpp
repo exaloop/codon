@@ -308,7 +308,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     size_t insertSize = stmt->size();
     if (!stmt->empty() && startswith(stmt->back().name, "**"))
       insertSize--;
-    for (auto &[c, t] : b->captures) {
+    for (const auto &[c, t] : sorted_view(b->captures)) {
       std::string cc = "$" + c;
       if (auto v = ctx->find(c, getTime())) {
         if (t != BindingsAttribute::CaptureType::Global && !v->isGlobal()) {

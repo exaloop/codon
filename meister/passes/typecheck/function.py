@@ -305,7 +305,7 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
         insert_idx = len(node.items)
         if node.items and node.items[-1].name.startswith("**"):
             insert_idx -= 1
-        for captured_name, capture_type in bindings.captures.items():
+        for captured_name, capture_type in sorted(bindings.captures.items()):
             capture_arg = f"${captured_name}"
             if (
                 (captured_item := self.ctx.find_at(captured_name, self.ctx.time))

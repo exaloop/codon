@@ -920,8 +920,9 @@ def get_param_type(typ: ast.types.Type | None) -> ast.Expr | None:
 
 def has_side_effect(expr: ast.Expr):
     # TODO: What if StringExpr has a nested value as a f-string?
+    # TODO: DotExpr(IdExpr)?!
     match expr:
-        case ast.IdExpr() | ast.DotExpr(expr=ast.IdExpr()):
+        case ast.IdExpr():
             return False
         case ast.NoneExpr() | ast.BoolExpr() | ast.IntExpr() | ast.FloatExpr() | ast.StringExpr():
             return False

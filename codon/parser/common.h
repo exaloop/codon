@@ -136,6 +136,12 @@ std::vector<std::pair<K, V>> sorted_view(const std::unordered_map<K, V> &map) {
   return sorted_keys;
 }
 
+template <typename T> std::vector<T> sorted_view(const std::unordered_set<T> &set) {
+  std::vector<T> sorted_values(set.begin(), set.end());
+  std::ranges::sort(sorted_values);
+  return sorted_values;
+}
+
 /// AST utilities
 
 template <typename T> T clone(const T &t, bool clean = false) { return t.clone(clean); }
