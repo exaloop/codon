@@ -1469,6 +1469,11 @@ struct DestinationExpression {
   }
 };
 
+// The inliner supplies a resolver for already-proven helper summaries. Keep the
+// original call/argument identities for CFG and reaching-definition queries; only
+// the arithmetic view and the eventual clone use the expanded expression.
+using HelperResolver = std::function<Value *(CallInstr *, std::vector<Value *> &)>;
+
 // Consider store-like expressions before their RHS. Claim their nodes only after
 // the destination proof succeeds, so rejected stores still allow ordinary fusion.
 struct ExtractArrayExpressions : public util::Operator {
@@ -1480,12 +1485,16 @@ struct ExtractArrayExpressions : public util::Operator {
   std::vector<NumPyOptimizationUnit> exprs;
   std::vector<DestinationExpression> destinations;
   std::unordered_set<id_t> extracted;
+  HelperResolver resolveHelper;
+  std::vector<std::pair<Value *, Value *>> helperSubstitutions;
+  std::unordered_map<Value *, std::vector<Value *>> helperOrder;
 
   ExtractArrayExpressions(BodiedFunc *func, analyze::dataflow::RDInspector *rd,
                           analyze::dataflow::CFGraph *cfg,
-                          analyze::module::SideEffectResult *sideEffects)
+                          analyze::module::SideEffectResult *sideEffects,
+                          HelperResolver resolveHelper = {})
       : func(func), types(func->getModule()), rd(rd), cfg(cfg),
-        sideEffects(sideEffects) {}
+        sideEffects(sideEffects), resolveHelper(std::move(resolveHelper)) {}
 
   void extract(Value *v, AssignInstr *assign = nullptr) {
     if (extracted.count(v->getId()))
@@ -1541,6 +1550,30 @@ struct ExtractArrayExpressions : public util::Operator {
       expr = parse(v, leaves, types, true);
     }
     if (expr) {
+      if (resolveHelper) {
+        expr->apply([&](NumPyExpr &element) {
+          auto *call = element.isLeaf() ? cast<CallInstr>(element.val) : nullptr;
+          if (!call)
+            return;
+          std::vector<Value *> order;
+          auto *replacement = resolveHelper(call, order);
+          if (!replacement)
+            return;
+          std::vector<std::pair<NumPyExpr *, Value *>> nestedLeaves;
+          auto nested = parse(replacement, nestedLeaves, types, true);
+          if (!nested || nested->isLeaf())
+            return;
+          element.replace(*nested);
+          helperSubstitutions.emplace_back(call, replacement);
+          helperOrder.emplace(call, std::move(order));
+          extracted.insert(call->getId());
+        });
+        leaves.clear();
+        expr->apply([&](NumPyExpr &element) {
+          if (element.isLeaf())
+            leaves.emplace_back(&element, element.val);
+        });
+      }
       int64_t numArrayNodes = 0;
       expr->apply([&](NumPyExpr &e) {
         if (e.type.isArray())
@@ -1564,7 +1597,9 @@ struct ExtractArrayExpressions : public util::Operator {
 
 using ValidationOrder = std::vector<std::pair<Value *, AssignInstr *>>;
 
-ValidationOrder getValidationOrder(NumPyOptimizationUnit &unit) {
+ValidationOrder getValidationOrder(
+    NumPyOptimizationUnit &unit,
+    const std::unordered_map<Value *, std::vector<Value *>> &helperOrder = {}) {
   std::unordered_set<Value *> nodes;
   unit.expr->apply([&](NumPyExpr &element) { nodes.insert(element.val); });
   ValidationOrder order;
@@ -1574,6 +1609,14 @@ ValidationOrder getValidationOrder(NumPyOptimizationUnit &unit) {
       return;
     for (auto *child : value->getUsedValues())
       visit(child);
+    auto helper = helperOrder.find(value);
+    if (helper != helperOrder.end()) {
+      // Arguments run before the callee body. The summary's checks retain the
+      // body's statement order, which need not match its collapsed expression.
+      for (auto *step : helper->second)
+        if (nodes.count(step) && visited.insert(step).second)
+          order.emplace_back(step, unit.assign);
+    }
     if (nodes.count(value))
       order.emplace_back(value, unit.assign);
   };
@@ -1582,12 +1625,15 @@ ValidationOrder getValidationOrder(NumPyOptimizationUnit &unit) {
 }
 
 void setValidationOrder(NumPyOptimizationUnit &unit, const ValidationOrder &order) {
-  std::unordered_map<Value *, NumPyExpr *> nodes;
-  unit.expr->apply([&](NumPyExpr &element) { nodes.emplace(element.val, &element); });
+  // Composing a helper can expose several reads of the same actual IR value.
+  // Each expression leaf still needs its own layout/binding entry.
+  std::unordered_map<Value *, std::vector<NumPyExpr *>> nodes;
+  unit.expr->apply([&](NumPyExpr &element) { nodes[element.val].push_back(&element); });
   for (auto &step : order) {
     auto found = nodes.find(step.first);
     if (found != nodes.end())
-      unit.validationOrder.emplace_back(step.second, found->second);
+      for (auto *element : found->second)
+        unit.validationOrder.emplace_back(step.second, element);
   }
 }
 
@@ -1601,19 +1647,21 @@ struct NumPyFunctionExpressions : ExtractArrayExpressions {
 
   NumPyFunctionExpressions(BodiedFunc *func, analyze::dataflow::RDInspector *rd,
                            analyze::dataflow::CFGraph *cfg,
-                           analyze::module::SideEffectResult *sideEffects)
-      : ExtractArrayExpressions(func, rd, cfg, sideEffects) {
+                           analyze::module::SideEffectResult *sideEffects,
+                           HelperResolver resolveHelper = {})
+      : ExtractArrayExpressions(func, rd, cfg, sideEffects, std::move(resolveHelper)) {
     func->accept(*this);
     for (auto &destination : destinations)
       setValidationOrder(destination.unit, getValidationOrder(destination.unit));
     ValidationOrder order;
     for (auto &unit : exprs) {
-      auto steps = getValidationOrder(unit);
+      auto steps = getValidationOrder(unit, helperOrder);
       order.insert(order.end(), steps.begin(), steps.end());
     }
     auto forwarding = getForwardingDAGs(func, rd, cfg, sideEffects, exprs);
     for (auto &dag : forwarding) {
       Expression expression;
+      expression.substitutions = helperSubstitutions;
       expression.unit =
           doForwarding(dag, expression.assignments, &expression.substitutions);
       setValidationOrder(*expression.unit, order);
@@ -1635,15 +1683,20 @@ struct NumPyExpressionResult : analyze::Result {
     auto found = functions.find(func->getId());
     if (found != functions.end())
       return found->second.get();
+    auto result = extract(func);
+    auto *ptr = result.get();
+    functions.emplace(func->getId(), std::move(result));
+    return ptr;
+  }
+
+  std::unique_ptr<NumPyFunctionExpressions> extract(BodiedFunc *func,
+                                                    HelperResolver resolver = {}) {
     auto definitions = reaching->results.find(func->getId());
     if (definitions == reaching->results.end())
       return nullptr;
     auto *cfg = reaching->cfgResult->graphs.at(func->getId()).get();
-    auto result = std::make_unique<NumPyFunctionExpressions>(
-        func, definitions->second.get(), cfg, sideEffects);
-    auto *ptr = result.get();
-    functions.emplace(func->getId(), std::move(result));
-    return ptr;
+    return std::make_unique<NumPyFunctionExpressions>(
+        func, definitions->second.get(), cfg, sideEffects, std::move(resolver));
   }
 
   std::unique_ptr<NumPyFunctionExpressions> take(BodiedFunc *func) {
@@ -2086,16 +2139,61 @@ void NumPyLifetimePass::visit(BodiedFunc *func) {
 }
 
 void NumPyInlinePass::run(Module *module) {
+  constexpr unsigned MaxHelperDepth = 4;
+  constexpr unsigned MaxExpressionNodes = 16;
+  constexpr unsigned MaxTemplateNodes = 128;
+  constexpr unsigned MaxHelperStatements = 17;
+  constexpr unsigned MaxCallerExpansions = 16;
+  constexpr unsigned MaxCallerNodes = 256;
+
+  struct Count : util::Operator {
+    unsigned size = 0;
+    void preHook(Node *) override { ++size; }
+  };
+  struct KeepInvariants : util::Operator {
+    util::CloneVisitor &clone;
+    analyze::module::SideEffectResult *sideEffects;
+    KeepInvariants(util::CloneVisitor &clone,
+                   analyze::module::SideEffectResult *sideEffects)
+        : clone(clone), sideEffects(sideEffects) {}
+    void preHook(Node *node) override {
+      // RD/SE describe the original program, not detached summary clones.
+      // Preserve literals and pure, parameter-independent subtrees (notably
+      // ufunc receivers and out=None). This shares IR identity, not evaluation.
+      auto *value = cast<Value>(node);
+      if (!value || sideEffects->hasSideEffect(value))
+        return;
+      struct CheckLocals : util::Operator {
+        bool local = false;
+        void preHook(Node *node) override {
+          for (auto *variable : node->getUsedVariables())
+            local |= !variable->isGlobal() && !isA<Func>(variable);
+        }
+      } check;
+      value->accept(check);
+      if (!check.local)
+        clone.forceRemap(value, value);
+    }
+  };
   struct InlineTemplate {
     Value *value = nullptr;
     unsigned size = 0;
     bool directBindings = false;
     std::vector<Var *> locals;
+    // Compose the raw expression and its check order, not the emitted validation
+    // FlowInstr: nested wrappers would hide arithmetic from the fusion parser.
+    Value *raw = nullptr;
+    std::vector<Value *> order;
+    unsigned rawSize = 0;
+    unsigned nodes = 0;
+    unsigned depth = 1;
+    unsigned expansions = 1;
+    bool reduction = false;
   };
   std::unordered_map<id_t, InlineTemplate> templates;
   auto *analysis = getAnalysisResult<NumPyExpressionResult>(expressionsKey);
 
-  auto prepare = [&](BodiedFunc *callee) -> InlineTemplate {
+  auto getStatements = [&](BodiedFunc *callee) -> std::vector<Value *> {
     auto *body = cast<SeriesFlow>(callee->getBody());
     if (!body || callee->isGenerator() || callee->isAsync() ||
         callee->getName().rfind("std.numpy.", 0) == 0 ||
@@ -2112,7 +2210,7 @@ void NumPyInlinePass::run(Module *module) {
       }
     };
     flatten(body);
-    if (statements.empty() || statements.size() > 17)
+    if (statements.empty() || statements.size() > MaxHelperStatements)
       return {};
     auto *returned = cast<ReturnInstr>(statements.back());
     if (!returned || !returned->getValue())
@@ -2124,13 +2222,79 @@ void NumPyInlinePass::run(Module *module) {
       if (!assignment || assignment->getLhs()->isGlobal())
         return {};
     }
-    auto *extracted = analysis->get(callee);
+    Count count;
+    body->accept(count);
+    return count.size <= MaxTemplateNodes ? statements : std::vector<Value *>();
+  };
+
+  auto prepare = [&](BodiedFunc *callee) -> InlineTemplate {
+    auto statements = getStatements(callee);
+    auto *returned = cast<ReturnInstr>(statements.back());
+    unsigned depth = 1, expansions = 1, nestedNodes = 0;
+    Count bodySize;
+    callee->getBody()->accept(bodySize);
+    unsigned estimatedSize = bodySize.size;
+    bool composable = true;
+    auto extracted =
+        analysis->extract(callee, [&](CallInstr *call, std::vector<Value *> &order) {
+          auto *nested = cast<BodiedFunc>(util::getFunc(call->getCallee()));
+          auto found = nested ? templates.find(nested->getId()) : templates.end();
+          if (found == templates.end())
+            return static_cast<Value *>(nullptr);
+          const auto &summary = found->second;
+          // Reductions are only parsed at expression roots. Do not turn a nested
+          // scalar reduction into pointwise work or duplicate its materialization.
+          bool stable =
+              summary.value && summary.directBindings && !summary.reduction &&
+              call->numArgs() == std::distance(nested->arg_begin(), nested->arg_end());
+          for (auto *actual : *call) {
+            auto *read = cast<VarValue>(actual);
+            stable &= read && !read->getVar()->isGlobal();
+          }
+          // Count occurrences, not cache entries. Preflight conservative upper bounds
+          // before cloning so a branching helper graph cannot grow exponentially.
+          if (!stable || summary.depth >= MaxHelperDepth ||
+              expansions + summary.expansions > MaxCallerExpansions ||
+              nestedNodes + summary.nodes > MaxExpressionNodes ||
+              estimatedSize + summary.rawSize > MaxTemplateNodes) {
+            composable = false;
+            return static_cast<Value *>(nullptr);
+          }
+          depth = std::max(depth, summary.depth + 1);
+          expansions += summary.expansions;
+          nestedNodes += summary.nodes;
+          estimatedSize += summary.rawSize;
+          util::CloneVisitor clone(module);
+          KeepInvariants invariants(clone, analysis->sideEffects);
+          summary.raw->accept(invariants);
+          std::unordered_map<Var *, Value *> arguments;
+          auto parameter = nested->arg_begin();
+          for (auto *actual : *call)
+            arguments.emplace(*parameter++, actual);
+          struct BindReads : util::Operator {
+            util::CloneVisitor &clone;
+            const std::unordered_map<Var *, Value *> &arguments;
+            BindReads(util::CloneVisitor &clone,
+                      const std::unordered_map<Var *, Value *> &arguments)
+                : clone(clone), arguments(arguments) {}
+            void handle(VarValue *read) override {
+              auto found = arguments.find(read->getVar());
+              if (found != arguments.end())
+                clone.forceRemap<Value>(read, found->second);
+            }
+          } bind(clone, arguments);
+          summary.raw->accept(bind);
+          auto *value = clone.clone(summary.raw);
+          for (auto *step : summary.order)
+            order.push_back(clone.clone(step));
+          return value;
+        });
     if (!extracted || !extracted->destinations.empty() ||
-        extracted->expressions.size() != 1)
+        extracted->expressions.size() != 1 || !composable)
       return {};
     auto &expression = extracted->expressions.front();
     auto *unit = expression.unit;
-    if (unit->expr->nodes() > 16 ||
+    if (unit->expr->nodes() > MaxExpressionNodes ||
         (!expression.substitutions.empty() &&
          hasUFuncArgumentEffects(*unit->expr, extracted->sideEffects)))
       return {};
@@ -2152,15 +2316,21 @@ void NumPyInlinePass::run(Module *module) {
                      [&](Value *statement) { return covered.count(statement); }))
       return {};
     util::CloneVisitor clone(module);
+    KeepInvariants invariants(clone, analysis->sideEffects);
+    unit->value->accept(invariants);
+    for (auto &substitution : expression.substitutions)
+      substitution.second->accept(invariants);
     for (auto &substitution : expression.substitutions)
       clone.forceRemap(substitution.first, clone.clone(substitution.second));
     auto *value = clone.clone(unit->value);
     struct CheckTemplate : util::Operator {
       std::unordered_set<Var *> parameters;
+      const std::unordered_map<id_t, InlineTemplate> &templates;
       unsigned size = 0;
       bool valid = true;
-      explicit CheckTemplate(BodiedFunc *callee)
-          : parameters(callee->arg_begin(), callee->arg_end()) {}
+      CheckTemplate(BodiedFunc *callee,
+                    const std::unordered_map<id_t, InlineTemplate> &templates)
+          : parameters(callee->arg_begin(), callee->arg_end()), templates(templates) {}
       void preHook(Node *node) override {
         ++size;
         if (isA<Flow>(node) || isA<FlowInstr>(node) || isA<AssignInstr>(node) ||
@@ -2171,10 +2341,23 @@ void NumPyInlinePass::run(Module *module) {
               !parameters.count(variable))
             valid = false;
       }
-    } check(callee);
+      void handle(CallInstr *call) override {
+        auto *callee = util::getFunc(call->getCallee());
+        // Only calls exposed by the NumPy parser participate in composition.
+        // A helper hidden inside an opaque leaf must remain in its own function;
+        // otherwise later traversal could inline it without charging its depth.
+        if (callee && templates.count(callee->getId()))
+          valid = false;
+      }
+    } check(callee, templates);
     value->accept(check);
-    if (!check.valid || check.size > 128)
+    if (!check.valid || check.size > MaxTemplateNodes)
       return {};
+    auto *raw = value;
+    auto rawSize = check.size;
+    std::vector<Value *> order;
+    for (auto &step : unit->validationOrder)
+      order.push_back(clone.clone(step.second->val));
     bool directBindings = true;
     unit->expr->apply([&](NumPyExpr &element) {
       if (!element.isLeaf())
@@ -2197,8 +2380,10 @@ void NumPyInlinePass::run(Module *module) {
     std::unordered_set<Value *> visited;
     std::function<void(Value *)> collectOrder = [&](Value *current) {
       auto substitution = substitutions.find(current);
-      if (substitution != substitutions.end())
+      while (substitution != substitutions.end()) {
         current = substitution->second;
+        substitution = substitutions.find(current);
+      }
       if (!visited.insert(current).second)
         return;
       for (auto *child : current->getUsedValues())
@@ -2235,16 +2420,23 @@ void NumPyInlinePass::run(Module *module) {
         checkedClone.forceRemap(substitution.first,
                                 checkedClone.clone(substitution.second));
       value = checkedClone.clone(unit->value);
-      struct Count : util::Operator {
-        unsigned size = 0;
-        void preHook(Node *) override { ++size; }
-      } count;
+      Count count;
       value->accept(count);
-      if (count.size > 128)
+      if (count.size > MaxTemplateNodes)
         return {};
       check.size = count.size;
     }
-    return {value, check.size, directBindings, std::move(locals)};
+    return {value,
+            check.size,
+            directBindings,
+            std::move(locals),
+            raw,
+            std::move(order),
+            rawSize,
+            unsigned(unit->expr->nodes()),
+            depth,
+            expansions,
+            unit->expr->isReduction()};
   };
 
   struct Prepare : util::Operator {
@@ -2255,40 +2447,74 @@ void NumPyInlinePass::run(Module *module) {
       if (auto *callee = cast<BodiedFunc>(util::getFunc(call->getCallee())))
         prepare(callee);
     }
-  } collect([&](BodiedFunc *callee) {
-    if (!templates.count(callee->getId()))
-      templates.emplace(callee->getId(), prepare(callee));
+  };
+  std::vector<BodiedFunc *> candidates;
+  std::unordered_set<id_t> seen, candidateIds;
+  NumPyPrimitiveTypes types(module);
+  Prepare collect([&](BodiedFunc *callee) {
+    if (!seen.insert(callee->getId()).second)
+      return;
+    bool array = NumPyType::get(util::getReturnType(callee), types).isArray();
+    for (auto argument = callee->arg_begin(); argument != callee->arg_end(); ++argument)
+      array |= NumPyType::get((*argument)->getType(), types).isArray();
+    if (array && !getStatements(callee).empty()) {
+      candidates.push_back(callee);
+      candidateIds.insert(callee->getId());
+    }
   });
   module->accept(collect);
+
+  // Kahn's ordering is iterative even for arbitrarily deep input call graphs.
+  // Recursive components (and callers depending on them) never become ready.
+  // Finish every immutable summary before rewriting any function body, so a
+  // caller cannot bypass depth limits by seeing an already-inlined callee.
+  std::unordered_map<id_t, unsigned> pending;
+  std::unordered_map<id_t, std::vector<BodiedFunc *>> callers;
+  std::vector<BodiedFunc *> ready;
+  for (auto *callee : candidates) {
+    std::unordered_set<id_t> dependencies;
+    Prepare collectDependencies([&](BodiedFunc *dependency) {
+      if (candidateIds.count(dependency->getId()))
+        dependencies.insert(dependency->getId());
+    });
+    callee->getBody()->accept(collectDependencies);
+    pending[callee->getId()] = dependencies.size();
+    for (auto dependency : dependencies)
+      callers[dependency].push_back(callee);
+    if (dependencies.empty())
+      ready.push_back(callee);
+  }
+  for (size_t index = 0; index < ready.size(); ++index) {
+    auto *callee = ready[index];
+    templates.emplace(callee->getId(), prepare(callee));
+    for (auto *caller : callers[callee->getId()])
+      if (--pending[caller->getId()] == 0)
+        ready.push_back(caller);
+  }
 
   struct Inliner : public util::Operator {
     BodiedFunc *parent;
     const std::unordered_map<id_t, InlineTemplate> &templates;
-    std::unordered_set<id_t> active;
-    unsigned remaining = 16;
-    unsigned budget = 256;
+    unsigned remaining = MaxCallerExpansions;
+    unsigned budget = MaxCallerNodes;
 
     Inliner(BodiedFunc *parent,
             const std::unordered_map<id_t, InlineTemplate> &templates)
-        : parent(parent), templates(templates), active{parent->getId()} {}
+        : parent(parent), templates(templates) {}
 
     void handle(CallInstr *call) override {
       if (!remaining)
         return;
       auto *callee = cast<BodiedFunc>(util::getFunc(call->getCallee()));
-      if (!callee || active.count(callee->getId()))
+      if (!callee || callee == parent)
         return;
       auto found = templates.find(callee->getId());
       if (found == templates.end() || !found->second.value ||
-          found->second.size > budget ||
+          found->second.expansions > remaining ||
           call->numArgs() != std::distance(callee->arg_begin(), callee->arg_end()))
         return;
       const auto &prepared = found->second;
       auto *module = call->getModule();
-      util::CloneVisitor clone(module);
-      for (auto *local : prepared.locals)
-        parent->push_back(clone.forceClone(local));
-      auto *bindings = module->Nr<SeriesFlow>();
       bool directBindings = prepared.directBindings;
       // Substitute only stable local reads directly. Otherwise bind every actual
       // argument once, including unused ones, before evaluating the helper body.
@@ -2296,6 +2522,15 @@ void NumPyInlinePass::run(Module *module) {
         auto *read = cast<VarValue>(value);
         directBindings &= read && !read->getVar()->isGlobal();
       }
+      // The emitted wrapper is part of the caller's budget too. Actual values
+      // themselves are retained, not cloned, and still run once in source order.
+      unsigned cost = prepared.size + (directBindings ? 0 : call->numArgs() + 2);
+      if (cost > budget)
+        return;
+      util::CloneVisitor clone(module);
+      for (auto *local : prepared.locals)
+        parent->push_back(clone.forceClone(local));
+      auto *bindings = module->Nr<SeriesFlow>();
       auto argument = callee->arg_begin();
       for (auto *value : *call) {
         if (directBindings) {
@@ -2309,11 +2544,8 @@ void NumPyInlinePass::run(Module *module) {
       auto *replacement = clone.clone(prepared.value);
       if (!directBindings)
         replacement = module->Nr<FlowInstr>(bindings, replacement);
-      --remaining;
-      budget -= prepared.size;
-      active.insert(callee->getId());
-      replacement->accept(*this);
-      active.erase(callee->getId());
+      remaining -= prepared.expansions;
+      budget -= cost;
       call->replaceAll(replacement);
     }
   };

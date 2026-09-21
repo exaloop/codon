@@ -39,6 +39,34 @@ def staged_where(array):
 def staged_nested(array):
     return staged_square(array) + 2
 
+def nested_staged(array):
+    temporary = staged_nested(array)
+    return temporary + 3
+
+def nested_deep(array):
+    return nested_staged(array) + 4
+
+def nested_diamond(array):
+    first = staged_square(array)
+    second = staged_square(array)
+    return second + first
+
+def nested_arguments(first, second, unused):
+    return staged_arguments(first, second, unused) + 1
+
+def nested_effectful_arguments(array):
+    return staged_arguments(record(array, 1), record(array * 2, 2), record(array, 3))
+
+def nested_raising_argument(array):
+    return staged_arguments(record(array, 1), record(array, 2), fail_argument())
+
+def nested_shared_input(array):
+    temporary = record(array + 1, 5)
+    return staged_square(temporary) + 1
+
+def nested_reduction(array):
+    return array - staged_mean(array)
+
 def staged_shared(array):
     temporary = record(array + 1, 5)
     return temporary * temporary + temporary
@@ -126,6 +154,12 @@ def check_staged_layout(dtype: type):
         assert result.dtype is expected.dtype
         assert result.strides == expected.strides
         assert np.array_equal(staged_nested(array), expected)
+        deep_expected = materialize(expected + 3) + 4
+        deep_result = nested_deep(array)
+        assert np.array_equal(deep_result, deep_expected)
+        assert deep_result.dtype is deep_expected.dtype
+        assert deep_result.strides == deep_expected.strides
+        assert np.array_equal(nested_diamond(array), materialize(array * array + 1) * 2)
         assert np.array_equal(staged_square(array + 1),
                               materialize((array + 1) * (array + 1)) + 1)
         assert np.array_equal(staged_rebind(array) + 2, materialize((array + 1) * 2) + 2)
@@ -178,6 +212,37 @@ def test_multistatement_helpers():
     assert np.array_equal(other, [100., 2.])
 
 @test
+def test_nested_helper_arguments():
+    array = np.arange(6.)
+    events.clear()
+    result = nested_arguments(record(array, 1), record(array * 2, 2), record(array, 3))
+    assert events == [1, 2, 3]
+    assert np.array_equal(result, array * 2 - array * array + 1)
+    events.clear()
+    result = nested_effectful_arguments(array)
+    assert events == [1, 2, 3]
+    assert np.array_equal(result, array * 2 - array * array)
+    events.clear()
+    try:
+        nested_arguments(record(array, 1), record(array, 2), fail_argument())
+        assert False
+    except ValueError:
+        assert events == [1, 2, 9]
+    events.clear()
+    try:
+        nested_raising_argument(array)
+        assert False
+    except ValueError:
+        assert events == [1, 2, 9]
+    events.clear()
+    assert np.array_equal(nested_shared_input(array), (array + 1) * (array + 1) + 2)
+    assert events == [5]
+    assert np.array_equal(nested_reduction(array), array - np.mean(array * array + 1))
+    mutable = np.array([1., 2.])
+    result = nested_staged(mutable) + mutate_array(mutable)
+    assert np.array_equal(result, [107., 12.])
+
+@test
 def test_safe_fusion_leaves():
     matrix = np.arange(12).reshape(3, 4)
     result = (matrix[1:, :-1] + matrix[:-1, 1:]) * matrix[1:, 1:]
@@ -206,5 +271,6 @@ def test_safe_fusion_leaves():
     assert np.array_equal(result, (left + right) / (2 * (dx ** 2 + dy ** 2)))
 
 test_multistatement_helpers()
+test_nested_helper_arguments()
 test_safe_fusion_leaves()
 test_inline_arguments()

@@ -215,6 +215,10 @@ ForwardingDAG buildForwardingDAG(BodiedFunc *func, RD *rd, CFG *cfg, SE *se,
                                  std::vector<NumPyOptimizationUnit> &exprs) {
   std::unordered_map<id_t, NumPyExpr *> parsedValues;
   for (auto &e : exprs) {
+    // A summarized helper still occupies its original call site in the CFG.
+    // Its proven expression, rather than the opaque call's effects, determines
+    // whether another producer may move past it.
+    parsedValues.emplace(e.value->getId(), e.expr.get());
     e.expr->apply([&](NumPyExpr &e) {
       if (e.val)
         parsedValues.emplace(e.val->getId(), &e);
@@ -228,15 +232,22 @@ ForwardingDAG buildForwardingDAG(BodiedFunc *func, RD *rd, CFG *cfg, SE *se,
     auto &forwardingVec = dag[&dst];
 
     std::vector<std::pair<Var *, NumPyExpr *>> vars;
+    std::unordered_map<Value *, unsigned> occurrences;
     target->apply([&](NumPyExpr &e) {
       if (e.isLeaf()) {
         if (auto *v = cast<VarValue>(e.val)) {
           vars.emplace_back(v->getVar(), &e);
+          ++occurrences[e.val];
         }
       }
     });
 
     for (auto &p : vars) {
+      // A composed helper may read one actual more than once (e.g. square(t)).
+      // Those leaves share the original call-site read so RD remains valid, but
+      // forwarding its producer into both would duplicate work and allocations.
+      if (occurrences[p.second->val] != 1)
+        continue;
       int64_t srcId = 0;
       for (auto &src : exprs) {
         if (srcId != dstId && src.assign && src.assign->getLhs() == p.first) {

@@ -615,13 +615,62 @@ def helper_reordered_matmul(left, right, other_left, other_right):
 
 def helper_recursive(values: np.ndarray[float, 1]) -> np.ndarray[float, 1]:
   return helper_recursive(values) + 1
+
+def helper_mutual(values: np.ndarray[float, 1]) -> np.ndarray[float, 1]:
+  return helper_mutual_other(values) + 1
+
+def helper_mutual_other(values: np.ndarray[float, 1]) -> np.ndarray[float, 1]:
+  return helper_mutual(values) + 1
+
+def helper_diamond(values):
+  return helper_chain(values) + helper_chain(values)
+
+def helper_nested_where(values):
+  return helper_where(values) + 1
+
+def helper_nested_reordered(values):
+  return helper_reordered(values) + 1
+
+def helper_staged_siblings(values):
+  first = helper_chain(values)
+  second = helper_chain(values)
+  return second + first
+
+def helper_nested_shared(values):
+  temporary = values + 1
+  return helper_chain(temporary) + 2
+
+def helper_nested_reduction(values):
+  return values - helper_mean(values)
+
+def helper_hidden_reduction(values):
+  return values - float(helper_mean(values))
+
+def helper_nested_actual(values):
+  return helper_chain(values + 1) + 2
+
+def helper_fanout(values):
+  return helper_diamond(values) + helper_diamond(values)
+
+def helper_nodes_limit(values):
+  return np.sin(values + 1 + 2 + 3 + 4 + 5 + 6 + 7)
+
+def helper_nodes_over(values):
+  return np.cos(helper_nodes_limit(values))
 )";
-        auto accepted =
-            std::vector<std::string>({"chain", "rebind", "mean", "where", "nested",
-                                      "reordered", "reordered_matmul"});
-        auto rejected =
-            std::vector<std::string>({"shared", "uncovered", "effect", "reduction",
-                                      "alias", "kept", "branch", "large", "recursive"});
+        auto accepted = std::vector<std::string>(
+            {"chain", "rebind", "mean", "where", "nested", "reordered",
+             "reordered_matmul", "diamond", "nested_where", "nested_reordered",
+             "staged_siblings", "depth_2", "depth_3", "nodes_limit"});
+        auto rejected = std::vector<std::string>(
+            {"shared", "uncovered", "effect", "reduction", "alias", "kept", "branch",
+             "large", "recursive", "mutual", "nested_shared", "nested_reduction",
+             "hidden_reduction", "nested_actual", "fanout", "depth_4", "nodes_over"});
+        code += "\ndef helper_depth_0(values):\n    return values + 1\n";
+        for (int depth = 1; depth <= 20; ++depth)
+          code += "\ndef helper_depth_" + std::to_string(depth) +
+                  "(values):\n    return helper_depth_" + std::to_string(depth - 1) +
+                  "(values) + 1\n";
         std::vector<std::string> cases = accepted;
         cases.insert(cases.end(), rejected.begin(), rejected.end());
         for (const auto &name : cases) {
@@ -634,17 +683,24 @@ def helper_recursive(values: np.ndarray[float, 1]) -> np.ndarray[float, 1]:
                   rank + "], condition: bool):\n    return helper_" + name + "(" +
                   arguments + ") + 2\n";
         }
-        code += "\ndef helper_depth_0(values):\n    return values + 1\n";
-        for (int depth = 1; depth <= 20; ++depth)
-          code += "\ndef helper_depth_" + std::to_string(depth) +
-                  "(values):\n    return helper_depth_" + std::to_string(depth - 1) +
-                  "(values) + 1\n";
         code += "\n@export\ndef probe_budget(values: np.ndarray[float, 1]):\n"
                 "    return helper_depth_20(values)\n";
+        // Five depth-four calls cost twenty expansions even with a cached
+        // summary. Four must disappear; the fifth must retain its helper call.
+        code += "\n@export\ndef probe_occurrences(values: np.ndarray[float, 1]):\n";
+        for (int index = 0; index < 5; ++index)
+          code += "    print(helper_depth_3(values))\n";
+        // Validation preludes count toward the IR budget. These templates must
+        // exhaust it before the independent sixteen-expansion caller limit.
+        code += "\n@export\ndef probe_ir_budget(values: np.ndarray[float, 1]):\n";
+        for (int index = 0; index < 20; ++index)
+          code += "    print(helper_reordered(values))\n";
         llvm::cantFail(compiler.parseCode("numpy_inline_coverage.codon", code));
         struct Inspect : ir::transform::OperatorPass {
           std::unordered_set<std::string> callers;
           std::unordered_set<std::string> retained;
+          unsigned occurrenceCalls = 0;
+          unsigned irBudgetCalls = 0;
           std::string getKey() const override { return "test-numpy-inline-coverage"; }
           void handle(ir::CallInstr *call) override {
             auto *parent = getParentFunc();
@@ -655,6 +711,12 @@ def helper_recursive(values: np.ndarray[float, 1]) -> np.ndarray[float, 1]:
             callers.insert(parent->getUnmangledName());
             if (callee->getUnmangledName().rfind("helper_", 0) == 0)
               retained.insert(parent->getUnmangledName());
+            if (parent->getUnmangledName() == "probe_occurrences" &&
+                callee->getUnmangledName() == "helper_depth_3")
+              ++occurrenceCalls;
+            if (parent->getUnmangledName() == "probe_ir_budget" &&
+                callee->getUnmangledName() == "helper_reordered")
+              ++irBudgetCalls;
           }
         };
         auto inspector = std::make_unique<Inspect>();
@@ -675,6 +737,9 @@ def helper_recursive(values: np.ndarray[float, 1]) -> np.ndarray[float, 1]:
           EXPECT_EQ(expected, bool(inspection->retained.count(caller)));
         }
         EXPECT_EQ(1, inspection->retained.count("probe_budget"));
+        EXPECT_EQ(1, inspection->occurrenceCalls);
+        EXPECT_GT(inspection->irBudgetCalls, 4);
+        EXPECT_LT(inspection->irBudgetCalls, 20);
         std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
       },
       testing::ExitedWithCode(EXIT_SUCCESS), "");
@@ -710,6 +775,44 @@ def staged_helper(values):
 def fused_staged_helper(values: np.ndarray[float, 1]):
   return staged_helper(values) + 2.0
 
+def nested_helper(values):
+  shifted = staged_helper(values)
+  return shifted + 2.0
+
+@export
+def fused_nested_helper(values: np.ndarray[float, 1]):
+  return nested_helper(values) + 3.0
+
+def nested_direct(values):
+  return staged_helper(values) + 2.0
+
+def nested_deep(values):
+  return nested_direct(values) + 3.0
+
+@export
+def fused_nested_direct(values: np.ndarray[float, 1]):
+  return nested_direct(values) + 3.0
+
+@export
+def fused_nested_deep(values: np.ndarray[float, 1]):
+  return nested_deep(values) + 4.0
+
+@export
+def fused_nested_diamond(values: np.ndarray[float, 1]):
+  return nested_diamond(values) + 3.0
+
+def nested_diamond(values):
+  return staged_helper(values) + staged_helper(values)
+
+def nested_siblings(values):
+  first = staged_helper(values)
+  second = staged_helper(values)
+  return second + first
+
+@export
+def fused_nested_siblings(values: np.ndarray[float, 1]):
+  return nested_siblings(values) + 3.0
+
 def staged_rebind(values):
   values = values + 1.0
   result = values * 2.0
@@ -727,6 +830,13 @@ def staged_reordered(left, right):
 @export
 def fused_staged_reordered(left: np.ndarray[float, 1], right: np.ndarray[float, 1]):
   return staged_reordered(left, right) + 3.0
+
+def nested_reordered(left, right):
+  return staged_reordered(left, right) + 2.0
+
+@export
+def fused_nested_reordered(left: np.ndarray[float, 1], right: np.ndarray[float, 1]):
+  return nested_reordered(left, right) + 3.0
 
 def staged_mean(values):
   squared = values * values
@@ -975,12 +1085,26 @@ def destination_reference(values: np.ndarray[float, 2]):
           }
           return allocations;
         };
-        for (auto name :
-             {"fused_helper", "fused_staged_helper", "fused_staged_rebind",
-              "fused_staged_reordered", "fused_copy_array", "fused_cast_array",
-              "fused_filled_array", "fused_axis_sum", "fused_axis_any",
-              "fused_axis_min", "fused_axis_keepdims", "fused_slices",
-              "fused_scalar_coefficients", "fused_complex_grid"}) {
+        for (auto name : {"fused_helper",
+                          "fused_staged_helper",
+                          "fused_nested_helper",
+                          "fused_nested_direct",
+                          "fused_nested_deep",
+                          "fused_nested_diamond",
+                          "fused_nested_reordered",
+                          "fused_nested_siblings",
+                          "fused_staged_rebind",
+                          "fused_staged_reordered",
+                          "fused_copy_array",
+                          "fused_cast_array",
+                          "fused_filled_array",
+                          "fused_axis_sum",
+                          "fused_axis_any",
+                          "fused_axis_min",
+                          "fused_axis_keepdims",
+                          "fused_slices",
+                          "fused_scalar_coefficients",
+                          "fused_complex_grid"}) {
           auto *function = module->getFunction(name);
           ASSERT_NE(nullptr, function);
           auto allocations = allocationCount(function);

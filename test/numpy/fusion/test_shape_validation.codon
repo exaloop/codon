@@ -12,6 +12,23 @@ def ordered_shape_reflected(left, right, other_left, other_right):
     second = other_left @ other_right
     return 10 - (second + first)
 
+def shape_add(left, right):
+    return left + right
+
+def shape_matmul(left, right):
+    return left @ right
+
+def nested_shape_helper(left, right, other_left, other_right):
+    first = shape_add(left, right)
+    second = shape_matmul(other_left, other_right)
+    return second + first
+
+def nested_shape_reordered(left, right, other_left, other_right):
+    return ordered_shape_helper(left, right, other_left, other_right) + 1
+
+def nested_shape_reflected(left, right, other_left, other_right):
+    return 10 - nested_shape_helper(left, right, other_left, other_right)
+
 @noinline
 def ordered_shape_kept(left, right, other_left, other_right):
     first = left + right
@@ -38,6 +55,10 @@ def ordered_shape_reference(left, right, other_left, other_right):
 def ordered_shape_before_index(left, right):
     return (left + right) + left[10]
 
+def nested_shape_before_index(left, right):
+    first = shape_add(left, right)
+    return first + left[10]
+
 def check_shape_failure(operation, message, left, right, other_left, other_right):
     try:
         operation(left, right, other_left, other_right)
@@ -56,6 +77,9 @@ def check_shape_validation(left, right, other_left, other_right):
     check_shape_failure(ordered_shape_reflected, message, left, right, other_left, other_right)
     check_shape_failure(ordered_shape_kept, message, left, right, other_left, other_right)
     check_shape_failure(ordered_shape_direct, message, left, right, other_left, other_right)
+    check_shape_failure(nested_shape_helper, message, left, right, other_left, other_right)
+    check_shape_failure(nested_shape_reordered, message, left, right, other_left, other_right)
+    check_shape_failure(nested_shape_reflected, message, left, right, other_left, other_right)
 
 @test
 def test_shape_validation_order():
@@ -78,6 +102,11 @@ def test_shape_validation_order():
         assert False, 'missing broadcast error before indexing'
     except ValueError as error:
         assert str(error) == message
+    try:
+        nested_shape_before_index(left, incompatible)
+        assert False, 'missing nested broadcast error before indexing'
+    except ValueError as error:
+        assert str(error) == message
     for array in (np.arange(6.).reshape(2, 3), np.arange(6.).reshape(2, 3)[:, ::-1],
                   np.empty((0, 3))):
         bias = np.ones((1, 3))
@@ -89,5 +118,12 @@ def test_shape_validation_order():
         assert actual.strides == expected.strides
         reflected = ordered_shape_reflected(array, bias, other_left, other_right)
         assert np.array_equal(reflected, 10 - expected)
+        nested = nested_shape_helper(array, bias, other_left, other_right)
+        assert np.array_equal(nested, expected)
+        assert nested.strides == expected.strides
+        assert np.array_equal(nested_shape_reordered(array, bias, other_left, other_right),
+                      expected + 1)
+        assert np.array_equal(nested_shape_reflected(array, bias, other_left, other_right),
+                      10 - expected)
 
 test_shape_validation_order()
