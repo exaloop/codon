@@ -11,18 +11,28 @@ _FUTURE_STATE_FINISHED:  Literal[int] = 1
 _FUTURE_STATE_EXCEPTION: Literal[int] = 2
 _FUTURE_STATE_CANCELLED: Literal[int] = 3
 
-@pure
-@derives
-@llvm
-def _bitcast(x: T, D: type, T: type) -> D:
-    %y = bitcast {=T} %x to {=D}
-    ret {=D} %y
+class _FutureState:
+    _result: cobj
+    _result_size: int
+    _exception: Optional[BaseException]
+    _lock: Lock
+    _cancel_msg: str
+    _done_callbacks: Ptr[Tuple[cobj, Optional[_FutureState]]]
+    _done_callbacks_len: int
+    _done_callbacks_cap: int
+    _state: int
+    _name: str
+    _coro: cobj
+    _task_view: cobj
+    _waiting_on_task: Optional[_FutureState]
+    _waiting_on_lock: cobj
+
+_DoneCallback = Tuple[cobj, Optional[_FutureState]]
 
 @tuple
 class WorkItem:
     coro: cobj        # Coroutine handle
-    task: cobj        # Raw Task pointer, or null
-    result_size: int  # Size in bytes of enclosed Future/Task result
+    task: Optional[_FutureState]
 
 class WorkNode:
     work: WorkItem
@@ -87,48 +97,30 @@ class TimerHandle:
     def when(self):
         return self._timer.when
 
-class Future[R]:
-    _exception: Optional[BaseException]
-    _lock: Lock
+class Future:
+    _data: _FutureState
     _loop: EventLoop
-    _cancel_msg: str
-    _done_callbacks: Ptr[WorkItem]
-    _done_callbacks_len: int
-    _done_callbacks_cap: int
-    _state: int
-    _result: R
+    R: type
 
-class Task[R](Future[R]):
-    _name: str
-    _coro: cobj
-    _waiting_on_task: Optional[Task[None]]
-    _waiting_on_lock: cobj
-
-def _raw_task(task: Task) -> Task[None]:
-    # Skip over `result` field (done automatically because _result
-    # is at the very end)
-    return _bitcast(task.__raw__(), Task[None])
+class Task(Static[Future[R]]):
+    R: type
 
 @extend
 class WorkItem:
     def __new__(coro: cobj):
-        return WorkItem(coro, cobj(), 0)
+        return WorkItem(coro, None)
 
     def __new__(coro: Coroutine):
-        return WorkItem(coro.__raw__(), cobj(), 0)
+        return WorkItem(coro.__raw__(), None)
 
     def __new__(task: Task):
-        data = task.__raw__()
-        coro = task._coro
-        result_size = gc.sizeof(task.R)
-        return WorkItem(coro, data, result_size)
+        return WorkItem(task._data)
+
+    def __new__(state: _FutureState):
+        return WorkItem(state._coro, state)
 
     def __new__():
         return WorkItem(cobj())
-
-    def raw_task(self) -> Task[None]:
-        # Skip over `result` field
-        return _bitcast(self.task + self.result_size, Task[None])
 
     def cancelled(self):
         return not bool(self.coro)
@@ -243,8 +235,7 @@ class EventLoop:
         return self._call_soon(item, return_handle=True)
 
     def call_soon_threadsafe(self, callback, *args):
-        with self._lock:
-            return self.call_soon(callback, *args)
+        return self.call_soon(callback, *args)
 
     def _call_later(self, work: WorkItem, delay: float, return_handle: Literal[bool] = False):
         timer = Timer(work, self.time() + delay)
@@ -262,8 +253,7 @@ class EventLoop:
         return self.call_later(delay, callback, *args)
 
     def _handle_exception(self, exc: BaseException):
-        rtti = _bitcast(Ptr[cobj](exc.__raw__())[1], TypeInfo)
-        _stderr.write(f'{rtti.nice_name}: {exc}\n')
+        _stderr.write(f'{exc.typename}: {exc}\n')
 
     def _enqueue_timers(self, now: float):
         while self._timers_len > 0 and self._timers[0].when <= now:
@@ -305,23 +295,23 @@ class EventLoop:
             except BaseException as e:
                 exception = e
 
-            if work.task:
-                task = work.raw_task()
-                callbacks = Ptr[WorkItem]()
+            if work.task is not None:
+                task = work.task
+                callbacks = Ptr[_DoneCallback]()
                 num_callbacks = 0
 
                 with task._lock:
                     if not task.done():
                         if exception is not None:
-                                callbacks, num_callbacks = \
-                                    task._finish_with_exception(exception)
+                            callbacks, num_callbacks = \
+                                task._finish_with_exception(exception)
                         elif g.__done__():
-                                str.memcpy(work.task,
-                                           g.__promise__().as_byte(),
-                                           work.result_size)
-                                callbacks, num_callbacks = task._finish()
+                            str.memcpy(task._result,
+                                       g.__promise__().as_byte(),
+                                       task._result_size)
+                            callbacks, num_callbacks = task._finish()
 
-                task._schedule_callbacks(callbacks, num_callbacks)
+                task._schedule_callbacks(self, callbacks, num_callbacks)
             elif exception is not None:
                 self._handle_exception(exception)
 
@@ -495,90 +485,72 @@ class EventLoop:
         return task
 
 @extend
-class Future:
-    def __init__(self, loop: Optional[EventLoop] = None):
+class _FutureState:
+    def __init__(self, result: cobj, result_size: int):
+        self._result = result
+        self._result_size = result_size
         self._exception = None
         self._lock = Lock()
-        if loop is None:
-            if _running_loop is not None:
-                self._loop = _running_loop
-            else:
-                self._loop = get_event_loop()
-        else:
-            self._loop = loop
         self._cancel_msg = ''
-        self._done_callbacks = Ptr[WorkItem]()
+        self._done_callbacks = Ptr[_DoneCallback]()
         self._done_callbacks_len = 0
         self._done_callbacks_cap = 0
         self._state = _FUTURE_STATE_PENDING
-
-    def _result_size(self):
-        return gc.sizeof(R)
+        self._name = ''
+        self._coro = cobj()
+        self._task_view = cobj()
+        self._waiting_on_task = None
+        self._waiting_on_lock = cobj()
 
     def _reset_callbacks(self):
-        self._done_callbacks = Ptr[WorkItem]()
+        self._done_callbacks = Ptr[_DoneCallback]()
         self._done_callbacks_len = 0
         self._done_callbacks_cap = 0
 
-    def add_done_callback(self, callback):
-        self._add_done_callback(
-          WorkItem(_future_callback_wrapper(callback, self)))
-
-    def _add_done_callback(self, work: WorkItem, add_if_done: Literal[bool] = True):
+    def _add_done_callback(self, loop: EventLoop, work: WorkItem, add_if_done: Literal[bool] = True):
         lock = self._lock
         lock.acquire()
 
         if self.done():
             lock.release()
             if add_if_done:
-                self._loop._call_soon(work)
+                loop._call_soon(work)
             return False
 
         n = self._done_callbacks_len
         m = self._done_callbacks_cap
 
         if m == 0:
-            self._done_callbacks = Ptr[WorkItem](1)
+            self._done_callbacks = Ptr[_DoneCallback](1)
             self._done_callbacks_cap = 1
         elif n >= m:
             new_m = m * 2
-            sz = gc.sizeof(WorkItem)
-            self._done_callbacks = Ptr[WorkItem](
+            sz = gc.sizeof(_DoneCallback)
+            self._done_callbacks = Ptr[_DoneCallback](
                                      gc.realloc(
                                        self._done_callbacks.as_byte(),
                                        new_m * sz, m * sz))
             self._done_callbacks_cap = new_m
 
-        self._done_callbacks[n] = work
+        self._done_callbacks[n] = (work.coro, work.task)
         self._done_callbacks_len += 1
         lock.release()
         return True
 
-    def _schedule_callbacks(self, callbacks: Ptr[WorkItem], num_callbacks: int):
+    def _schedule_callbacks(self, loop: EventLoop, callbacks: Ptr[_DoneCallback], num_callbacks: int):
         for i in range(num_callbacks):
-            item = callbacks[i]
-            if item.task:
-                task = item.raw_task()
+            coro, state = callbacks[i]
+            item = WorkItem(coro, state)
+            if item.task is not None:
+                task = item.task
                 waiting_on_lock = task._waiting_on_lock
                 if waiting_on_lock != self._lock.p:
                     continue
                 task._waiting_on_task = None
                 task._waiting_on_lock = cobj()
-            self._loop._call_soon(item)
+            loop._call_soon(item)
         if callbacks:
             gc.free(callbacks.as_byte())
-
-    def result(self):
-        with self._lock:
-            state = self._state
-            if state == _FUTURE_STATE_CANCELLED:
-                raise CancelledError(self._cancel_msg)
-            elif state == _FUTURE_STATE_EXCEPTION:
-                raise self._exception.__val__()
-            elif state == _FUTURE_STATE_PENDING:
-                raise InvalidStateError("Result is not set.")
-            else:
-                return self._result
 
     def _finish(self):
         if self.done():
@@ -601,43 +573,8 @@ class Future:
         self._reset_callbacks()
         return callbacks, num_callbacks
 
-    def set_result(self, result: R):
-        callbacks = Ptr[WorkItem]()
-        num_callbacks = 0
-
-        with self._lock:
-            if self.done():
-                raise InvalidStateError("Invalid state")
-
-            self._result = result
-            self._state = _FUTURE_STATE_FINISHED
-
-            callbacks = self._done_callbacks
-            num_callbacks = self._done_callbacks_len
-            self._reset_callbacks()
-
-        self._schedule_callbacks(callbacks, num_callbacks)
-
-    def _set_result_if_not_done(self, result: R):
-        callbacks = Ptr[WorkItem]()
-        num_callbacks = 0
-
-        with self._lock:
-            if self.done():
-                return False
-
-            self._result = result
-            self._state = _FUTURE_STATE_FINISHED
-
-            callbacks = self._done_callbacks
-            num_callbacks = self._done_callbacks_len
-            self._reset_callbacks()
-
-        self._schedule_callbacks(callbacks, num_callbacks)
-        return True
-
-    def set_exception(self, exception: BaseException):
-        callbacks = Ptr[WorkItem]()
+    def set_exception(self, loop: EventLoop, exception: BaseException):
+        callbacks = Ptr[_DoneCallback]()
         num_callbacks = 0
 
         with self._lock:
@@ -651,10 +588,10 @@ class Future:
             num_callbacks = self._done_callbacks_len
             self._reset_callbacks()
 
-        self._schedule_callbacks(callbacks, num_callbacks)
+        self._schedule_callbacks(loop, callbacks, num_callbacks)
 
-    def _set_exception_if_not_done(self, exception: BaseException):
-        callbacks = Ptr[WorkItem]()
+    def _set_exception_if_not_done(self, loop: EventLoop, exception: BaseException):
+        callbacks = Ptr[_DoneCallback]()
         num_callbacks = 0
 
         with self._lock:
@@ -668,7 +605,7 @@ class Future:
             num_callbacks = self._done_callbacks_len
             self._reset_callbacks()
 
-        self._schedule_callbacks(callbacks, num_callbacks)
+        self._schedule_callbacks(loop, callbacks, num_callbacks)
         return True
 
     def cancelled(self):
@@ -677,8 +614,8 @@ class Future:
     def done(self):
         return self._state != _FUTURE_STATE_PENDING
 
-    def cancel(self, msg: Optional[str] = None):
-        callbacks = Ptr[WorkItem]()
+    def cancel(self, loop: EventLoop, msg: Optional[str] = None):
+        callbacks = Ptr[_DoneCallback]()
         num_callbacks = 0
 
         with self._lock:
@@ -693,11 +630,16 @@ class Future:
             num_callbacks = self._done_callbacks_len
             self._reset_callbacks()
 
-        self._schedule_callbacks(callbacks, num_callbacks)
+        self._schedule_callbacks(loop, callbacks, num_callbacks)
+        if self._coro:
+            with self._lock:
+                waiting_on_task = self._waiting_on_task
+                if waiting_on_task is not None:
+                    waiting_on_task.cancel(loop, msg)
+                self._waiting_on_task = None
+                self._waiting_on_lock = cobj()
+                loop._call_soon_no_duplicate(WorkItem(self))
         return True
-
-    def get_loop(self):
-        return self._loop
 
     def exception(self) -> Optional[BaseException]:
         with self._lock:
@@ -710,6 +652,83 @@ class Future:
                 raise InvalidStateError("Exception is not set.")
             else:
                 return None
+
+@extend
+class Future:
+    def __init__(self, loop: Optional[EventLoop] = None):
+        self._data = _FutureState(Ptr[R](1).as_byte(), gc.sizeof(R))
+        if loop is None:
+            self._loop = _running_loop if _running_loop is not None else get_event_loop()
+        else:
+            self._loop = loop
+
+    @property
+    def _result(self) -> R:
+        return Ptr[R](self._data._result)[0]
+
+    def _result_size(self):
+        return self._data._result_size
+
+    def add_done_callback(self, callback):
+        self._add_done_callback(WorkItem(_future_callback_wrapper(callback, self)))
+
+    def _add_done_callback(self, work: WorkItem, add_if_done: Literal[bool] = True):
+        return self._data._add_done_callback(self._loop, work, add_if_done)
+
+    def _schedule_callbacks(self, callbacks: Ptr[_DoneCallback], num_callbacks: int):
+        self._data._schedule_callbacks(self._loop, callbacks, num_callbacks)
+
+    def result(self) -> R:
+        data = self._data
+        with data._lock:
+            if data._state == _FUTURE_STATE_CANCELLED:
+                raise CancelledError(data._cancel_msg)
+            elif data._state == _FUTURE_STATE_EXCEPTION:
+                raise data._exception.__val__()
+            elif data._state == _FUTURE_STATE_PENDING:
+                raise InvalidStateError("Result is not set.")
+            else:
+                return self._result
+
+    def set_result(self, result: R):
+        data = self._data
+        with data._lock:
+            if data.done():
+                raise InvalidStateError("Invalid state")
+            Ptr[R](data._result)[0] = result
+            callbacks, num_callbacks = data._finish()
+        data._schedule_callbacks(self._loop, callbacks, num_callbacks)
+
+    def _set_result_if_not_done(self, result: R):
+        data = self._data
+        with data._lock:
+            if data.done():
+                return False
+            Ptr[R](data._result)[0] = result
+            callbacks, num_callbacks = data._finish()
+        data._schedule_callbacks(self._loop, callbacks, num_callbacks)
+        return True
+
+    def set_exception(self, exception: BaseException):
+        self._data.set_exception(self._loop, exception)
+
+    def _set_exception_if_not_done(self, exception: BaseException):
+        return self._data._set_exception_if_not_done(self._loop, exception)
+
+    def cancelled(self):
+        return self._data.cancelled()
+
+    def done(self):
+        return self._data.done()
+
+    def cancel(self, msg: Optional[str] = None):
+        return self._data.cancel(self._loop, msg)
+
+    def get_loop(self):
+        return self._loop
+
+    def exception(self) -> Optional[BaseException]:
+        return self._data.exception()
 
     async def __await__(self):
         return await self
@@ -729,21 +748,34 @@ class Task:
                  name: Optional[str] = None):
         super().__init__(loop)
         if name is None:
-            self._name = _default_task_name()
+            self._data._name = _default_task_name()
         else:
-            self._name = name
-        self._coro = coro.__raw__()
-        self._waiting_on_task = None
-        self._waiting_on_lock = cobj()
+            self._data._name = name
+        self._data._coro = coro.__raw__()
+        if isinstance(self, Task[None]):
+            view = Ptr[Task[None]](1)
+            view[0] = self
+            self._data._task_view = view.as_byte()
+
+    def _from_state(data: _FutureState, loop: EventLoop) -> Task[None]:
+        with data._lock:
+            if not data._task_view:
+                task = Task[None].__new__()
+                task._data = data
+                task._loop = loop
+                view = Ptr[Task[None]](1)
+                view[0] = task
+                data._task_view = view.as_byte()
+            return Ptr[Task[None]](data._task_view)[0]
 
     def get_name(self):
-        return self._name
+        return self._data._name
 
     def set_name(self, value: str):
-        self._name = value
+        self._data._name = value
 
     def get_coro(self, T: type = NoneType) -> Coroutine[T]:
-        return Coroutine[T](self._coro)
+        return Coroutine[T](self._data._coro)
 
     def add_done_callback(self, callback):
         super().add_done_callback(callback)
@@ -751,7 +783,7 @@ class Task:
     def _add_done_callback(self, work: WorkItem, add_if_done: Literal[bool] = True):
         return super()._add_done_callback(work, add_if_done)
 
-    def _schedule_callbacks(self, callbacks: Ptr[WorkItem], num_callbacks: int):
+    def _schedule_callbacks(self, callbacks: Ptr[_DoneCallback], num_callbacks: int):
         super()._schedule_callbacks(callbacks, num_callbacks)
 
     def get_loop(self):
@@ -766,25 +798,11 @@ class Task:
     def result(self):
         return super().result()
 
-    def _finish(self):
-        return super()._finish()
-
-    def _finish_with_exception(self, exception: BaseException):
-        return super()._finish_with_exception(exception)
+    def exception(self) -> Optional[BaseException]:
+        return super().exception()
 
     def cancel(self, msg: Optional[str] = None):
-        if not super().cancel(msg):
-            return False
-
-        with self._lock:
-            waiting_on_task = self._waiting_on_task
-            if waiting_on_task is not None:
-                waiting_on_task.cancel(msg)
-                self._waiting_on_task = None
-                self._waiting_on_lock = cobj()
-            self._loop._call_soon_no_duplicate(WorkItem(self))
-
-        return True
+        return super().cancel(msg)
 
     async def __await__(self):
         return await self
@@ -800,11 +818,11 @@ def _wait_on(future):
 
     added = future._add_done_callback(work_curr, add_if_done=False)
 
-    if added and work_curr.task:
-        task = work_curr.raw_task()
-        task._waiting_on_lock = future._lock.p
+    if added and work_curr.task is not None:
+        task = work_curr.task
+        task._waiting_on_lock = future._data._lock.p
         if isinstance(future, Task):
-            task._waiting_on_task = _raw_task(future)
+            task._waiting_on_task = future._data
 
     return added
 
@@ -825,7 +843,7 @@ def _resume(coro):
     g.__resume__()
 
 def _curr_task():
-    return get_running_loop()._work_curr.raw_task()
+    return get_running_loop()._work_curr.task
 
 def _is_waiting(task):
     return bool(task._waiting_on_lock)
@@ -833,8 +851,8 @@ def _is_waiting(task):
 def _cancel_checkpoint():
     loop = get_running_loop()
     work_curr = loop._work_curr
-    if work_curr is not None and work_curr.task:
-        task = work_curr.raw_task()
+    if work_curr is not None and work_curr.task is not None:
+        task = work_curr.task
         if task.cancelled():
             raise CancelledError(task._cancel_msg)
 
@@ -880,8 +898,8 @@ def ensure_future(obj, loop: Optional[EventLoop] = None):
 def current_task() -> Optional[Task[None]]:
     loop = get_running_loop()
     work_curr = loop._work_curr
-    if work_curr is not None and work_curr.task:
-        return work_curr.raw_task()
+    if work_curr is not None and work_curr.task is not None:
+        return Task[None]._from_state(unwrap(work_curr.task), loop)
     else:
         return None
 
@@ -928,11 +946,11 @@ def gather(*aws):
         def __call__(self, future):
             outer, results, my_result, remaining = self.payload
 
-            with future._lock:
-                if future._state == _FUTURE_STATE_FINISHED:
+            with future._data._lock:
+                if future._data._state == _FUTURE_STATE_FINISHED:
                     my_result[0] = future._result
-                elif future._state == _FUTURE_STATE_EXCEPTION:
-                    outer._set_exception_if_not_done(future._exception)
+                elif future._data._state == _FUTURE_STATE_EXCEPTION:
+                    outer._set_exception_if_not_done(future._data._exception)
                     return
 
             if atomic_decrement(remaining) == 1:
