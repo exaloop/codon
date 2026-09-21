@@ -574,7 +574,7 @@ def get_thunk(self: TypeVisitor, fn: ast.types.Function) -> ast.types.Function:
                         )
                     ],
                 ),
-                items=[ast.IdExpr(param.name) for param in node.items],
+                items=[ast.IdExpr(param.name) for param in node.items if param.is_value],
             )
         ),
     )

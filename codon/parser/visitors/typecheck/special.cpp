@@ -4,6 +4,7 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -160,8 +161,8 @@ FunctionStmt *TypecheckVisitor::generateThunkAST(const FuncType *fp, ClassType *
   std::vector<std::string> ns;
   for (auto &a : args)
     ns.push_back(a->realizedName());
-  auto thunkName =
-      fmt::format("_thunk.{}.{}.{}", base->name, fp->getFuncName(), join(ns, "."));
+  auto thunkName = fmt::format("_thunk.{}.{}.{}.{}", base->name, fp->getFuncName(),
+                               derived->realizedName(), join(ns, "."));
   if (getFunction(getMangledFunc("", thunkName, 0, 0, /* noCore */ true)))
     return nullptr;
 
@@ -236,40 +237,50 @@ SuiteStmt *TypecheckVisitor::generateGetThunkIDAST(types::FuncType *f) {
   baseRealization->vtable[key] =
       std::static_pointer_cast<FuncType>(fp->shared_from_this());
 
-  // Iterate through all derived classes and instantiate the corresponding thunk
-  for (const auto &[clsName, cls] : sorted_view(ctx->cache->classes)) {
-    // First check if our class descends from our base class
-    // (ignore generics for now; this is just a speed-up).
-    // TODO: use hashmap
-    bool inMro = false;
-    for (auto &m : cls.mro)
-      if (m && m->is(baseCls)) {
-        inMro = true;
-        break;
-      }
-    if (!inMro || clsName == baseCls)
-      continue;
-    for (const auto &[_, real] : sorted_view(cls.realizations)) {
-      // Now check if generics match!
-      inMro = false;
-      for (auto &mro : real->bases) // now check realizations!
-        if (mro->realizedName() == cp->realizedName()) {
+  // Realizing a thunk can add class realizations. Keep processing sorted snapshots
+  // until all newly added realizations have been visited.
+  std::set<std::pair<std::string, std::string>> processed;
+  for (bool added = true; added;) {
+    added = false;
+    for (const auto &[clsName, cls] : sorted_view(ctx->cache->classes)) {
+      // First check if our class descends from our base class
+      // (ignore generics for now; this is just a speed-up).
+      // TODO: use hashmap
+      bool inMro = false;
+      for (auto &m : cls.mro)
+        if (m && m->is(baseCls)) {
           inMro = true;
           break;
         }
-      if (!inMro)
+      if (!inMro || clsName == baseCls)
         continue;
-      if (auto thunkAst = generateThunkAST(fp, cp, real->getType())) {
-        auto thunkFn = getFunction(thunkAst->name);
-        auto ti =
-            std::static_pointer_cast<FuncType>(instantiateType(thunkFn->getType()));
-        auto tm = realizeFunc(ti.get(), true);
-        seqassert(tm, "bad thunk {}", thunkFn->type->debugString(2));
-        seqassert(!in(real->vtable, key), "thunk {}.{} already added to {}", baseCls,
-                  fnSig, real->getType()->realizedName());
-        real->vtable[key] = std::static_pointer_cast<FuncType>(tm->shared_from_this());
-        LOG_REALIZE("[thunk]: {}->{}@{} == {}", baseCls,
-                    real->getType()->realizedName(), key, vid);
+      for (const auto &[realName, real] : sorted_view(cls.realizations)) {
+        if (!processed.emplace(clsName, realName).second)
+          continue;
+        added = true;
+
+        // Now check if generics match!
+        inMro = false;
+        for (auto &mro : real->bases) // now check realizations!
+          if (mro->realizedName() == cp->realizedName()) {
+            inMro = true;
+            break;
+          }
+        if (!inMro)
+          continue;
+        if (auto thunkAst = generateThunkAST(fp, cp, real->getType())) {
+          auto thunkFn = getFunction(thunkAst->name);
+          auto ti =
+              std::static_pointer_cast<FuncType>(instantiateType(thunkFn->getType()));
+          auto tm = realizeFunc(ti.get(), true);
+          seqassert(tm, "bad thunk {}", thunkFn->type->debugString(2));
+          seqassert(!in(real->vtable, key), "thunk {}.{} already added to {}", baseCls,
+                    fnSig, real->getType()->realizedName());
+          real->vtable[key] =
+              std::static_pointer_cast<FuncType>(tm->shared_from_this());
+          LOG_REALIZE("[thunk]: {}->{}@{} == {}", baseCls,
+                      real->getType()->realizedName(), key, vid);
+        }
       }
     }
   }
@@ -747,9 +758,18 @@ Expr *TypecheckVisitor::transformIsInstance(CallExpr *expr) {
         return transform(N<BoolExpr>(true));
     }
 
-    // TODO: disallow all impossible cases that are not related to any MRO!
-    return transform(N<CallExpr>(N<IdExpr>(getMangledMethod("", "RTTIType", instCall)),
-                                 expr->begin()->getExpr(), (*expr)[1].getExpr()));
+    // Check whether the target can be a subtype of the value's static type. Besides
+    // rejecting unrelated classes, this specializes target generics through its base
+    // type (e.g. Future[int] against Task[R] binds R to int).
+    for (auto &tx : getMRO(targetType->getClass())) {
+      types::Type::Unification us;
+      if (tx->unify(typ, &us) >= 0) {
+        return transform(
+            N<CallExpr>(N<IdExpr>(getMangledMethod("", "RTTIType", instCall)),
+                        expr->begin()->getExpr(), (*expr)[1].getExpr()));
+      }
+      us.undo();
+    }
   }
 
   return transform(N<BoolExpr>(false));
@@ -1514,8 +1534,7 @@ TypecheckVisitor::populateStaticVarsLoop(Expr *iter,
       stmts.push_back(
           N<AssignStmt>(N<IdExpr>(vars[withIdx]), N<StringExpr>(fieldName),
                         N<IndexExpr>(N<IdExpr>("Literal"), N<IdExpr>("str"))));
-      stmts.push_back(
-          N<AssignStmt>(N<IdExpr>(vars[withIdx + 1]), N<IdExpr>(fieldVar)));
+      stmts.push_back(N<AssignStmt>(N<IdExpr>(vars[withIdx + 1]), N<IdExpr>(fieldVar)));
       auto b = N<SuiteStmt>(stmts);
       block.push_back(b);
       idx++;

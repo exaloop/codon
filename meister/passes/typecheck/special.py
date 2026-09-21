@@ -167,7 +167,9 @@ def generate_thunk_ast(
         )
 
     names = [arg.realized_name() for arg in arg_types]
-    thunk_name = f"_thunk.{base.name}.{function.func_name}.{'.'.join(names)}"
+    thunk_name = (
+        f"_thunk.{base.name}.{function.func_name}.{derived.realized_name()}.{'.'.join(names)}"
+    )
     if utils.get_function(ctx, ast.types.mangle(func=thunk_name, no_core=True)):
         return None
 
@@ -252,40 +254,49 @@ def generate_get_thunk_id_ast(ctx: TypeContext, function: ast.types.Function):
     virtual_id = ctx.cache.thunk_ids[key]
     base_realization.vtable[key] = fn_type
 
-    # Iterate through all derived classes and instantiate the corresponding thunk
-    for cls_name, cls_data in sorted(ctx.cache.classes.items()):
-        # First check if our class descends from our base class
-        # (ignore generics for now; this is just a speed-up).
-        # TODO: use hashmap
-        in_mro = False
-        for mro_type in cls_data.mro:
-            if mro_type and mro_type == base_class:
-                in_mro = True
-                break
-        if not in_mro or cls_name == base_class:
-            continue
-        for _, realization in sorted(cls_data.realizations.items()):
-            # Now check if generics match!
+    processed = set()
+    added = True
+    while added:
+        added = False
+        # Iterate through all derived classes and instantiate the corresponding thunk
+        for cls_name, cls_data in sorted(ctx.cache.classes.items()):
+            # First check if our class descends from our base class
+            # (ignore generics for now; this is just a speed-up).
+            # TODO: use hashmap
             in_mro = False
-            # now check realizations!
-            for mro_type in realization.bases:
-                if mro_type.realized_name() == cls_type.realized_name():
+            for mro_type in cls_data.mro:
+                if mro_type and mro_type == base_class:
                     in_mro = True
                     break
-            if not in_mro:
+            if not in_mro or cls_name == base_class:
                 continue
-            thunk_ast = generate_thunk_ast(ctx, fn_type, cls_type, realization.type)
-            if thunk_ast:
-                thunk_data = utils.get_function(ctx, thunk_ast.name)
-                assert thunk_data and thunk_data.type
-                thunk_type = utils.instantiate(ctx, thunk_data.type).require_func
-                thunk_type = infer.realize_func(ctx, thunk_type, force=True)
-                assert thunk_type is not None, f"bad thunk {thunk_data.type!r}"
-                assert key not in realization.vtable, (
-                    f"thunk {base_class}.{fn_signature} already added to "
-                    f"{realization.type.realized_name()}"
-                )
-                realization.vtable[key] = thunk_type.require_func
+            for realization_name, realization in sorted(cls_data.realizations.items()):
+                if (cls_name, realization_name) in processed:
+                    continue
+                processed.add((cls_name, realization_name))
+                added = True
+
+                # Now check if generics match!
+                in_mro = False
+                # now check realizations!
+                for mro_type in realization.bases:
+                    if mro_type.realized_name() == cls_type.realized_name():
+                        in_mro = True
+                        break
+                if not in_mro:
+                    continue
+                thunk_ast = generate_thunk_ast(ctx, fn_type, cls_type, realization.type)
+                if thunk_ast:
+                    thunk_data = utils.get_function(ctx, thunk_ast.name)
+                    assert thunk_data and thunk_data.type
+                    thunk_type = utils.instantiate(ctx, thunk_data.type).require_func
+                    thunk_type = infer.realize_func(ctx, thunk_type, force=True)
+                    assert thunk_type is not None, f"bad thunk {thunk_data.type!r}"
+                    assert key not in realization.vtable, (
+                        f"thunk {base_class}.{fn_signature} already added to "
+                        f"{realization.type.realized_name()}"
+                    )
+                    realization.vtable[key] = thunk_type.require_func
     return ast.SuiteStmt(ast.ReturnStmt(expr=ast.IntExpr(virtual_id)))
 
 
@@ -819,10 +830,10 @@ def transform_is_instance(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr | N
         )
 
     # Check RTTI super types
-    target_cls_data = utils.get_class(self.ctx, target_type)
-    value_cls_data = utils.get_class(self.ctx, obj_type)
-    assert target_cls_data and value_cls_data
-    if target_cls_data and value_cls_data and target_cls_data.rtti and value_cls_data.rtti:
+    target_data = utils.get_class(self.ctx, target_type)
+    obj_data = utils.get_class(self.ctx, obj_type)
+    assert target_data and obj_data
+    if target_data and obj_data and target_data.rtti and obj_data.rtti:
         obj_data = utils.get_class(self.ctx, obj_type)
         assert obj_data
         for base in obj_data.mro:
@@ -831,13 +842,19 @@ def transform_is_instance(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr | N
                 if mro_type | target_type:
                     return self.visit_expr(ast.BoolExpr(True))
 
-        # TODO: disallow all impossible cases that are not related to any MRO!
-        return self.visit_expr(
-            ast.CallExpr(
-                ast.IdExpr(ast.types.mangle(cls="RTTIType", func=instance_call)),
-                items=[obj_arg, type_expr],
-            )
-        )
+        # Check whether the target can be a subtype of the value's static type. Besides
+        # rejecting unrelated classes, this specializes target generics through its base
+        # type (e.g. Future[int] against Task[R] binds R to int).
+        for target_base in utils.get_mro(self.ctx, target_type):
+            undo = ast.types.Type.UnifyContext()
+            if target_base.unify(obj_type, undo) >= 0:
+                return self.visit_expr(
+                    ast.CallExpr(
+                        ast.IdExpr(ast.types.mangle(cls="RTTIType", func=instance_call)),
+                        items=[obj_arg, type_expr],
+                    )
+                )
+            undo.undo()
 
     return self.visit_expr(ast.BoolExpr(False))
 

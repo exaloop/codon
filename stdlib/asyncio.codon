@@ -777,35 +777,8 @@ class Task:
     def get_coro(self, T: type = NoneType) -> Coroutine[T]:
         return Coroutine[T](self._data._coro)
 
-    def add_done_callback(self, callback):
-        super().add_done_callback(callback)
-
-    def _add_done_callback(self, work: WorkItem, add_if_done: Literal[bool] = True):
-        return super()._add_done_callback(work, add_if_done)
-
-    def _schedule_callbacks(self, callbacks: Ptr[_DoneCallback], num_callbacks: int):
-        super()._schedule_callbacks(callbacks, num_callbacks)
-
-    def get_loop(self):
-        return super().get_loop()
-
-    def done(self):
-        return super().done()
-
-    def cancelled(self):
-        return super().cancelled()
-
     def result(self):
         return super().result()
-
-    def exception(self) -> Optional[BaseException]:
-        return super().exception()
-
-    def cancel(self, msg: Optional[str] = None):
-        return super().cancel(msg)
-
-    async def __await__(self):
-        return await self
 
 def _wait_on(future):
     loop = get_running_loop()
