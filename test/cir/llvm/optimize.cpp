@@ -1,6 +1,7 @@
 #include "test.h"
 
 #include "codon/cir/llvm/llvisitor.h"
+#include "codon/cir/llvm/native/native.h"
 #include "codon/cir/llvm/optimize.h"
 #include "codon/cir/transform/manager.h"
 #include "codon/cir/transform/numpy/numpy.h"
@@ -242,6 +243,47 @@ compare('hello', 'world', result, grid=1, block=1)
         std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
       },
       testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(LLVMOptimizationTest, PreservesLinuxArm64UnwindFramePointers) {
+  auto options = Options::getDefault("build/codon_test");
+  Compiler compiler(*options);
+  for (const auto &triple : {"aarch64-unknown-linux-gnu", "arm64-apple-darwin",
+                             "x86_64-unknown-linux-gnu"}) {
+    SCOPED_TRACE(triple);
+    llvm::LLVMContext context;
+    llvm::SMDiagnostic diagnostic;
+    auto module = llvm::parseAssemblyString(R"(
+declare void @may_throw()
+define void @caller() {
+  call void @may_throw()
+  ret void
+}
+)",
+                                            diagnostic, context);
+    ASSERT_NE(nullptr, module);
+    module->setTargetTriple(triple);
+
+    llvm::LoopAnalysisManager loops;
+    llvm::FunctionAnalysisManager functions;
+    llvm::CGSCCAnalysisManager callGraph;
+    llvm::ModuleAnalysisManager modules;
+    llvm::PassBuilder builder;
+    builder.registerModuleAnalyses(modules);
+    builder.registerCGSCCAnalyses(callGraph);
+    builder.registerFunctionAnalyses(functions);
+    builder.registerLoopAnalyses(loops);
+    builder.crossRegisterProxies(loops, functions, callGraph, modules);
+    ir::addNativeLLVMPasses(&builder);
+    auto pipeline = builder.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O1);
+    pipeline.run(*module, modules);
+
+    auto *caller = module->getFunction("caller");
+    ASSERT_NE(nullptr, caller);
+    EXPECT_EQ(llvm::StringRef(triple) == "aarch64-unknown-linux-gnu" ? "non-leaf"
+                                                                     : "none",
+              caller->getFnAttribute("frame-pointer").getValueAsString().str());
+  }
 }
 
 TEST(LLVMOptimizationTest, RemovesUnusedStandardStreamInitialization) {
