@@ -574,6 +574,28 @@ std::unique_ptr<NumPyExpr> parse(Value *v,
   if (auto *c = cast<CallInstr>(v)) {
     auto *f = util::getFunc(c->getCallee());
 
+    if (f && c->numArgs() == 4 && f->getUnmangledName() == "clip" &&
+        (isArrayType(f->getParentType()) ||
+         f->getName().rfind(ast::getMangledFunc("std.numpy.routines", "clip") + "[",
+                            0) == 0) &&
+        isNoneType(c->back()->getType(), T)) {
+      std::vector<Value *> args(c->begin(), c->end());
+      bool noMin = isNoneType(args[1]->getType(), T);
+      bool noMax = isNoneType(args[2]->getType(), T);
+      if (noMin && noMax)
+        return {};
+      auto operand = parse(args[0], leaves, T);
+      auto bound = parse(args[noMin ? 2 : 1], leaves, T);
+      auto upper = !noMin && !noMax ? parse(args[2], leaves, T) : nullptr;
+      if (!operand || !bound || (!noMin && !noMax && !upper))
+        return {};
+      auto op = noMin   ? NumPyExpr::NP_OP_CLIP_MAX
+                : noMax ? NumPyExpr::NP_OP_CLIP_MIN
+                        : NumPyExpr::NP_OP_CLIP;
+      return std::make_unique<NumPyExpr>(type, v, op, std::move(operand),
+                                         std::move(bound), std::move(upper));
+    }
+
     if (f && c->numArgs() == 3 &&
         f->getName().rfind(ast::getMangledFunc("std.numpy.routines", "where") + "[",
                            0) == 0) {
@@ -1111,8 +1133,8 @@ bool isSafeFusionLeaf(Value *value, NumPyPrimitiveTypes &types,
          });
 }
 
-// Ufunc receivers and out=None expressions are absent from the arithmetic tree,
-// but removing their calls must not discard observable argument evaluation.
+// Arguments omitted from the arithmetic tree must still preserve observable
+// evaluation, including ufunc receivers and clip's None bounds/out argument.
 bool hasUFuncArgumentEffects(NumPyExpr &expr,
                              analyze::module::SideEffectResult *sideEffects) {
   bool effects = false;
@@ -1124,6 +1146,13 @@ bool hasUFuncArgumentEffects(NumPyExpr &expr,
     if (callee && isUFuncType(callee->getParentType()))
       effects |= sideEffects->hasSideEffect(call->front()) ||
                  sideEffects->hasSideEffect(*std::prev(call->end(), 2));
+    if (call && element.isClip()) {
+      effects |= sideEffects->hasSideEffect(call->back());
+      if (element.op == NumPyExpr::NP_OP_CLIP_MIN)
+        effects |= sideEffects->hasSideEffect(*std::next(call->begin(), 2));
+      if (element.op == NumPyExpr::NP_OP_CLIP_MAX)
+        effects |= sideEffects->hasSideEffect(*std::next(call->begin()));
+    }
   });
   return effects;
 }
@@ -1210,6 +1239,9 @@ bool hasOwnedResult(const NumPyExpr &expr) {
   case NumPyExpr::NP_OP_ZEROS_LIKE:
   case NumPyExpr::NP_OP_ONES_LIKE:
   case NumPyExpr::NP_OP_WHERE:
+  case NumPyExpr::NP_OP_CLIP:
+  case NumPyExpr::NP_OP_CLIP_MIN:
+  case NumPyExpr::NP_OP_CLIP_MAX:
   case NumPyExpr::NP_OP_SUM:
   case NumPyExpr::NP_OP_MEAN:
   case NumPyExpr::NP_OP_PROD:

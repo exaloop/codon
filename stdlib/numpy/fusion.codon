@@ -17,6 +17,27 @@ def _where(condition, on_true, on_false, dtype: type):
     return util.cast(on_true, dtype) if bool(condition) else util.cast(on_false, dtype)
 
 @inline
+def _clip(value, lower, upper, dtype: type):
+    # Match clip's casts and comparison order, including NaNs and signed zero.
+    value = util.cast(value, dtype)
+    lower = util.cast(lower, dtype)
+    upper = util.cast(upper, dtype)
+    value = value if value > lower else lower
+    return upper if upper < value else value
+
+@inline
+def _clip_min(value, lower, dtype: type):
+    value = util.cast(value, dtype)
+    lower = util.cast(lower, dtype)
+    return value if value > lower else lower
+
+@inline
+def _clip_max(value, upper, dtype: type):
+    value = util.cast(value, dtype)
+    upper = util.cast(upper, dtype)
+    return upper if upper < value else value
+
+@inline
 def _zeros_like(value, dtype: type):
     return dtype(0)
 
@@ -112,6 +133,11 @@ def _where_layout(condition, on_true, on_false, dtype: type):
     shape = broadcast_shapes(condition.shape, on_true.shape, on_false.shape)
     if condition._contig_match(on_true) and condition._contig_match(on_false):
         return ndarray(shape, Ptr[dtype](), fcontig=not condition._contig[0])
+    return ndarray(shape, Ptr[dtype]())
+
+def _clip_layout(arrays, dtype: type):
+    from .routines import broadcast_shapes
+    shape = broadcast_shapes(*tuple(array.shape for array in arrays))
     return ndarray(shape, Ptr[dtype]())
 
 def _loop_alloc_layout(arrays, func, extra, layout, dtype: type):

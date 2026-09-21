@@ -2128,6 +2128,33 @@ test_dot(np.array([1, 2, 3]), np.array([3, 2, 1]), 10)
 test_dot(np.array([1.5, 2.3, 3.2]), np.array([3, 2, 1]), 12.3)
 
 @test
+def test_dot_strides(dtype: type):
+    left = np.arange(12).astype(dtype)
+    right = (np.arange(12) + 1).astype(dtype)
+    if dtype is np.complex64 or dtype is np.complex128:
+        left += 2j
+        right -= 3j
+    for first in (left, left[::-1], left[::2], left[::-2]):
+        for second in (right[:first.size], right[:first.size][::-1]):
+            expected = (first * second).sum()
+            assert np.isclose(np.dot(first, second), expected)
+            assert np.isclose(first @ second, expected)
+    repeated = np.broadcast_to(left[:1], (right.size,))
+    assert np.isclose(repeated @ right, (repeated * right).sum())
+    assert np.isclose(repeated @ right[::-1], (repeated * right[::-1]).sum())
+    assert np.dot(left[:0], right[:0]) == dtype(0)
+    assert np.dot(left[:0][::-1], right[:0]) == dtype(0)
+
+    # A one-element view tests BLAS stride overflow without a huge allocation.
+    wide = np.ndarray((1,), (left.itemsize * (0x7fffffff + 1),), left.data)
+    assert np.isclose(wide @ right[:1], left[0] * right[0])
+
+test_dot_strides(np.float32)
+test_dot_strides(np.float64)
+test_dot_strides(np.complex64)
+test_dot_strides(np.complex128)
+
+@test
 def test_dot_multidim(a, b, expected):
     assert (np.dot(a, b) == expected).all()
 

@@ -11,6 +11,7 @@
 #include <cstdlib>
 
 #include <llvm/AsmParser/Parser.h>
+#include <llvm/IR/Verifier.h>
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/FileUtilities.h>
 #include <llvm/Support/SourceMgr.h>
@@ -156,6 +157,7 @@ OptimizedModule compileAndOptimizeIR(const std::string &code) {
   options->native = false;
   options->standalone = true;
   ir::optimize(result.module.get(), options.get());
+  EXPECT_FALSE(llvm::verifyModule(*result.module, &llvm::errs()));
   return result;
 }
 
@@ -527,10 +529,11 @@ def dot_reversed(left: np.ndarray[float, 1], right: np.ndarray[float, 1]):
         };
         auto dots = countCalls("cblas_ddot");
         auto releases = countCalls("seq_free");
-        if (dots != 1 || releases != 2)
+        // Dynamic strides retain both the common and packed BLAS call sites.
+        if (dots != 2 || releases != 2)
           llvm::errs() << "Reversed dot: BLAS calls=" << dots
                        << ", scratch releases=" << releases << '\n';
-        EXPECT_EQ(1, dots);
+        EXPECT_EQ(2, dots);
         EXPECT_EQ(2, releases);
         std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
       },
@@ -878,6 +881,22 @@ def fused_clip(values: np.ndarray[float, 2]):
   return (np.clip(values, 2., 10.) * 3. + values) * 2.
 
 @export
+def fused_clip_min(values: np.ndarray[float, 2]):
+  return values.clip(min=2.) + 1.
+
+@export
+def fused_clip_max(values: np.ndarray[float, 2]):
+  return np.clip(values, None, 10.) * 2.
+
+@export
+def fused_clip_bounds(values: np.ndarray[float, 2], lower: np.ndarray[float, 1], upper: np.ndarray[float, 2]):
+  return np.clip(values + 1., lower, upper) * 2.
+
+@export
+def fused_clip_sum(values: np.ndarray[float, 2]):
+  return np.clip(values, -2., 2.).sum()
+
+@export
 def fused_scalar_coefficients(values: np.ndarray[float, 2], dx: float, dy: float):
   return (values[1:, :-1] / (2 * dx) + values[:-1, 1:] * (1 / dy)) / (2 * (dx ** 2 + dy ** 2))
 
@@ -1147,7 +1166,15 @@ def destination_reference(values: np.ndarray[float, 2]):
                        << ", expected: " << expectedMasked << '\n';
         EXPECT_EQ(expectedMasked, reachableAllocations(masked));
         ASSERT_NE(nullptr, clipped);
-        EXPECT_EQ(2, reachableAllocations(clipped));
+        EXPECT_EQ(1, reachableAllocations(clipped));
+        for (auto name : {"fused_clip_min", "fused_clip_max", "fused_clip_bounds"}) {
+          auto *clip = module->getFunction(name);
+          ASSERT_NE(nullptr, clip);
+          EXPECT_EQ(1, reachableAllocations(clip)) << name;
+        }
+        auto *clipSum = module->getFunction("fused_clip_sum");
+        ASSERT_NE(nullptr, clipSum);
+        EXPECT_EQ(0, reachableAllocations(clipSum));
         auto *where = module->getFunction("fused_where");
         ASSERT_NE(nullptr, where);
         if (reachableAllocations(where) != 1)
@@ -1674,8 +1701,11 @@ TEST(LLVMOptimizationTest, DoesNotHoistEscapingPointerThroughAggregatePhi) {
 }
 
 TEST(LLVMOptimizationTest, ResetsLazyAllocationCacheForEachOuterIteration) {
-  auto optimized = compileAndOptimizeIR(R"(
+  for (bool freed : {false, true}) {
+    SCOPED_TRACE(freed);
+    auto optimized = compileAndOptimizeIR(std::string(R"(
 declare noalias ptr @seq_alloc_atomic(i64)
+declare void @seq_free(ptr) nounwind
 declare i8 @read(ptr nocapture) nofree memory(read)
 
 define i64 @test(i64 %limit, i64 %count) {
@@ -1698,6 +1728,8 @@ allocation:
   %buffer = call ptr @seq_alloc_atomic(i64 %size)
   store i8 42, ptr %buffer
   %value = call i8 @read(ptr %buffer)
+)") + (freed ? "  call void @seq_free(ptr %buffer)\n" : "") +
+                                          R"(
   %extended = zext i8 %value to i64
   %sum = add i64 %subtotal, %extended
   br label %inner.latch
@@ -1713,25 +1745,386 @@ exit:
   ret i64 %subtotal
 }
 )");
+    ASSERT_NE(nullptr, optimized.module);
+    auto *function = optimized.module->getFunction("test");
+    ASSERT_NE(nullptr, function);
+    llvm::DominatorTree dominators(*function);
+    llvm::LoopInfo loops(dominators);
+    unsigned caches = 0;
+    for (auto &block : *function) {
+      auto *loop = loops.getLoopFor(&block);
+      if (!loop || loop->getLoopDepth() != 2 || loop->getHeader() != &block)
+        continue;
+      for (auto &phi : block.phis()) {
+        if (!phi.getType()->isPointerTy())
+          continue;
+        ++caches;
+        auto *initial = phi.getIncomingValueForBlock(loop->getLoopPreheader());
+        EXPECT_TRUE(llvm::isa<llvm::ConstantPointerNull>(initial));
+      }
+    }
+    EXPECT_EQ(1, caches);
+    unsigned releases = 0;
+    for (auto &block : *function) {
+      for (auto &instruction : block) {
+        auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+        auto *callee = call ? call->getCalledFunction() : nullptr;
+        if (callee && callee->getName() == "seq_free") {
+          // Loop unswitching may retain a free(NULL) on the zero-trip path.
+          releases += !llvm::isa<llvm::ConstantPointerNull>(call->getArgOperand(0));
+          auto *loop = loops.getLoopFor(&block);
+          ASSERT_NE(nullptr, loop);
+          EXPECT_EQ(1, loop->getLoopDepth());
+        }
+      }
+    }
+    EXPECT_EQ(freed ? 1u : 0u, releases);
+  }
+}
+
+TEST(LLVMOptimizationTest, HoistsAndReleasesFreedLoopAllocation) {
+  auto optimized = compileAndOptimizeIR(
+      makeAllocationLoopIR("declare {} @seq_free(ptr) nounwind\n"
+                           "declare i8 @read(ptr nocapture) nofree memory(read)\n",
+                           "  store i8 42, ptr %allocation\n"
+                           "  %value = call i8 @read(ptr %allocation)\n"
+                           "  call {} @seq_free(ptr %allocation)\n"));
+
   ASSERT_NE(nullptr, optimized.module);
   auto *function = optimized.module->getFunction("test");
   ASSERT_NE(nullptr, function);
   llvm::DominatorTree dominators(*function);
   llvm::LoopInfo loops(dominators);
-  unsigned caches = 0;
+  unsigned releases = 0;
   for (auto &block : *function) {
-    auto *loop = loops.getLoopFor(&block);
-    if (!loop || loop->getLoopDepth() != 2 || loop->getHeader() != &block)
-      continue;
-    for (auto &phi : block.phis()) {
-      if (!phi.getType()->isPointerTy())
-        continue;
-      ++caches;
-      auto *initial = phi.getIncomingValueForBlock(loop->getLoopPreheader());
-      EXPECT_TRUE(llvm::isa<llvm::ConstantPointerNull>(initial));
+    for (auto &instruction : block) {
+      auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+      auto *callee = call ? call->getCalledFunction() : nullptr;
+      if (callee && callee->getName() == "seq_free") {
+        ++releases;
+        EXPECT_EQ(nullptr, loops.getLoopFor(&block));
+      }
     }
   }
-  EXPECT_EQ(1, caches);
+  EXPECT_EQ(1, releases);
+  EXPECT_EQ(1, countFixedAllocations(optimized.module.get(), 65536));
+  EXPECT_TRUE(countFixedAllocations(optimized.module.get(), 65536, true) == 0 ||
+              countLazyFixedAllocationCaches(optimized.module.get(), 65536) == 1);
+}
+
+TEST(LLVMOptimizationTest, HoistsFreedAllocationWithConditionalUseAndEarlyExit) {
+  auto optimized = compileAndOptimizeIR(R"(
+declare noalias ptr @seq_alloc_atomic(i64)
+declare void @seq_free(ptr) nounwind
+declare i8 @read(ptr nocapture) nofree memory(read)
+declare void @early_exit()
+
+define i64 @test(i64 %count, i64 %stop) {
+entry:
+  br label %header
+header:
+  %index = phi i64 [ 0, %entry ], [ %next, %latch ]
+  %total = phi i64 [ 0, %entry ], [ %updated, %latch ]
+  %done = icmp eq i64 %index, %count
+  br i1 %done, label %exit, label %body
+body:
+  %parity = and i64 %index, 1
+  %allocate = icmp eq i64 %parity, 1
+  br i1 %allocate, label %allocation, label %latch
+allocation:
+  %buffer = call ptr @seq_alloc_atomic(i64 65536)
+  store i8 42, ptr %buffer
+  %value = call i8 @read(ptr %buffer)
+  call void @seq_free(ptr nonnull %buffer)
+  %extended = zext i8 %value to i64
+  %sum = add i64 %total, %extended
+  %finish = icmp eq i64 %index, %stop
+  br i1 %finish, label %early, label %latch
+latch:
+  %updated = phi i64 [ %total, %body ], [ %sum, %allocation ]
+  %next = add i64 %index, 1
+  br label %header
+early:
+  call void @early_exit()
+  ret i64 %sum
+exit:
+  ret i64 %total
+}
+)");
+  ASSERT_NE(nullptr, optimized.module);
+  auto *function = optimized.module->getFunction("test");
+  ASSERT_NE(nullptr, function);
+  llvm::DominatorTree dominators(*function);
+  llvm::LoopInfo loops(dominators);
+  unsigned releases = 0;
+  for (auto &block : *function) {
+    for (auto &instruction : block) {
+      auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+      auto *callee = call ? call->getCalledFunction() : nullptr;
+      if (callee && callee->getName() == "seq_free") {
+        ++releases;
+        EXPECT_EQ(nullptr, loops.getLoopFor(&block));
+      }
+    }
+  }
+  EXPECT_GE(releases, 1u);
+  EXPECT_EQ(1, countLazyFixedAllocationCaches(optimized.module.get(), 65536));
+}
+
+TEST(LLVMOptimizationTest, DoesNotHoistMixedOwnerFree) {
+  auto optimized = compileAndOptimizeIR(
+      makeAllocationLoopIR("declare void @seq_free(ptr) nounwind\n"
+                           "declare ptr @other()\n"
+                           "declare i1 @choose()\n"
+                           "declare i8 @read(ptr nocapture) nofree memory(read)\n",
+                           "  store i8 42, ptr %allocation\n"
+                           "  %value = call i8 @read(ptr %allocation)\n"
+                           "  %other = call ptr @other()\n"
+                           "  %choose = call i1 @choose()\n"
+                           "  %owner = select i1 %choose, ptr %allocation, ptr %other\n"
+                           "  call void @seq_free(ptr %owner)\n"));
+  ASSERT_NE(nullptr, optimized.module);
+  EXPECT_GT(countFixedAllocations(optimized.module.get(), 65536, true), 0);
+  EXPECT_EQ(0, countLazyFixedAllocationCaches(optimized.module.get(), 65536));
+}
+
+TEST(LLVMOptimizationTest, DoesNotHoistEscapingFreedAllocation) {
+  auto optimized = compileAndOptimizeIR(
+      makeAllocationLoopIR("@escaped = global ptr null\n"
+                           "declare void @seq_free(ptr) nounwind\n"
+                           "declare i8 @read(ptr nocapture) nofree memory(read)\n",
+                           "  store ptr %allocation, ptr @escaped\n"
+                           "  %value = call i8 @read(ptr %allocation)\n"
+                           "  call void @seq_free(ptr %allocation)\n"));
+  ASSERT_NE(nullptr, optimized.module);
+  EXPECT_GT(countFixedAllocations(optimized.module.get(), 65536, true), 0);
+  EXPECT_EQ(0, countLazyFixedAllocationCaches(optimized.module.get(), 65536));
+}
+
+TEST(LLVMOptimizationTest, DoesNotHoistFreeAcrossExceptionalExit) {
+  auto optimized = compileAndOptimizeIR(R"(
+declare noalias ptr @seq_alloc_atomic(i64)
+declare void @seq_free(ptr) nounwind
+declare i8 @read(ptr nocapture) nofree
+declare void @cleanup() nounwind
+declare i32 @__gxx_personality_v0(...)
+
+define i64 @test(i64 %count) personality ptr @__gxx_personality_v0 {
+entry:
+  br label %header
+header:
+  %index = phi i64 [ 0, %entry ], [ %next, %normal ]
+  %total = phi i64 [ 0, %entry ], [ %updated, %normal ]
+  %done = icmp eq i64 %index, %count
+  br i1 %done, label %exit, label %body
+body:
+  %allocation = call ptr @seq_alloc_atomic(i64 65536)
+  %value = invoke i8 @read(ptr %allocation) to label %normal unwind label %unwind
+normal:
+  call void @seq_free(ptr %allocation)
+  %extended = zext i8 %value to i64
+  %updated = add i64 %total, %extended
+  %next = add i64 %index, 1
+  br label %header
+unwind:
+  %exception = landingpad { ptr, i32 } cleanup
+  call void @cleanup()
+  resume { ptr, i32 } %exception
+exit:
+  ret i64 %total
+}
+)");
+  ASSERT_NE(nullptr, optimized.module);
+  EXPECT_GT(countFixedAllocations(optimized.module.get(), 65536, true), 0);
+  EXPECT_EQ(0, countLazyFixedAllocationCaches(optimized.module.get(), 65536));
+}
+
+TEST(LLVMOptimizationTest, ExecutesHoistedFreedLoopAllocations) {
+  ASSERT_EXIT(
+      {
+        auto compiler = compileAndOptimize(R"(
+from internal.gc import free
+
+@C
+def GC_get_total_bytes() -> int:
+  pass
+
+@noinline
+def touch(buffer: Ptr[byte], size: int, value: int):
+  for offset in range(size):
+    buffer[offset] = byte(value + offset)
+  return int(buffer[0]) + int(buffer[size - 1])
+
+@noinline
+def exercise(limit: int, count: int, stop: int, skip: bool):
+  total = 0
+  for outer in range(limit):
+    size = (outer + 1) * 4096
+    for inner in range(count):
+      if skip or inner % 2 == 0:
+        continue
+      buffer = Ptr[byte](size)
+      total += touch(buffer, size, outer + inner)
+      free(buffer.as_byte())
+      if inner == stop:
+        return total
+  return total
+
+def expected(limit: int, count: int, stop: int, skip: bool):
+  total = 0
+  for outer in range(limit):
+    for inner in range(count):
+      if skip or inner % 2 == 0:
+        continue
+      total += ((outer + inner) & 255) + ((outer + inner - 1) & 255)
+      if inner == stop:
+        return total
+  return total
+
+for count in (0, 1, 8):
+  for stop in (-1, 3):
+    for skip in (False, True):
+      assert exercise(8, count, stop, skip) == expected(8, count, stop, skip)
+
+before = GC_get_total_bytes()
+result = exercise(8, 128, -1, False)
+allocated = GC_get_total_bytes() - before
+assert result == expected(8, 128, -1, False)
+assert 0 < allocated < 1024 * 1024
+)");
+        compiler->getLLVMVisitor()->run({"allocation_free_test.codon"});
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(LLVMOptimizationTest, HoistsAllocationPassedToMetadataOnlyHelper) {
+  auto optimized = compileAndOptimizeIR(makeAllocationLoopIR(R"(
+declare i8 @observe_size(i64)
+declare i8 @read(ptr nocapture) nofree
+
+define i8 @metadata({ { ptr, i64 }, i64 } %descriptor) noinline {
+  %nested = extractvalue { { ptr, i64 }, i64 } %descriptor, 0
+  %size = extractvalue { ptr, i64 } %nested, 1
+  %result = call i8 @observe_size(i64 %size)
+  ret i8 %result
+}
+)",
+                                                             R"(
+  %descriptor = insertvalue { { ptr, i64 }, i64 } zeroinitializer, ptr %allocation, 0, 0
+  %sized = insertvalue { { ptr, i64 }, i64 } %descriptor, i64 %index, 0, 1
+  %metadata = call i8 @metadata({ { ptr, i64 }, i64 } %sized)
+  %byte = call i8 @read(ptr %allocation)
+  %value = add i8 %metadata, %byte
+)"));
+  ASSERT_NE(nullptr, optimized.module);
+  EXPECT_EQ(1, countFixedAllocations(optimized.module.get(), 65536));
+  EXPECT_TRUE(countFixedAllocations(optimized.module.get(), 65536,
+                                    /*inLoopOnly=*/true) == 0 ||
+              countLazyFixedAllocationCaches(optimized.module.get(), 65536) == 1);
+}
+
+TEST(LLVMOptimizationTest, HoistsMetadataFieldsThroughAggregateHelpers) {
+  auto optimized = compileAndOptimizeIR(makeAllocationLoopIR(R"(
+declare i8 @observe_size(i64)
+declare i8 @read(ptr nocapture) nofree
+declare void @escape_descriptor({ ptr, i64 })
+
+define i8 @metadata_leaf({ ptr, i64 } %descriptor) noinline optnone {
+  %cleared = insertvalue { ptr, i64 } %descriptor, ptr null, 0
+  call void @escape_descriptor({ ptr, i64 } %cleared)
+  %size = extractvalue { ptr, i64 } %descriptor, 1
+  %result = call i8 @observe_size(i64 %size)
+  ret i8 %result
+}
+
+define i8 @metadata({ { ptr, i64 }, i64 } %descriptor, i1 %choose) noinline optnone {
+entry:
+  %frozen = freeze { { ptr, i64 }, i64 } %descriptor
+  %selected = select i1 %choose, { { ptr, i64 }, i64 } %frozen,
+                                { { ptr, i64 }, i64 } zeroinitializer
+  br i1 %choose, label %first, label %second
+first:
+  br label %merge
+second:
+  br label %merge
+merge:
+  %merged = phi { { ptr, i64 }, i64 } [ %selected, %first ], [ %descriptor, %second ]
+  %nested = extractvalue { { ptr, i64 }, i64 } %merged, 0
+  %result = call i8 @metadata_leaf({ ptr, i64 } %nested)
+  ret i8 %result
+}
+)",
+                                                             R"(
+  %descriptor = insertvalue { { ptr, i64 }, i64 } zeroinitializer, ptr %allocation, 0, 0
+  %sized = insertvalue { { ptr, i64 }, i64 } %descriptor, i64 %index, 0, 1
+  %choose = icmp eq i64 %index, 0
+  %metadata = call i8 @metadata({ { ptr, i64 }, i64 } %sized, i1 %choose)
+  %byte = call i8 @read(ptr %allocation)
+  %value = add i8 %metadata, %byte
+)"));
+  ASSERT_NE(nullptr, optimized.module);
+  EXPECT_EQ(1, countFixedAllocations(optimized.module.get(), 65536));
+  EXPECT_TRUE(countFixedAllocations(optimized.module.get(), 65536,
+                                    /*inLoopOnly=*/true) == 0 ||
+              countLazyFixedAllocationCaches(optimized.module.get(), 65536) == 1);
+}
+
+TEST(LLVMOptimizationTest, DoesNotHoistUsedAggregateFields) {
+  const char *bodies[] = {
+      "store { ptr, i64 } %descriptor, ptr @escaped_descriptor\n",
+      "%pointer = extractvalue { ptr, i64 } %descriptor, 0\n"
+      "store ptr %pointer, ptr @escaped\n",
+      "%pointer = extractvalue { ptr, i64 } %descriptor, 0\n"
+      "call void @seq_free(ptr %pointer)\n",
+      "call void @unknown({ ptr, i64 } %descriptor)\n",
+      "%returned = call { ptr, i64 } @identity({ ptr, i64 } %descriptor)\n"
+      "call void @unknown({ ptr, i64 } %returned)\n",
+      "%indirect = load ptr, ptr @callee\n"
+      "call void %indirect({ ptr, i64 } %descriptor)\n",
+      "%again = call i1 @choose()\n"
+      "br i1 %again, label %recurse, label %capture\n"
+      "recurse:\n"
+      "%recursive = call i8 @metadata({ ptr, i64 } %descriptor)\n"
+      "ret i8 %recursive\n"
+      "capture:\n"
+      "call void @unknown({ ptr, i64 } %descriptor)\n",
+      "call void @variadic(i64 0, { ptr, i64 } %descriptor)\n",
+      "%weak = call i8 @replaceable({ ptr, i64 } %descriptor)\n",
+      "call void @bundle() [ \"unknown\"({ ptr, i64 } %descriptor) ]\n"};
+  for (auto *body : bodies) {
+    SCOPED_TRACE(body);
+    auto declarations = std::string(R"(
+@escaped = global ptr null
+@escaped_descriptor = global { ptr, i64 } zeroinitializer
+@callee = external global ptr
+declare void @seq_free(ptr)
+declare void @unknown({ ptr, i64 })
+declare void @variadic(i64, ...)
+declare void @bundle()
+declare i1 @choose()
+declare i8 @read(ptr nocapture) nofree
+define { ptr, i64 } @identity({ ptr, i64 } %descriptor) noinline optnone {
+  ret { ptr, i64 } %descriptor
+}
+define weak i8 @replaceable({ ptr, i64 } %descriptor) noinline optnone {
+  ret i8 0
+}
+define i8 @metadata({ ptr, i64 } %descriptor) noinline optnone {
+)") + body + "ret i8 1\n}\n";
+    auto optimized = compileAndOptimizeIR(makeAllocationLoopIR(declarations, R"(
+  %descriptor = insertvalue { ptr, i64 } zeroinitializer, ptr %allocation, 0
+  %sized = insertvalue { ptr, i64 } %descriptor, i64 %index, 1
+  %metadata = call i8 @metadata({ ptr, i64 } %sized)
+  %byte = call i8 @read(ptr %allocation)
+  %value = add i8 %metadata, %byte
+)"));
+    ASSERT_NE(nullptr, optimized.module);
+    EXPECT_GT(countFixedAllocations(optimized.module.get(), 65536,
+                                    /*inLoopOnly=*/true),
+              0);
+    EXPECT_EQ(0, countLazyFixedAllocationCaches(optimized.module.get(), 65536));
+  }
 }
 
 TEST(LLVMOptimizationTest, DoesNotHoistReadonlyCallWithoutNoCapture) {

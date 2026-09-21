@@ -15,6 +15,9 @@
 #include <unistd.h>
 #include <vector>
 
+#include "llvm/Support/PrettyStackTrace.h"
+#include "llvm/Support/Signals.h"
+
 #include "codon/cir/analyze/dataflow/capture.h"
 #include "codon/cir/analyze/dataflow/reaching.h"
 #include "codon/cir/util/inlining.h"
@@ -294,10 +297,15 @@ public:
                                 ir::analyze::dataflow::DominatorAnalysis::KEY});
       pm->registerPass(std::make_unique<EscapeValidator>(capKey), /*insertBefore=*/"",
                        {capKey});
-      llvm::cantFail(compiler->compile());
+      {
+        llvm::PrettyStackTraceString trace("Compiling source test");
+        llvm::cantFail(compiler->compile());
+      }
 
-      if (run)
+      if (run) {
+        llvm::PrettyStackTraceString trace("Optimizing and executing source test");
         compiler->getLLVMVisitor()->run({file});
+      }
       fflush(stdout);
     };
 
@@ -308,6 +316,11 @@ public:
 
     if (pid == 0) {
       GC_atfork_child();
+      // Keep fatal-signal diagnostics on stderr, outside the captured test output.
+      llvm::sys::PrintStackTraceOnErrorSignal(argv0, /*DisableCrashReporting=*/true);
+      llvm::EnablePrettyStackTrace();
+      auto file = getFilename(get<0>(GetParam()));
+      llvm::PrettyStackTraceString trace(file.c_str());
       dup2(out_pipe[1], STDOUT_FILENO);
       close(out_pipe[0]);
       close(out_pipe[1]);

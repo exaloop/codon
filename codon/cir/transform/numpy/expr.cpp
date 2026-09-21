@@ -138,6 +138,10 @@ bool NumPyExpr::haveVectorizedLoop() const {
 
 int64_t NumPyExpr::opcost() const {
   switch (op) {
+  case NP_OP_CLIP:
+    return 2;
+  case NP_OP_CLIP_MIN:
+  case NP_OP_CLIP_MAX:
   case NP_OP_CAST:
   case NP_OP_ZEROS_LIKE:
   case NP_OP_ONES_LIKE:
@@ -454,6 +458,9 @@ std::string NumPyExpr::opstring() const {
       {NP_OP_ZEROS_LIKE, "zeros_like"},
       {NP_OP_ONES_LIKE, "ones_like"},
       {NP_OP_WHERE, "where"},
+      {NP_OP_CLIP, "clip"},
+      {NP_OP_CLIP_MIN, "clip_min"},
+      {NP_OP_CLIP_MAX, "clip_max"},
       {NP_OP_SUM, "sum"},
       {NP_OP_MEAN, "mean"},
       {NP_OP_PROD, "prod"},
@@ -591,6 +598,8 @@ Var *NumPyExpr::codegenLayout(CodegenContext &C) {
     operands.push_back(M->Nr<VarValue>(lhs->codegenLayout(C)));
   if (rhs && rhs->type.isArray())
     operands.push_back(M->Nr<VarValue>(rhs->codegenLayout(C)));
+  if (third && third->type.isArray())
+    operands.push_back(M->Nr<VarValue>(third->codegenLayout(C)));
   Func *layoutFunc = nullptr;
   if (op == NP_OP_CAST || op == NP_OP_ZEROS_LIKE || op == NP_OP_ONES_LIKE) {
     auto *call = cast<CallInstr>(val);
@@ -603,8 +612,8 @@ Var *NumPyExpr::codegenLayout(CodegenContext &C) {
   } else {
     auto *arrays = util::makeTuple(operands);
     operands = {arrays};
-    layoutFunc =
-        M->getOrRealizeFunc("_layout", {arrays->getType()}, {baseType}, FUSION_MODULE);
+    layoutFunc = M->getOrRealizeFunc(isClip() ? "_clip_layout" : "_layout",
+                                     {arrays->getType()}, {baseType}, FUSION_MODULE);
   }
   seqassertn(layoutFunc, "fusion layout func not found for {}", opstring());
   return C.layouts[this] =
@@ -713,7 +722,7 @@ Var *NumPyExpr::codegenFusedEval(CodegenContext &C, Var *destination) {
   }
   bool needsLayout = !destination && C.layouts.count(element) != 0;
   element->apply([&](NumPyExpr &expr) {
-    if (expr.op == NP_OP_WHERE ||
+    if (expr.op == NP_OP_WHERE || expr.isClip() ||
         (expr.type.ndim > 1 && (expr.op == NP_OP_CAST || expr.op == NP_OP_ZEROS_LIKE ||
                                 expr.op == NP_OP_ONES_LIKE)))
       needsLayout = true;
@@ -808,18 +817,21 @@ Var *NumPyExpr::codegenSequentialEval(CodegenContext &C) {
   bool ltmp = lfreeable && lhs->type.dtype == type.dtype && lhs->type.ndim == type.ndim;
   bool rtmp = rfreeable && rhs->type.dtype == type.dtype && rhs->type.ndim == type.ndim;
 
-  if (op == NP_OP_WHERE) {
-    auto *thirdValue = third->codegenSequentialEval(C);
+  if (op == NP_OP_WHERE || isClip()) {
+    auto *thirdValue = third ? third->codegenSequentialEval(C) : nullptr;
     auto *call = cast<CallInstr>(val);
-    auto *result = util::makeVar(util::call(util::getFunc(call->getCallee()),
-                                            {M->Nr<VarValue>(lv), M->Nr<VarValue>(rv),
-                                             M->Nr<VarValue>(thirdValue)}),
-                                 series, func);
+    std::vector<Value *> args(call->begin(), call->end());
+    args[0] = M->Nr<VarValue>(lv);
+    args[op == NP_OP_CLIP_MAX ? 2 : 1] = M->Nr<VarValue>(rv);
+    if (thirdValue)
+      args[2] = M->Nr<VarValue>(thirdValue);
+    auto *result =
+        util::makeVar(util::call(util::getFunc(call->getCallee()), args), series, func);
     if (lfreeable)
       series->push_back(freeArray(lv));
     if (rfreeable)
       series->push_back(freeArray(rv));
-    if (third->type.isArray() && (third->ownedLastUse || !third->isLeaf()))
+    if (third && third->type.isArray() && (third->ownedLastUse || !third->isLeaf()))
       series->push_back(freeArray(thirdValue));
     return result;
   }
@@ -1176,13 +1188,18 @@ Value *NumPyExpr::codegenScalarExpr(
   Value *rv = rhs ? rhs->codegenScalarExpr(C, args, scalarMap, scalars) : nullptr;
   auto name = "_" + opstring();
 
-  if (op == NP_OP_WHERE) {
-    auto *thirdValue = third->codegenScalarExpr(C, args, scalarMap, scalars);
-    auto *select =
-        M->getOrRealizeFunc(name, {lv->getType(), rv->getType(), thirdValue->getType()},
-                            {type.getIRBaseType(T)}, FUSION_MODULE);
-    seqassertn(select, "where scalar func not found");
-    return util::call(select, {lv, rv, thirdValue});
+  if (op == NP_OP_WHERE || isClip()) {
+    std::vector<Value *> operands = {lv, rv};
+    std::vector<Type *> operandTypes = {lv->getType(), rv->getType()};
+    if (third) {
+      auto *thirdValue = third->codegenScalarExpr(C, args, scalarMap, scalars);
+      operands.push_back(thirdValue);
+      operandTypes.push_back(thirdValue->getType());
+    }
+    auto *scalar =
+        M->getOrRealizeFunc(name, operandTypes, {type.getIRBaseType(T)}, FUSION_MODULE);
+    seqassertn(scalar, "scalar func not found for {}", opstring());
+    return util::call(scalar, operands);
   }
 
   if (lv && rv) {

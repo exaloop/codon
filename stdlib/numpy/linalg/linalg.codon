@@ -2466,6 +2466,19 @@ def _blas_stride(stride: int, itemsize: int):
             return stride
     return 0
 
+@inline
+def _dot_blas(ip1: Ptr[T1], ib1: int, ip2: Ptr[T2], ib2: int, op: Ptr[T3], n: int,
+              T1: type, T2: type, T3: type):
+    args = (fint(n), ip1.as_byte(), fint(ib1), ip2.as_byte(), fint(ib2))
+    if T1 is float:
+        op[0] = cblas_ddot(*args)
+    elif T1 is float32:
+        op[0] = cblas_sdot(*args)
+    elif T1 is complex:
+        cblas_zdotu_sub(*args, op)
+    elif T1 is complex64:
+        cblas_cdotu_sub(*args, op)
+
 def _dot(ip1: Ptr[T1], is1: int, ip2: Ptr[T2], is2: int, op: Ptr[T3], n: int,
          T1: type, T2: type, T3: type):
     if not ((T1 is float and T2 is float and T3 is float) or
@@ -2479,6 +2492,17 @@ def _dot(ip1: Ptr[T1], is1: int, ip2: Ptr[T2], is2: int, op: Ptr[T3], n: int,
         op[0] = zero(T3)
         return
 
+    ib1 = _blas_stride(is1, sizeof(T1))
+    ib2 = _blas_stride(is2, sizeof(T2))
+    # Keep packing and scalar fallbacks out of the common call chain so matmul can inline
+    # into its caller and specialize the positive strides and shape checks.
+    if n > _CBLAS_INT_MAX or ib1 == 0 or ib2 == 0:
+        _dot_strided(ip1, is1, ip2, is2, op, n)
+    else:
+        _dot_blas(ip1, ib1, ip2, ib2, op, n)
+
+def _dot_strided(ip1: Ptr[T1], is1: int, ip2: Ptr[T2], is2: int, op: Ptr[T3], n: int,
+                 T1: type, T2: type, T3: type):
     ib1 = _blas_stride(is1, sizeof(T1))
     ib2 = _blas_stride(is2, sizeof(T2))
     if (n > _CBLAS_INT_MAX or (ib1 == 0 and is1 >= 0) or
@@ -2503,15 +2527,7 @@ def _dot(ip1: Ptr[T1], is1: int, ip2: Ptr[T2], is2: int, op: Ptr[T3], n: int,
         ip2 = packed2
         ib2 = 1
 
-    args = (fint(n), ip1.as_byte(), fint(ib1), ip2.as_byte(), fint(ib2))
-    if T1 is float:
-        op[0] = cblas_ddot(*args)
-    elif T1 is float32:
-        op[0] = cblas_sdot(*args)
-    elif T1 is complex:
-        cblas_zdotu_sub(*args, op)
-    elif T1 is complex64:
-        cblas_cdotu_sub(*args, op)
+    _dot_blas(ip1, ib1, ip2, ib2, op, n)
 
     if is1 < 0:
         free(ip1)

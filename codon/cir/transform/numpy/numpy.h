@@ -252,6 +252,9 @@ struct NumPyExpr {
     NP_OP_ZEROS_LIKE,
     NP_OP_ONES_LIKE,
     NP_OP_WHERE,
+    NP_OP_CLIP,
+    NP_OP_CLIP_MIN,
+    NP_OP_CLIP_MAX,
     NP_OP_SUM,
     NP_OP_MEAN,
     NP_OP_PROD,
@@ -297,6 +300,9 @@ struct NumPyExpr {
   std::string str() const;
 
   bool isLeaf() const { return !lhs && !rhs && !third; }
+  bool isClip() const {
+    return op == NP_OP_CLIP || op == NP_OP_CLIP_MIN || op == NP_OP_CLIP_MAX;
+  }
   bool isReduction() const {
     return op == NP_OP_SUM || op == NP_OP_MEAN || op == NP_OP_PROD || op == NP_OP_ANY ||
            op == NP_OP_ALL || op == NP_OP_AMIN || op == NP_OP_AMAX;
