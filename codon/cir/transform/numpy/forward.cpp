@@ -74,37 +74,25 @@ struct GetAllUses : public util::Operator {
   }
 };
 
-bool canForwardExpressionAlongPath(
+bool canForwardExpressionInBlock(
     Value *source, Value *destination, std::unordered_set<id_t> &vids,
-    const std::unordered_map<id_t, NumPyExpr *> &parsedValues, SE *se,
-    const std::vector<CFBlock *> &path) {
-  if (path.empty())
-    return false;
-
-  bool go = false;
-  for (auto *block : path) {
-    for (const auto *value : *block) {
-      // Skip things before 'source' in first block
-      if (!go && block == path.front() && value == source) {
-        go = true;
-        continue;
-      }
-
-      // Skip things after 'destination' in last block
-      if (go && block == path.back() && value == destination) {
-        return true;
-      }
-
-      if (!go)
-        continue;
-
-      OkToForwardPast check(vids, parsedValues, se);
-      const_cast<Value *>(value)->accept(check);
-      if (!check.ok)
-        return false;
+    const std::unordered_map<id_t, NumPyExpr *> &parsedValues, SE *se, CFBlock *block) {
+  bool go = source == nullptr;
+  for (const auto *value : *block) {
+    if (!go) {
+      go = value == source;
+      continue;
     }
+
+    if (value == destination)
+      return true;
+
+    OkToForwardPast check(vids, parsedValues, se);
+    const_cast<Value *>(value)->accept(check);
+    if (!check.ok)
+      return false;
   }
-  return false;
+  return go && destination == nullptr;
 }
 
 bool canForwardExpression(NumPyOptimizationUnit *expr, Value *target,
@@ -147,38 +135,45 @@ bool canForwardExpression(NumPyOptimizationUnit *expr, Value *target,
       pending.insert(pending.end(), curr->successors_begin(), curr->successors_end());
   }
 
-  bool ok = true;
-  bool reached = false;
-
   // Every path must reach the consumer, or forwarding could suppress an eager
   // shape error. Also reject cycles and intervening writes/effects.
-  std::function<void(CFBlock *, std::vector<CFBlock *> &)> dfs =
-      [&](CFBlock *curr, std::vector<CFBlock *> &path) {
-        if (!ok)
-          return;
-        path.push_back(curr);
-        if (curr == end) {
-          reached = true;
-          if (!canForwardExpressionAlongPath(source, target, vids, parsedValues, se,
-                                             path))
-            ok = false;
-        } else {
-          if (curr->successors_begin() == curr->successors_end())
-            ok = false;
-          for (auto it = curr->successors_begin(); it != curr->successors_end(); ++it) {
-            if (std::find(path.begin(), path.end(), *it) != path.end()) {
-              ok = false;
-              break;
-            }
-            dfs(*it, path);
-          }
-        }
-        path.pop_back();
-      };
+  std::vector<CFBlock *> blocks = {start};
+  std::unordered_map<CFBlock *, size_t> incoming = {{start, 0}};
+  for (size_t index = 0; index < blocks.size(); ++index) {
+    auto *block = blocks[index];
+    if (!canForwardExpressionInBlock(block == start ? source : nullptr,
+                                     block == end ? target : nullptr, vids,
+                                     parsedValues, se, block))
+      return false;
+    if (block == end)
+      continue;
+    if (block->successors_begin() == block->successors_end())
+      return false;
+    for (auto successor = block->successors_begin();
+         successor != block->successors_end(); ++successor) {
+      auto inserted = incoming.emplace(*successor, 0);
+      ++inserted.first->second;
+      if (inserted.second)
+        blocks.push_back(*successor);
+    }
+  }
+  if (!incoming.count(end))
+    return false;
 
-  std::vector<CFBlock *> path;
-  dfs(start, path);
-  return ok && reached;
+  std::vector<CFBlock *> ready;
+  for (auto &entry : incoming)
+    if (entry.second == 0)
+      ready.push_back(entry.first);
+  for (size_t index = 0; index < ready.size(); ++index) {
+    auto *block = ready[index];
+    if (block == end)
+      continue;
+    for (auto successor = block->successors_begin();
+         successor != block->successors_end(); ++successor)
+      if (--incoming[*successor] == 0)
+        ready.push_back(*successor);
+  }
+  return ready.size() == blocks.size();
 }
 
 bool canForwardVariable(AssignInstr *assign, Value *destination, BodiedFunc *func,
@@ -483,8 +478,16 @@ getForwardingDAGs(BodiedFunc *func, RD *rd, CFG *cfg, SE *se,
   for (auto &component : dags) {
     auto *root = getForwardingRoot(component);
     auto *block = cfg->getBlock(root->value);
+    std::unordered_map<Var *, unsigned> leafOccurrences;
+    for (auto &entry : component) {
+      entry.first->expr->apply([&](NumPyExpr &element) {
+        if (auto *variable = element.isLeaf() ? cast<VarValue>(element.val) : nullptr)
+          ++leafOccurrences[variable->getVar()];
+      });
+    }
     for (auto &source : exprs) {
       if (!block || !source.assign || component.count(&source) ||
+          leafOccurrences[source.assign->getLhs()] != 1 ||
           !hasOwnedResult(*source.expr) || source.assign->getLhs()->isGlobal() ||
           cfg->getBlock(source.assign) != block)
         continue;

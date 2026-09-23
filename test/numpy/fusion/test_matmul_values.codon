@@ -145,4 +145,36 @@ def test_matmul_add_values():
     assert np.array_equal(matmul_add(integer, integer, integer),
                           matmul_add_reference(integer, integer, integer))
 
+def check_syrk_add_dtype(dtype: type, mode: Literal[int]):
+    from numpy.fusion import _matmul_add
+
+    matrix = np.arange(24, dtype=dtype).reshape(4, 6) * dtype(0.125)
+    for left in (matrix, matrix.copy(order='F'), matrix.T, matrix[::2, :],
+                 matrix[:, ::2], matrix[:, ::-1]):
+        rows = left.shape[0]
+        bias = np.arange(rows * rows, dtype=dtype).reshape(rows, rows)
+        original = left.copy()
+        for addend in (bias, bias.copy(order='F'), bias[:1, :], bias[:, :1],
+                       bias[::-1, ::-1]):
+            snapshot = addend.copy()
+            expected = matmul_add_reference(left, left.T, addend, mode)
+            result = matmul_add_transposed(left, addend, mode)
+            assert np.array_equal(result, expected)
+            assert result.data != addend.data
+            for order in ('C', 'F'):
+                output = np.empty((rows, rows), dtype=dtype, order=order)
+                output[:] = addend
+                result = _matmul_add(left, left.T, output, output, mode=mode)
+                assert result.data == output.data
+                assert np.array_equal(result, expected)
+            assert np.array_equal(addend, snapshot)
+            assert np.array_equal(left, original)
+
+@test
+def test_syrk_add_values():
+    for mode in static.range(4):
+        check_syrk_add_dtype(np.float32, mode)
+        check_syrk_add_dtype(np.float64, mode)
+
 test_matmul_add_values()
+test_syrk_add_values()

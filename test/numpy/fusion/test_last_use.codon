@@ -2,6 +2,60 @@ import numpy as np
 
 from helpers import check_axis_result, materialize
 
+def last_use_square(values):
+    return values * values
+
+def last_use_nested_square(values):
+    return last_use_square(values)
+
+def last_use_deep_square(values):
+    return last_use_nested_square(values)
+
+@noinline
+def last_use_reduced_square(values, mode: Literal[int]):
+    reduced = values.sum(axis=0)
+    if mode == 0:
+        return last_use_nested_square(reduced)
+    elif mode == 1:
+        return last_use_deep_square(reduced)
+    else:
+        return last_use_nested_square(reduced) + 1
+
+@noinline
+def last_use_read_square(values):
+    temporary = values + 1
+    total = temporary.sum()
+    return last_use_nested_square(temporary), total
+
+@noinline
+def last_use_overwrite(count, dtype: type):
+    return np.full(count, -12345., dtype=dtype)
+
+def check_live_square(result, count, expected):
+    replacement = last_use_overwrite(count, result.dtype)
+    if count:
+        assert result.data != replacement.data
+    assert np.all(result == expected)
+    assert np.all(replacement == -12345.)
+
+def check_nested_last_use(dtype: type):
+    for count in (0, 1, 16, 64, 128, 1024):
+        values = np.ones((3, count), dtype=dtype)
+        check_live_square(last_use_reduced_square(values, 0), count, 9.)
+        check_live_square(last_use_reduced_square(values, 1), count, 9.)
+        check_live_square(last_use_reduced_square(values, 2), count, 10.)
+        assert np.all(values == 1.)
+        values = np.ones(count, dtype=dtype)
+        result, total = last_use_read_square(values)
+        check_live_square(result, count, 4.)
+        assert total == 2 * count
+        assert np.all(values == 1.)
+
+@test
+def test_nested_last_use():
+    check_nested_last_use(np.float32)
+    check_nested_last_use(np.float64)
+
 @noinline
 def last_use_normalize(values, axis, keepdims: Literal[bool]):
     temporary = np.exp(values)
@@ -178,5 +232,6 @@ def test_last_use_normalization():
     check_axis_result(result, exponential /
                       materialize(exponential.sum(axis=1, dtype=np.float64, keepdims=True)))
 
+test_nested_last_use()
 test_last_use_mutation()
 test_last_use_normalization()

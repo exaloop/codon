@@ -700,10 +700,16 @@ Var *NumPyExpr::codegenFusedEval(CodegenContext &C, Var *destination) {
         util::call(ptrsetFunc, {M->Nr<VarValue>(scalarFuncArgVars[0]), scalarExpr})));
   }
 
+  Value *scalarCallback = M->Nr<VarValue>(scalarFunc);
+  if (isReduction()) {
+    auto *wrapper = M->getOrRealizeFunc("_reduction_function", {scalarFunc->getType()},
+                                        {int64_t(scalarFunc->getId())}, FUSION_MODULE);
+    seqassertn(wrapper, "reduction callback wrapper not found");
+    scalarCallback = util::call(wrapper, {scalarCallback});
+  }
   auto *arraysTuple = util::makeTuple(arrays);
-  std::vector<Value *> loopArgs = {arraysTuple, M->Nr<VarValue>(scalarFunc),
-                                   extraTuple};
-  std::vector<Type *> loopTypes = {arraysTuple->getType(), scalarFunc->getType(),
+  std::vector<Value *> loopArgs = {arraysTuple, scalarCallback, extraTuple};
+  std::vector<Type *> loopTypes = {arraysTuple->getType(), scalarCallback->getType(),
                                    extraTuple->getType()};
   std::vector<Generic> loopGenerics = {baseType};
   if (isReduction()) {

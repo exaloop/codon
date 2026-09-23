@@ -143,6 +143,36 @@ def test_short_circuit_reduction_loop():
     assert not _loop_reduce((strided[:0],), counted, __ptr__(calls), (), int, bool, 'any')
     assert calls == 0
 
+@noinline
+def multiple_fused_sums(left, right, coefficient):
+    return ((left * right).sum(), (left + right).sum(),
+            (left + coefficient).sum(), (left * coefficient).sum(),
+            (left - right).mean())
+
+def check_multiple_fused_sums(dtype: type):
+    for size in (0, 1, 63, 64, 65, 127, 128, 129, 513):
+        left = np.arange(size, dtype=dtype)
+        right = np.ones(size, dtype=dtype) * dtype(3)
+        for first, second in ((left, right), (left[::-2], right[::-2])):
+            for coefficient in (dtype(0.5), dtype(-2)):
+                got = multiple_fused_sums(first, second, coefficient)
+                assert got[0] == materialize(first * second).sum()
+                assert got[1] == materialize(first + second).sum()
+                assert got[2] == materialize(first + coefficient).sum()
+                assert got[3] == materialize(first * coefficient).sum()
+                if first.size:
+                    assert got[4] == materialize(first - second).mean()
+                else:
+                    assert np.isnan(got[4])
+
+@test
+def test_multiple_fused_sums():
+    check_multiple_fused_sums(np.float32)
+    check_multiple_fused_sums(np.float64)
+    check_multiple_fused_sums(np.complex64)
+    check_multiple_fused_sums(np.complex128)
+
 test_fused_reductions()
 test_multidimensional_reductions()
 test_short_circuit_reduction_loop()
+test_multiple_fused_sums()

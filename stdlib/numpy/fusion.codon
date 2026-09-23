@@ -87,6 +87,20 @@ def _contig_match(arrs):
 def _ptrset(p: Ptr[T], x: T, T: type):
     p[0] = x
 
+@tuple
+class _ReductionFunction:
+    func: F
+    identity: Literal[int]
+    F: type
+
+    @inline
+    def __call__(self, *args):
+        return self.func(*args)
+
+@inline
+def _reduction_function(func, identity: Literal[int]):
+    return _ReductionFunction[identity, type(func)](func)
+
 @inline
 def _loop_alloc(arrays, func, extra, dtype: type):
     return ndarray._loop(arrays, func, alloc=Tuple[dtype], extra=extra)[0]
@@ -624,7 +638,9 @@ def _matmul_add(left, right, bias, output=None, mode: Literal[int] = 0):
                 rows <= BLAS_MAXSIZE and inner <= BLAS_MAXSIZE and
                 columns <= BLAS_MAXSIZE and left_ok and right_ok)
     if right.ndim == 2:
-        eligible = eligible and columns > 1
+        eligible = (eligible and columns > 1 and not (
+            left.data == right.data and rows == columns and
+            left.strides == right.strides[::-1]))
     if output is None and bias.ndim == 2:
         bias_c, bias_f = bias._contig
         eligible = eligible and (bias_c or not bias_f)
