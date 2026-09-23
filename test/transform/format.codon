@@ -1,0 +1,194 @@
+@test
+def test_compound_formatting():
+    assert "abc{:04d}xyz".format(42) == "abc0042xyz"
+    assert "{1}:{0}:{1}".format("left", "right") == "right:left:right"
+    assert "{{{0}}} = {1:+06d} = {2:.2f}".format("x", 42, 1.25) == (
+        "{x} = +00042 = 1.25"
+    )
+    assert "{:*^7}|{:.3}".format("x", "abcdef") == "***x***|abc"
+    assert "{:é^5}".format("x") == "ééxéé"
+    assert "π:{:😀^5}:Ω".format("é") == "π:😀😀é😀😀:Ω"
+    assert "{{{}}}".format("inside") == "{inside}"
+
+
+class CompoundValue:
+    name: str
+    values: List[int]
+    mapping: Dict[str, str]
+
+    def __init__(self):
+        self.name = "box"
+        self.values = [3, 7]
+        self.mapping = {"key": "value"}
+
+
+@test
+def test_compound_fields():
+    value = CompoundValue()
+    assert "{0.name}:{0.values[1]:04d}:{0.mapping[key]}".format(value) == (
+        "box:0007:value"
+    )
+    assert "{[1]}:{[key]}".format(["zero", "one"], {"key": "mapped"}) == (
+        "one:mapped"
+    )
+    assert "{0[1]}:{0[2]}".format(("zero", "one", "two")) == "one:two"
+    assert "{0[1]}".format("abc") == "b"
+    assert "{.name}".format(value) == "box"
+
+
+@test
+def test_argument_evaluation():
+    events = List[str]()
+
+    def mark(value: str) -> str:
+        events.append(value)
+        return value
+
+    assert "{1}:{0}:{1}".format(mark("first"), mark("second")) == (
+        "second:first:second"
+    )
+    assert events == ["first", "second"]
+
+    events.clear()
+    assert "{}".format(mark("used"), mark("unused")) == "used"
+    assert events == ["used", "unused"]
+
+
+class IndexedValue:
+    calls: List[int]
+
+    def __init__(self):
+        self.calls = []
+
+    def __getitem__(self, index: int) -> int:
+        self.calls.append(index)
+        if index == 1:
+            raise ValueError("stop")
+        return index + 10
+
+
+@test
+def test_field_evaluation():
+    value = IndexedValue()
+    assert "{0[0]}:{0[2]}:{0[0]}".format(value) == "10:12:10"
+    assert value.calls == [0, 2, 0]
+
+    value.calls.clear()
+    failed = False
+    try:
+        "{0[0]}:{0[1]}:{0[2]}".format(value)
+    except ValueError:
+        failed = True
+    assert failed
+    assert value.calls == [0, 1]
+
+
+class Formattable:
+    value: str
+
+    def __init__(self, value: str):
+        self.value = value
+
+    def __format__(self, spec: str) -> str:
+        return str.cat(self.value, ":", spec)
+
+
+class ProtocolValue:
+    calls: List[str]
+
+    def __init__(self):
+        self.calls = []
+
+    def __str__(self) -> str:
+        self.calls.append("str")
+        return "STR"
+
+    def __repr__(self) -> str:
+        self.calls.append("repr")
+        return "REPR"
+
+    def __format__(self, spec: str) -> str:
+        self.calls.append(str.cat("format:", spec))
+        return str.cat("FMT[", spec, "]")
+
+
+@test
+def test_fallbacks():
+    assert "<{:tag}>".format(Formattable("value")) == "<value:tag>"
+
+    value = ProtocolValue()
+    assert f"{value}" == "FMT[]"
+    assert f"{value:custom}" == "FMT[custom]"
+    assert f"{value!s}" == "STR"
+    assert f"{value!r}" == "REPR"
+    assert value.calls == ["format:", "format:custom", "str", "repr"]
+
+    dynamic = "{:04d}"
+    assert dynamic.format(7) == "0007"
+
+    assert "{0:{1}}".format(7, "04d") == "0007"
+
+    failed = False
+    try:
+        "{".format(1)
+    except ValueError:
+        failed = True
+    assert failed
+
+
+@test
+def test_union_formatting():
+    value: Union[int, str] = 42
+    assert value.__format__("#x") == "0x2a"
+    assert "{}".format(value) == "42"
+    assert "{:04d}".format(value) == "0042"
+    assert f"{value:+06d}" == "+00042"
+
+    dynamic = "{:*^6}"
+    if True:
+        value = "xy"
+    assert value.__format__("*^6") == "**xy**"
+    assert dynamic.format(value) == "**xy**"
+    assert "{!s:>5}".format(value) == "   xy"
+    assert "{!r:>6}".format(value) == "  'xy'"
+
+    if True:
+        value = "café"
+    assert "{!a}".format(value) == "'caf\\xe9'"
+
+    custom: Union[Formattable, int] = Formattable("union")
+    assert "<{:tag}>".format(custom) == "<union:tag>"
+
+
+@test
+def test_scalar_formatting():
+    assert (42).__format__("+06d") == "+00042"
+    assert (1.25).__format__("08.2f") == "00001.25"
+    assert "x".__format__("*^5") == "**x**"
+    assert "{!a}".format("café") == "'caf\\xe9'"
+    assert "{:+z.1f}".format(-0.0) == "+0.0"
+
+    assert "{:}".format(i16(-32768)) == "-32768"
+    assert "{:}".format(u16(65535)) == "65535"
+    assert "{:}".format(UInt[64]("18446744073709551615")) == (
+        "18446744073709551615"
+    )
+    u128_hex = "{:#x}".format(
+        UInt[128]("340282366920938463463374607431768211455")
+    )
+    assert u128_hex == "0xffffffffffffffffffffffffffffffff"
+    assert "{:#b}".format(UInt[128]("340282366920938463463374607431768211455")) == (
+        "0b" + "1" * 128
+    )
+    assert "{:}".format(
+        Int[128]("-170141183460469231731687303715884105728")
+    ) == "-170141183460469231731687303715884105728"
+
+
+test_compound_formatting()
+test_compound_fields()
+test_argument_evaluation()
+test_field_evaluation()
+test_fallbacks()
+test_union_formatting()
+test_scalar_formatting()

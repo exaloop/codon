@@ -262,11 +262,14 @@ public:
       bool pyNumerics = get<6>(GetParam());
       bool run = get<7>(GetParam());
 
-      auto compiler = std::make_unique<Compiler>(
-          argv0, debug, /*disabledPasses=*/std::vector<std::string>{}, /*isTest=*/true,
-          pyNumerics);
+      auto options = Options::getDefault(argv0);
+      options->test = true;
+      options->standalone = true;
+      options->debug = debug;
+      options->pynum = pyNumerics;
+
+      auto compiler = std::make_unique<Compiler>(*options);
       // make sure we abort() on runtime error
-      compiler->getLLVMVisitor()->setStandalone(true);
       llvm::handleAllErrors(code.empty()
                                 ? compiler->parseFile(file, testFlags)
                                 : compiler->parseCode(file, code, startLine, testFlags),
@@ -354,7 +357,9 @@ TEST_P(SeqTest, Run) {
     status = runInChildProcess();
   if (!WIFEXITED(status))
     std::cerr << result() << std::endl;
-  ASSERT_TRUE(WIFEXITED(status));
+  ASSERT_TRUE(WIFEXITED(status))
+      << "child wait status: " << status
+      << ", signal: " << (WIFSIGNALED(status) ? WTERMSIG(status) : 0);
 
   string output = result();
 
@@ -443,6 +448,7 @@ INSTANTIATE_TEST_SUITE_P(
       testing::Values(
         "core/helloworld.codon",
         "core/arithmetic.codon",
+        "core/numerics.codon",
         "core/parser.codon",
         "core/generics.codon",
         "core/generators.codon",
@@ -463,16 +469,39 @@ INSTANTIATE_TEST_SUITE_P(
       testing::Values(""),
       testing::Values(0),
       testing::Values(false),
-      testing::Values(false),
+      testing::Values(true),
       testing::Values(true)
     ),
     getTestNameFromParam);
 
 INSTANTIATE_TEST_SUITE_P(
-    NumericsTests, SeqTest,
+    StdlibTests, SeqTest,
     testing::Combine(
       testing::Values(
-        "core/numerics.codon"
+        "stdlib/llvm_test.codon",
+        "stdlib/str_test.codon",
+        "stdlib/bytearray_test.codon",
+        "stdlib/re_test.codon",
+        "stdlib/math_test.codon",
+        "stdlib/cmath_test.codon",
+        "stdlib/datetime_test.codon",
+        "stdlib/itertools_test.codon",
+        "stdlib/json_test.codon",
+        "stdlib/bisect_test.codon",
+        "stdlib/random_test.codon",
+        "stdlib/statistics_test.codon",
+        "stdlib/sort_test.codon",
+        "stdlib/heapq_test.codon",
+        "stdlib/operator_test.codon",
+        "stdlib/asyncio_test.codon",
+        "stdlib/io_test.codon",
+        "stdlib/sys_test.codon",
+        "stdlib/os_test.codon",
+        "stdlib/pathlib_test.codon",
+        "stdlib/ntpath_test.codon",
+        "stdlib/win32_os_test.codon",
+        "stdlib/unicode_test.codon",
+        "python/pybridge.codon"
       ),
       testing::Values(true, false),
       testing::Values(""),
@@ -485,24 +514,11 @@ INSTANTIATE_TEST_SUITE_P(
     getTestNameFromParam);
 
 INSTANTIATE_TEST_SUITE_P(
-    StdlibTests, SeqTest,
+    CNumericsTests, SeqTest,
     testing::Combine(
       testing::Values(
-        "stdlib/llvm_test.codon",
-        "stdlib/str_test.codon",
-        "stdlib/re_test.codon",
-        "stdlib/math_test.codon",
-        "stdlib/cmath_test.codon",
-        "stdlib/datetime_test.codon",
-        "stdlib/itertools_test.codon",
-        "stdlib/bisect_test.codon",
-        "stdlib/random_test.codon",
-        "stdlib/statistics_test.codon",
-        "stdlib/sort_test.codon",
-        "stdlib/heapq_test.codon",
-        "stdlib/operator_test.codon",
-        "stdlib/asyncio_test.codon",
-        "python/pybridge.codon"
+        "core/numerics.codon",
+        "stdlib/math_test.codon"
       ),
       testing::Values(true, false),
       testing::Values(""),
@@ -523,6 +539,7 @@ INSTANTIATE_TEST_SUITE_P(
             "transform/escapes.codon",
             "transform/folding.codon",
             "transform/for_lowering.codon",
+            "transform/format.codon",
             "transform/io_opt.codon",
             "transform/inlining.codon",
             "transform/list_opt.codon",
@@ -535,7 +552,7 @@ INSTANTIATE_TEST_SUITE_P(
         testing::Values(""),
         testing::Values(0),
         testing::Values(false),
-        testing::Values(false),
+        testing::Values(true),
         testing::Values(true)
     ),
     getTestNameFromParam);
@@ -551,7 +568,7 @@ INSTANTIATE_TEST_SUITE_P(
         testing::Values(""),
         testing::Values(0),
         testing::Values(false),
-        testing::Values(false),
+        testing::Values(true),
         testing::Values(false)  // do not run by default, just compile
     ),
     getTestNameFromParam);
@@ -590,7 +607,7 @@ INSTANTIATE_TEST_SUITE_P(
         testing::Values(""),
         testing::Values(0),
         testing::Values(false),
-        testing::Values(false),
+        testing::Values(true),
         testing::Values(true)
     ),
     getTestNameFromParam);

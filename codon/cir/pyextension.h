@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "codon/cir/func.h"
-#include "codon/cir/types/types.h"
+#include "codon/cir/type.h"
 
 namespace codon {
 namespace ir {
@@ -67,7 +67,7 @@ struct PyGetSet {
 struct PyType {
   std::string name;
   std::string doc;
-  types::Type *type = nullptr;
+  Type *type = nullptr;
   PyType *base = nullptr;
   Func *repr = nullptr;
   Func *add = nullptr;

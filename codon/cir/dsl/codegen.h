@@ -5,7 +5,7 @@
 #include <unordered_map>
 
 #include "codon/cir/llvm/llvm.h"
-#include "codon/cir/types/types.h"
+#include "codon/cir/type.h"
 
 namespace codon {
 namespace ir {

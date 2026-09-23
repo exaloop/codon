@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "codon/cir/attribute.h"
-#include "codon/cir/types/types.h"
+#include "codon/cir/type.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
 #include "codon/parser/visitors/scoping/scoping.h"
@@ -43,8 +43,7 @@ Type *TypecheckVisitor::unify(Type *a, Type *b) const {
 }
 
 /// Infer all types within a Stmt *. Implements the LTS-DI typechecking.
-/// @param isToplevel set if typechecking the program toplevel.
-Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool isToplevel) {
+Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool sweepForceRealize) {
   if (!result)
     return nullptr;
 
@@ -83,7 +82,7 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool isToplevel) {
     std::swap(ctx->returnEarly, returnEarly);
     ctx->typecheckLevel--;
 
-    if (ctx->getBase()->iteration == 1 && isToplevel) {
+    if (sweepForceRealize && ctx->getBase()->iteration == 1) {
       // Realize all @force_realize functions
       // Copy keys to avoid modifications during the iteration (#768)
       auto copied = sorted_view(ctx->cache->functions);
@@ -299,7 +298,7 @@ types::Type *TypecheckVisitor::realizeType(types::ClassType *type) {
   auto lt = makeIRType(realized);
 
   // Realize fields
-  std::vector<ir::types::Type *> typeArgs;   // needed for IR
+  std::vector<ir::Type *> typeArgs;          // needed for IR
   std::vector<std::string> names;            // needed for IR
   std::map<std::string, SrcInfo> memberInfo; // needed for IR
   for (size_t i = 0; i < fTypes.size(); i++) {
@@ -308,7 +307,6 @@ types::Type *TypecheckVisitor::realizeType(types::ClassType *type) {
       E(Error::TYPE_CANNOT_REALIZE_ATTR, getSrcInfo(), fields[i].name,
         realized->prettyString());
     }
-    // LOG_REALIZE("- member: {} -> {}: {}", field.name, field.type, fTypes[i]);
     realization->fields.emplace_back(fields[i].name, fTypes[i]);
     names.emplace_back(fields[i].name);
     typeArgs.emplace_back(makeIRType(fTypes[i]->getClass()));
@@ -317,7 +315,7 @@ types::Type *TypecheckVisitor::realizeType(types::ClassType *type) {
 
   // Set IR attributes
   if (!names.empty()) {
-    if (auto *ir = cast<ir::types::RefType>(lt)) {
+    if (auto *ir = cast<ir::RefType>(lt)) {
       ir->getContents()->realize(typeArgs, names);
       ir->setAttribute(std::make_unique<ir::MemberAttribute>(memberInfo));
       ir->getContents()->setAttribute(
@@ -334,12 +332,11 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
   auto imp = getImport(module);
   if (auto r = in(realizations, type->realizedName())) {
     if (!force) {
+      if (!(*r)->ast && !(*r)->getType()->getRetType()->canRealize())
+        ctx->getBase()->recursiveDependencies.insert((*r)->type);
       return (*r)->getType();
     }
   }
-
-  // auto *_t = new Cache::CTimer(ctx->cache, ctx->getRealizationStackName() + ":" +
-  //                                              type->realizedName());
 
   auto oldCtx = this->ctx;
   this->ctx = imp->ctx;
@@ -360,12 +357,6 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
         break;
       }
     }
-    // LOG("[realize] F {} -> {} : base {} ; depth = {} ; ctx-base: {}; ret = {}; "
-    //     "parent = {}",
-    //     type->getFuncName(), type->realizedName(), ctx->getRealizationStackName(),
-    //     ctx->getRealizationDepth(), ctx->getBaseName(),
-    //     ctx->getBase()->returnType->debugString(2),
-    //     ctx->bases[ctx->getBase()->parent].name);
   }
 
   // Types might change after realization, fix it
@@ -374,7 +365,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
 
   // Clone the generic AST that is to be realized
   auto ast = clean_clone(type->ast);
-  if (auto s = generateSpecialAST(type))
+  if (auto s = generateSpecialAst(type))
     ast->suite = s;
   addClassGenerics(type, true);
   ctx->getBase()->func = ast;
@@ -455,6 +446,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
 
     if (!ret) {
       realizations.erase(key);
+      auto dependencies = std::move(ctx->getBase()->recursiveDependencies);
       ParserErrors errors;
       if (!startswith(ast->name, "%_lambda")) {
         // Lambda typecheck failures are "ignored" as they are treated as statements,
@@ -468,7 +460,22 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
         ctx->typecheckLevel--;
         getLogger().level--;
       }
-      if (!errors.empty()) {
+      bool deferred = false;
+      for (const auto &dependency : dependencies) {
+        if (dependency->getFunc()->getRetType()->canRealize())
+          continue;
+        for (const auto &[name, imported] : ctx->cache->imports) {
+          if (!imported.ctx)
+            continue;
+          for (const auto &base : imported.ctx->bases) {
+            if (base.type == dependency) {
+              oldCtx->getBase()->recursiveDependencies.insert(dependency);
+              deferred = true;
+            }
+          }
+        }
+      }
+      if (!errors.empty() && !deferred) {
         throw exc::ParserException(errors);
       }
       this->ctx = oldCtx;
@@ -494,6 +501,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
     ctx->popBlock();
     ctx->typecheckLevel--;
     getLogger().level--;
+    this->ctx = oldCtx;
     return nullptr;
   }
   seqassert(ret, "cannot realize return type '{}'", *(type->getRetType()));
@@ -538,7 +546,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
 }
 
 /// Make IR node for a realized type.
-ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
+ir::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
   // Realize if not, and return cached value if it exists
   auto realizedName = t->ClassType::realizedName();
   auto cls = ctx->cache->getClass(t);
@@ -549,7 +557,7 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
   }
   if (auto l = cls->realizations[realizedName]->ir) {
     if (cls->rtti)
-      cast<ir::types::RefType>(l)->setPolymorphic();
+      cast<ir::RefType>(l)->setPolymorphic();
     return l;
   }
 
@@ -564,7 +572,7 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
   };
 
   // Prepare generics and statics
-  std::vector<ir::types::Type *> types;
+  std::vector<ir::Type *> types;
   std::vector<types::StaticType *> statics;
   if (t->is(StdlibTypes::UnrealizedType))
     types.push_back(nullptr);
@@ -578,14 +586,10 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
 
   // Get the IR type
   auto *module = ctx->cache->module;
-  ir::types::Type *handle = nullptr;
+  ir::Type *handle = nullptr;
 
   if (t->name == StdlibTypes::Bool) {
     handle = module->getBoolType();
-  } else if (t->name == "byte") {
-    handle = module->getByteType();
-  } else if (t->name == "int") {
-    handle = module->getIntType();
   } else if (t->name == StdlibTypes::Float) {
     handle = module->getFloatType();
   } else if (t->name == "float32") {
@@ -598,10 +602,11 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
     handle = module->getFloat128Type();
   } else if (t->name == StdlibTypes::String) {
     handle = module->getStringType();
+  } else if (t->name == "bytes") {
+    handle = module->getBytesType();
   } else if (t->name == StdlibTypes::Int || t->name == StdlibTypes::UInt) {
-    handle = module->Nr<ir::types::IntNType>(getIntLiteral(statics[0]),
-                                             t->name == StdlibTypes::Int);
-  } else if (t->name == StdlibTypes::Ptr) {
+    handle = module->unsafeGetIntType(getIntLiteral(statics[0]), t->name == StdlibTypes::Int);
+  } else if (t->name == "Ptr") {
     seqassert(types.size() == 1, "bad generics/statics");
     handle = module->unsafeGetPointerType(types[0]);
   } else if (t->name == StdlibTypes::Generator || t->name == "AsyncGenerator") {
@@ -615,14 +620,13 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
     handle = module->unsafeGetOptionalType(types[0]);
   } else if (t->name == StdlibTypes::NoneType) {
     seqassert(types.empty() && statics.empty(), "bad generics/statics");
-    auto record =
-        cast<ir::types::RecordType>(module->unsafeGetMemberedType(realizedName));
+    auto record = cast<ir::RecordType>(module->unsafeGetMemberedType(realizedName));
     record->realize({}, {});
     handle = record;
   } else if (t->name == StdlibTypes::Union) {
     seqassert(!types.empty(), "bad union");
     auto unionTypes = t->getUnion()->getRealizationTypes();
-    std::vector<ir::types::Type *> unionVec;
+    std::vector<ir::Type *> unionVec;
     unionVec.reserve(unionTypes.size());
     for (auto &u : unionTypes)
       unionVec.emplace_back(forceFindIRType(u));
@@ -640,7 +644,7 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
     // Type arguments will be populated afterwards to avoid infinite loop with recursive
     // reference types (e.g., `class X: x: Optional[X]`)
     if (t->isRecord()) {
-      std::vector<ir::types::Type *> typeArgs;   // needed for IR
+      std::vector<ir::Type *> typeArgs;          // needed for IR
       std::vector<std::string> names;            // needed for IR
       std::map<std::string, SrcInfo> memberInfo; // needed for IR
 
@@ -656,8 +660,7 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
         typeArgs.emplace_back(makeIRType(ft[i]->getClass()));
         memberInfo[fields[i].name] = ft[i]->getSrcInfo();
       }
-      auto record =
-          cast<ir::types::RecordType>(module->unsafeGetMemberedType(realizedName));
+      auto record = cast<ir::RecordType>(module->unsafeGetMemberedType(realizedName));
       record->realize(typeArgs, names);
       handle = record;
       handle->setAttribute(
@@ -665,7 +668,7 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
     } else {
       handle = module->unsafeGetMemberedType(realizedName, !t->isRecord());
       if (cls->rtti)
-        cast<ir::types::RefType>(handle)->setPolymorphic();
+        cast<ir::RefType>(handle)->setPolymorphic();
     }
   }
   handle->setSrcInfo(t->getSrcInfo());
@@ -679,6 +682,8 @@ ir::Func *TypecheckVisitor::makeIRFunction(
     const std::shared_ptr<Cache::Function::FunctionRealization> &r) {
   ir::Func *fn = nullptr;
   auto irm = ctx->cache->module;
+
+  std::string unmangledName = ctx->cache->reverseIdentifierLookup[r->type->ast->name];
   // Create and store a function IR node and a realized AST for IR passes
   if (r->ast->hasAttribute(Attr::Internal)) {
     // e.g., __new__, Ptr.__new__, etc.
@@ -686,11 +691,21 @@ ir::Func *TypecheckVisitor::makeIRFunction(
   } else if (r->ast->hasAttribute(Attr::LLVM)) {
     fn = irm->Nr<ir::LLVMFunc>(r->type->realizedName());
   } else if (r->ast->hasAttribute(Attr::C)) {
-    fn = irm->Nr<ir::ExternalFunc>(r->type->realizedName());
+    std::string name = r->type->realizedName();
+    if (auto f =
+            r->ast->getAttribute<ir::KeyValueAttribute>(Attr::FunctionAttributes)) {
+      if (auto i =
+              in(f->attributes, getMangledFunc("std.internal.c_stubs", "linkname"))) {
+        auto fp = ctx->cache->findFunction(*i);
+        auto str = extractFuncGeneric(fp)->getStrStatic();
+        unmangledName = str->value;
+      }
+    }
+    fn = irm->Nr<ir::ExternalFunc>(name);
   } else {
     fn = irm->Nr<ir::BodiedFunc>(r->type->realizedName());
   }
-  fn->setUnmangledName(ctx->cache->reverseIdentifierLookup[r->type->ast->name]);
+  fn->setUnmangledName(unmangledName);
   auto parent = r->type->funcParent;
   if (auto aa = r->ast->getAttribute<ir::StringValueAttribute>(Attr::ParentClass)) {
     if (!aa->value.empty() && !r->ast->hasAttribute(Attr::Method)) {
@@ -713,7 +728,7 @@ ir::Func *TypecheckVisitor::makeIRFunction(
 
   // Populate the IR node
   std::vector<std::string> names;
-  std::vector<codon::ir::types::Type *> types;
+  std::vector<codon::ir::Type *> types;
   for (size_t i = 0, j = 0; i < r->ast->size(); i++) {
     if ((*r->ast)[i].isValue()) {
       if (!extractFuncArgType(r->getType(), j)->getFunc()) {
@@ -745,10 +760,6 @@ ir::Func *TypecheckVisitor::realizeIRFunc(types::FuncType *fn,
   if (!realize(fnType.get()))
     return nullptr;
 
-  auto pr = ctx->cache->pendingRealizations; // copy it as it might be modified
-  for (const auto &key : pr | std::views::keys)
-    TranslateVisitor(ctx->cache->codegenCtx)
-        .translateStmts(clone(getFunction(key)->ast));
   return getFunction(fn->ast->getName())->realizations[fnType->realizedName()]->ir;
 }
 

@@ -15,12 +15,12 @@ const std::string FoldingPassGroup::KEY = "core-folding-pass-group";
 FoldingPassGroup::FoldingPassGroup(const std::string &sideEffectsPass,
                                    const std::string &reachingDefPass,
                                    const std::string &globalVarPass, int repeat,
-                                   bool runGlobalDemotion, bool pyNumerics)
+                                   bool runGlobalDemotion)
     : PassGroup(repeat) {
   auto gdUnique = runGlobalDemotion ? std::make_unique<cleanup::GlobalDemotionPass>()
                                     : std::unique_ptr<cleanup::GlobalDemotionPass>();
   auto canonUnique = std::make_unique<cleanup::CanonicalizationPass>(sideEffectsPass);
-  auto fpUnique = std::make_unique<FoldingPass>(pyNumerics);
+  auto fpUnique = std::make_unique<FoldingPass>();
   auto dceUnique = std::make_unique<cleanup::DeadCodeCleanupPass>(sideEffectsPass);
 
   gd = gdUnique.get();

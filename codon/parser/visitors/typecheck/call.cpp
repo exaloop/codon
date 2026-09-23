@@ -164,7 +164,11 @@ void TypecheckVisitor::visit(CallExpr *expr) {
       std::vector<std::string> a;
       for (auto &t : *expr)
         a.emplace_back(fmt::format("{}", t.getExpr()->getType()->getStatic()
-                                             ? t.getExpr()->getClassType()->name
+                                             ? t.getExpr()
+                                                   ->getType()
+                                                   ->getStatic()
+                                                   ->getNonStaticType()
+                                                   ->prettyString()
                                              : t.getExpr()->getType()->prettyString()));
       auto argsNice = fmt::format("({})", join(a, ", "));
       auto name = getUnmangledName(calleeFn->getFuncName());
@@ -368,7 +372,11 @@ TypecheckVisitor::getCalleeFn(CallExpr *expr, PartialCallData &part) {
       typ = extractClassGeneric(typ)->getClass();
     if (!typ)
       return {nullptr, nullptr};
-    auto clsName = typ->name;
+    if (typ->is(getMangledClass("std.internal.types.error", "OSError"))) {
+      auto factory = transform(
+          N<CallExpr>(N<DotExpr>(expr->getExpr(), "_construct"), expr->items));
+      return {nullptr, factory};
+    }
     if (typ->isRecord()) {
       if (expr->hasAttribute(Attr::TupleCall)) {
         expr->eraseAttribute(Attr::TupleCall);
@@ -725,7 +733,7 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
                  typeArgs.size() == calleeFn->funcGenerics.size()),
             "bad vector sizes");
   if (!calleeFn->funcGenerics.empty()) {
-    auto niGenerics = calleeFn->ast->getNonInferrableGenerics();
+    const auto &niGenerics = calleeFn->ast->getNonInferrableGenerics();
     for (size_t si = 0; !expr->hasAttribute(Attr::ExprOrderedCall) &&
                         si < calleeFn->funcGenerics.size();
          si++) {
@@ -941,6 +949,10 @@ std::pair<bool, Expr *> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
     return {true, transformStaticFormat(expr)};
   } else if (isF(ei, "std.internal.static", "int_to_string")) { // static
     return {true, transformStaticIntToStr(expr)};
+  } else if (isF(ei, "std.internal.static", "platform")) { // static
+    return {true, transformStaticPlatform(expr)};
+  } else if (isF(ei, "std.internal.static", "contains")) { // static
+    return {true, transformStaticContains(expr)};
   } else {
     return {false, nullptr};
   }

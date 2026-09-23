@@ -1,7 +1,7 @@
 // Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
 #include "codon/cir/transform/pass.h"
-#include "codon/cir/types/types.h"
+#include "codon/cir/type.h"
 
 namespace codon {
 namespace ir {

@@ -18,7 +18,7 @@ bool isList(Value *v) {
   return v->getType()->getName().rfind(ast::StdlibTypes::List + "[", 0) == 0;
 }
 bool isSlice(Value *v) {
-  return v->getType()->getName() == ast::StdlibTypes::Slice + "[int,int,int]";
+  return v->getType()->getName() == ast::StdlibTypes::Slice + "[Int[64],Int[64],Int[64]]";
 }
 
 // The following "handlers" account for the possible sub-expressions we might
@@ -51,7 +51,7 @@ struct ElementHandler {
     }
   }
 
-  static std::unique_ptr<ElementHandler> get(Value *v, types::Type *ty);
+  static std::unique_ptr<ElementHandler> get(Value *v, Type *ty);
 };
 
 struct DefaultHandler : public ElementHandler {
@@ -80,7 +80,7 @@ struct DefaultHandler : public ElementHandler {
     return util::call(fn, {result, e});
   }
 
-  static std::unique_ptr<ElementHandler> get(Value *v, types::Type *ty) {
+  static std::unique_ptr<ElementHandler> get(Value *v, Type *ty) {
     if (!v->getType()->is(ty))
       return {};
     return std::make_unique<DefaultHandler>(v);
@@ -119,7 +119,7 @@ struct SliceHandler : public ElementHandler {
     return util::call(fn, {result, e, s});
   }
 
-  static std::unique_ptr<ElementHandler> get(Value *v, types::Type *ty) {
+  static std::unique_ptr<ElementHandler> get(Value *v, Type *ty) {
     if (!v->getType()->is(ty))
       return {};
 
@@ -163,7 +163,7 @@ struct LiteralHandler : public ElementHandler {
     return block;
   }
 
-  static std::unique_ptr<ElementHandler> get(Value *v, types::Type *ty) {
+  static std::unique_ptr<ElementHandler> get(Value *v, Type *ty) {
     if (!v->getType()->is(ty))
       return {};
 
@@ -181,7 +181,7 @@ struct LiteralHandler : public ElementHandler {
   }
 };
 
-std::unique_ptr<ElementHandler> ElementHandler::get(Value *v, types::Type *ty) {
+std::unique_ptr<ElementHandler> ElementHandler::get(Value *v, Type *ty) {
   if (auto h = SliceHandler::get(v, ty))
     return std::move(h);
 

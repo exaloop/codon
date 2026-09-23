@@ -25,7 +25,7 @@ print y.__add__(1)[0] #: 3
 print (y + 3).__sub__(y + 1) #: 2
 print y.__eq__(z) #: True
 print y.__eq__(zz) #: True
-print y.as_byte().__eq__('abc'.ptr) #: False
+print y.as_byte().__eq__('abc'._ptr) #: False
 print y.__ne__(z) #: False
 print y.__lt__(y+1) #: True
 print y.__gt__(y+1) #: False
@@ -44,7 +44,7 @@ y.__prefetch_w3__()
 a = int()
 b = int(5)
 c = int(True)
-d = int(byte(1))
+d = int(u8(1))
 e = int(1.1)
 print a, b, c, d, e #: 0 5 1 1 1
 print a.__repr__() #: 0
@@ -154,29 +154,15 @@ print z.__ge__(True) #: False
 print z.__and__(True), z.__or__(True), z.__xor__(True) #: False True True
 
 #%% byte,barebones
-z = byte.__new__()
-z = byte(65)
-print z.__repr__() #: byte('A')
+z = u8.__new__()
+z = u8(65)
 print z.__bool__() #: True
-print z.__eq__(byte(5)) #: False
-print z.__ne__(byte(5)) #: True
-print z.__lt__(byte(5)) #: False
-print z.__gt__(byte(5)) #: True
-print z.__le__(byte(5)) #: False
-print z.__ge__(byte(5)) #: True
-
-#%% array,barebones
-a = Array[float](5)
-pa = Ptr[float](3)
-z = Array[float](pa, 3)
-z.__copy__()
-print z.__len__() #: 3
-print z.__bool__() #: True
-z.__setitem__(0, 1.0)
-z.__setitem__(1, 2.0)
-z.__setitem__(2, 3.0)
-print z.__getitem__(1) #: 2
-print z.slice(0, 2).len #: 2
+print z.__eq__(u8(5)) #: False
+print z.__ne__(u8(5)) #: True
+print z.__lt__(u8(5)) #: False
+print z.__gt__(u8(5)) #: True
+print z.__le__(u8(5)) #: False
+print z.__ge__(u8(5)) #: True
 
 #%% optional,barebones
 a = Optional[float]()

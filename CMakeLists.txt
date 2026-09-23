@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.14)
 project(
   Codon
-  VERSION "0.19.6"
+  VERSION "0.20.2"
   HOMEPAGE_URL "https://github.com/exaloop/codon"
   DESCRIPTION "high-performance, extensible Python compiler")
-set(CODON_JIT_PYTHON_VERSION "0.4.6")
+set(CODON_JIT_PYTHON_VERSION "0.5.2")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.h.in"
                "${PROJECT_SOURCE_DIR}/codon/config/config.h")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.py.in"
@@ -15,7 +15,6 @@ if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.24.0")
 endif()
 
 set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   set(CMAKE_CXX_FLAGS
       "${CMAKE_CXX_FLAGS} -pedantic -fvisibility-inlines-hidden -Wno-return-type-c-linkage -Wno-gnu-zero-variadic-macro-arguments -Wno-deprecated-declarations"
@@ -23,7 +22,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 else()
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-return-type")
 endif()
-set(CMAKE_CXX_FLAGS_DEBUG "-g")
+set(CMAKE_CXX_FLAGS_DEBUG "-O1 -g")
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fno-limit-debug-info")
 endif()
@@ -45,12 +44,7 @@ message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 include(${CMAKE_SOURCE_DIR}/cmake/deps.cmake)
 include(${CMAKE_SOURCE_DIR}/cmake/CMakeRC.cmake)
 
-set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
-if(APPLE)
-  set(CMAKE_INSTALL_RPATH "@loader_path;@loader_path/../lib/codon")
-else()
-  set(CMAKE_INSTALL_RPATH "$ORIGIN:$ORIGIN/../lib/codon")
-endif()
+include(${CMAKE_SOURCE_DIR}/cmake/UnicodeTables.cmake)
 
 add_executable(peg2cpp codon/util/peg2cpp.cpp)
 target_include_directories(peg2cpp PRIVATE ${peglib_SOURCE_DIR})
@@ -71,38 +65,13 @@ set(CODON_JUPYTER_FILES codon/util/jupyter.h codon/util/jupyter.cpp)
 add_library(codon_jupyter SHARED ${CODON_JUPYTER_FILES})
 
 # Codon runtime library
-add_library(codonfloat STATIC
-            codon/runtime/floatlib/extenddftf2.c
-            codon/runtime/floatlib/fp_trunc.h
-            codon/runtime/floatlib/truncdfhf2.c
-            codon/runtime/floatlib/extendhfsf2.c
-            codon/runtime/floatlib/int_endianness.h
-            codon/runtime/floatlib/truncdfsf2.c
-            codon/runtime/floatlib/extendhftf2.c
-            codon/runtime/floatlib/int_lib.h
-#            codon/runtime/floatlib/truncsfbf2.c
-            codon/runtime/floatlib/extendsfdf2.c
-            codon/runtime/floatlib/int_math.h
-            codon/runtime/floatlib/truncsfhf2.c
-            codon/runtime/floatlib/extendsftf2.c
-            codon/runtime/floatlib/int_types.h
-            codon/runtime/floatlib/trunctfdf2.c
-            codon/runtime/floatlib/fp_extend.h
-            codon/runtime/floatlib/int_util.h
-            codon/runtime/floatlib/trunctfhf2.c
-            codon/runtime/floatlib/fp_lib.h
-#            codon/runtime/floatlib/truncdfbf2.c
-            codon/runtime/floatlib/trunctfsf2.c)
-target_compile_options(codonfloat PRIVATE -O3)
-target_compile_definitions(codonfloat PRIVATE COMPILER_RT_HAS_FLOAT16)
-
 set(CODONRT_FILES codon/runtime/lib.h codon/runtime/lib.cpp
                   codon/runtime/re.cpp codon/runtime/exc.cpp
                   codon/runtime/numpy/sort.cpp
                   codon/runtime/numpy/loops.cpp codon/runtime/numpy/zmath.cpp)
 add_library(codonrt SHARED ${CODONRT_FILES})
 add_dependencies(codonrt zlibstatic gc backtrace bz2 liblzma
-                         re2 hwy hwy_contrib fast_float codonfloat)
+                         re2 hwy hwy_contrib fast_float)
 
 if(DEFINED ENV{CODON_SYSTEM_LIBRARIES})
   if(APPLE)
@@ -137,6 +106,48 @@ target_include_directories(codonrt PRIVATE ${backtrace_SOURCE_DIR}
                                            "${gc_SOURCE_DIR}/include"
                                            "${fast_float_SOURCE_DIR}/include" runtime)
 target_link_libraries(codonrt PRIVATE fmt omp backtrace LLVMSupport)
+
+if(APPLE)
+  set(COMPILER_RT_NAMES clang_rt.osx libclang_rt.osx.a)
+  set(COMPILER_RT_PATHS
+    "${LLVM_LIBRARY_DIR}/clang/${LLVM_VERSION_MAJOR}/lib/darwin"
+    "${LLVM_LIBRARY_DIR}/clang/${LLVM_PACKAGE_VERSION}/lib/darwin"
+  )
+elseif(UNIX)
+  set(COMPILER_RT_NAMES clang_rt.builtins libclang_rt.builtins.a)
+
+  set(COMPILER_RT_TRIPLES
+    "${CMAKE_SYSTEM_PROCESSOR}-unknown-linux-gnu"
+    "${CMAKE_SYSTEM_PROCESSOR}-linux-gnu"
+    "aarch64-unknown-linux-gnu"
+    "x86_64-unknown-linux-gnu"
+  )
+
+  foreach(TRIPLE IN LISTS COMPILER_RT_TRIPLES)
+    list(APPEND COMPILER_RT_PATHS
+      "${LLVM_LIBRARY_DIR}/clang/${LLVM_VERSION_MAJOR}/lib/${TRIPLE}"
+      "${LLVM_LIBRARY_DIR}/clang/${LLVM_PACKAGE_VERSION}/lib/${TRIPLE}"
+    )
+  endforeach()
+
+  list(APPEND COMPILER_RT_PATHS
+    "${LLVM_LIBRARY_DIR}/clang/${LLVM_VERSION_MAJOR}/lib/linux"
+    "${LLVM_LIBRARY_DIR}/clang/${LLVM_PACKAGE_VERSION}/lib/linux"
+  )
+endif()
+
+find_library(COMPILER_RT_LIB
+  NAMES ${COMPILER_RT_NAMES}
+  PATHS ${COMPILER_RT_PATHS}
+  NO_DEFAULT_PATH
+)
+
+if(NOT COMPILER_RT_LIB)
+  message(FATAL_ERROR
+    "Could not find compiler-rt. Tried ${COMPILER_RT_NAMES} in ${COMPILER_RT_PATHS}")
+endif()
+message(STATUS "Found compiler-rt: ${COMPILER_RT_LIB}")
+
 if(APPLE)
   target_link_libraries(
     codonrt
@@ -147,7 +158,7 @@ if(APPLE)
             -Wl,-force_load,$<TARGET_FILE:re2>
             -Wl,-force_load,$<TARGET_FILE:hwy>
             -Wl,-force_load,$<TARGET_FILE:hwy_contrib>
-            -Wl,-force_load,$<TARGET_FILE:codonfloat>)
+            -Wl,-force_load,${COMPILER_RT_LIB})
   target_link_libraries(codonrt PUBLIC "-framework Accelerate")
 elseif(SYSTEM_BLAS)
   target_link_libraries(
@@ -159,13 +170,16 @@ elseif(SYSTEM_BLAS)
   find_package(BLAS REQUIRED)
   target_link_libraries(codonrt PUBLIC BLAS::BLAS)
 else()
-  add_dependencies(codonrt openblas)
+  add_dependencies(codonrt openblas_64)
+
+  # compiler-rt must be built with COMPILER_RT_BUILTINS_HIDE_SYMBOLS=OFF
+  # so helpers referenced only by JIT-generated code remain exported.
   target_link_libraries(
     codonrt
     PRIVATE -Wl,--whole-archive $<TARGET_FILE:zlibstatic> $<TARGET_FILE:gc>
             $<TARGET_FILE:bz2> $<TARGET_FILE:liblzma> $<TARGET_FILE:re2>
-            $<TARGET_FILE:openblas> $<TARGET_FILE:hwy> $<TARGET_FILE:hwy_contrib>
-            $<TARGET_FILE:codonfloat> -Wl,--no-whole-archive)
+            $<TARGET_FILE:openblas_64> $<TARGET_FILE:hwy> $<TARGET_FILE:hwy_contrib>
+            ${COMPILER_RT_LIB} -Wl,--no-whole-archive)
 endif()
 if(ASAN)
   target_compile_options(
@@ -192,6 +206,7 @@ set(CODON_HPPFILES
   codon/compiler/jit.h
   codon/compiler/jit_extern.h
   codon/compiler/memory_manager.h
+  codon/compiler/options.h
   codon/dsl/dsl.h
   codon/dsl/plugins.h
   codon/parser/ast.h
@@ -261,12 +276,13 @@ set(CODON_HPPFILES
   codon/cir/transform/parallel/schedule.h
   codon/cir/transform/pass.h
   codon/cir/transform/pythonic/dict.h
+  codon/cir/transform/pythonic/format.h
   codon/cir/transform/pythonic/generator.h
   codon/cir/transform/pythonic/io.h
   codon/cir/transform/pythonic/list.h
   codon/cir/transform/pythonic/str.h
   codon/cir/transform/rewrite.h
-  codon/cir/types/types.h
+  codon/cir/type.h
   codon/cir/util/cloning.h
   codon/cir/util/context.h
   codon/cir/util/format.h
@@ -298,6 +314,7 @@ set(CODON_CPPFILES
   codon/compiler/error.cpp
   codon/compiler/jit.cpp
   codon/compiler/memory_manager.cpp
+  codon/compiler/options.cpp
   codon/dsl/plugins.cpp
   codon/parser/ast/expr.cpp
   codon/parser/ast/codon_string.cpp
@@ -371,11 +388,12 @@ set(CODON_CPPFILES
   codon/cir/transform/parallel/schedule.cpp
   codon/cir/transform/pass.cpp
   codon/cir/transform/pythonic/dict.cpp
+  codon/cir/transform/pythonic/format.cpp
   codon/cir/transform/pythonic/generator.cpp
   codon/cir/transform/pythonic/io.cpp
   codon/cir/transform/pythonic/list.cpp
   codon/cir/transform/pythonic/str.cpp
-  codon/cir/types/types.cpp
+  codon/cir/type.cpp
   codon/cir/util/cloning.cpp
   codon/cir/util/format.cpp
   codon/cir/util/inlining.cpp
@@ -452,7 +470,9 @@ cmrc_add_resource_library(
   NAMESPACE codon
   ${CODON_STDLIB_RESOURCES}
 )
+cmrc_add_resources(codon-stdlib WHENCE "${CMAKE_BINARY_DIR}" ${CODON_UNICODE_GENERATED_FILES})
 set_property(TARGET codon-stdlib PROPERTY POSITION_INDEPENDENT_CODE ON)
+add_dependencies(codon-stdlib unicode_data)
 
 target_link_libraries(codonc PRIVATE ${LLVM_LIBS} fmt dl codonrt codon-stdlib)
 
@@ -499,6 +519,14 @@ add_dependencies(libs codonrt codonc)
 # Codon command-line tool
 add_executable(codon codon/app/main.cpp)
 target_link_libraries(codon PUBLIC fmt codonc codon_jupyter Threads::Threads)
+if(ASAN)
+  target_compile_options(
+    codon PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address"
+                  "-fsanitize-recover=address")
+  target_link_libraries(
+    codon PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address"
+                  "-fsanitize-recover=address")
+endif()
 
 # Codon test Download and unpack googletest at configure time
 include(FetchContent)
@@ -520,18 +548,52 @@ set(CODON_TEST_CPPFILES
     test/cir/flow.cpp
     test/cir/func.cpp
     test/cir/instr.cpp
+    test/cir/llvm/optimize.cpp
     test/cir/module.cpp
+    test/cir/transform/format.cpp
     test/cir/transform/manager.cpp
-    test/cir/types/types.cpp
+    test/cir/type.cpp
     test/cir/util/matching.cpp
     test/cir/value.cpp
     test/cir/var.cpp
     test/types.cpp)
 add_executable(codon_test ${CODON_TEST_CPPFILES})
 target_include_directories(codon_test PRIVATE test/cir "${gc_SOURCE_DIR}/include")
-target_link_libraries(codon_test fmt codonc codonrt gtest_main)
+target_link_libraries(codon_test PRIVATE fmt codonc codonrt gtest_main)
+if(ASAN)
+  target_compile_options(
+    codon_test PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address"
+                       "-fsanitize-recover=address")
+  target_link_libraries(
+    codon_test PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address"
+                       "-fsanitize-recover=address")
+endif()
 target_compile_definitions(codon_test
                            PRIVATE TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test")
+
+if(APPLE)
+  set_target_properties(
+    codonrt codonc codon_jupyter
+    PROPERTIES
+      INSTALL_RPATH "@loader_path"
+  )
+  set_target_properties(
+    codon
+    PROPERTIES
+      INSTALL_RPATH "@loader_path/../lib/codon"
+  )
+else()
+  set_target_properties(
+    codonrt codonc codon_jupyter
+    PROPERTIES
+      INSTALL_RPATH "$ORIGIN"
+  )
+  set_target_properties(
+    codon
+    PROPERTIES
+      INSTALL_RPATH "$ORIGIN/../lib/codon"
+  )
+endif()
 
 install(TARGETS codonrt codonc codon_jupyter DESTINATION lib/codon)
 install(FILES ${CMAKE_BINARY_DIR}/libomp${CMAKE_SHARED_LIBRARY_SUFFIX} DESTINATION lib/codon)
@@ -549,6 +611,11 @@ install(DIRECTORY ${CMAKE_BINARY_DIR}/include/codon DESTINATION include)
 install(DIRECTORY ${LLVM_INCLUDE_DIRS}/llvm DESTINATION include)
 install(DIRECTORY ${LLVM_INCLUDE_DIRS}/llvm-c DESTINATION include)
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/stdlib DESTINATION lib/codon)
+foreach(unicode_file IN LISTS CODON_UNICODE_GENERATED_FILES)
+  file(RELATIVE_PATH unicode_relative "${CMAKE_BINARY_DIR}" "${unicode_file}")
+  get_filename_component(unicode_directory "${unicode_relative}" DIRECTORY)
+  install(FILES "${unicode_file}" DESTINATION "lib/codon/${unicode_directory}")
+endforeach()
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/jit/ DESTINATION python)
 install(DIRECTORY DESTINATION lib/codon/plugins)
 

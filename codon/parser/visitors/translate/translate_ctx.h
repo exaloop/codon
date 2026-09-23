@@ -8,7 +8,6 @@
 #include <vector>
 
 #include "codon/cir/cir.h"
-#include "codon/cir/types/types.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/ctx.h"
 
@@ -25,7 +24,7 @@ struct TranslateItem {
   union {
     codon::ir::Var *var;
     codon::ir::Func *func;
-    codon::ir::types::Type *type;
+    codon::ir::Type *type;
   } handle;
   /// Base function pointer.
   codon::ir::BodiedFunc *base;
@@ -34,9 +33,7 @@ struct TranslateItem {
       : kind(k), handle{nullptr}, base(base) {}
   const codon::ir::BodiedFunc *getBase() const { return base; }
   codon::ir::Func *getFunc() const { return kind == Func ? handle.func : nullptr; }
-  codon::ir::types::Type *getType() const {
-    return kind == Type ? handle.type : nullptr;
-  }
+  codon::ir::Type *getType() const { return kind == Type ? handle.type : nullptr; }
   codon::ir::Var *getVar() const { return kind == Var ? handle.var : nullptr; }
 };
 

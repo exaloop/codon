@@ -52,12 +52,6 @@ ClassType::ClassType(const ClassType *base)
 
 int ClassType::unify(Type *typ, Unification *us) {
   if (auto tc = typ->getClass()) {
-    if (name == "int" && tc->name == StdlibTypes::Int)
-      return tc->unify(this, us);
-    if (tc->name == "int" && name == StdlibTypes::Int) {
-      auto t64 = std::make_shared<IntStaticType>(cache, 64);
-      return generics[0].type->unify(t64.get(), us);
-    }
     if (name == StdlibTypes::UnrealizedType && tc->name == name) {
       // instantiate + unify!
       std::unordered_map<int, types::TypePtr> genericCache;
@@ -159,11 +153,13 @@ int ClassType::unify(Type *typ, Unification *us) {
 
 TypePtr ClassType::generalize(int atLevel) const {
   std::vector<Generic> g, hg;
+  g.reserve(generics.size());
+  hg.reserve(hiddenGenerics.size());
   for (auto &t : generics)
     g.push_back(t.generalize(atLevel));
   for (auto &t : hiddenGenerics)
     hg.push_back(t.generalize(atLevel));
-  auto c = std::make_shared<ClassType>(cache, name, g, hg);
+  auto c = std::make_shared<ClassType>(cache, name, std::move(g), std::move(hg));
   c->isTuple = isTuple;
   c->setSrcInfo(getSrcInfo());
   return c;
@@ -172,11 +168,13 @@ TypePtr ClassType::generalize(int atLevel) const {
 TypePtr ClassType::instantiate(int atLevel, int *unboundCount,
                                std::unordered_map<int, TypePtr> *cache) const {
   std::vector<Generic> g, hg;
+  g.reserve(generics.size());
+  hg.reserve(hiddenGenerics.size());
   for (auto &t : generics)
     g.push_back(t.instantiate(atLevel, unboundCount, cache));
   for (auto &t : hiddenGenerics)
     hg.push_back(t.instantiate(atLevel, unboundCount, cache));
-  auto c = std::make_shared<ClassType>(this->cache, name, g, hg);
+  auto c = std::make_shared<ClassType>(this->cache, name, std::move(g), std::move(hg));
   c->isTuple = isTuple;
   c->setSrcInfo(getSrcInfo());
   return c;
@@ -301,7 +299,10 @@ std::string ClassType::debugString(char mode) const {
   }
   // Special formatting for Functions and Tuples
   auto n = mode == 0 ? cache->rev(name) : name;
-  return n + (gs.empty() ? "" : ("[" + join(gs, ",") + "]"));
+  auto s = n + (gs.empty() ? "" : ("[" + join(gs, ",") + "]"));
+  if (s == "Int[64]")
+    return "int";
+  return s;
 }
 
 std::string ClassType::realizedName() const {
@@ -326,7 +327,6 @@ std::string ClassType::realizedName() const {
     s = join(gs, ",");
     s = name + (s.empty() ? "" : ("[" + s + "]"));
   }
-
   if (canRealize())
     const_cast<ClassType *>(this)->_rn = s;
 

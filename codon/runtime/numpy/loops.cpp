@@ -411,6 +411,19 @@ struct HypotFunctor {
   static inline auto scalar(const float x, const float y) { return hypotf(x, y); }
 };
 
+struct ComplexAbsFunctor {
+  template <typename T, typename V>
+  static inline auto vector(const hn::ScalableTag<T> d, const V &re, const V &im) {
+    return Hypot(d, re, im);
+  }
+
+  static inline double scalar(const double re, const double im) {
+    return hypot(re, im);
+  }
+
+  static inline float scalar(const float re, const float im) { return hypotf(re, im); }
+};
+
 template <typename T, typename F>
 void UnaryLoop(const T *in, size_t is, T *out, size_t os, size_t n) {
   const hn::ScalableTag<T> d;
@@ -512,6 +525,36 @@ void BinaryLoop(const T *in1, size_t is1, const T *in2, size_t is2, T *out, size
     for (; i < n; ++i)
       *(T *)((char *)out + i * os) =
           F::scalar(*(T *)((char *)in1 + i * is1), *(T *)((char *)in2 + i * is2));
+  }
+}
+
+template <typename T, typename F>
+void ComplexUnaryLoop(const T *in, size_t is, T *out, size_t os, size_t n) {
+  const hn::ScalableTag<T> d;
+  HWY_LANES_CONSTEXPR size_t L = hn::Lanes(d);
+  T tmp_re[L];
+  T tmp_im[L];
+  T tmp_out[L];
+  size_t i;
+
+  for (i = 0; i + L <= n; i += L) {
+    for (size_t j = 0; j < L; ++j) {
+      const auto *z = (const T *)((const char *)in + (i + j) * is);
+      tmp_re[j] = z[0];
+      tmp_im[j] = z[1];
+    }
+
+    auto re = hn::Load(d, tmp_re);
+    auto im = hn::Load(d, tmp_im);
+    hn::Store(F::template vector<T, decltype(re)>(d, re, im), d, tmp_out);
+
+    for (size_t j = 0; j < L; ++j)
+      *(T *)((char *)out + (i + j) * os) = tmp_out[j];
+  }
+
+  for (; i < n; ++i) {
+    const auto *z = (const T *)((const char *)in + i * is);
+    *(T *)((char *)out + i * os) = F::scalar(z[0], z[1]);
   }
 }
 
@@ -671,6 +714,14 @@ void LoopHypot64(const double *in1, size_t is1, const double *in2, size_t is2,
   BinaryLoop<double, HypotFunctor>(in1, is1, in2, is2, out, os, n);
 }
 
+void LoopAbsComplex64(const float *in, size_t is, float *out, size_t os, size_t n) {
+  ComplexUnaryLoop<float, ComplexAbsFunctor>(in, is, out, os, n);
+}
+
+void LoopAbsComplex128(const double *in, size_t is, double *out, size_t os, size_t n) {
+  ComplexUnaryLoop<double, ComplexAbsFunctor>(in, is, out, os, n);
+}
+
 } // namespace HWY_NAMESPACE
 } // namespace
 HWY_AFTER_NAMESPACE();
@@ -715,6 +766,8 @@ HWY_EXPORT(LoopTanh32);
 HWY_EXPORT(LoopTanh64);
 HWY_EXPORT(LoopHypot32);
 HWY_EXPORT(LoopHypot64);
+HWY_EXPORT(LoopAbsComplex64);
+HWY_EXPORT(LoopAbsComplex128);
 
 SEQ_FUNC void cnp_acos_float32(const float *in, size_t is, float *out, size_t os,
                                size_t n) {
@@ -942,6 +995,18 @@ SEQ_FUNC void cnp_hypot_float64(const double *in1, size_t is1, const double *in2
                                 size_t is2, double *out, size_t os, size_t n) {
   const auto ptr = HWY_DYNAMIC_POINTER(LoopHypot64);
   return ptr(in1, is1, in2, is2, out, os, n);
+}
+
+SEQ_FUNC void cnp_abs_complex64(const float *in, size_t is, float *out, size_t os,
+                                size_t n) {
+  const auto ptr = HWY_DYNAMIC_POINTER(LoopAbsComplex64);
+  return ptr(in, is, out, os, n);
+}
+
+SEQ_FUNC void cnp_abs_complex128(const double *in, size_t is, double *out, size_t os,
+                                 size_t n) {
+  const auto ptr = HWY_DYNAMIC_POINTER(LoopAbsComplex128);
+  return ptr(in, is, out, os, n);
 }
 
 #endif // HWY_ONCE

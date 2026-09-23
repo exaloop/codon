@@ -4,6 +4,9 @@
 
 #include <sstream>
 
+#include "llvm/Support/JSON.h"
+#include "llvm/TargetParser/Host.h"
+
 #include "codon/parser/common.h"
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/doc/doc.h"
@@ -11,6 +14,23 @@
 #include "codon/parser/visitors/scoping/scoping.h"
 #include "codon/parser/visitors/translate/translate.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
+
+namespace {
+llvm::Expected<std::unordered_map<std::string, std::string>>
+parseJITDefines(const std::vector<std::string> &definitions) {
+  std::unordered_map<std::string, std::string> result;
+  for (const auto &definition : definitions) {
+    auto equals = definition.find('=');
+    if (equals == std::string::npos || equals == 0)
+      return llvm::createStringError("invalid JIT definition '%s'; expected name=value",
+                                     definition.c_str());
+    auto name = definition.substr(0, equals);
+    if (!result.emplace(name, definition.substr(equals + 1)).second)
+      return llvm::createStringError("duplicate JIT definition '%s'", name.c_str());
+  }
+  return result;
+}
+} // namespace
 
 namespace codon {
 namespace jit {
@@ -22,17 +42,12 @@ typedef void *PyWrapperFunc(void *);
 const std::string JIT_FILENAME = "<jit>";
 } // namespace
 
-JIT::JIT(const std::string &argv0, const std::string &mode,
-         const std::string &stdlibRoot)
-    : compiler(std::make_unique<Compiler>(argv0, Compiler::Mode::JIT,
-                                          /*disabledPasses=*/std::vector<std::string>{},
-                                          /*isTest=*/false,
-                                          /*pyNumerics=*/false, /*pyExtension=*/false)),
-      engine(std::make_unique<Engine>()), pydata(std::make_unique<PythonData>()),
-      mode(mode), forgetful(false) {
+JIT::JIT(const Options &options, const std::string &mode, const std::string &stdlibRoot)
+    : compiler(std::make_unique<Compiler>(options)),
+      engine(std::make_unique<Engine>(compiler->getOptions())),
+      pydata(std::make_unique<PythonData>()), mode(mode), forgetful(false) {
   if (!stdlibRoot.empty())
     compiler->getCache()->fs->add_search_path(stdlibRoot);
-  compiler->getLLVMVisitor()->setJIT(true);
 }
 
 void collectExecutableStmts(ast::Stmt *s, ast::SuiteStmt *final) {
@@ -50,8 +65,9 @@ void collectExecutableStmts(ast::Stmt *s, ast::SuiteStmt *final) {
 llvm::Error JIT::init(bool forgetful) {
   if (forgetful) {
     this->forgetful = true;
-    auto fs = std::make_shared<ast::ResourceFilesystem>(compiler->getArgv0(), "",
-                                                        /*allowExternal=*/false);
+    auto fs =
+        std::make_shared<ast::ResourceFilesystem>(compiler->getOptions()->argv0, "",
+                                                  /*allowExternal=*/false);
     compiler->getCache()->fs = fs;
   }
 
@@ -60,13 +76,17 @@ llvm::Error JIT::init(bool forgetful) {
   auto *pm = compiler->getPassManager();
   auto *llvisitor = compiler->getLLVMVisitor();
 
-  cache->isJit = true;
-  auto typechecked = ast::TypecheckVisitor::apply(
-      cache, cache->N<ast::SuiteStmt>(), JIT_FILENAME, {}, compiler->getEarlyDefines());
-  cache->isJit =
-      false; // we still need main(), so pause isJit first time during translation
+  auto definitions = parseJITDefines(compiler->getOptions()->defines);
+  if (!definitions)
+    return definitions.takeError();
+  compiler->getOptions()->jit = true;
+  auto typechecked =
+      ast::TypecheckVisitor::apply(cache, cache->N<ast::SuiteStmt>(), JIT_FILENAME,
+                                   *definitions, compiler->getEarlyDefines());
+  compiler->getOptions()->jit =
+      false; // we still need main(), so pause jit first time during translation
   ast::TranslateVisitor::apply(cache, std::move(typechecked));
-  cache->isJit = true;
+  compiler->getOptions()->jit = true;
   module->setSrcInfo({JIT_FILENAME, 0, 0, 0});
 
   pm->run(module);
@@ -308,10 +328,10 @@ std::string buildPythonWrapper(const std::string &name, const std::string &wrapn
 
 JIT::PythonData::PythonData() : cobj(nullptr), cache() {}
 
-ir::types::Type *JIT::PythonData::getCObjType(ir::Module *M) {
+ir::Type *JIT::PythonData::getCObjType(ir::Module *M) {
   if (cobj)
     return cobj;
-  cobj = M->getPointerType(M->getByteType());
+  cobj = M->getPointerType();
   return cobj;
 }
 
@@ -377,10 +397,139 @@ JIT::JITResult JIT::executePython(const std::string &name,
 } // namespace jit
 } // namespace codon
 
+namespace {
+llvm::Expected<std::unique_ptr<codon::Options>> parseJITOptions(const char *name,
+                                                                const char *settings) {
+  auto options = codon::Options::getDefault(name);
+  options->jit = true;
+  options->debug = false;
+
+  auto parsed = llvm::json::parse(settings);
+  if (!parsed)
+    return parsed.takeError();
+  auto *object = parsed->getAsObject();
+  if (!object)
+    return llvm::createStringError("JIT options must be an object");
+
+  using Options = codon::Options;
+  const std::pair<const char *, bool Options::*> booleans[] = {
+      {"debug", &Options::debug},       {"pmempty", &Options::pmempty},
+      {"capture", &Options::capture},   {"native", &Options::native},
+      {"pynum", &Options::pynum},       {"noexc", &Options::noexc},
+      {"fastmath", &Options::fastmath}, {"autopy", &Options::autopy},
+      {"autofree", &Options::autofree}, {"unordereddict", &Options::unordereddict},
+  };
+  for (const auto &[key, member] : booleans) {
+    if (auto *value = object->get(key)) {
+      auto setting = value->getAsBoolean();
+      if (!setting)
+        return llvm::createStringError("JIT option '%s' must be a bool", key);
+      options.get()->*member = *setting;
+      object->erase(key);
+    }
+  }
+  const std::pair<const char *, std::string Options::*> strings[] = {
+      {"libdevice", &Options::libdevice},
+      {"gpuName", &Options::gpuName},
+      {"gpuFeat", &Options::gpuFeat},
+      {"gpuOutput", &Options::gpuOutput},
+      {"log", &Options::log},
+      {"march", &Options::march},
+      {"mcpu", &Options::mcpu},
+  };
+  for (const auto &[key, member] : strings) {
+    if (auto *value = object->get(key)) {
+      auto setting = value->getAsString();
+      if (!setting || setting->contains('\0'))
+        return llvm::createStringError(
+            "JIT option '%s' must be a string without NUL bytes", key);
+      options.get()->*member = setting->str();
+      object->erase(key);
+    }
+  }
+  const std::pair<const char *, std::vector<std::string> Options::*> lists[] = {
+      {"plugins", &Options::plugins},
+      {"defines", &Options::defines},
+      {"disabled", &Options::disabled},
+      {"mattrs", &Options::mattrs},
+  };
+  for (const auto &[key, member] : lists) {
+    if (auto *value = object->get(key)) {
+      auto *settings = value->getAsArray();
+      if (!settings)
+        return llvm::createStringError("JIT option '%s' must be a list of strings",
+                                       key);
+      for (const auto &element : *settings) {
+        auto setting = element.getAsString();
+        if (!setting || setting->contains('\0'))
+          return llvm::createStringError(
+              "JIT option '%s' must contain strings without NUL bytes", key);
+        (options.get()->*member).push_back(setting->str());
+      }
+      object->erase(key);
+    }
+  }
+  if (!object->empty())
+    return llvm::createStringError("unknown or unsupported JIT option '%s'",
+                                   object->begin()->first.str().c_str());
+  auto definitions = parseJITDefines(options->defines);
+  if (!definitions)
+    return definitions.takeError();
+  if (options->march == "native") {
+    options->march.clear();
+    if (options->mcpu.empty()) {
+      auto hostCPU = llvm::sys::getHostCPUName();
+      if (!hostCPU.empty() && hostCPU != "generic")
+        options->mcpu = hostCPU.str();
+    }
+    if (options->mattrs.empty())
+      for (const auto &[feature, enabled] : llvm::sys::getHostCPUFeatures())
+        options->mattrs.push_back((enabled ? "+" : "-") + feature.str());
+  }
+  return std::move(options);
+}
+
+CJITResult jitError(llvm::Error error) {
+  auto message = llvm::toString(std::move(error));
+  return {nullptr, strndup(message.c_str(), message.size())};
+}
+} // namespace
+
+CJITResult jit_validate_options(const char *settings) {
+  auto options = parseJITOptions("codon jit", settings);
+  if (!options)
+    return jitError(options.takeError());
+  return {nullptr, nullptr};
+}
+
+CJITResult jit_init_with_options(const char *name, const char *settings) {
+  auto options = parseJITOptions(name, settings);
+  if (!options)
+    return jitError(options.takeError());
+  try {
+    codon::getLogger().parse((*options)->log);
+    if (auto *debug = getenv("CODON_DEBUG"))
+      codon::getLogger().parse(debug);
+    auto jit = std::make_unique<codon::jit::JIT>(**options);
+    for (const auto &plugin : (*options)->plugins)
+      if (auto error = jit->getCompiler()->load(plugin))
+        return jitError(std::move(error));
+    if (auto error = jit->init())
+      return jitError(std::move(error));
+    return {jit.release(), nullptr};
+  } catch (const codon::exc::ParserException &error) {
+    return jitError(llvm::make_error<codon::error::ParserErrorInfo>(error.getErrors()));
+  }
+}
+
 void *jit_init(char *name) {
-  auto jit = new codon::jit::JIT(std::string(name));
-  llvm::cantFail(jit->init());
-  return jit;
+  auto result = jit_init_with_options(name, "{}");
+  if (result.error) {
+    auto error = llvm::createStringError("%s", result.error);
+    free(result.error);
+    llvm::cantFail(std::move(error));
+  }
+  return result.result;
 }
 
 void jit_exit(void *jit) { delete ((codon::jit::JIT *)jit); }

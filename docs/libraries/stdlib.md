@@ -27,10 +27,11 @@ or in part natively in Codon:
 | `re`          | Uses [Google's RE2 library](https://github.com/google/re2) internally. |
 | `time`        ||
 | `bz2`         ||
-| `os`          ||
+| `os`          | Native environment, filesystem, process and descriptor operations. |
 | `cmath`       ||
 | `functools`   ||
 | `itertools`   ||
+| `json`        | Tagged native JSON values, parsing and encoding. |
 | `statistics`  ||
 | `typing`      | Contents are available by default in Codon. |
 | `getopt`      ||
@@ -38,7 +39,8 @@ or in part natively in Codon:
 | `pickle`      | Codon uses its own pickle format, so generally not compatible with CPython pickling. |
 | `string`      ||
 | `collections` ||
-| `sys`         ||
+| `pathlib`     | Native `Path` objects, filesystem operations, globbing and traversal. |
+| `sys`         | Native streams, encoding queries and Codon implementation metadata. |
 
 ## Additional modules
 

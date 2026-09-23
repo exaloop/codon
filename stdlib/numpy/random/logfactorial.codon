@@ -16,4 +16,4 @@ def logfactorial(k: int):
 	if k < 126:
 		return logfact(k)
 
-	return (k + 0.5)*log(float(k)) - k + (halfln2pi + (1.0/k)*(1/12.0 - 1/(360.0*k*k)))
+	return (k + 0.5)*log(float(k)) - k + (halfln2pi + ((1.).cdiv(float(k)))*((1.).cdiv(12.) - (1.).cdiv(360.0*k*k)))

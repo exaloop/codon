@@ -25,6 +25,10 @@ def no_side_effect():
     pass
 
 @__attribute__
+def llvm_memory_none():
+    pass
+
+@__attribute__
 def nocapture():
     pass
 

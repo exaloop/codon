@@ -27,15 +27,15 @@ void warn(const std::string &msg, const Value *v) {
 }
 
 struct OMPTypes {
-  types::Type *i64 = nullptr;
-  types::Type *i32 = nullptr;
-  types::Type *i8ptr = nullptr;
-  types::Type *i32ptr = nullptr;
+  Type *i64 = nullptr;
+  Type *i32 = nullptr;
+  Type *i8ptr = nullptr;
+  Type *i32ptr = nullptr;
 
   explicit OMPTypes(Module *M) {
     i64 = M->getIntType();
-    i32 = M->getIntNType(32, /*sign=*/true);
-    i8ptr = M->getPointerType(M->getByteType());
+    i32 = M->getIntType(32, /*sign=*/true);
+    i8ptr = M->getPointerType();
     i32ptr = M->getPointerType(i32);
   }
 };
@@ -98,6 +98,7 @@ struct Reduction {
   enum Kind {
     NONE,
     ADD,
+    SUB,
     MUL,
     AND,
     OR,
@@ -109,8 +110,8 @@ struct Reduction {
   Kind kind = Kind::NONE;
   Var *shared = nullptr;
 
-  types::Type *getType() {
-    auto *ptrType = cast<types::PointerType>(shared->getType());
+  Type *getType() {
+    auto *ptrType = cast<PointerType>(shared->getType());
     seqassertn(ptrType, "expected shared var to be of pointer type");
     return ptrType->getBase();
   }
@@ -121,9 +122,11 @@ struct Reduction {
     auto *M = shared->getModule();
     auto *type = getType();
 
-    if (isA<types::IntType>(type)) {
+    if (util::isInt(type)) {
       switch (kind) {
       case Kind::ADD:
+        return M->getInt(0);
+      case Kind::SUB:
         return M->getInt(0);
       case Kind::MUL:
         return M->getInt(1);
@@ -140,9 +143,11 @@ struct Reduction {
       default:
         return nullptr;
       }
-    } else if (isA<types::FloatType>(type)) {
+    } else if (isA<FloatType>(type)) {
       switch (kind) {
       case Kind::ADD:
+        return M->getFloat(0.);
+      case Kind::SUB:
         return M->getFloat(0.);
       case Kind::MUL:
         return M->getFloat(1.);
@@ -153,12 +158,15 @@ struct Reduction {
       default:
         return nullptr;
       }
-    } else if (isA<types::Float32Type>(type)) {
+    } else if (isA<Float32Type>(type)) {
       auto *f32 = M->getOrRealizeType("float32");
       float value = 0.0;
 
       switch (kind) {
       case Kind::ADD:
+        value = 0.0;
+        break;
+      case Kind::SUB:
         value = 0.0;
         break;
       case Kind::MUL:
@@ -175,6 +183,16 @@ struct Reduction {
       }
 
       return (*f32)(*M->getFloat(value));
+    } else if (type->is(M->getBoolType())) {
+      switch (kind) {
+      case Kind::AND:
+        return M->getBool(true);
+      case Kind::OR:
+      case Kind::XOR:
+        return M->getBool(false);
+      default:
+        return nullptr;
+      }
     }
 
     auto *init = (*type)();
@@ -189,6 +207,9 @@ struct Reduction {
     Value *result = nullptr;
     switch (kind) {
     case Kind::ADD:
+      result = *lhs + *arg;
+      break;
+    case Kind::SUB:
       result = *lhs + *arg;
       break;
     case Kind::MUL:
@@ -227,9 +248,12 @@ struct Reduction {
     auto *type = getType();
     std::string func = "";
 
-    if (isA<types::IntType>(type)) {
+    if (util::isInt(type)) {
       switch (kind) {
       case Kind::ADD:
+        func = "_atomic_int_add";
+        break;
+      case Kind::SUB:
         func = "_atomic_int_add";
         break;
       case Kind::MUL:
@@ -253,7 +277,7 @@ struct Reduction {
       default:
         break;
       }
-    } else if (isA<types::FloatType>(type)) {
+    } else if (isA<FloatType>(type)) {
       switch (kind) {
       case Kind::ADD:
         func = "_atomic_float_add";
@@ -270,9 +294,12 @@ struct Reduction {
       default:
         break;
       }
-    } else if (isA<types::Float32Type>(type)) {
+    } else if (isA<Float32Type>(type)) {
       switch (kind) {
       case Kind::ADD:
+        func = "_atomic_float32_add";
+        break;
+      case Kind::SUB:
         func = "_atomic_float32_add";
         break;
       case Kind::MUL:
@@ -298,6 +325,9 @@ struct Reduction {
 
     switch (kind) {
     case Kind::ADD:
+      func = "__atomic_add__";
+      break;
+    case Kind::SUB:
       func = "__atomic_add__";
       break;
     case Kind::MUL:
@@ -384,7 +414,7 @@ struct ReductionIdentifier : public util::Operator {
 
   bool isSharedDeref(Var *shared, Value *v) {
     auto *M = v->getModule();
-    auto *ptrType = cast<types::PointerType>(shared->getType());
+    auto *ptrType = cast<PointerType>(shared->getType());
     seqassertn(ptrType, "expected shared var to be of pointer type");
     auto *type = ptrType->getBase();
 
@@ -399,8 +429,7 @@ struct ReductionIdentifier : public util::Operator {
     return false;
   }
 
-  static void extractAssociativeOpChain(Value *v, const std::string &op,
-                                        types::Type *type,
+  static void extractAssociativeOpChain(Value *v, const std::string &op, Type *type,
                                         std::vector<Value *> &result) {
     if (util::isCallOf(v, op, {type, nullptr}, type, /*method=*/true) ||
         util::isCallOf(v, op, {nullptr, type}, type, /*method=*/true)) {
@@ -410,6 +439,93 @@ struct ReductionIdentifier : public util::Operator {
     } else {
       result.push_back(v);
     }
+  }
+
+  bool isSharedDerefForReductionCond(Var *shared, Value *v) {
+    if (isSharedDeref(shared, v))
+      return true;
+
+    // Only unwrap the known lowering artifact:
+    // flow(series(assign tmp = shared_deref), tmp)
+    if (auto *flow = cast<FlowInstr>(v)) {
+      auto *series = cast<SeriesFlow>(flow->getFlow());
+      auto *ret = cast<VarValue>(flow->getValue());
+      if (!series || !ret || std::distance(series->begin(), series->end()) != 1)
+        return false;
+
+      auto *assign = cast<AssignInstr>(series->front());
+      if (!assign || assign->getLhs()->getId() != ret->getVar()->getId())
+        return false;
+
+      return isSharedDeref(shared, assign->getRhs());
+    }
+
+    return false;
+  }
+
+  static Var *getConditionResultVar(Value *v) {
+    if (auto *flow = cast<FlowInstr>(v))
+      if (auto *ret = cast<VarValue>(flow->getValue()))
+        return ret->getVar();
+
+    if (auto *ret = cast<VarValue>(v))
+      return ret->getVar();
+
+    return nullptr;
+  }
+
+  static bool isConditionResult(Value *cond, Value *v) {
+    auto *condVar = getConditionResultVar(cond);
+    auto *valueVar = cast<VarValue>(v);
+    return condVar && valueVar && condVar->getId() == valueVar->getVar()->getId();
+  }
+
+  static bool isLogicalFalseValue(Value *cond, Value *v) {
+    return util::isConst<bool>(v, false) || isConditionResult(cond, v);
+  }
+
+  static bool isLogicalTrueValue(Value *cond, Value *v) {
+    return util::isConst<bool>(v, true) || isConditionResult(cond, v);
+  }
+
+  Reduction getReductionFromTernary(Var *shared, Type *type, Value *item) {
+    auto *M = item->getModule();
+    if (!type->is(M->getBoolType()))
+      return {};
+
+    auto *ternary = cast<TernaryInstr>(item);
+    if (!ternary)
+      return {};
+
+    auto *cond = ternary->getCond();
+
+    if (isSharedDerefForReductionCond(shared, cond) &&
+        isLogicalFalseValue(cond, ternary->getFalseValue()) &&
+        ternary->getTrueValue()->getType()->is(type)) {
+      Reduction reduction = {Reduction::Kind::AND, shared};
+      return reduction.getInitial() ? reduction : Reduction();
+    }
+
+    if (isSharedDerefForReductionCond(shared, cond) &&
+        isLogicalTrueValue(cond, ternary->getTrueValue()) &&
+        ternary->getFalseValue()->getType()->is(type)) {
+      Reduction reduction = {Reduction::Kind::OR, shared};
+      return reduction.getInitial() ? reduction : Reduction();
+    }
+
+    if (isSharedDerefForReductionCond(shared, ternary->getTrueValue()) &&
+        isLogicalFalseValue(cond, ternary->getFalseValue())) {
+      Reduction reduction = {Reduction::Kind::AND, shared};
+      return reduction.getInitial() ? reduction : Reduction();
+    }
+
+    if (isSharedDerefForReductionCond(shared, ternary->getFalseValue()) &&
+        isLogicalTrueValue(cond, ternary->getTrueValue())) {
+      Reduction reduction = {Reduction::Kind::OR, shared};
+      return reduction.getInitial() ? reduction : Reduction();
+    }
+
+    return {};
   }
 
   Reduction getReductionFromCall(CallInstr *v) {
@@ -428,7 +544,7 @@ struct ReductionIdentifier : public util::Operator {
     if (!shared || !isShared(shared) || !util::isConst<int64_t>(idx, 0))
       return {};
 
-    auto *ptrType = cast<types::PointerType>(shared->getType());
+    auto *ptrType = cast<PointerType>(shared->getType());
     seqassertn(ptrType, "expected shared var to be of pointer type");
     auto *type = ptrType->getBase();
     auto *noneType = M->getOptionalType(M->getNoneType());
@@ -441,6 +557,7 @@ struct ReductionIdentifier : public util::Operator {
 
     const std::vector<ReductionFunction> reductionFunctions = {
         {Module::ADD_MAGIC_NAME, Reduction::Kind::ADD, true},
+        {Module::SUB_MAGIC_NAME, Reduction::Kind::SUB, true},
         {Module::MUL_MAGIC_NAME, Reduction::Kind::MUL, true},
         {Module::AND_MAGIC_NAME, Reduction::Kind::AND, true},
         {Module::OR_MAGIC_NAME, Reduction::Kind::OR, true},
@@ -499,7 +616,7 @@ struct ReductionIdentifier : public util::Operator {
       return reduction;
     }
 
-    return {};
+    return getReductionFromTernary(shared, type, item);
   }
 
   Reduction getReduction(Var *shared) {
@@ -622,6 +739,11 @@ struct ParallelLoopTemplateReplacer : public LoopTemplateReplacer {
 
       auto *M = parent->getModule();
       auto *extras = util::getVar(v->front());
+      auto *series = M->Nr<SeriesFlow>();
+      for (auto &info : sharedInfo) {
+        if (info.reduction)
+          info.local = util::makeVar(M->Nr<VarValue>(info.local), series, parent);
+      }
       auto *reductionTuple = getReductionTuple();
       auto *reducer = makeReductionFunc();
       auto *lck = locks.getMainLock(M);
@@ -639,7 +761,6 @@ struct ParallelLoopTemplateReplacer : public LoopTemplateReplacer {
           {reductionLocRef->getType(), gtid->getType(), lckPtrType}, {}, ompModule);
       seqassertn(reduceNoWaitEnd, "end reduce nowait function not found");
 
-      auto *series = M->Nr<SeriesFlow>();
       auto *tupleVal = util::makeVar(reductionTuple, series, parent);
       auto *reduceCode =
           util::call(reduceNoWait,
@@ -728,7 +849,7 @@ struct ImperativeLoopTemplateReplacer : public ParallelLoopTemplateReplacer {
 
           // shared vars will be stored in a new var
           if (isA<PointerValue>(arg)) {
-            types::Type *base = cast<types::PointerType>(arg->getType())->getBase();
+            Type *base = cast<PointerType>(arg->getType())->getBase();
 
             // get extras again since we'll be inserting the new var before extras local
             Var *lastArg = parent->arg_back(); // ptr to {chunk, start, stop, extras}
@@ -1051,17 +1172,14 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
       auto *taskRedInputType =
           M->getOrRealizeType(ast::getMangledClass(ompModule, "TaskReductionInput"));
       seqassertn(taskRedInputType, "could not find 'TaskReductionInput' type");
-      auto *irArrayType = M->getOrRealizeType(
-          ast::getMangledClass(ompModule, "TaskReductionInputArray"));
-      seqassertn(irArrayType, "could not find 'TaskReductionInputArray' type");
+      auto *irArrayType = M->getPointerType(taskRedInputType);
       auto *taskRedInputsArray = util::makeVar(
           M->Nr<StackAllocInstr>(irArrayType, numRed), taskRedInitSeries, parent);
       array = taskRedInputsArray;
-      auto *taskRedInputsArrayType = taskRedInputsArray->getType();
 
-      auto *taskRedSetItem = M->getOrRealizeMethod(
-          taskRedInputsArrayType, Module::SETITEM_MAGIC_NAME,
-          {taskRedInputsArrayType, M->getIntType(), taskRedInputType});
+      auto *taskRedSetItem =
+          M->getOrRealizeMethod(irArrayType, Module::SETITEM_MAGIC_NAME,
+                                {irArrayType, M->getIntType(), taskRedInputType});
       seqassertn(taskRedSetItem,
                  "could not find 'TaskReductionInputArray.__setitem__' method");
       int i = 0;
@@ -1075,18 +1193,17 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
         }
       }
 
-      auto *arrayPtr = M->Nr<ExtractInstr>(M->Nr<VarValue>(array), "ptr");
       auto *taskRedInitFunc =
           M->getOrRealizeFunc("_taskred_init",
                               {reductionLocRef->getType(), gtid->getType(),
-                               M->getIntType(), arrayPtr->getType()},
+                               M->getIntType(), array->getType()},
                               {}, ompModule);
       seqassertn(taskRedInitFunc, "task red init function not found");
-      auto *taskRedInitResult =
-          util::makeVar(util::call(taskRedInitFunc, {M->Nr<VarValue>(reductionLocRef),
-                                                     M->Nr<VarValue>(gtid),
-                                                     M->getInt(numRed), arrayPtr}),
-                        taskRedInitSeries, parent);
+      auto *taskRedInitResult = util::makeVar(
+          util::call(taskRedInitFunc,
+                     {M->Nr<VarValue>(reductionLocRef), M->Nr<VarValue>(gtid),
+                      M->getInt(numRed), M->Nr<VarValue>(array)}),
+          taskRedInitSeries, parent);
       tskgrp = taskRedInitResult;
       v->replaceAll(taskRedInitSeries);
     }
@@ -1284,7 +1401,7 @@ ForkCallData createForkCall(Module *M, OMPTypes &types, Value *rawTemplateFunc,
                             transform::parallel::OMPSched *sched) {
   ForkCallData result;
   auto *forkExtra = util::makeTuple(forkExtraArgs, M);
-  std::vector<types::Type *> forkArgTypes = {types.i8ptr, forkExtra->getType()};
+  std::vector<Type *> forkArgTypes = {types.i8ptr, forkExtra->getType()};
   auto *forkFunc = M->getOrRealizeFunc("_fork_call", forkArgTypes, {}, ompModule);
   seqassertn(forkFunc, "fork call function not found");
   result.fork = util::call(forkFunc, {rawTemplateFunc, forkExtra});
@@ -1440,9 +1557,8 @@ void OpenMPPass::handle(ForFlow *v) {
     auto *nullPtr = types.i8ptr->construct({});
     privates.push_back(nullPtr);
 
-    auto *outlinedFuncType = cast<types::FuncType>(outline.func->getType());
-    std::vector<types::Type *> argTypes(outlinedFuncType->begin(),
-                                        outlinedFuncType->end());
+    auto *outlinedFuncType = cast<FuncType>(outline.func->getType());
+    std::vector<Type *> argTypes(outlinedFuncType->begin(), outlinedFuncType->end());
     argTypes.push_back(M->getIntType());
     auto *retType = outlinedFuncType->getReturnType();
 
@@ -1479,7 +1595,7 @@ void OpenMPPass::handle(ForFlow *v) {
   auto *sharedsTuple = util::makeTuple(shareds, M);
 
   // template call
-  std::vector<types::Type *> templateFuncArgs = {
+  std::vector<Type *> templateFuncArgs = {
       types.i32ptr, types.i32ptr,
       M->getPointerType(
           M->getTupleType({v->getIter()->getType(), privatesTuple->getType(),
@@ -1538,7 +1654,7 @@ void OpenMPPass::handle(ImperativeForFlow *v) {
 
   // gather extra arguments
   std::vector<Value *> extraArgs;
-  std::vector<types::Type *> extraArgTypes;
+  std::vector<Type *> extraArgTypes;
   for (auto *arg : *outline.call) {
     if (getVarFromOutlinedArg(arg)->getId() != loopVar->getId()) {
       extraArgs.push_back(arg);
@@ -1569,8 +1685,8 @@ void OpenMPPass::handle(ImperativeForFlow *v) {
       }
     }
 
-    std::vector<types::Type *> templateFuncArgs = {types.i64, types.i64,
-                                                   M->getTupleType(extraArgTypes)};
+    std::vector<Type *> templateFuncArgs = {types.i64, types.i64,
+                                            M->getTupleType(extraArgTypes)};
     static int64_t instance = 0;
     auto *templateFunc = M->getOrRealizeFunc(templateFuncName, templateFuncArgs,
                                              {instance++}, gpuModule);
@@ -1602,7 +1718,7 @@ void OpenMPPass::handle(ImperativeForFlow *v) {
     v->replaceAll(util::call(
         templateFunc, {v->getStart(), v->getEnd(), util::makeTuple(extraArgs, M)}));
   } else {
-    std::vector<types::Type *> templateFuncArgs = {
+    std::vector<Type *> templateFuncArgs = {
         types.i32ptr, types.i32ptr,
         M->getPointerType(M->getTupleType(
             {types.i64, types.i64, types.i64, M->getTupleType(extraArgTypes)}))};

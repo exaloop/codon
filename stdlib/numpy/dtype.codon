@@ -20,7 +20,7 @@ float64 = float
 complex128 = complex
 
 bool_ = bool
-# byte already present in Codon
+byte = u8
 ubyte = uint8
 short = int16
 ushort = uint16

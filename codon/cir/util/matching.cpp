@@ -159,6 +159,10 @@ public:
   void handle(const StringConst *x, const StringConst *y) {
     result = process(x->getType(), y->getType()) && x->getVal() == y->getVal();
   }
+  VISIT(BytesConst);
+  void handle(const BytesConst *x, const BytesConst *y) {
+    result = process(x->getType(), y->getType()) && x->getVal() == y->getVal();
+  }
   VISIT(dsl::CustomConst);
   void handle(const dsl::CustomConst *x, const dsl::CustomConst *y) {
     result = x->match(y);
@@ -244,10 +248,10 @@ public:
     else if ((!x && y) || (x && !y))
       return false;
 
-    auto *tx = cast<types::Type>(x);
-    auto *ty = cast<types::Type>(y);
+    auto *tx = cast<Type>(x);
+    auto *ty = cast<Type>(y);
     if (tx || ty)
-      return tx && ty && tx->is(const_cast<types::Type *>(ty));
+      return tx && ty && tx->is(const_cast<Type *>(ty));
 
     MatchVisitor v(checkName);
     x->accept(v);

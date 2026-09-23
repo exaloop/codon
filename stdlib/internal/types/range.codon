@@ -51,10 +51,10 @@ class range:
             step < 0 and not (stop < idx <= start)
         ):
             return False
-        return (idx - start) % step == 0
+        return (idx - start).cmod(step) == 0
 
     def _index(self, n: int) -> int:
-        return (n - self.start) // self.step
+        return (n - self.start).cdiv(self.step)
 
     def index(self, n: int) -> int:
         if n in self:
@@ -82,9 +82,9 @@ class range:
     def __len__(self) -> int:
         start, stop, step = self.start, self.stop, self.step
         if step > 0 and start < stop:
-            return 1 + (stop - 1 - start) // step
+            return 1 + (stop - 1 - start).cdiv(step)
         elif step < 0 and start > stop:
-            return 1 + (start - 1 - stop) // (-step)
+            return 1 + (start - 1 - stop).cdiv(-step)
         else:
             return 0
 

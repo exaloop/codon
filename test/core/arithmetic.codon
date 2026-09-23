@@ -3,8 +3,8 @@ def t1():
     assert 2 + 2 == 4
     assert 3.14 * 2 == 6.28
     assert 2 + 3*2 == 8
-    assert 1.0/0 == float('inf')
-    assert str(0.0/0) == 'nan'
+    assert (1.0).cdiv(0.0) == float('inf')
+    assert str((0.0).cdiv(0.0)) == 'nan'
 
     assert 5 // 2 == 2
     assert 5 / 2 == 2.5
@@ -28,6 +28,51 @@ def test_popcnt():
     assert (UInt[1024](0xfffffffffffffff3) * UInt[1024](0xfffffffffffffff3)).popcnt() == 4
     assert UInt[128](-1).popcnt() == 128
 test_popcnt()
+
+@test
+def test_int_shift_count(N: Literal[int]):
+    signed = Int[N](-1)
+    unsigned = UInt[N](-1)
+    for count in range(N):
+        signed_left = signed << count
+        signed_right = signed >> count
+        unsigned_left = unsigned << count
+        unsigned_right = unsigned >> count
+        assert type(signed_left) is Int[N]
+        assert type(signed_right) is Int[N]
+        assert type(unsigned_left) is UInt[N]
+        assert type(unsigned_right) is UInt[N]
+        assert signed_left == signed << Int[N](count)
+        assert signed_right == signed
+        assert unsigned_left == unsigned << UInt[N](count)
+        assert unsigned_right == unsigned >> UInt[N](count)
+
+    assert type(signed << 0) is Int[N]
+    assert type(signed >> 0) is Int[N]
+    assert type(unsigned << 0) is UInt[N]
+    assert type(unsigned >> 0) is UInt[N]
+    if N > 1:
+        signed <<= 1
+        assert type(signed) is Int[N]
+        assert signed == Int[N](-2)
+        signed >>= 1
+        assert signed == Int[N](-1)
+        unsigned >>= 1
+        assert type(unsigned) is UInt[N]
+        assert unsigned == UInt[N](-1) >> UInt[N](1)
+        unsigned <<= 1
+        assert unsigned == UInt[N](-2)
+
+test_int_shift_count(1)
+test_int_shift_count(2)
+test_int_shift_count(7)
+test_int_shift_count(8)
+test_int_shift_count(16)
+test_int_shift_count(32)
+test_int_shift_count(64)
+test_int_shift_count(65)
+test_int_shift_count(128)
+test_int_shift_count(256)
 
 @test
 def test_conversions():
@@ -56,12 +101,11 @@ def test_conversions():
     assert str(False) == 'False'
     assert str(True) == 'True'
 
-    # byte -> int, float, bool, str
-    assert int(byte(42)) == 42
-    assert float(byte(42)) == 42.0
-    assert bool(byte(0)) == False
-    assert bool(byte(42)) == True
-    assert str(byte(42)) == '*'
+    # u8 -> int, float, bool, str
+    assert int(u8(42)) == 42
+    assert float(u8(42)) == 42.0
+    assert bool(u8(0)) == False
+    assert bool(u8(42)) == True
 
     # intN -> int, float, bool, str | N < 64
     assert int(i32(-42)) == -42
@@ -486,3 +530,17 @@ def test_int_match():
     assert n == 4
 
 test_int_match()
+
+@test
+def test_int_int_ops():
+    assert type(u32(1) + u32(1)) is u32
+    assert type(u32(1) + u64(1)) is u64
+    assert u32(1) + u64(1) == u64(2)
+    assert u32(1) + u64(1) == u32(2)
+
+    assert type(i32(1) + i32(1)) is i32
+    assert type(i32(1) + 1) is int
+    assert i32(1) + 1 == u64(2)
+    assert i32(1) + 1 == i32(2)
+
+test_int_int_ops()

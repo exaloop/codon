@@ -14,7 +14,7 @@ def test_new():
     assert Vec[float32, 4](float32(1.0)).scatter() == [float32(1.0)] * 4
 
     data = [u8(i) for i in range(16)]
-    assert Vec[u8, 8](data.arr.ptr).scatter() == data[:8]
+    assert Vec[u8, 8](data._ptr).scatter() == data[:8]
     assert Vec[u8, 8](data).scatter() == data[:8]
     assert Vec[u8, 8]("abcdefgh").scatter() == [u8(i) for i in range(ord('a'), ord('a') + 8)]
 

@@ -176,14 +176,14 @@ def _log_impl(z):
     minnum = util.minnum(F)
     mantdig = util.mantdig(F)
 
-    if ax > maxnum / F(4) or ay > maxnum / F(4):
-        rr = util.log(util.hypot(ax / F(2), ay / F(2))) + F(util.LOGE2)
+    if ax > maxnum.cdiv(F(4)) or ay > maxnum.cdiv(F(4)):
+        rr = util.log(util.hypot(ax.cdiv(F(2)), ay.cdiv(F(2)))) + F(util.LOGE2)
     elif ax < minnum and ay < minnum:
         if ax > F(0) or ay > F(0):
             rr = util.log(util.hypot(util.ldexp(ax, mantdig),
                  util.ldexp(ay, mantdig))) - F(mantdig)*F(util.LOGE2)
         else:
-            rr = F(-1) / z.real
+            rr = F(-1).cdiv(z.real)
             rr = util.copysign(rr, F(-1))
             ri = arg(z)
             return C(rr, ri)
@@ -192,7 +192,7 @@ def _log_impl(z):
         if F(0.71) <= h <= F(1.73):
             am = ax if ax > ay else ay
             an = ay if ax > ay else ax
-            rr = util.log1p((am-F(1))*(am+F(1))+an*an)/F(2)
+            rr = util.log1p((am-F(1))*(am+F(1))+an*an).cdiv(F(2))
         else:
             rr = util.log(h)
     ri = arg(z)
@@ -223,7 +223,7 @@ def _sqrt_impl(z):
     b = z.imag
     C = type(z)
     F = type(a)
-    thresh = util.maxnum(F) / F(1 + util.SQRT2)
+    thresh = util.maxnum(F).cdiv(F(1 + util.SQRT2))
     scale = False
     result = C()
 
@@ -234,7 +234,7 @@ def _sqrt_impl(z):
         return C(util.inf(F), b)
 
     if util.isnan(a):
-        t = (b - b) / (b - b)
+        t = (b - b).cdiv(b - b)
         return C(a, t)
 
     if util.isinf(a):
@@ -252,10 +252,10 @@ def _sqrt_impl(z):
 
     if a >= F(0):
         t = util.sqrt((a + util.hypot(a, b)) * F(0.5))
-        result = C(t, b / (F(2) * t))
+        result = C(t, b.cdiv(F(2) * t))
     else:
         t = util.sqrt((-a + util.hypot(a, b)) * F(0.5))
-        result = C(util.fabs(b) / (F(2) * t), util.copysign(t, b))
+        result = C(util.fabs(b).cdiv(F(2) * t), util.copysign(t, b))
 
     if scale:
         return C(result.real * F(2), result.imag)
@@ -443,18 +443,18 @@ def _tanh_impl(z):
     s = util.sinh(x)
     rho = util.sqrt(F(1) + s * s)
     denom = F(1) + beta * s * s
-    return C((beta * rho * s) / denom, t / denom)
+    return C((beta * rho * s).cdiv(denom), t.cdiv(denom))
 
 def _f(a, b, hypot_a_b):
     F = type(a)
 
     if b < F(0):
-        return (hypot_a_b - b) / F(2)
+        return (hypot_a_b - b).cdiv(F(2))
 
     if b == F(0):
-        return a / F(2)
+        return a.cdiv(F(2))
 
-    return a * a / (hypot_a_b + b) / F(2);
+    return (a * a).cdiv(hypot_a_b + b).cdiv(F(2))
 
 def _hard_work_params(F: type):  # -> (A_crossover, B_crossover, FOUR_SQRT_MIN)
     if F is float:
@@ -474,20 +474,20 @@ def _do_hard_work(x, y):  # -> (rx, B_is_usable, B, sqrt_A2my2, new_y)
 
     R = util.hypot(x, y + F(1))
     S = util.hypot(x, y - F(1))
-    A = (R + S) / F(2)
+    A = (R + S).cdiv(F(2))
     B = F()
 
     if A < F(1):
         A = F(1)
 
     if A < A_crossover:
-        if y == F(1) and x < eps * eps / F(128):
+        if y == F(1) and x < (eps * eps).cdiv(F(128)):
             rx = util.sqrt(x)
         elif x >= eps * util.fabs(y - F(1)):
             Am1 = _f(x, F(1) + y, R) + _f(x, F(1) - y, S)
             rx = util.log1p(Am1 + util.sqrt(Am1 * (A + F(1))))
         elif y < F(1):
-            rx = x / util.sqrt((F(1) - y) * (F(1) + y))
+            rx = x.cdiv(util.sqrt((F(1) - y) * (F(1) + y)))
         else:
             rx = util.log1p(y - F(1) + util.sqrt((y - F(1)) * (y + F(1))))
     else:
@@ -498,25 +498,25 @@ def _do_hard_work(x, y):  # -> (rx, B_is_usable, B, sqrt_A2my2, new_y)
 
     if y < four_sqrt_min:
         B_is_usable = False
-        sqrt_A2my2 = A * (F(2) / eps)
-        new_y = y * (F(2) / eps)
+        sqrt_A2my2 = A * (F(2).cdiv(eps))
+        new_y = y * (F(2).cdiv(eps))
         return rx, B_is_usable, B, sqrt_A2my2, new_y
 
-    B = y / A
+    B = y.cdiv(A)
     B_is_usable = True
 
     if B > B_crossover:
         B_is_usable = False
 
-        if y == F(1) and x < eps / F(128):
-            sqrt_A2my2 = util.sqrt(x) * util.sqrt((A + y) / F(2))
+        if y == F(1) and x < eps.cdiv(F(128)):
+            sqrt_A2my2 = util.sqrt(x) * util.sqrt((A + y).cdiv(F(2)))
         elif x >= eps * util.fabs(y - F(1)):
             Amy = _f(x, y + F(1), R) + _f(x, y - F(1), S)
             sqrt_A2my2 = util.sqrt(Amy * (A + y))
         elif y > F(1):
-            sqrt_A2my2 = (x * (F(4) / eps / eps) * y /
-                util.sqrt((y + F(1)) * (y - F(1))))
-            new_y = y * (F(4) / eps / eps)
+            sqrt_A2my2 = ((x * (F(4).cdiv(eps).cdiv(eps)) * y).cdiv(
+                util.sqrt((y + F(1)) * (y - F(1)))))
+            new_y = y * (F(4).cdiv(eps).cdiv(eps))
         else:
             sqrt_A2my2 = util.sqrt((F(1) - y) * (F(1) + y))
 
@@ -540,12 +540,12 @@ def _clog_for_large_values(x: F, y: F, F: type):
     if ax < ay:
         ax, ay = ay, ax
 
-    if ax > util.maxnum(F) / F(2):
-        rr = util.log(util.hypot(x / F(util.E), y / F(util.E))) + F(1)
+    if ax > util.maxnum(F).cdiv(F(2)):
+        rr = util.log(util.hypot(x.cdiv(F(util.E)), y.cdiv(F(util.E)))) + F(1)
     elif ax > quarter_sqrt_max or ay < sqrt_min:
         rr = util.log(util.hypot(x, y))
     else:
-        rr = util.log(ax * ax + ay * ay) / F(2)
+        rr = util.log(ax * ax + ay * ay).cdiv(F(2))
     ri = util.atan2(y, x)
 
     return rr, ri
@@ -585,7 +585,7 @@ def _acos_impl(z):
     sqrt_6_epsilon, pio2_lo = _acos_params(F)
     pio2_hi = F(util.PI_2)
     eps = util.eps(F)
-    recip_epsilon = F(1) / eps
+    recip_epsilon = F(1).cdiv(eps)
 
     sx = util.signbit(x)
     sy = util.signbit(y)
@@ -620,7 +620,7 @@ def _acos_impl(z):
 
     # raise inexact
 
-    if ax < sqrt_6_epsilon / F(4) and ay < sqrt_6_epsilon / F(4):
+    if ax < sqrt_6_epsilon.cdiv(F(4)) and ay < sqrt_6_epsilon.cdiv(F(4)):
         return C(pio2_hi - (x - pio2_lo), -y)
 
     ry, B_is_usable, B, sqrt_A2my2, new_x = _do_hard_work(ay, ax)
@@ -709,7 +709,7 @@ def _asinh_impl(z):
     C = type(z)
     F = type(x)
     sqrt_6_epsilon = _asinh_params(F)
-    recip_epsilon = F(1) / util.eps(F)
+    recip_epsilon = F(1).cdiv(util.eps(F))
 
     ax = util.fabs(x)
     ay = util.fabs(y)
@@ -743,7 +743,7 @@ def _asinh_impl(z):
 
     # raise_inexact()
 
-    if ax < sqrt_6_epsilon / F(4) and ay < sqrt_6_epsilon / F(4):
+    if ax < sqrt_6_epsilon.cdiv(F(4)) and ay < sqrt_6_epsilon.cdiv(F(4)):
         return z
 
     rx, B_is_usable, B, sqrt_A2my2, new_y = _do_hard_work(ax, ay)
@@ -782,26 +782,26 @@ def _set_float_word(x: u32):
 
 def _real_part_reciprocal32(x, y):
     F = type(x)
-    bias = util.maxexp(F) - 1
-    cutoff = util.mantdig(F) // 2 + 1
+    bias: Literal[int] = util.maxexp(F) - 1
+    cutoff: Literal[int] = util.mantdig(F) // 2 + 1
     hx = _get_float_word(x)
     ix = hx & u32(0x7f800000)
     hy = _get_float_word(y)
     iy = hy & u32(0x7f800000)
 
     if ix - iy >= u32(cutoff << 23) or util.isinf(x):
-        return F(1) / x
+        return F(1).cdiv(x)
 
     if iy - ix >= u32(cutoff << 23):
-        return x / y / y
+        return x.cdiv(y).cdiv(y)
 
     if ix <= u32((bias + util.maxexp(F) // 2 - cutoff) << 23):
-        return (x / (x * x + y * y))
+        return (x.cdiv(x * x + y * y))
 
     scale = _set_float_word(u32(0x7f800000) - ix)
     x *= scale
     y *= scale
-    return x / (x * x + y * y) * scale
+    return x.cdiv(x * x + y * y) * scale
 
 def _get_low_word(x):
     return _bitcast(x, Tuple[u32, u32])[0]
@@ -815,26 +815,26 @@ def _set_high_word(d, v):
 
 def _real_part_reciprocal64(x, y):
     F = type(x)
-    bias = util.maxexp(F) - 1
-    cutoff = util.mantdig(F) // 2 + 1
+    bias: Literal[int] = util.maxexp(F) - 1
+    cutoff: Literal[int] = util.mantdig(F) // 2 + 1
     hx = _get_high_word(x)
     ix = hx & u32(0x7ff00000)
     hy = _get_high_word(y)
     iy = hy & u32(0x7ff00000)
 
     if ix - iy >= u32(cutoff << 20) or util.isinf(x):
-        return F(1) / x
+        return F(1).cdiv(x)
 
     if iy - ix >= u32(cutoff << 20):
-        return x / y / y
+        return x.cdiv(y).cdiv(y)
 
     if ix <= u32((bias + util.maxexp(F) // 2 - cutoff) << 20):
-        return (x / (x * x + y * y))
+        return (x.cdiv(x * x + y * y))
 
     scale = _set_high_word(1.0, u32(0x7ff00000) - ix)
     x *= scale
     y *= scale
-    return x / (x * x + y * y) * scale
+    return x.cdiv(x * x + y * y) * scale
 
 def _real_part_reciprocal(x, y):
     if isinstance(x, float) and isinstance(y, float):
@@ -878,7 +878,7 @@ def _atanh_impl(z):
     F = type(x)
     sqrt_3_epsilon, pio2_lo = _atanh_params(F)
     pio2_hi = F(util.PI_2)
-    recip_epsilon = F(1) / util.eps(F)
+    recip_epsilon = F(1).cdiv(util.eps(F))
 
     ax = util.fabs(x)
     ay = util.fabs(y)
@@ -905,21 +905,21 @@ def _atanh_impl(z):
         return C(_real_part_reciprocal(x, y),
                  util.copysign(pio2_hi + pio2_lo, y))
 
-    if ax < sqrt_3_epsilon / F(2) and ay < sqrt_3_epsilon / F(2):
+    if ax < sqrt_3_epsilon.cdiv(F(2)) and ay < sqrt_3_epsilon.cdiv(F(2)):
         # raise_inexact()
         return z
 
     if ax == F(1) and ay < util.eps(F):
-        rx = F(util.LOGE2) - util.log(ay) / F(2)
+        rx = F(util.LOGE2) - util.log(ay).cdiv(F(2))
     else:
-        rx = util.log1p(F(4) * ax / _sum_squares(ax - F(1), ay)) / F(4)
+        rx = util.log1p((F(4) * ax).cdiv(_sum_squares(ax - F(1), ay))).cdiv(F(4))
 
     if ax == F(1):
-        ry = util.atan2(F(2), -ay) / F(2)
+        ry = util.atan2(F(2), -ay).cdiv(F(2))
     elif ay < util.eps(F):
-        ry = util.atan2(F(2) * ay, (F(1) - ax) * (F(1) + ax)) / F(2)
+        ry = util.atan2(F(2) * ay, (F(1) - ax) * (F(1) + ax)).cdiv(F(2))
     else:
-        ry = util.atan2(F(2) * ay, (F(1) - ax) * (F(1) + ax) - ay * ay) / F(2)
+        ry = util.atan2(F(2) * ay, (F(1) - ax) * (F(1) + ax) - ay * ay).cdiv(F(2))
 
     return C(util.copysign(rx, x), util.copysign(ry, y))
 
@@ -1067,7 +1067,7 @@ def expm1(z):
     y = z.imag
     C = type(z)
     F = type(x)
-    a = util.sin(y / F(2))
+    a = util.sin(y.cdiv(F(2)))
     rx = util.expm1(x) * util.cos(y) - F(2) * a * a
     ry = util.exp(x) * util.sin(y)
     return C(rx, ry)

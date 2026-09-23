@@ -6,7 +6,7 @@
 #include "codon/cir/analyze/module/global_vars.h"
 #include "codon/cir/analyze/module/side_effect.h"
 #include "codon/cir/transform/pass.h"
-#include "codon/cir/types/types.h"
+#include "codon/cir/type.h"
 
 #include <functional>
 #include <memory>
@@ -41,28 +41,28 @@ public:
 };
 
 struct NumPyPrimitiveTypes {
-  types::Type *none;
-  types::Type *optnone;
-  types::Type *bool_;
-  types::Type *i8;
-  types::Type *u8;
-  types::Type *i16;
-  types::Type *u16;
-  types::Type *i32;
-  types::Type *u32;
-  types::Type *i64;
-  types::Type *u64;
-  types::Type *f16;
-  types::Type *f32;
-  types::Type *f64;
-  types::Type *c64;
-  types::Type *c128;
+  Type *none;
+  Type *optnone;
+  Type *bool_;
+  Type *i8;
+  Type *u8;
+  Type *i16;
+  Type *u16;
+  Type *i32;
+  Type *u32;
+  Type *i64;
+  Type *u64;
+  Type *f16;
+  Type *f32;
+  Type *f64;
+  Type *c64;
+  Type *c128;
 
   explicit NumPyPrimitiveTypes(Module *M);
 };
 
 struct NumPyType {
-  enum Type {
+  enum TypeCode {
     NP_TYPE_NONE = -1,
     NP_TYPE_BOOL,
     NP_TYPE_I8,
@@ -96,12 +96,12 @@ struct NumPyType {
   } dtype;
   int64_t ndim;
 
-  NumPyType(Type dtype, int64_t ndim = 0);
+  NumPyType(TypeCode dtype, int64_t ndim = 0);
   NumPyType();
 
-  static NumPyType get(types::Type *t, NumPyPrimitiveTypes &T);
+  static NumPyType get(Type *t, NumPyPrimitiveTypes &T);
 
-  types::Type *getIRBaseType(NumPyPrimitiveTypes &T) const;
+  Type *getIRBaseType(NumPyPrimitiveTypes &T) const;
 
   operator bool() const { return dtype != NP_TYPE_NONE; }
   bool isArray() const { return dtype > NP_TYPE_SCALAR_END; }

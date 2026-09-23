@@ -41,8 +41,8 @@ CodonAstDumpResult parseScopeDump(const std::string &argv0, Parse &&parse,
                                   bool includeAttributes, int indent, int typecheck) {
   try {
     std::vector<std::string> disabledOptsVec;
-    auto compiler = std::make_unique<codon::Compiler>(argv0, true, disabledOptsVec,
-                                                      /*isTest=*/true, false, false);
+    auto options = codon::Options::getDefault(argv0);
+    auto compiler = std::make_unique<codon::Compiler>(*options);
     auto parsed = parse(compiler->getCache());
     if (!parsed)
       return failure(llvm::toString(parsed.takeError()));

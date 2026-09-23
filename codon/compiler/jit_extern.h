@@ -15,6 +15,8 @@ struct CJITResult {
 };
 
 void *jit_init(char *name);
+struct CJITResult jit_init_with_options(const char *name, const char *options);
+struct CJITResult jit_validate_options(const char *options);
 void jit_exit(void *jit);
 
 struct CJITResult jit_execute_python(void *jit, char *name, char **types,

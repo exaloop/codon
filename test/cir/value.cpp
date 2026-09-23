@@ -7,7 +7,8 @@ TEST_F(CIRCoreTest, ValueQueryMethodsDelegate) {
   auto originalRef = original->referenceString();
 
   auto *fn = module->Nr<BodiedFunc>();
-  fn->realize(module->unsafeGetDummyFuncType(), {});
+  fn->realize(
+      module->unsafeGetFuncType("<internal_func_type>", module->getIntType(), {}), {});
   Value *replacement = module->Nr<VarValue>(fn, "baz");
   original->replaceAll(replacement);
 
@@ -20,7 +21,7 @@ TEST_F(CIRCoreTest, ValueQueryMethodsDelegate) {
   original->replaceAll(replacement);
   ASSERT_EQ(0, original->getUsedVariables().size());
   ASSERT_EQ(1, original->getUsedValues().size());
-  ASSERT_EQ(module->getVoidType(), original->getType());
+  ASSERT_EQ(module->getIntType(), original->getType());
 
   replacement = module->Nr<TypePropertyInstr>(module->getIntType(),
                                               TypePropertyInstr::Property::SIZEOF);

@@ -1,481 +1,840 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
+"""Descriptive statistics and distributions for native numeric data.
+
+The API follows CPython 3.14, including weighted means, ranked correlation,
+regression, and kernel density estimation. Numeric aggregates return `float`;
+`median_low`, `median_high`, and modes preserve the input element type.
+Compensated floating-point arithmetic and widened integer intermediates avoid
+common cancellation and overflow errors, but do not provide Decimal/Fraction
+arithmetic. Random sampling accepts integer seeds. Remove NaNs before computing
+order statistics; native floats do not retain Python object identity for NaNs.
+Finite product overflow uses a fixed-point recovery accumulator. Supplied-center
+dispersion is scaled, and integer relational statistics use shifted origins;
+these can retain finite results and precision lost by CPython's float paths.
+"""
+
 import bisect
 import random
+from collections import Counter
 from math import (
-    gcd as _gcd,
-    erf as _erf,
+    erfc as _erfc,
     exp as _exp,
     fabs as _fabs,
-    floor as _floor,
-    frexp as _frexp,
     fsum as _fsum,
     log as _log,
     sqrt as _sqrt,
     tau as _tau,
     hypot as _hypot,
+    isfinite as _isfinite,
+    isnan as _isnan,
+    inf as _inf,
+    nan as _nan,
+    atan as _atan,
+    asin as _asin,
+    cos as _cos,
+    sin as _sin,
+    tan as _tan,
+    log1p as _log1p,
 )
 
-class StatisticsError(Exception):
+class StatisticsError(ValueError):
     def __init__(self, message: str = ""):
         super().__init__(message)
 
-def median(data: List[T], T: type) -> float:
-    """
-    Return the median (middle value) of numeric data.
-
-    When the number of data points is odd, return the middle data point.
-    When the number of data points is even, the median is interpolated by
-    taking the average of the two middle values
-    """
+def median(data) -> float:
     data = sorted(data)
     n = len(data)
     if n == 0:
         raise StatisticsError("no median for empty data")
-    if n % 2 == 1:
-        return float(data[n // 2])
+    if n.cmod(2) == 1:
+        return float(data[n.cdiv(2)])
     else:
-        i = n // 2
-        return (data[i - 1] + data[i]) / 2
+        i = n.cdiv(2)
+        if isinstance(data[i], int):
+            return float(Int[128](data[i - 1]) + Int[128](data[i])).cdiv(2.)
+        return float(data[i - 1] + data[i]).cdiv(2.)
 
-def median_low(data: List[T], T: type) -> float:
-    """
-    Return the low median of numeric data.
-
-    When the number of data points is odd, the middle value is returned.
-    When it is even, the smaller of the two middle values is returned.
-    """
+def median_low(data):
     data = sorted(data)
     n = len(data)
     if n == 0:
         raise StatisticsError("no median for empty data")
-    if n % 2 == 1:
-        return float(data[n // 2])
+    if n.cmod(2) == 1:
+        return data[n.cdiv(2)]
     else:
-        return float(data[n // 2 - 1])
+        return data[n.cdiv(2) - 1]
 
-def median_high(data: List[T], T: type) -> float:
-    """
-    Return the high median of data.
-
-    When the number of data points is odd, the middle value is returned.
-    When it is even, the larger of the two middle values is returned.
-    """
+def median_high(data):
     data = sorted(data)
     n = len(data)
     if n == 0:
         raise StatisticsError("no median for empty data")
-    return float(data[n // 2])
+    return data[n.cdiv(2)]
 
-def _find_lteq(a: List[T], x: float, T: type):
-    """
-    Locate the leftmost value exactly equal to x
-    """
-    i = bisect.bisect_left(a, x)
-    if i != len(a) and a[i] == x:
-        return i
-    assert False
-
-def _find_rteq(a: List[T], l: int, x: float, T: type):
-    """
-    Locate the rightmost value exactly equal to x
-    """
-    i = bisect.bisect_right(a, x, lo=l)
-    if i != (len(a) + 1) and a[i - 1] == x:
-        return i - 1
-    assert False
-
-def median_grouped(data: List[T], interval: S = 1, T: type, S: type = int) -> float:
-    """
-    Return the 50th percentile (median) of grouped continuous data.
-    """
+def median_grouped(data, interval=1.0) -> float:
     data = sorted(data)
     n = len(data)
     if n == 0:
         raise StatisticsError("no median for empty data")
-    elif n == 1:
-        return float(data[0])
+    midpoint = data[n.cdiv(2)]
+    first = bisect.bisect_left(data, midpoint)
+    last = bisect.bisect_right(data, midpoint, lo=first)
+    def as_float(value) -> float:
+        if isinstance(value, str):
+            from internal.builtin import _parse_float_prefix
+            text = value.strip()
+            result, consumed = _parse_float_prefix(text, 0)
+            if not text or consumed != len(text):
+                raise TypeError("Value cannot be converted to a float")
+            return result
+        else:
+            return float(value)
+    width = as_float(interval)
+    center = as_float(midpoint)
+    lower = center - width.cdiv(2.0)
+    return lower + (width * (float(n).cdiv(2.0) - first)).cdiv(last - first)
 
-    # Find the value at the midpoint.
-    x = float(data[n // 2])
-    L = x - float(interval) / 2  # The lower limit of the median interval.
+def _counts(data: Generator[T], T: type):
+    if T is float or T is float32:
+        positions = Dict[T, int]()
+        pairs = List[Tuple[T, int]]()
+        for value in data:
+            if _isnan(float(value)):
+                pairs.append((value, 1))
+            elif value in positions:
+                index = positions[value]
+                pairs[index] = (pairs[index][0], pairs[index][1] + 1)
+            else:
+                positions[value] = len(pairs)
+                pairs.append((value, 1))
+        return pairs
+    else:
+        return list(Counter(data).items())
 
-    # Find the position of leftmost occurrence of x in data
-    l1 = _find_lteq(data, x)
-    # Find the position of rightmost occurrence of x in data[l1...len(data)]
-    # Assuming always l1 <= l2
-    l2 = _find_rteq(data, l1, x)
-    cf = l1
-    f = l2 - l1 + 1
-    return L + interval * (n / 2 - cf) / f
+def mode(data):
+    counts = _counts(iter(data))
+    if not counts:
+        raise StatisticsError("no mode for empty data")
+    return max(counts, key=lambda pair: pair[1])[0]
 
-def mode(data: List[T], T: type) -> T:
-    """
-    Return the most common data point from discrete or nominal data.
-    """
-    counter = 0
-    elem = data[0]
+def multimode(data):
+    counts = _counts(iter(data))
+    maximum = max((pair[1] for pair in counts), default=0)
+    return [value for value, count in counts if count == maximum]
 
-    for i in data:
-        curr_frequency = data.count(i)
-        if curr_frequency > counter:
-            counter = curr_frequency
-            elem = i
-    return elem
-
-def multimode(data: List[T], T: type):
-    """
-    Return a list of the most frequently occurring values.
-
-    Will return more than one result if there are multiple modes
-    or an empty list if *data* is empty.
-    """
-    elem = data[0]
-    counter = data.count(elem)
-    li = sorted(data)
-    mulmode = []
-
-    for i in li:
-        curr_frequency = data.count(i)
-        if curr_frequency > counter:
-            mulmode = []
-            mulmode.append(i)
-            counter = curr_frequency
-        elif curr_frequency == counter and i not in mulmode:
-            mulmode.append(i)
-    return mulmode
-
-def quantiles(
-    data: List[T], n: int = 4, method: str = "exclusive", T: type
-) -> List[float]:
-    """
-    Divide *data* into *n* continuous intervals with equal probability.
-
-    Returns a list of (n - 1) cut points separating the intervals.
-
-    Set *n* to 4 for quartiles (the default).  Set *n* to 10 for deciles.
-    Set *n* to 100 for percentiles which gives the 99 cuts points that
-    separate *data* into 100 equal sized groups.
-
-    The *data* can be any iterable containing sample.
-    The cut points are linearly interpolated between data points.
-
-    If *method* is set to *inclusive*, *data* is treated as population
-    data.  The minimum value is treated as the 0th percentile and the
-    maximum value is treated as the 100th percentile.
-    """
+def quantiles(data, n: int = 4, method: str = "exclusive") -> List[float]:
     if n < 1:
         raise StatisticsError("n must be at least 1")
     data = sorted(data)
     ld = len(data)
-    if ld < 2:
-        raise StatisticsError("must have at least two data points")
+    if ld == 0:
+        raise StatisticsError("must have at least one data point")
+    if ld == 1:
+        return [float(data[0])] * (n - 1)
 
     if method == "inclusive":
         m = ld - 1
-        result = []
+        result = Ptr[float](n - 1)
         for i in range(1, n):
-            j = i * m // n
-            delta = (i * m) - (j * n)
-            interpolated = (data[j] * (n - delta) + data[j + 1] * delta) / n
-            result.append(interpolated)
-        return result
+            scaled = i * m
+            j = scaled.cdiv(n)
+            delta = scaled.cmod(n)
+            if isinstance(data[j], int):
+                interpolated = float(Int[128](data[j]) * (n - delta) + Int[128](data[j + 1]) * delta).cdiv(n)
+            else:
+                interpolated = float(data[j] * (n - delta) + data[j + 1] * delta).cdiv(n)
+            result[i - 1] = interpolated
+        return List(result, n - 1)
     if method == "exclusive":
         m = ld + 1
-        result = []
+        result = Ptr[float](n - 1)
         for i in range(1, n):
-            j = i * m // n  # rescale i to m/n
+            j = (i * m).cdiv(n)  # rescale i to m/n
             j = 1 if j < 1 else ld - 1 if j > ld - 1 else j  # clamp to 1 .. ld-1
             delta = (i * m) - (j * n)  # exact integer math
-            interpolated = (data[j - 1] * (n - delta) + data[j] * delta) / n
-            result.append(interpolated)
-        return result
-    raise ValueError(f"Unknown method: {method}")
+            if isinstance(data[j], int):
+                interpolated = float(Int[128](data[j - 1]) * (n - delta) + Int[128](data[j]) * delta).cdiv(n)
+            else:
+                interpolated = float(data[j - 1] * (n - delta) + data[j] * delta).cdiv(n)
+            result[i - 1] = interpolated
+        return List(result, n - 1)
+    raise ValueError(f"Unknown method: {method!r}")
 
-def _lcm(x: int, y: int):
-    """
-    Returns the lowest common multiple between x and y
-    """
-    greater = 0
-    if x > y:
-        greater = x
+def _as_sequence(data):
+    if hasattr(data, "__len__") and hasattr(data, "__getitem__") and not hasattr(data, "keys"):
+        return data
     else:
-        greater = y
+        return list(data)
 
-    while True:
-        if greater % x == 0 and greater % y == 0:
-            lcm = greater
-            return lcm
-        greater += 1
+def _compensated_add(total: float, correction: float, value: float):
+    combined = total + value
+    if abs(total) >= abs(value):
+        correction += (total - combined) + value
+    else:
+        correction += (value - combined) + total
+    return combined, correction
 
-def _sum(data: List[float]) -> float:
-    """
-    Return a high-precision sum of the given numeric data as a fraction,
-    together with the type to be converted to and the count of items.
+def _sum_finite(data) -> float:
+    total, correction = 0.0, 0.0
+    for value in data:
+        total, correction = _compensated_add(total, correction, float(value))
+    return total + correction
 
-    If optional argument ``start`` is given, it is added to the total.
-    If ``data`` is empty, ``start`` (defaulting to 0) is returned.
+def _sum(data: Generator[T], overflow: Ptr[bool] = Ptr[bool](), T: type) -> float:
+    if T is int or T is bool:
+        total = Int[128](0)
+        for value in data:
+            total += Int[128](value)
+        return float(total)
+    elif T is str:
+        compile_error("expected a real number")
+    else:
+        total, correction, special = 0.0, 0.0, 0.0
+        for value in data:
+            numeric = float(value)
+            if _isfinite(numeric):
+                total, correction = _compensated_add(total, correction, numeric)
+            else:
+                special += numeric
+        if special != 0.0:
+            return special
+        if not _isfinite(total):
+            if overflow:
+                overflow[0] = True
+                return 0.0
+            raise OverflowError("intermediate overflow in sum")
+        return total + correction
 
-    TODO/CAVEATS
-      - The start argument should default to 0 or 0.0
-      - Assumes input is floats
-    """
-    # Neumaier sum
-    # https://en.wikipedia.org/wiki/Kahan_summation_algorithm#Further_enhancements
-    # https://www.mat.univie.ac.at/~neum/scan/01.pdf (German)
-    s = 0.0
-    c = 0.0
-    i = 0
-    N = len(data)
-    while i < N:
-        x = data[i]
-        t = s + x
-        if abs(s) >= abs(x):
-            c += (s - t) + x
-        else:
-            c += (x - t) + s
-        s = t
-        i += 1
-    return s + c
-
-def mean(data: List[float]) -> float:
-    """
-    Return the sample arithmetic mean of data.
-
-    TODO/CAVEATS
-      - Assumes input is floats
-      - Does not address NAN or INF
-    """
-    n = len(data)
+def mean(data) -> float:
+    values = _as_sequence(data)
+    n = len(values)
     if n < 1:
         raise StatisticsError("mean requires at least one data point")
-    total = _sum(data)
-    return total / n
+    if isinstance(values[0], float):
+        total = _sum_finite(values)
+        if _isfinite(total):
+            return total.cdiv(n)
+    overflow = False
+    total = _sum(iter(values), __ptr__(overflow))
+    if overflow:
+        def scaled_values(values, count: int):
+            for value in values:
+                yield float(value).cdiv(count)
+        return _sum(scaled_values(values, n))
+    return total.cdiv(n)
 
-'''
-def fmean(data: List[float]) -> float:
-    """
-    Convert data to floats and compute the arithmetic mean.
+def _product_fixed(first: float, second: float) -> Int[4352]:
+    """Encode a finite binary64 product in units of 2**-2148.
 
-    TODO/CAVEATS
-    @jordan- fsum is not implemented in math.seq yet and the above
-             mean(data) deals with only floats. Thus this function is passed for now.
+    Products need at most 4196 bits; 4352 also accommodates an int64-sized
+    stream. The 53-bit significands multiply exactly in Int[128].
     """
-    pass
-'''
+    from math import frexp
+    first_mantissa, first_exponent = frexp(first)
+    second_mantissa, second_exponent = frexp(second)
+    significand = (Int[128](int(first_mantissa * 9007199254740992.0))
+                   * Int[128](int(second_mantissa * 9007199254740992.0)))
+    shift = first_exponent + second_exponent + 2042
+    if shift < 0:
+        return Int[4352](significand >> Int[128](-shift))
+    return Int[4352](significand) << Int[4352](shift)
 
-def geometric_mean(data: List[float]) -> float:
-    """
-    Convert data to floats and compute the geometric mean.
+def _fixed_float(total: Int[4352], divisor: float) -> float:
+    """Normalize before narrowing, retaining a sticky bit for discarded digits."""
+    from math import frexp
+    from C import ldexp(float, Int[32]) -> float
+    if not _isfinite(divisor):
+        return 0.0.cdiv(divisor)
+    magnitude = abs(total)
+    shift = max(0, magnitude.bit_length() - 120)
+    leading = magnitude >> Int[4352](shift)
+    if magnitude != leading << Int[4352](shift):
+        leading |= Int[4352](1)
+    mantissa, exponent = frexp(divisor)
+    result = ldexp(float(Int[128](leading)).cdiv(mantissa), Int[32](shift - 2148 - exponent))
+    return -result if total < 0 else result
 
-    Raises a StatisticsError if the input dataset is empty,
+def _sumprod_recover(pairs, first: float, second: float, total: float,
+                     correction: float, divisor: float) -> float:
+    """Promote the finite prefix and consume the remaining products once."""
+    extended = _product_fixed(total, 1.0) + _product_fixed(correction, 1.0) + _product_fixed(first, second)
+    special = 0.0
+    for left_value, right_value in pairs:
+        first, second = float(left_value), float(right_value)
+        if not _isfinite(first) or not _isfinite(second):
+            special += first * second
+        elif special == 0.0:
+            extended += _product_fixed(first, second)
+    if special != 0.0:
+        return special.cdiv(divisor)
+    return _fixed_float(extended, divisor)
 
-    TODO/CAVEATS:
-      - Assumes input is a list of floats
-      - Uses mean instead of fmean for now
-      - Does not handle data that contains a zero, or if it contains a negative value.
-    """
-    if len(data) < 1:
-        raise StatisticsError("geometric mean requires a non-empty dataset")
-    return _exp(mean(list(map(_log, data))))
+def _sumprod(left: Generator[T], right: Generator[U], divisor: float = 1.0,
+             T: type, U: type) -> float:
+    if (T is int or T is bool) and (U is int or U is bool):
+        total = Int[256](0)
+        for left_value, right_value in zip(left, right):
+            total += Int[256](left_value) * Int[256](right_value)
+        magnitude = abs(total)
+        shift = max(0, magnitude.bit_length() - 120)
+        leading = magnitude >> Int[256](shift)
+        if magnitude != leading << Int[256](shift):
+            leading |= Int[256](1)
+        from math import ldexp
+        result = ldexp(float(Int[128](leading)), shift)
+        return (-result if total < 0 else result).cdiv(divisor)
+    else:
+        from C import fma(float, float, float) -> float
+        total, correction, special = 0.0, 0.0, 0.0
+        pairs = zip(left, right)
+        for left_value, right_value in pairs:
+            first = float(left_value)
+            second = float(right_value)
+            product = first * second
+            if not _isfinite(product):
+                if _isfinite(first) and _isfinite(second):
+                    if special == 0.0:
+                        return _sumprod_recover(pairs, first, second, total, correction, divisor)
+                else:
+                    special += product
+            elif special == 0.0:
+                combined, compensation = _compensated_add(total, correction, product)
+                combined, compensation = _compensated_add(combined, compensation, fma(first, second, -product))
+                if not _isfinite(combined) or not _isfinite(compensation):
+                    return _sumprod_recover(pairs, first, second, total, correction, divisor)
+                total, correction = combined, compensation
+        if special != 0.0:
+            return special.cdiv(divisor)
+        result = total + correction
+        if not _isfinite(result):
+            return _sumprod_recover(pairs, 0.0, 0.0, total, correction, divisor)
+        return result.cdiv(divisor)
 
-def _fail_neg(values: List[float], errmsg: str):
-    """
-    Iterate over values, failing if any are less than zero.
-    """
-    for x in values:
-        if x < 0:
+def fmean(data, weights=None) -> float:
+    if weights is None:
+        if hasattr(data, "__len__"):
+            count = len(data)
+            total = _fsum(data)
+        else:
+            count = 0
+            def counted(data, count: Ptr[int]):
+                for value in data:
+                    count[0] += 1
+                    yield value
+            total = _fsum(counted(data, __ptr__(count)))
+        if not count:
+            raise StatisticsError("fmean requires at least one data point")
+        return total.cdiv(count)
+    else:
+        values = _as_sequence(data)
+        weights = _as_sequence(weights)
+        if len(values) != len(weights):
+            raise StatisticsError("data and weights must be the same length")
+        denominator = _fsum(weights)
+        if not denominator:
+            raise StatisticsError("sum of weights must be non-zero")
+        return _sumprod(iter(values), iter(weights), denominator)
+
+def geometric_mean(data) -> float:
+    count = 0
+    found_zero = False
+    def logarithms(values, count: Ptr[int], found_zero: Ptr[bool]):
+        for value in values:
+            count[0] += 1
+            if value > 0.0 or _isnan(float(value)):
+                yield _log(float(value))
+            elif value == 0.0:
+                found_zero[0] = True
+            else:
+                raise StatisticsError("No negative inputs allowed")
+    total = _fsum(logarithms(data, __ptr__(count), __ptr__(found_zero)))
+    if not count:
+        raise StatisticsError("Must have a non-empty dataset")
+    if _isnan(total):
+        return _nan
+    if found_zero:
+        return _nan if total == _inf else 0.0
+    return _exp(total.cdiv(count))
+
+def _fail_neg(values, errmsg: str):
+    for value in values:
+        if value < 0:
             raise StatisticsError(errmsg)
-        yield x
+        yield value
 
-def harmonic_mean(data: List[float]) -> float:
-    """
-    Return the harmonic mean of data.
-
-    The harmonic mean, sometimes called the subcontrary mean, is the
-    reciprocal of the arithmetic mean of the reciprocals of the data,
-    and is often appropriate when averaging quantities which are rates
-    or ratios.
-    """
+def harmonic_mean(data, weights=None) -> float:
+    values = _as_sequence(data)
     errmsg = "harmonic mean does not support negative values"
-    n = len(data)
+    n = len(values)
     if n < 1:
         raise StatisticsError("harmonic_mean requires at least one data point")
+    found_zero = False
+    overflow = False
+    def reciprocals(values, weights, errmsg: str, found_zero: Ptr[bool]):
+        if weights is None:
+            for value in _fail_neg(values, errmsg):
+                numeric = float(value)
+                if numeric == 0.0:
+                    found_zero[0] = True
+                    return
+                yield 1.0.cdiv(numeric)
+        else:
+            for weight, value in zip(weights, _fail_neg(values, errmsg)):
+                if not weight:
+                    yield 0.0
+                else:
+                    numeric = float(value)
+                    if numeric == 0.0:
+                        found_zero[0] = True
+                        return
+                    yield float(weight).cdiv(numeric)
+    if weights is None:
+        if n == 1:
+            value = float(values[0])
+            if value < 0:
+                raise StatisticsError(errmsg)
+            return value
+        total_weight = float(n)
+        total = _sum(reciprocals(values, None, errmsg, __ptr__(found_zero)), __ptr__(overflow))
+    else:
+        weight_values = _as_sequence(weights)
+        if len(weight_values) != n:
+            raise StatisticsError("Number of weights does not match data size")
+        total_weight = _sum(_fail_neg(weight_values, errmsg))
+        total = _sum(reciprocals(values, weight_values, errmsg, __ptr__(found_zero)), __ptr__(overflow))
+    if found_zero:
+        return 0.0
+    if overflow:
+        raise OverflowError("intermediate overflow in sum")
+    if total <= 0:
+        raise StatisticsError("Weighted sum must be positive")
+    return total_weight.cdiv(total)
 
-    x = data[0]
+def _difference(value, center) -> float:
+    if isinstance(value, int) and isinstance(center, int):
+        return float(Int[128](value) - Int[128](center))
+    return float(value) - float(center)
 
-    if n == 1:
-        return x
-    total = 0.0
+def _scaled_difference(value, center, scale: float) -> float:
+    difference = _difference(value, center)
+    if not _isfinite(difference):
+        return float(value).cdiv(scale) - float(center).cdiv(scale)
+    return difference.cdiv(scale)
 
-    li = List[float](n)
-    for x in _fail_neg(data, errmsg):
-        if x == 0.0:
+def _spread(data, center, correction: int, root: bool, recenter: Literal[bool] = True) -> float:
+    count = len(data)
+    maximum = 0.0
+    magnitude = abs(float(center))
+    special = 0.0
+    for value in data:
+        numeric = float(value)
+        difference = _difference(value, center)
+        if recenter:
+            if not _isfinite(numeric):
+                special += numeric
+        else:
+            if not _isfinite(numeric) or not _isfinite(float(center)):
+                special += difference * difference
+        magnitude = max(magnitude, abs(numeric))
+        maximum = max(maximum, abs(difference))
+    if special != 0.0:
+        if root:
+            raise ValueError("inf or nan encountered in data")
+        return special
+    if maximum == 0.0:
+        return 0.0
+    scale = 1.0
+    if not _isfinite(maximum):
+        scale = magnitude
+    elif maximum > 1e140 or maximum < 1e-140:
+        scale = maximum
+    offset = 0.0
+    if recenter:
+        offset = _sum_finite(map(_scaled_difference(center=center, scale=scale, ...), data)).cdiv(count)
+    total, compensation = 0.0, 0.0
+    residual, residual_compensation = 0.0, 0.0
+    for value in data:
+        difference = _scaled_difference(value, center, scale) - offset
+        total, compensation = _compensated_add(total, compensation, difference * difference)
+        if recenter:
+            residual, residual_compensation = _compensated_add(residual, residual_compensation, difference)
+    total += compensation
+    if recenter:
+        residual += residual_compensation
+        total = max(0.0, total - residual * residual.cdiv(count))
+    normalized = total.cdiv(count - correction)
+    if root:
+        return _sqrt(normalized) * scale
+    result = (normalized * scale) * scale
+    if recenter and not _isfinite(result):
+        raise OverflowError("integer division result too large for a float")
+    return result
+
+def _dispersion(data, center, correction: int, root: bool, name: str) -> float:
+    values = _as_sequence(data)
+    if len(values) <= correction:
+        requirement = "two data points" if correction else "one data point"
+        raise StatisticsError(f"{name} requires at least {requirement}")
+    if center is None:
+        return _spread(values, values[0], correction, root)
+    else:
+        return _spread(values, center, correction, root, recenter=False)
+
+def pvariance(data, mu=None) -> float:
+    return _dispersion(data, mu, 0, False, "pvariance")
+
+def pstdev(data, mu=None) -> float:
+    return _dispersion(data, mu, 0, True, "pstdev")
+
+def variance(data, xbar=None) -> float:
+    return _dispersion(data, xbar, 1, False, "variance")
+
+def stdev(data, xbar=None) -> float:
+    return _dispersion(data, xbar, 1, True, "stdev")
+
+def _paired(xdata, ydata, name: str):
+    left = _as_sequence(xdata)
+    right = _as_sequence(ydata)
+    if len(left) != len(right):
+        raise StatisticsError(f"{name} requires that both inputs have same number of data points")
+    if len(left) < 2:
+        raise StatisticsError(f"{name} requires at least two data points")
+    return left, right
+
+def _origin_mean(data, proportional: bool = False):
+    if isinstance(data[0], int) or isinstance(data[0], bool):
+        origin = 0 if proportional else int(data[0])
+        total = Int[128](0)
+        if not proportional:
+            for value in data:
+                total += Int[128](value) - Int[128](origin)
+        return origin, float(total).cdiv(len(data))
+    else:
+        return 0.0, 0.0 if proportional else fmean(data)
+
+def _centered(data, origin, center: float, count: int):
+    for index in range(count):
+        yield _difference(data[index], origin) - center
+
+def _relational_scale(data, origin, center: float, count: int) -> float:
+    scale = abs(center)
+    for index in range(count):
+        difference = _difference(data[index], origin)
+        if not _isfinite(difference):
             return 0.0
-        li.append(1 / x)
-    total = _sum(li)
-    return n / total
+        scale = max(scale, abs(difference))
+    return scale if scale else 1.0
 
-def _ss(data: List[float], c: float):
-    """
-    Return sum of square deviations of sequence data.
+def _scaled_centered(data, origin, center: float, count: int, scale: float):
+    for index in range(count):
+        yield _scaled_difference(data[index], origin, scale) - center.cdiv(scale)
 
-    If c is None, the mean is calculated in one pass, and the deviations
-    from the mean are calculated in a second pass. Otherwise, deviations are
-    calculated from c as given.
-    """
-    total = _sum([(x - c) ** 2 for x in data])
-    total2 = _sum([(x - c) for x in data])
+def covariance(xdata, ydata) -> float:
+    left, right = _paired(xdata, ydata, "covariance")
+    left_origin, left_mean = _origin_mean(left)
+    right_origin, right_mean = _origin_mean(right)
+    count = len(left)
+    return _sumprod(_centered(left, left_origin, left_mean, count),
+                    _centered(right, right_origin, right_mean, count), float(count - 1))
 
-    total -= total2 ** 2 / len(data)
-    return total
+def _rank(data):
+    count = len(data)
+    def rank_key(data, index: int):
+        return data[index]
+    order = sorted(range(count), key=rank_key(data, ...))
+    ranks = Ptr[float](count)
+    start = 0
+    while start < count:
+        stop = start + 1
+        while stop < count and data[order[stop]] == data[order[start]]:
+            stop += 1
+        rank = float(start + stop - count).cdiv(2.0)
+        for index in range(start, stop):
+            ranks[order[index]] = rank
+        start = stop
+    return ranks
 
-def pvariance(data: List[float], mu: Optional[float] = None):
-    """
-    Return the population variance of `data`.
+def _correlation(left, right, left_origin, right_origin, left_mean: float,
+                  right_mean: float, count: int) -> float:
+    product = _sumprod(_centered(left, left_origin, left_mean, count),
+                       _centered(right, right_origin, right_mean, count), float(count))
+    left_square = _sumprod(_centered(left, left_origin, left_mean, count),
+                           _centered(left, left_origin, left_mean, count), float(count))
+    right_square = _sumprod(_centered(right, right_origin, right_mean, count),
+                            _centered(right, right_origin, right_mean, count), float(count))
+    if (not _isfinite(product) or not _isfinite(left_square) or not _isfinite(right_square)
+            or left_square == 0.0 or right_square == 0.0):
+        left_scale = _relational_scale(left, left_origin, left_mean, count)
+        right_scale = _relational_scale(right, right_origin, right_mean, count)
+        if left_scale and right_scale:
+            product = _sumprod(_scaled_centered(left, left_origin, left_mean, count, left_scale),
+                               _scaled_centered(right, right_origin, right_mean, count, right_scale))
+            left_square = _sumprod(_scaled_centered(left, left_origin, left_mean, count, left_scale),
+                                   _scaled_centered(left, left_origin, left_mean, count, left_scale))
+            right_square = _sumprod(_scaled_centered(right, right_origin, right_mean, count, right_scale),
+                                    _scaled_centered(right, right_origin, right_mean, count, right_scale))
+    squares = left_square * right_square
+    if squares > 0.0 and _isfinite(squares):
+        denominator = _sqrt(squares)
+    else:
+        denominator = _sqrt(left_square) * _sqrt(right_square)
+    if denominator == 0.0:
+        raise StatisticsError("at least one of the inputs is constant")
+    return product.cdiv(denominator)
 
-    Should contain atleast one value.
-    The optional argument mu, if given, should be the mean of
-    the data. If it is missing or None, the mean is automatically calculated.
+def correlation(xdata, ydata, method: str = "linear") -> float:
+    left, right = _paired(xdata, ydata, "correlation")
+    if method == "ranked":
+        return _correlation(_rank(left), _rank(right), 0.0, 0.0, 0.0, 0.0, len(left))
+    if method != "linear":
+        raise ValueError(f"Unknown method: {method!r}")
+    left_origin, left_mean = _origin_mean(left)
+    right_origin, right_mean = _origin_mean(right)
+    return _correlation(left, right, left_origin, right_origin, left_mean, right_mean, len(left))
 
-    TODO/CAVEATS:
-      - Assumes input is a list of floats
-    """
-    if mu is None:
-        mu = mean(data)
+@tuple
+class LinearRegression:
+    slope: float
+    intercept: float
 
-    n = len(data)
-    if n < 1:
-        raise StatisticsError("pvariance requires at least one data point")
+def _origin_parts(value):
+    if isinstance(value, int):
+        return float(value >> 32) * 4294967296.0, float(value & 0xffffffff)
+    else:
+        return float(value), 0.0
 
-    ss = _ss(data, mu)
-    return ss / n
+def linear_regression(xdata, ydata, proportional: bool = False):
+    left, right = _paired(xdata, ydata, "linear regression")
+    left_origin, left_mean = _origin_mean(left, proportional)
+    right_origin, right_mean = _origin_mean(right, proportional)
+    count = len(left)
+    product = _sumprod(_centered(left, left_origin, left_mean, count),
+                       _centered(right, right_origin, right_mean, count), float(count))
+    square = _sumprod(_centered(left, left_origin, left_mean, count),
+                      _centered(left, left_origin, left_mean, count), float(count))
+    left_scale, right_scale = 1.0, 1.0
+    rescaled = False
+    if not _isfinite(product) or not _isfinite(square) or square == 0.0:
+        left_scale = _relational_scale(left, left_origin, left_mean, count)
+        right_scale = _relational_scale(right, right_origin, right_mean, count)
+        if left_scale and right_scale:
+            product = _sumprod(_scaled_centered(left, left_origin, left_mean, count, left_scale),
+                               _scaled_centered(right, right_origin, right_mean, count, right_scale))
+            square = _sumprod(_scaled_centered(left, left_origin, left_mean, count, left_scale),
+                              _scaled_centered(left, left_origin, left_mean, count, left_scale))
+            rescaled = True
+    if square == 0.0:
+        raise StatisticsError("x is constant")
+    slope = product.cdiv(square)
+    if rescaled:
+        slope = _fixed_float(_product_fixed(slope, right_scale), left_scale)
+    intercept = 0.0
+    if not proportional:
+        if isinstance(left_origin, int) or isinstance(right_origin, int):
+            left_high, left_low = _origin_parts(left_origin)
+            right_high, right_low = _origin_parts(right_origin)
+            intercept = _sumprod(iter((right_high, right_low, right_mean, left_high, left_low, left_mean)),
+                                 iter((1.0, 1.0, 1.0, -slope, -slope, -slope)))
+        else:
+            intercept = right_mean - slope * left_mean
+    return LinearRegression(slope, intercept)
 
-def pstdev(data: List[float], mu: Optional[float] = None):
-    """
-    Return the square root of the population variance.
-    """
-    if mu is None:
-        mu = mean(data)
-    var = pvariance(data, mu)
-    return _sqrt(var)
+def _kernel_id(data, bandwidth, kernel: str) -> int:
+    if not len(data):
+        raise StatisticsError("Empty data sequence")
+    if not isinstance(data[0], int) and not isinstance(data[0], float):
+        compile_error("Data sequence must contain ints or floats")
+    if bandwidth <= 0.0:
+        raise StatisticsError(f"Bandwidth h must be positive, not h={bandwidth!r}")
+    if kernel == "normal" or kernel == "gauss":
+        return 0
+    if kernel == "logistic":
+        return 1
+    if kernel == "sigmoid":
+        return 2
+    if kernel == "rectangular" or kernel == "uniform":
+        return 3
+    if kernel == "triangular":
+        return 4
+    if kernel == "parabolic" or kernel == "epanechnikov":
+        return 5
+    if kernel == "quartic" or kernel == "biweight":
+        return 6
+    if kernel == "triweight":
+        return 7
+    if kernel == "cosine":
+        return 8
+    raise StatisticsError(f"Unknown kernel name: {kernel!r}")
 
-def variance(data: List[float], xbar: Optional[float] = None):
-    """
-    Return the sample variance of data.
+def _kernel_value(value: float, kind: int, cumulative: bool) -> float:
+    if kind == 0:
+        if cumulative:
+            return 0.5 * _erfc((-value).cdiv(_sqrt(2.0)))
+        return _exp(-0.5 * value * value).cdiv(_sqrt(_tau))
+    if kind == 1:
+        tail = _exp(-abs(value))
+        if cumulative:
+            return tail.cdiv(1.0 + tail) if value < 0 else 1.0.cdiv(1.0 + tail)
+        return tail.cdiv((1.0 + tail) * (1.0 + tail))
+    if kind == 2:
+        tail = _exp(-abs(value))
+        if cumulative:
+            probability = 4.0.cdiv(_tau) * _atan(tail)
+            return probability if value < 0 else 1.0 - probability
+        return (4.0.cdiv(_tau) * tail).cdiv(1.0 + tail * tail)
+    if cumulative:
+        if value <= -1.0:
+            return 0.0
+        if value >= 1.0:
+            return 1.0
+    elif abs(value) > 1.0:
+        return 0.0
+    if kind == 3:
+        return 0.5 * value + 0.5 if cumulative else 0.5
+    if kind == 4:
+        if cumulative:
+            return 0.5 * (1.0 + value) ** 2 if value < 0 else 1.0 - 0.5 * (1.0 - value) ** 2
+        return 1.0 - abs(value)
+    square = value * value
+    if kind == 5:
+        if cumulative:
+            return 0.5 + value * (0.75 - 0.25 * square)
+        return 0.75 * (1.0 - square)
+    if kind == 6:
+        if cumulative:
+            return 0.5 + value * (0.9375 + square * (-0.625 + 0.1875 * square))
+        return 0.9375 * (1.0 - square) ** 2
+    if kind == 7:
+        if cumulative:
+            return 0.5 + value * (1.09375 + square * (-1.09375 + square * (0.65625 - 0.15625 * square)))
+        return 1.09375 * (1.0 - square) ** 3
+    if cumulative:
+        return 0.5 * _sin(value * _tau.cdiv(4.0)) + 0.5
+    return _tau.cdiv(8.0) * _cos(value * _tau.cdiv(4.0))
 
-    Shoulw contain atleast two values.
-    The optional argument xbar, if given, should be the mean of
-    the data. If it is missing or None, the mean is automatically calculated.
-    """
-    if xbar is None:
-        xbar = mean(data)
-    n = len(data)
-    if n < 2:
-        raise StatisticsError("variance requires at least two data points")
-    ss = _ss(data, xbar)
-    return ss / (n - 1)
+def _kernel_values(data, first: int, last: int, point: float, bandwidth: float,
+                   kind: int, cumulative: bool):
+    for index in range(first, last):
+        yield _kernel_value((point - data[index]).cdiv(bandwidth), kind, cumulative)
 
-def stdev(data, xbar: Optional[float] = None):
-    """
-    Return the square root of the sample variance.
-    """
-    if xbar is None:
-        xbar = mean(data)
-    var = variance(data, xbar)
-    return _sqrt(var)
+def kde(data, h, kernel: str = "normal", cumulative: bool = False):
+    """Return a kernel density or cumulative distribution estimator."""
+    kind = _kernel_id(data, h, kernel)
+    bandwidth = float(h)
+    samples = sorted(data) if kind >= 3 else []
+    def estimate(data, bandwidth: float, kind: int, cumulative: bool, samples,
+                 point: float) -> float:
+        count = len(data)
+        if not count:
+            samples.clear()
+            raise ZeroDivisionError("division by zero")
+        if kind < 3:
+            total = _fsum(_kernel_values(data, 0, count, point, bandwidth, kind, cumulative))
+        else:
+            if len(samples) != count:
+                samples.clear()
+                samples.extend(data)
+                samples.sort()
+            first = bisect.bisect_left(samples, point - bandwidth)
+            last = bisect.bisect_right(samples, point + bandwidth)
+            total = _fsum(_kernel_values(samples, first, last, point, bandwidth, kind, cumulative))
+            if cumulative:
+                total += first
+        return total.cdiv(count if cumulative else count * bandwidth)
+    return estimate(data, bandwidth, kind, cumulative, samples, ...)
+
+def _kernel_inverse(probability: float, kind: int, normal) -> float:
+    if kind == 0:
+        return normal._normal_dist_inv_cdf(probability, 0.0, 1.0)
+    if kind == 1:
+        return _log(probability) - _log1p(-probability)
+    if kind == 2:
+        return _log(_tan(probability * _tau.cdiv(4.0)))
+    if kind == 3:
+        return 2.0 * probability - 1.0
+    if kind == 4:
+        return _sqrt(2.0 * probability) - 1.0 if probability < 0.5 else 1.0 - _sqrt(2.0 - 2.0 * probability)
+    if kind == 8:
+        return 4.0.cdiv(_tau) * _asin(2.0 * probability - 1.0)
+    if probability <= 0.0:
+        return -1.0
+    if probability >= 1.0:
+        return 1.0
+    lower, upper = -1.0, 1.0
+    value = 2.0 * probability - 1.0
+    for iteration in range(60):
+        error = _kernel_value(value, kind, True) - probability
+        if abs(error) < 1e-14:
+            break
+        if error < 0.0:
+            lower = value
+        else:
+            upper = value
+        density = _kernel_value(value, kind, False)
+        candidate = value - error.cdiv(density) if density else upper
+        value = candidate if lower < candidate < upper else (lower + upper) * 0.5
+    return value
+
+def kde_random(data, h, kernel: str = "normal", seed: Optional[int] = None):
+    """Return a sampler with a private random generator and optional integer seed."""
+    kind = _kernel_id(data, h, kernel)
+    generator = random.Random(seed)
+    normal = NormalDist()
+    def sample(data, bandwidth: float, kind: int, generator, normal) -> float:
+        value = generator.choice(data)
+        probability = generator.random()
+        return value + bandwidth * _kernel_inverse(probability, kind, normal)
+    return sample(data, float(h), kind, generator, normal, ...)
 
 class NormalDist:
-    """
-    Normal distribution of a random variable
-    """
-
-    PRECISION: float
     _mu: float
     _sigma: float
 
-    def __eq__(self, other: NormalDist):
-        return (self._mu - other._mu) < self.PRECISION and (
-            self._sigma - other._sigma
-        ) < self.PRECISION
-
-    def _init(self, mu: float, sigma: float):
-        self.PRECISION = 1e-6
+    def __init__(self, mu=0.0, sigma=1.0):
         if sigma < 0.0:
             raise StatisticsError("sigma must be non-negative")
-        self._mu = mu
-        self._sigma = sigma
-
-    def __init__(self, mu, sigma):
-        self._init(float(mu), float(sigma))
-
-    def __init__(self, mu):
-        self._init(float(mu), 1.0)
-
-    def __init__(self):
-        self._init(0.0, 1.0)
+        self._mu = float(mu)
+        self._sigma = float(sigma)
 
     @property
     def mean(self):
-        """
-        Arithmetic mean of the normal distribution.
-        """
         return self._mu
 
     @property
     def median(self):
-        """
-        Return the median of the normal distribution
-        """
         return self._mu
 
     @property
     def mode(self):
-        """
-        Return the mode of the normal distribution
-
-        The mode is the value x where which the probability density
-        function (pdf) takes its maximum value.
-        """
         return self._mu
 
     @property
     def stdev(self):
-        """
-        Standard deviation of the normal distribution.
-        """
         return self._sigma
 
     @property
     def variance(self):
-        """
-        Square of the standard deviation.
-        """
-        return self._sigma ** 2.0
+        return self._sigma * self._sigma
 
     def pdf(self, x):
-        """
-        Probability density function.  P(x <= X < x+dx) / dx
-        """
-        variance = self._sigma ** 2.0
+        variance = self._sigma * self._sigma
         if not variance:
             raise StatisticsError("pdf() not defined when sigma is zero")
-        return _exp((x - self._mu) ** 2.0 / (-2.0 * variance)) / _sqrt(_tau * variance)
+        difference = x - self._mu
+        return _exp((difference * difference).cdiv(-2.0 * variance)).cdiv(_sqrt(_tau * variance))
 
     def cdf(self, x):
-        """
-        Cumulative distribution function.  P(X <= x)
-        """
         if not self._sigma:
             raise StatisticsError("cdf() not defined when sigma is zero")
-        return 0.5 * (1.0 + _erf((x - self._mu) / (self._sigma * _sqrt(2.0))))
+        return 0.5 * _erfc((self._mu - x).cdiv(self._sigma * _sqrt(2.0)))
+
+    def zscore(self, x):
+        if not self._sigma:
+            raise StatisticsError("zscore() not defined when sigma is zero")
+        return (x - self._mu).cdiv(self._sigma)
 
     def _normal_dist_inv_cdf(self, p: float, mu: float, sigma: float):
-        """
-        Wichura, M.J. (1988). "Algorithm AS241: The Percentage Points of the
-        Normal Distribution".  Applied Statistics. Blackwell Publishing. 37
-        (3): 477–484. doi:10.2307/2347330. JSTOR 2347330.
-        """
         q = p - 0.5
         num = 0.0
         den = 0.0
@@ -498,7 +857,7 @@ class NormalDist:
                     6.8718700749205790830e+2) * r +
                     4.2313330701600911252e+1) * r +
                     1.0)
-            x = num / den
+            x = num.cdiv(den)
             return mu + (x * sigma)
         r = p if q <= 0.0 else 1.0 - p
         r = _sqrt(-_log(r))
@@ -540,45 +899,20 @@ class NormalDist:
                     1.36929880922735805310e-1) * r +
                     5.99832206555887937690e-1) * r +
                     1.0)
-        x = num / den
+        x = num.cdiv(den)
         if q < 0.0:
             x = -x
         return mu + (x * sigma)
 
     def inv_cdf(self, p: float):
-        """
-        Inverse cumulative distribution function.  x : P(X <= x) = p
-
-        Finds the value of the random variable such that the probability of
-        the variable being less than or equal to that value equals the given
-        probability.
-        """
         if p <= 0.0 or p >= 1.0:
             raise StatisticsError("p must be in the range 0.0 < p < 1.0")
-        if self._sigma <= 0.0:
-            raise StatisticsError("cdf() not defined when sigma at or below zero")
         return self._normal_dist_inv_cdf(p, self._mu, self._sigma)
 
     def quantiles(self, n: int = 4):
-        """
-        Divide into *n* continuous intervals with equal probability.
-
-        Returns a list of (n - 1) cut points separating the intervals.
-
-        Set *n* to 4 for quartiles (the default).  Set *n* to 10 for deciles.
-        Set *n* to 100 for percentiles which gives the 99 cuts points that
-        separate the normal distribution into 100 equal sized groups.
-        """
-        return [self.inv_cdf(float(i) / float(n)) for i in range(1, n)]
+        return [self.inv_cdf(float(i).cdiv(float(n))) for i in range(1, n)]
 
     def overlap(self, other: NormalDist) -> float:
-        """
-        Compute the overlapping coefficient (OVL) between two normal distributions.
-
-        Measures the agreement between two normal probability distributions.
-        Returns a value between 0.0 and 1.0 giving the overlapping area in
-        the two underlying probability density functions.
-        """
         X, Y = self, other
 
         if (Y._sigma, Y._mu) < (X._sigma, X._mu):  # sort to assure commutativity
@@ -593,91 +927,47 @@ class NormalDist:
         dm = _fabs(Y._mu - X._mu)
 
         if not dv:
-            return 1.0 - _erf(dm / (2.0 * X._sigma * _sqrt(2.0)))
+            return _erfc(dm.cdiv(2.0 * X._sigma * _sqrt(2.0)))
 
         a = X._mu * Y_var - Y._mu * X_var
-        b = X._sigma * Y._sigma * _sqrt(dm ** 2.0 + dv * _log(Y_var / X_var))
-        x1 = (a + b) / dv
-        x2 = (a - b) / dv
+        b = X._sigma * Y._sigma * _sqrt(dm ** 2.0 + dv * _log(Y_var.cdiv(X_var)))
+        x1 = (a + b).cdiv(dv)
+        x2 = (a - b).cdiv(dv)
 
         return 1.0 - (_fabs(Y.cdf(x1) - X.cdf(x1)) + _fabs(Y.cdf(x2) - X.cdf(x2)))
 
-    def samples(self, n: int):
-        """
-        Generate *n* samples for a given mean and standard deviation.
-        """
-        gauss = random.gauss
-        return [gauss(self._mu, self._sigma) for i in range(n)]
+    def samples(self, n: int, seed: Optional[int] = None):
+        if seed is None:
+            return [self._normal_dist_inv_cdf(random.random(), self._mu, self._sigma) for index in range(n)]
+        else:
+            generator = random.Random(seed)
+            return [self._normal_dist_inv_cdf(generator.random(), self._mu, self._sigma) for index in range(n)]
 
-    def from_samples(data: List[float]):
-        """
-        Make a normal distribution instance from sample data.
-        TODO/CAVEATS:
-          - Assumes input is a list of floats
-          - Uses mean instead of fmean for now
-        """
-        xbar = mean(data)
-        return NormalDist(xbar, stdev(data, xbar))
+    def from_samples(data):
+        values = _as_sequence(data)
+        if len(values) < 2:
+            raise StatisticsError("stdev requires at least two data points")
+        return NormalDist(mean(values), stdev(values))
 
     def __add__(x1: NormalDist, x2: NormalDist):
-        """
-        Add a constant or another NormalDist instance.
-        If *other* is a constant, translate mu by the constant,
-        leaving sigma unchanged.
-        If *other* is a NormalDist, add both the means and the variances.
-        Mathematically, this works only if the two distributions are
-        independent or if they are jointly normally distributed.
-        """
         return NormalDist(x1._mu + x2._mu, _hypot(x1._sigma, x2._sigma))
 
     def __add__(x1: NormalDist, x2: float):
-        """
-        Add a constant or another NormalDist instance.
-        If *other* is a constant, translate mu by the constant,
-        leaving sigma unchanged.
-        If *other* is a NormalDist, add both the means and the variances.
-        Mathematically, this works only if the two distributions are
-        independent or if they are jointly normally distributed.
-        """
         return NormalDist(x1._mu + x2, x1._sigma)
 
     def __sub__(x1: NormalDist, x2: NormalDist):
-        """
-        Subtract a constant or another NormalDist instance.
-        If *other* is a constant, translate by the constant mu,
-        leaving sigma unchanged.
-        If *other* is a NormalDist, subtract the means and add the variances.
-        Mathematically, this works only if the two distributions are
-        independent or if they are jointly normally distributed.
-        """
         return NormalDist(x1._mu - x2._mu, _hypot(x1._sigma, x2._sigma))
 
     def __sub__(x1: NormalDist, x2: float):
-        """
-        Subtract a constant or another NormalDist instance.
-        If *other* is a constant, translate by the constant mu,
-        leaving sigma unchanged.
-        If *other* is a NormalDist, subtract the means and add the variances.
-        Mathematically, this works only if the two distributions are
-        independent or if they are jointly normally distributed.
-        """
         return NormalDist(x1._mu - x2, x1._sigma)
 
     def __mul__(x1: NormalDist, x2: float):
-        """
-        Multiply both mu and sigma by a constant.
-        Used for rescaling, perhaps to change measurement units.
-        Sigma is scaled with the absolute value of the constant.
-        """
         return NormalDist(x1._mu * x2, x1._sigma * _fabs(x2))
 
     def __truediv__(x1: NormalDist, x2: float):
-        """
-        Divide both mu and sigma by a constant.
-        Used for rescaling, perhaps to change measurement units.
-        Sigma is scaled with the absolute value of the constant.
-        """
-        return NormalDist(x1._mu / x2, x1._sigma / _fabs(x2))
+        if x2 == 0.0:
+            raise ZeroDivisionError("division by zero")
+        return NormalDist(x1._mu.cdiv(x2), x1._sigma.cdiv(_fabs(x2)))
 
     def __pos__(x1: NormalDist):
         return NormalDist(x1._mu, x1._sigma)
@@ -688,7 +978,7 @@ class NormalDist:
     def __radd__(x1: NormalDist, x2: float):
         return x1 + x2
 
-    def __rsub__(x1: NormalDist, x2: NormalDist):
+    def __rsub__(x1: NormalDist, x2: float):
         return -(x1 - x2)
 
     def __rmul__(x1: NormalDist, x2: float):
@@ -696,6 +986,9 @@ class NormalDist:
 
     def __eq__(x1: NormalDist, x2: NormalDist):
         return x1._mu == x2._mu and x1._sigma == x2._sigma
+
+    def __ne__(self, other: NormalDist):
+        return not self == other
 
     def __hash__(self):
         return hash((self._mu, self._sigma))

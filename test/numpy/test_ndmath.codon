@@ -1849,8 +1849,8 @@ test_signbit()
 @test
 def test_copysign():
     assert np.copysign(1.3, -1) == -1.3
-    assert 1 / np.copysign(0, 1) == np.inf
-    assert 1 / np.copysign(0, -1) == -np.inf
+    assert (1.).cdiv(np.copysign(0, 1)) == np.inf
+    assert (1.).cdiv(np.copysign(0, -1)) == -np.inf
     assert (np.copysign([-1, 0, 1], -1.1) == np.array([-1., -0., -1.])).all()
 
 test_copysign()
@@ -2350,3 +2350,144 @@ def test_sinc():
     assert np.allclose(got, exp)
 
 test_sinc()
+
+@test
+def check_divmod0_float_array_scalar_zero(dt: type):
+    a = np.array([1.0, -1.0, 0.0], dtype=dt)
+
+    r = a / 0.0
+    assert np.isinf(r[0]) and r[0] > 0
+    assert np.isinf(r[1]) and r[1] < 0
+    assert np.isnan(r[2])
+
+    r = np.divide(a, 0.0)
+    assert np.isinf(r[0]) and r[0] > 0
+    assert np.isinf(r[1]) and r[1] < 0
+    assert np.isnan(r[2])
+
+    r = a % 0.0
+    assert np.isnan(r[0])
+    assert np.isnan(r[1])
+    assert np.isnan(r[2])
+
+    r = np.mod(a, 0.0)
+    assert np.isnan(r[0])
+    assert np.isnan(r[1])
+    assert np.isnan(r[2])
+
+@test
+def check_divmod0_float_array_array_zero(dt: type):
+    a = np.array([1.0, -1.0, 0.0], dtype=dt)
+    z = np.array([0.0, 0.0, 0.0], dtype=dt)
+
+    r = a / z
+    assert np.isinf(r[0]) and r[0] > 0
+    assert np.isinf(r[1]) and r[1] < 0
+    assert np.isnan(r[2])
+
+    r = a % z
+    assert np.isnan(r[0])
+    assert np.isnan(r[1])
+    assert np.isnan(r[2])
+
+@test
+def check_divmod0_int_array_scalar_zero(dt: type):
+    a = np.array([1, 2, 0], dtype=dt)
+
+    r = a / 0
+    assert np.isinf(r[0])
+    assert np.isinf(r[1])
+    assert np.isnan(r[2])
+
+    r = np.divide(a, 0)
+    assert np.isinf(r[0])
+    assert np.isinf(r[1])
+    assert np.isnan(r[2])
+
+@test
+def check_divmod0_int_array_array_zero(dt: type):
+    a = np.array([1, 2, 0], dtype=dt)
+    z = np.array([0, 0, 0], dtype=dt)
+
+    r = a / z
+    assert np.isinf(r[0])
+    assert np.isinf(r[1])
+    assert np.isnan(r[2])
+
+@test
+def check_divmod0_python_scalar_numerator(dt: type):
+    a = np.array([0.0, 0.0, 0.0], dtype=dt)
+
+    r = 1.0 / a
+    assert np.isinf(r[0]) and r[0] > 0
+    assert np.isinf(r[1]) and r[1] > 0
+    assert np.isinf(r[2]) and r[2] > 0
+
+    r = 0.0 / a
+    assert np.isnan(r[0])
+    assert np.isnan(r[1])
+    assert np.isnan(r[2])
+
+    r = 1.0 % a
+    assert np.isnan(r[0])
+    assert np.isnan(r[1])
+    assert np.isnan(r[2])
+
+@test
+def check_divmod0_mixed_int_float_zero(idt: type, fdt: type):
+    ai = np.array([1, -1, 0], dtype=idt)
+    af = np.array([0.0, 0.0, 0.0], dtype=fdt)
+
+    r = ai / af
+    assert np.isinf(r[0]) and r[0] > 0
+    assert np.isinf(r[1]) and r[1] < 0
+    assert np.isnan(r[2])
+
+    r = ai % af
+    assert np.isnan(r[0])
+    assert np.isnan(r[1])
+    assert np.isnan(r[2])
+
+@test
+def check_divmod0_broadcast_zero(dt: type):
+    a = np.array([[1.0], [-1.0], [0.0]], dtype=dt)
+    z = np.array([0.0], dtype=dt)
+
+    r = a / z
+    assert np.isinf(r[0, 0]) and r[0, 0] > 0
+    assert np.isinf(r[1, 0]) and r[1, 0] < 0
+    assert np.isnan(r[2, 0])
+
+    r = a % z
+    assert np.isnan(r[0, 0])
+    assert np.isnan(r[1, 0])
+    assert np.isnan(r[2, 0])
+
+check_divmod0_float_array_scalar_zero(np.float32)
+check_divmod0_float_array_scalar_zero(np.float64)
+check_divmod0_float_array_array_zero(np.float32)
+check_divmod0_float_array_array_zero(np.float64)
+check_divmod0_python_scalar_numerator(np.float32)
+check_divmod0_python_scalar_numerator(np.float64)
+check_divmod0_broadcast_zero(np.float32)
+check_divmod0_broadcast_zero(np.float64)
+check_divmod0_int_array_scalar_zero(np.int8)
+check_divmod0_int_array_scalar_zero(np.int16)
+check_divmod0_int_array_scalar_zero(np.int32)
+check_divmod0_int_array_scalar_zero(np.int64)
+check_divmod0_int_array_scalar_zero(np.uint8)
+check_divmod0_int_array_scalar_zero(np.uint16)
+check_divmod0_int_array_scalar_zero(np.uint32)
+check_divmod0_int_array_scalar_zero(np.uint64)
+check_divmod0_int_array_array_zero(np.int8)
+check_divmod0_int_array_array_zero(np.int16)
+check_divmod0_int_array_array_zero(np.int32)
+check_divmod0_int_array_array_zero(np.int64)
+check_divmod0_int_array_array_zero(np.uint8)
+check_divmod0_int_array_array_zero(np.uint16)
+check_divmod0_int_array_array_zero(np.uint32)
+check_divmod0_int_array_array_zero(np.uint64)
+check_divmod0_mixed_int_float_zero(np.int32, np.float32)
+check_divmod0_mixed_int_float_zero(np.int32, np.float64)
+check_divmod0_mixed_int_float_zero(np.int64, np.float32)
+check_divmod0_mixed_int_float_zero(np.int64, np.float64)

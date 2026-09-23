@@ -78,6 +78,13 @@ print(bar() and foo())
 #: bar
 #: False
 
+v: Optional[str] = None
+result = v or "default"
+print(result)  #: default
+v: Optional[str] = "hoo"
+result = v or "default"
+print(result)  #: hoo
+
 x: Optional[List[int]] = None
 z = x if x else []
 print(z, z.__class__.__name__)  #: [] Optional[List[int]]
@@ -137,6 +144,21 @@ fx: function[[int], int] = foo
 print fx(2) #: 3
 fxx: Function[[int], int] = foo
 print fxx(3) #: 4
+
+#%% index_union_annotation_revisit,barebones
+class IndexUnionA:
+    pass
+
+class IndexUnionB:
+    pass
+
+class IndexUnionTemplate[T]:
+    pass
+
+def index_union_arg(t: Union[IndexUnionTemplate[IndexUnionA], IndexUnionTemplate[IndexUnionB]]):
+    print("ok")
+
+index_union_arg(IndexUnionTemplate[IndexUnionA]())  #: ok
 
 #%% index_special,barebones
 class Foo:
@@ -396,9 +418,8 @@ l.append(('str', 1, True, 5.15))
 print l, l.__class__.__name__ #: [('str', 1, True, 5.15)] List[Tuple[str,int,bool,float]]
 
 #%% nested_generic,barebones
-x = Array[Array[int]](0)
 f = Optional[Optional[Optional[int]]](Optional[Optional[int]](Optional[int](5)))
-print x.len, f  #: 0 5
+print f  #: 5
 
 #%% static,barebones
 class Num[N_: Literal[int]]:

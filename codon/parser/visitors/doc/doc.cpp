@@ -92,7 +92,8 @@ std::shared_ptr<json> DocVisitor::apply(const std::string &argv0,
                                         const std::vector<std::string> &files) {
   auto shared = std::make_shared<DocShared>();
   shared->argv0 = argv0;
-  auto cache = std::make_unique<ast::Cache>(argv0);
+  std::vector<std::unique_ptr<ast::ASTNode>> nodes;
+  auto cache = std::make_unique<ast::Cache>(nodes, argv0);
   shared->cache = cache.get();
   shared->modules[""] = std::make_shared<DocContext>(shared);
   shared->j = std::make_shared<json>();
@@ -106,10 +107,16 @@ std::shared_ptr<json> DocVisitor::apply(const std::string &argv0,
   if (!coreOrErr)
     throw exc::ParserException(coreOrErr.takeError());
   shared->modules[""]->setFilename(stdlib->path);
+  shared->modules[""]->add("int", std::make_shared<int>(shared->itemID++));
   shared->modules[""]->add("__py_numerics__", std::make_shared<int>(shared->itemID++));
   shared->modules[""]->add("__py_extension__", std::make_shared<int>(shared->itemID++));
   shared->modules[""]->add("__debug__", std::make_shared<int>(shared->itemID++));
   shared->modules[""]->add("__apple__", std::make_shared<int>(shared->itemID++));
+  shared->modules[""]->add("__dict_unordered__",
+                           std::make_shared<int>(shared->itemID++));
+  for (const auto *name : {"__codon_version_major__", "__codon_version_minor__",
+                           "__codon_version_micro__"})
+    shared->modules[""]->add(name, std::make_shared<int>(shared->itemID++));
 
   auto j = std::make_shared<json>(std::unordered_map<std::string, std::string>{
       {"name", "type"}, {"kind", "class"}, {"type", "type"}});
@@ -128,7 +135,6 @@ std::shared_ptr<json> DocVisitor::apply(const std::string &argv0,
   for (auto &f : files) {
     auto path = std::string(cache->fs->canonical(f));
     ctx->setFilename(path);
-    // LOG("-> parsing {}", path);
     auto fAstOrErr = ast::parseFile(shared->cache, path);
     if (!fAstOrErr)
       throw exc::ParserException(fAstOrErr.takeError());
@@ -483,7 +489,6 @@ void DocVisitor::visit(ImportStmt *stmt) {
   if (it == ctx->shared->modules.end()) {
     ctx->shared->modules[file->path] = ictx = std::make_shared<DocContext>(ctx->shared);
     ictx->setFilename(file->path);
-    // LOG("=> parsing {}", file->path);
     auto tmpOrErr = parseFile(ctx->shared->cache, file->path);
     if (!tmpOrErr)
       throw exc::ParserException(tmpOrErr.takeError());
@@ -514,6 +519,16 @@ void DocVisitor::visit(AssignStmt *stmt) {
   auto e = cast<IdExpr>(stmt->getLhs());
   if (!e)
     return;
+
+  if (auto ei = cast<IdExpr>(stmt->getRhs())) {
+    auto i = ctx->find(ei->getValue());
+    auto k = ctx->shared->j->get(std::to_string(*i))->get("kind");
+    if (k != nullptr && k->values.begin()->first == "class") {
+      ctx->add(e->getValue(), i);
+      return;
+    }
+  }
+
   int id = ctx->shared->itemID++;
   ctx->add(e->getValue(), std::make_shared<int>(id));
   auto j = std::make_shared<json>(std::unordered_map<std::string, std::string>{

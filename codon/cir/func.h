@@ -19,7 +19,7 @@ private:
   /// whether the function is an async function
   bool async;
   /// Parent type if func is a method, or null if not
-  types::Type *parentType;
+  Type *parentType;
 
 protected:
   /// list of arguments
@@ -28,8 +28,8 @@ protected:
   std::vector<Var *> doGetUsedVariables() const override;
   int doReplaceUsedVariable(id_t id, Var *newVar) override;
 
-  std::vector<types::Type *> doGetUsedTypes() const override;
-  int doReplaceUsedType(const std::string &name, types::Type *newType) override;
+  std::vector<Type *> doGetUsedTypes() const override;
+  int doReplaceUsedType(const std::string &name, Type *newType) override;
 
 public:
   static const char NodeId;
@@ -43,7 +43,7 @@ public:
   /// Re-initializes the function with a new type and names.
   /// @param newType the function's new type
   /// @param names the function's new argument names
-  void realize(types::Type *newType, const std::vector<std::string> &names);
+  void realize(Type *newType, const std::vector<std::string> &names);
 
   /// @return iterator to the first arg
   auto arg_begin() { return args.begin(); }
@@ -86,10 +86,10 @@ public:
   Var *getArgVar(const std::string &n);
 
   /// @return the parent type
-  types::Type *getParentType() const { return parentType; }
+  Type *getParentType() const { return parentType; }
   /// Sets the parent type.
   /// @param p the new parent
-  void setParentType(types::Type *p) { parentType = p; }
+  void setParentType(Type *p) { parentType = p; }
 };
 
 class BodiedFunc : public AcceptorExtend<BodiedFunc, Func> {
@@ -169,7 +169,7 @@ public:
   using AcceptorExtend::AcceptorExtend;
 
   /// @return true if the function is variadic
-  bool isVariadic() const { return cast<types::FuncType>(getType())->isVariadic(); }
+  bool isVariadic() const { return cast<FuncType>(getType())->isVariadic(); }
 };
 
 /// Internal, LLVM-only function.
@@ -184,7 +184,7 @@ public:
 class LLVMFunc : public AcceptorExtend<LLVMFunc, Func> {
 private:
   /// literals that must be formatted into the body
-  std::vector<types::Generic> llvmLiterals;
+  std::vector<Generic> llvmLiterals;
   /// declares for llvm-only function
   std::string llvmDeclares;
   /// body of llvm-only function
@@ -197,7 +197,7 @@ public:
 
   /// Sets the LLVM literals.
   /// @param v the new values.
-  void setLLVMLiterals(std::vector<types::Generic> v) { llvmLiterals = std::move(v); }
+  void setLLVMLiterals(std::vector<Generic> v) { llvmLiterals = std::move(v); }
 
   /// @return iterator to the first literal
   auto literal_begin() { return llvmLiterals.begin(); }
@@ -229,8 +229,8 @@ public:
   void setLLVMBody(std::string v) { llvmBody = std::move(v); }
 
 protected:
-  std::vector<types::Type *> doGetUsedTypes() const override;
-  int doReplaceUsedType(const std::string &name, types::Type *newType) override;
+  std::vector<Type *> doGetUsedTypes() const override;
+  int doReplaceUsedType(const std::string &name, Type *newType) override;
 };
 
 } // namespace ir

@@ -12,6 +12,7 @@
 #include "codon/cir/analyze/analysis.h"
 #include "codon/cir/module.h"
 #include "codon/cir/transform/pass.h"
+#include "codon/compiler/options.h"
 
 namespace codon {
 namespace ir {
@@ -73,6 +74,9 @@ private:
     AnalysisMetadata &operator=(AnalysisMetadata &&) = default;
   };
 
+  /// compiler options
+  Options *options;
+
   /// key manager to handle duplicate keys (i.e. passes being added twice)
   KeyManager km;
 
@@ -91,33 +95,15 @@ private:
   /// passes to avoid registering
   std::vector<std::string> disabled;
 
-  /// whether to use Python (vs. C) numeric semantics in passes
-  bool pyNumerics;
-
-  /// true if we are compiling as a Python extension
-  bool pyExtension;
-
 public:
-  /// PassManager initialization mode.
-  enum Init {
-    EMPTY,
-    DEBUG,
-    RELEASE,
-    JIT,
-  };
-
-  explicit PassManager(Init init, std::vector<std::string> disabled = {},
-                       bool pyNumerics = false, bool pyExtension = false)
-      : km(), passes(), analyses(), executionOrder(), results(),
-        disabled(std::move(disabled)), pyNumerics(pyNumerics),
-        pyExtension(pyExtension) {
-    registerStandardPasses(init);
+  explicit PassManager(Options *options)
+      : options(options), km(), passes(), analyses(), executionOrder(), results() {
+    registerStandardPasses();
   }
 
-  explicit PassManager(bool debug = false, std::vector<std::string> disabled = {},
-                       bool pyNumerics = false, bool pyExtension = false)
-      : PassManager(debug ? Init::DEBUG : Init::RELEASE, std::move(disabled),
-                    pyNumerics, pyExtension) {}
+  /// Returns the compiler options
+  /// @return the compiler options
+  Options *getOptions() { return options; }
 
   /// Checks if the given pass is included in this manager.
   /// @param key the pass key
@@ -180,7 +166,7 @@ public:
 
 private:
   void runPass(Module *module, const std::string &name);
-  void registerStandardPasses(Init init);
+  void registerStandardPasses();
   void runAnalysis(Module *module, const std::string &name);
   void invalidate(const std::string &key);
 };

@@ -16,20 +16,6 @@ const std::string GPU_TRIPLE = "nvptx64-nvidia-cuda";
 const std::string GPU_DL =
     "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-"
     "f64:64:64-v16:16:16-v32:32:32-v64:64:64-v128:128:128-n16:32:64";
-llvm::cl::opt<std::string>
-    libdevice("libdevice", llvm::cl::desc("libdevice path for GPU kernels"),
-              llvm::cl::init("/usr/local/cuda/nvvm/libdevice/libdevice.10.bc"));
-llvm::cl::opt<std::string> ptxOutput("ptx",
-                                     llvm::cl::desc("Output PTX to specified file"));
-llvm::cl::opt<std::string> gpuName(
-    "gpu-name",
-    llvm::cl::desc(
-        "Target GPU architecture or compute capability (e.g. sm_70, sm_80, etc.)"),
-    llvm::cl::init("sm_30"));
-llvm::cl::opt<std::string> gpuFeatures(
-    "gpu-features",
-    llvm::cl::desc("GPU feature flags passed (e.g. +ptx42 to enable PTX 4.2 features)"),
-    llvm::cl::init("+ptx42"));
 
 // Adapted from LLVM's GVExtractorPass, which is not externally available
 // as a pass for the new pass manager.
@@ -352,6 +338,64 @@ void codegenVectorizedBinaryLoop(llvm::IRBuilder<> &B,
   B.CreateRet(llvm::UndefValue::get(parent->getReturnType()));
 }
 
+void codegenVectorizedComplexLoop(llvm::IRBuilder<> &B,
+                                  const std::vector<llvm::Value *> &args,
+                                  llvm::Function *func) {
+  // Create IR to represent:
+  //   p_in = in
+  //   p_out = out
+  //   for i in range(n):
+  //       re = p_in[0]
+  //       im = p_in[1]
+  //       *p_out = func(re, im)
+  //       p_in += is
+  //       p_out += os
+  auto &context = B.getContext();
+  auto *parent = B.GetInsertBlock()->getParent();
+  auto *ty = func->getReturnType();
+
+  auto *in = args[0];
+  auto *is = args[1];
+  auto *out = args[2];
+  auto *os = args[3];
+  auto *n = args[4];
+
+  auto *loop = llvm::BasicBlock::Create(context, "loop", parent);
+  auto *exit = llvm::BasicBlock::Create(context, "exit", parent);
+
+  auto *pinStore = B.CreateAlloca(B.getPtrTy());
+  auto *poutStore = B.CreateAlloca(B.getPtrTy());
+  auto *idxStore = B.CreateAlloca(B.getInt64Ty());
+
+  B.CreateStore(in, pinStore);
+  B.CreateStore(out, poutStore);
+  B.CreateStore(B.getInt64(0), idxStore);
+  B.CreateCondBr(B.CreateICmpSGT(n, B.getInt64(0)), loop, exit);
+
+  B.SetInsertPoint(loop);
+  auto *pin = B.CreateLoad(B.getPtrTy(), pinStore);
+  auto *pout = B.CreateLoad(B.getPtrTy(), poutStore);
+
+  auto *pre = pin;
+  auto *pim = B.CreateGEP(ty, pin, B.getInt64(1));
+
+  auto *re = B.CreateLoad(ty, pre);
+  auto *im = B.CreateLoad(ty, pim);
+  auto *y = B.CreateCall(func, {re, im});
+  B.CreateStore(y, pout);
+
+  auto *idx = B.CreateLoad(B.getInt64Ty(), idxStore);
+  B.CreateStore(B.CreateAdd(idx, B.getInt64(1)), idxStore);
+  B.CreateStore(B.CreateGEP(B.getInt8Ty(), pin, is), pinStore);
+  B.CreateStore(B.CreateGEP(B.getInt8Ty(), pout, os), poutStore);
+
+  idx = B.CreateLoad(B.getInt64Ty(), idxStore);
+  B.CreateCondBr(B.CreateICmpSLT(idx, n), loop, exit);
+
+  B.SetInsertPoint(exit);
+  B.CreateRet(llvm::UndefValue::get(parent->getReturnType()));
+}
+
 llvm::Function *makeFillIn(llvm::Function *F, Codegen codegen) {
   auto *M = F->getParent();
   auto &context = M->getContext();
@@ -489,6 +533,44 @@ void remapFunctions(llvm::Module *M) {
 
   // functions that need to be generated as they're not available on GPU
   static const std::vector<std::pair<std::string, Codegen>> fillins = {
+      {"memcmp",
+       [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {
+         // NVPTX has neither libc's memcmp nor LLVM's libc-call folding. Give
+         // string equality a device body that can also fold for constant strings.
+         auto *F = B.GetInsertBlock()->getParent();
+         auto &context = B.getContext();
+         auto *entry = B.GetInsertBlock();
+         auto *loop = llvm::BasicBlock::Create(context, "loop", F);
+         auto *next = llvm::BasicBlock::Create(context, "next", F);
+         auto *different = llvm::BasicBlock::Create(context, "different", F);
+         auto *equal = llvm::BasicBlock::Create(context, "equal", F);
+         auto *sizeTy = llvm::cast<llvm::IntegerType>(args[2]->getType());
+         auto *zero = llvm::ConstantInt::get(sizeTy, 0);
+         auto *one = llvm::ConstantInt::get(sizeTy, 1);
+         B.CreateCondBr(B.CreateICmpEQ(args[2], zero), equal, loop);
+
+         B.SetInsertPoint(loop);
+         auto *index = B.CreatePHI(sizeTy, 2);
+         index->addIncoming(zero, entry);
+         auto *lhs = B.CreateLoad(B.getInt8Ty(),
+                                  B.CreateInBoundsGEP(B.getInt8Ty(), args[0], index));
+         auto *rhs = B.CreateLoad(B.getInt8Ty(),
+                                  B.CreateInBoundsGEP(B.getInt8Ty(), args[1], index));
+         B.CreateCondBr(B.CreateICmpEQ(lhs, rhs), next, different);
+
+         B.SetInsertPoint(next);
+         auto *nextIndex = B.CreateAdd(index, one);
+         index->addIncoming(nextIndex, next);
+         B.CreateCondBr(B.CreateICmpEQ(nextIndex, args[2]), equal, loop);
+
+         B.SetInsertPoint(different);
+         B.CreateRet(B.CreateSub(B.CreateZExt(lhs, F->getReturnType()),
+                                 B.CreateZExt(rhs, F->getReturnType())));
+
+         B.SetInsertPoint(equal);
+         B.CreateRet(llvm::ConstantInt::get(F->getReturnType(), 0));
+       }},
+
       {"seq_alloc",
        [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {
          auto *M = B.GetInsertBlock()->getModule();
@@ -607,6 +689,31 @@ void remapFunctions(llvm::Module *M) {
     }                                                                                  \
   }
 
+#define FILLIN_VECLOOP_COMPLEX64(loop, func)                                           \
+  {                                                                                    \
+    loop, [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {           \
+      auto *M = B.GetInsertBlock()->getModule();                                       \
+      auto f = llvm::cast<llvm::Function>(                                             \
+          M->getOrInsertFunction(func, B.getFloatTy(), B.getFloatTy(), B.getFloatTy()) \
+              .getCallee());                                                           \
+      f->setWillReturn();                                                              \
+      codegenVectorizedComplexLoop(B, args, f);                                        \
+    }                                                                                  \
+  }
+
+#define FILLIN_VECLOOP_COMPLEX128(loop, func)                                          \
+  {                                                                                    \
+    loop, [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {           \
+      auto *M = B.GetInsertBlock()->getModule();                                       \
+      auto f = llvm::cast<llvm::Function>(                                             \
+          M->getOrInsertFunction(func, B.getDoubleTy(), B.getDoubleTy(),               \
+                                 B.getDoubleTy())                                      \
+              .getCallee());                                                           \
+      f->setWillReturn();                                                              \
+      codegenVectorizedComplexLoop(B, args, f);                                        \
+    }                                                                                  \
+  }
+
       FILLIN_VECLOOP_UNARY64("cnp_acos_float64", "__nv_acos"),
       FILLIN_VECLOOP_UNARY64("cnp_acosh_float64", "__nv_acosh"),
       FILLIN_VECLOOP_UNARY64("cnp_asin_float64", "__nv_asin"),
@@ -623,6 +730,8 @@ void remapFunctions(llvm::Module *M) {
       FILLIN_VECLOOP_UNARY64("cnp_log2_float64", "__nv_log2"),
       FILLIN_VECLOOP_UNARY64("cnp_sin_float64", "__nv_sin"),
       FILLIN_VECLOOP_UNARY64("cnp_sinh_float64", "__nv_sinh"),
+      FILLIN_VECLOOP_UNARY64("cnp_cos_float64", "__nv_cos"),
+      FILLIN_VECLOOP_UNARY64("cnp_cosh_float64", "__nv_cosh"),
       FILLIN_VECLOOP_UNARY64("cnp_tan_float64", "__nv_tan"),
       FILLIN_VECLOOP_UNARY64("cnp_tanh_float64", "__nv_tanh"),
       FILLIN_VECLOOP_BINARY64("cnp_hypot_float64", "__nv_hypot"),
@@ -643,9 +752,14 @@ void remapFunctions(llvm::Module *M) {
       FILLIN_VECLOOP_UNARY32("cnp_log2_float32", "__nv_log2f"),
       FILLIN_VECLOOP_UNARY32("cnp_sin_float32", "__nv_sinf"),
       FILLIN_VECLOOP_UNARY32("cnp_sinh_float32", "__nv_sinhf"),
+      FILLIN_VECLOOP_UNARY32("cnp_cos_float32", "__nv_cosf"),
+      FILLIN_VECLOOP_UNARY32("cnp_cosh_float32", "__nv_coshf"),
       FILLIN_VECLOOP_UNARY32("cnp_tan_float32", "__nv_tanf"),
       FILLIN_VECLOOP_UNARY32("cnp_tanh_float32", "__nv_tanhf"),
       FILLIN_VECLOOP_BINARY32("cnp_hypot_float32", "__nv_hypotf"),
+
+      FILLIN_VECLOOP_COMPLEX128("cnp_abs_complex128", "__nv_hypot"),
+      FILLIN_VECLOOP_COMPLEX64("cnp_abs_complex64", "__nv_hypotf"),
   };
 
   for (auto &pair : remapping) {
@@ -756,7 +870,8 @@ llvm::Function *normalizeKernelReturnToVoid(llvm::Function *F) {
   return G;
 }
 
-std::string moduleToPTX(llvm::Module *M, std::vector<llvm::GlobalValue *> &kernels) {
+std::string moduleToPTX(llvm::Module *M, std::vector<llvm::GlobalValue *> &kernels,
+                        Options *options) {
   llvm::Triple triple(llvm::Triple::normalize(GPU_TRIPLE));
   llvm::TargetLibraryInfoImpl tlii(triple);
 
@@ -765,11 +880,11 @@ std::string moduleToPTX(llvm::Module *M, std::vector<llvm::GlobalValue *> &kerne
       llvm::TargetRegistry::lookupTarget("nvptx64", triple, err);
   seqassertn(target, "couldn't lookup target: {}", err);
 
-  const llvm::TargetOptions options =
+  const llvm::TargetOptions topt =
       llvm::codegen::InitTargetOptionsFromCodeGenFlags(triple);
 
   std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
-      triple.getTriple(), gpuName, gpuFeatures, options,
+      triple.getTriple(), options->gpuName, options->gpuFeat, topt,
       llvm::codegen::getExplicitRelocModel(), llvm::codegen::getExplicitCodeModel(),
       llvm::CodeGenOptLevel::Aggressive));
 
@@ -807,7 +922,7 @@ std::string moduleToPTX(llvm::Module *M, std::vector<llvm::GlobalValue *> &kerne
   prune(keep);
 
   // Link libdevice and other cleanup.
-  linkLibdevice(M, libdevice);
+  linkLibdevice(M, options->libdevice);
   remapFunctions(M);
 
   // Strip debug info and remove noinline from functions (added in debug mode).
@@ -945,16 +1060,33 @@ void patchPTXVar(llvm::Module *M, llvm::GlobalValue *ptxVar,
 }
 } // namespace
 
-void applyGPUTransformations(llvm::Module *M, const std::string &ptxFilename) {
-  llvm::LLVMContext &context = M->getContext();
+std::unique_ptr<llvm::Module> prepareGPUmodule(llvm::Module *M, Options *options) {
+  bool hasKernels = false;
+  for (auto &F : *M) {
+    if (F.hasFnAttribute("kernel")) {
+      hasKernels = true;
+      break;
+    }
+  }
+
+  if (!hasKernels) {
+    patchPTXVar(M, nullptr);
+    return {};
+  }
+
   std::unique_ptr<llvm::Module> clone = llvm::CloneModule(*M);
   clone->setTargetTriple(llvm::Triple::normalize(GPU_TRIPLE));
   clone->setDataLayout(GPU_DL);
-  if (isFastMathOn()) {
+  if (options->fastmath) {
     clone->addModuleFlag(llvm::Module::ModFlagBehavior::Override, "nvvm-reflect-ftz",
                          1);
   }
+  return clone;
+}
 
+void applyGPUTransformations(llvm::Module *M, std::unique_ptr<llvm::Module> clone,
+                             Options *options, const std::string &ptxFilename) {
+  llvm::LLVMContext &context = M->getContext();
   llvm::NamedMDNode *nvvmAnno = clone->getOrInsertNamedMetadata("nvvm.annotations");
   std::vector<llvm::Function *> kernelCandidates;
   std::vector<llvm::GlobalValue *> kernels;
@@ -983,12 +1115,12 @@ void applyGPUTransformations(llvm::Module *M, const std::string &ptxFilename) {
     return;
   }
 
-  auto ptx = moduleToPTX(clone.get(), kernels);
+  auto ptx = moduleToPTX(clone.get(), kernels, options);
   cleanUpIntrinsics(M);
 
-  if (ptxOutput.getNumOccurrences() > 0) {
+  if (!options->gpuOutput.empty()) {
     std::error_code err;
-    llvm::ToolOutputFile out(ptxOutput, err, llvm::sys::fs::OF_Text);
+    llvm::ToolOutputFile out(options->gpuOutput, err, llvm::sys::fs::OF_Text);
     seqassertn(!err, "Could not open file: {}", err.message());
     llvm::raw_ostream &os = out.os();
     os << ptx;

@@ -35,6 +35,20 @@ def test_call_soon_fifo_order():
     assert log == [0, 1, 2, 3, 4]
 
 @test
+def test_call_soon_threadsafe():
+    loop = new_loop()
+    log: List[int] = []
+
+    def cb(value: int):
+        log.append(value)
+        loop.stop()
+
+    handle = loop.call_soon_threadsafe(cb, 42)
+    assert not handle.cancelled()
+    loop.run_forever()
+    assert log == [42]
+
+@test
 def test_loop_stop_from_callback():
     loop = new_loop()
     ran = Box[int]()
@@ -595,6 +609,7 @@ def test_custom_await():
 
 
 test_call_soon_fifo_order()
+test_call_soon_threadsafe()
 test_loop_stop_from_callback()
 test_callback_exception_isolated()
 test_call_later_orders_by_time()

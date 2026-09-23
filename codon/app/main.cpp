@@ -15,6 +15,7 @@
 #include "codon/compiler/compiler.h"
 #include "codon/compiler/error.h"
 #include "codon/compiler/jit.h"
+#include "codon/compiler/options.h"
 #include "codon/parser/common.h"
 #include "codon/util/common.h"
 #include "codon/util/jupyter.h"
@@ -90,7 +91,7 @@ void display(const codon::error::ParserErrorInfo &e) {
   }
 }
 
-void initLogFlags(const llvm::cl::opt<std::string> &log) {
+void initLogFlags(const std::string &log) {
   codon::getLogger().parse(log);
   if (auto *d = getenv("CODON_DEBUG"))
     codon::getLogger().parse(std::string(d));
@@ -107,8 +108,6 @@ enum BuildKind {
   Detect,
   CIR
 };
-enum OptMode { Debug, Release };
-enum Numerics { C, Python };
 } // namespace
 
 int docMode(const std::vector<const char *> &args, const std::string &argv0) {
@@ -142,7 +141,9 @@ int docMode(const std::vector<const char *> &args, const std::string &argv0) {
 
   if (args.size() > 1)
     collectPaths(args[1]);
-  auto compiler = std::make_unique<codon::Compiler>(args[0]);
+
+  auto options = codon::Options::getDefault(args[0]);
+  auto compiler = std::make_unique<codon::Compiler>(*options);
   bool failed = false;
   std::sort(files.begin(), files.end());
   auto result = compiler->docgen(files);
@@ -163,37 +164,15 @@ std::unique_ptr<codon::Compiler> processSource(
     std::function<bool()> pyExtension = [] { return false; }) {
   llvm::cl::opt<std::string> input(llvm::cl::Positional, llvm::cl::desc("<input file>"),
                                    llvm::cl::init("-"));
-  auto regs = llvm::cl::getRegisteredOptions();
-  llvm::cl::opt<OptMode> optMode(
-      llvm::cl::desc("optimization mode"),
-      llvm::cl::values(
-          clEnumValN(Debug, regs.find("debug") != regs.end() ? "default" : "debug",
-                     "Turn off compiler optimizations and show backtraces"),
-          clEnumValN(Release, "release",
-                     "Turn on compiler optimizations and disable debug info")),
-      llvm::cl::init(Debug));
-  llvm::cl::list<std::string> defines(
-      "D", llvm::cl::Prefix,
-      llvm::cl::desc("Add static variable definitions. The syntax is <name>=<value>"));
-  llvm::cl::list<std::string> disabledOpts(
-      "disable-opt", llvm::cl::desc("Disable the specified IR optimization"));
-  llvm::cl::list<std::string> plugins("plugin",
-                                      llvm::cl::desc("Load specified plugin"));
-  llvm::cl::opt<std::string> log("log", llvm::cl::desc("Enable given log streams"));
-  llvm::cl::opt<Numerics> numerics(
-      "numerics", llvm::cl::desc("numerical semantics"),
-      llvm::cl::values(
-          clEnumValN(C, "c", "C semantics: best performance but deviates from Python"),
-          clEnumValN(Python, "py",
-                     "Python semantics: mirrors Python but might disable optimizations "
-                     "like vectorization")),
-      llvm::cl::init(C));
 
   llvm::cl::ParseCommandLineOptions(args.size(), args.data());
-  initLogFlags(log);
+  auto options = codon::Options::getFromCommandLine(args[0]);
+  options->standalone = standalone;
+  options->pyext = pyExtension();
+  initLogFlags(options->log);
 
   std::unordered_map<std::string, std::string> defmap;
-  for (const auto &define : defines) {
+  for (const auto &define : options->defines) {
     auto eq = define.find('=');
     if (eq == std::string::npos || !eq) {
       codon::compilationWarning("ignoring malformed definition: " + define);
@@ -211,15 +190,10 @@ std::unique_ptr<codon::Compiler> processSource(
     defmap.emplace(name, value);
   }
 
-  const bool isDebug = (optMode == OptMode::Debug);
-  std::vector<std::string> disabledOptsVec(disabledOpts);
-  auto compiler = std::make_unique<codon::Compiler>(
-      args[0], isDebug, disabledOptsVec,
-      /*isTest=*/false, (numerics == Numerics::Python), pyExtension());
-  compiler->getLLVMVisitor()->setStandalone(standalone);
+  auto compiler = std::make_unique<codon::Compiler>(*options);
 
   // load plugins
-  for (const auto &plugin : plugins) {
+  for (const auto &plugin : options->plugins) {
     bool failed = false;
     llvm::handleAllErrors(
         compiler->load(plugin), [&failed](const codon::error::PluginErrorInfo &e) {
@@ -306,15 +280,15 @@ void jitLoop(codon::jit::JIT *jit, std::istream &fp) {
 int jitMode(const std::vector<const char *> &args) {
   llvm::cl::opt<std::string> input(llvm::cl::Positional, llvm::cl::desc("<input file>"),
                                    llvm::cl::init("-"));
-  llvm::cl::list<std::string> plugins("plugin",
-                                      llvm::cl::desc("Load specified plugin"));
-  llvm::cl::opt<std::string> log("log", llvm::cl::desc("Enable given log streams"));
+
   llvm::cl::ParseCommandLineOptions(args.size(), args.data());
-  initLogFlags(log);
-  codon::jit::JIT jit(args[0]);
+  auto options = codon::Options::getFromCommandLine(args[0]);
+  options->jit = true;
+  initLogFlags(options->log);
+  codon::jit::JIT jit(*options);
 
   // load plugins
-  for (const auto &plugin : plugins) {
+  for (const auto &plugin : options->plugins) {
     bool failed = false;
     llvm::handleAllErrors(jit.getCompiler()->load(plugin),
                           [&failed](const codon::error::PluginErrorInfo &e) {

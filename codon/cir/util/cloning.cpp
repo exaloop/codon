@@ -89,7 +89,7 @@ void CloneVisitor::visit(const BodiedFunc *v) {
   res->setUnmangledName(v->getUnmangledName());
   res->setGenerator(v->isGenerator());
   res->setAsync(v->isAsync());
-  res->realize(cast<types::FuncType>(v->getType()), argNames);
+  res->realize(cast<FuncType>(v->getType()), argNames);
 
   auto argIt1 = v->arg_begin();
   auto argIt2 = res->arg_begin();
@@ -116,7 +116,7 @@ void CloneVisitor::visit(const ExternalFunc *v) {
   res->setUnmangledName(v->getUnmangledName());
   res->setGenerator(v->isGenerator());
   res->setAsync(v->isAsync());
-  res->realize(cast<types::FuncType>(v->getType()), argNames);
+  res->realize(cast<FuncType>(v->getType()), argNames);
 
   auto argIt1 = v->arg_begin();
   auto argIt2 = res->arg_begin();
@@ -137,7 +137,7 @@ void CloneVisitor::visit(const InternalFunc *v) {
   res->setUnmangledName(v->getUnmangledName());
   res->setGenerator(v->isGenerator());
   res->setAsync(v->isAsync());
-  res->realize(cast<types::FuncType>(v->getType()), argNames);
+  res->realize(cast<FuncType>(v->getType()), argNames);
 
   auto argIt1 = v->arg_begin();
   auto argIt2 = res->arg_begin();
@@ -159,7 +159,7 @@ void CloneVisitor::visit(const LLVMFunc *v) {
   res->setUnmangledName(v->getUnmangledName());
   res->setGenerator(v->isGenerator());
   res->setAsync(v->isAsync());
-  res->realize(cast<types::FuncType>(v->getType()), argNames);
+  res->realize(cast<FuncType>(v->getType()), argNames);
 
   auto argIt1 = v->arg_begin();
   auto argIt2 = res->arg_begin();
@@ -171,8 +171,7 @@ void CloneVisitor::visit(const LLVMFunc *v) {
 
   res->setLLVMBody(v->getLLVMBody());
   res->setLLVMDeclarations(v->getLLVMDeclarations());
-  res->setLLVMLiterals(
-      std::vector<types::Generic>(v->literal_begin(), v->literal_end()));
+  res->setLLVMLiterals(std::vector<Generic>(v->literal_begin(), v->literal_end()));
   result = res;
 }
 
@@ -273,6 +272,10 @@ void CloneVisitor::visit(const StringConst *v) {
   result = Nt(v, v->getVal(), v->getType());
 }
 
+void CloneVisitor::visit(const BytesConst *v) {
+  result = Nt(v, v->getVal(), v->getType());
+}
+
 void CloneVisitor::visit(const dsl::CustomConst *v) { result = v->doClone(*this); }
 
 void CloneVisitor::visit(const AssignInstr *v) {
@@ -295,7 +298,7 @@ void CloneVisitor::visit(const CallInstr *v) {
 }
 
 void CloneVisitor::visit(const StackAllocInstr *v) {
-  result = Nt(v, v->getArrayType(), v->getCount());
+  result = Nt(v, v->getPtrType(), v->getCount());
 }
 
 void CloneVisitor::visit(const TypePropertyInstr *v) {

@@ -288,7 +288,7 @@ struct Outliner : public Operator {
 
     auto *M = flowRegion->getModule();
     std::vector<std::pair<Var *, Var *>> remap; // mapping of old vars to new func vars
-    std::vector<types::Type *> argTypes;        // arg types of new func
+    std::vector<Type *> argTypes;               // arg types of new func
     std::vector<std::string> argNames;          // arg names of new func
     std::vector<OutlineResult::ArgKind> argKinds; // arg information given back to user
 
@@ -305,7 +305,7 @@ struct Outliner : public Operator {
       seqassertn(var, "unknown var id [{}]", var->getSrcInfo());
       remap.emplace_back(var, nullptr);
       const bool isMod = (mod.count(id) > 0);
-      types::Type *type = isMod ? M->getPointerType(var->getType()) : var->getType();
+      Type *type = isMod ? M->getPointerType(var->getType()) : var->getType();
       argTypes.push_back(type);
       argNames.push_back(var->getName());
       argKinds.push_back(isMod ? OutlineResult::ArgKind::MODIFIED

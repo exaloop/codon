@@ -25,13 +25,19 @@ Type *StaticType::getNonStaticType() const { return cache->findClass(name); }
 /*****************************************************************/
 
 IntStaticType::IntStaticType(Cache *cache, int64_t i)
-    : StaticType(cache, "int"), value(i) {}
+    : StaticType(cache, "Int"), value(i) {
+  _rn = "Int[64]";
+  // auto base = cache->findClass(name);
+  // seqassert(base, "cannot locate Int");
+  // generics = base->generics;
+  // isTuple = base->isTuple;
+}
 
 int IntStaticType::unify(Type *typ, Unification *us) {
   if (auto t = typ->getIntStatic()) {
     return value == t->value ? 1 : -1;
   } else if (auto c = typ->getClass()) {
-    return ClassType::unify(c, us);
+    return getNonStaticType()->unify(c, us);
   } else if (auto tl = typ->getLink()) {
     return tl->unify(this, us);
   } else {
@@ -57,6 +63,8 @@ std::string IntStaticType::debugString(char mode) const {
 }
 
 Expr *IntStaticType::getStaticExpr() const { return cache->N<IntExpr>(value); }
+
+Type *IntStaticType::getNonStaticType() const { return cache->findClass("Int[64]"); }
 
 /*****************************************************************/
 

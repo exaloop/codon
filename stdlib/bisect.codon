@@ -7,7 +7,7 @@ def bisect_left(
         raise ValueError("lo must be non-negative")
     hi: int = len(a) if hi is None else hi
     while lo < hi:
-        mid = (lo + hi) // 2
+        mid = (lo + hi).cdiv(2)
         if a[mid] < x:
             lo = mid + 1
         else:
@@ -21,7 +21,7 @@ def bisect_right(
         raise ValueError("lo must be non-negative")
     hi: int = len(a) if hi is None else hi
     while lo < hi:
-        mid = (lo + hi) // 2
+        mid = (lo + hi).cdiv(2)
         if x < a[mid]:
             hi = mid
         else:

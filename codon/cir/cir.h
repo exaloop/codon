@@ -8,6 +8,6 @@
 #include "codon/cir/func.h"
 #include "codon/cir/instr.h"
 #include "codon/cir/module.h"
-#include "codon/cir/types/types.h"
+#include "codon/cir/type.h"
 #include "codon/cir/value.h"
 #include "codon/cir/var.h"

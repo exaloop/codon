@@ -44,7 +44,8 @@ public:
         const std::unordered_map<std::string, std::string> &earlyDefines = {},
         bool barebones = false);
   static Stmt *apply(const std::shared_ptr<TypeContext> &cache, Stmt *node,
-                     const std::string &file = "<internal>");
+                     const std::string &file = "<internal>",
+                     bool sweepForceRealize = true);
 
 private:
   static void loadStdLibrary(Cache *, SuiteStmt *,
@@ -234,11 +235,11 @@ public:
   }
 
 private:
-  Stmt *inferTypes(Stmt *, bool isToplevel = false);
+  Stmt *inferTypes(Stmt *, bool sweepForceRealize = false);
   types::Type *realizeFunc(types::FuncType *, bool = false);
   types::Type *realizeType(types::ClassType *);
-  SuiteStmt *generateSpecialAST(types::FuncType *);
-  codon::ir::types::Type *makeIRType(types::ClassType *);
+  SuiteStmt *generateSpecialAst(types::FuncType *);
+  codon::ir::Type *makeIRType(types::ClassType *);
   codon::ir::Func *
   makeIRFunction(const std::shared_ptr<Cache::Function::FunctionRealization> &);
 
@@ -406,6 +407,8 @@ public:
   Expr *transformStaticTupleType(const CallExpr *);
   Expr *transformStaticFormat(CallExpr *);
   Expr *transformStaticIntToStr(CallExpr *);
+  Expr *transformStaticPlatform(CallExpr *);
+  Expr *transformStaticContains(CallExpr *);
   SuiteStmt *generateClassPopulateVTablesAST();
   SuiteStmt *generateBaseDerivedDistAST(types::FuncType *);
   FunctionStmt *generateThunkAST(const types::FuncType *fp, types::ClassType *base,

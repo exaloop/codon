@@ -3,7 +3,7 @@
 #pragma once
 
 #include "codon/cir/base.h"
-#include "codon/cir/types/types.h"
+#include "codon/cir/type.h"
 #include "codon/cir/util/packs.h"
 
 namespace codon {
@@ -35,10 +35,10 @@ public:
   }
   using Node::replaceUsedValue;
 
-  std::vector<types::Type *> getUsedTypes() const final {
+  std::vector<Type *> getUsedTypes() const final {
     return getActual()->doGetUsedTypes();
   }
-  int replaceUsedType(const std::string &name, types::Type *newType) final {
+  int replaceUsedType(const std::string &name, Type *newType) final {
     return getActual()->doReplaceUsedType(name, newType);
   }
   using Node::replaceUsedType;
@@ -56,7 +56,7 @@ public:
   using Node::replaceUsedVariable;
 
   /// @return the value's type
-  types::Type *getType() const { return getActual()->doGetType(); }
+  Type *getType() const { return getActual()->doGetType(); }
 
   id_t getId() const override { return getActual()->id; }
 
@@ -109,15 +109,13 @@ private:
 
   Value *doCall(const std::vector<Value *> &args);
 
-  virtual types::Type *doGetType() const = 0;
+  virtual Type *doGetType() const = 0;
 
   virtual std::vector<Value *> doGetUsedValues() const { return {}; }
   virtual int doReplaceUsedValue(id_t id, Value *newValue) { return 0; }
 
-  virtual std::vector<types::Type *> doGetUsedTypes() const { return {}; }
-  virtual int doReplaceUsedType(const std::string &name, types::Type *newType) {
-    return 0;
-  }
+  virtual std::vector<Type *> doGetUsedTypes() const { return {}; }
+  virtual int doReplaceUsedType(const std::string &name, Type *newType) { return 0; }
 
   virtual std::vector<Var *> doGetUsedVariables() const { return {}; }
   virtual int doReplaceUsedVariable(id_t id, Var *newVar) { return 0; }

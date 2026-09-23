@@ -54,7 +54,7 @@ def _binary_search_with_guess(key, arr, lenxp, guess):
 
     # Finally, find index by bisection
     while imin < imax:
-        imid = imin + (imax - imin) // 2
+        imid = imin + (imax - imin).cdiv(2)
         if key >= arr[imid]:
             imin = imid + 1
         else:
@@ -189,7 +189,7 @@ def _compiled_interp(x: Ptr[X],
         if lenxp <= lenx:
             slopes = [0.0] * (lenxp - 1)
             for i in range(lenxp - 1):
-                slopes[i] = (dy[i + 1] - dy[i]) / (dx[i + 1] - dx[i])
+                slopes[i] = float(dy[i + 1] - dy[i]).cdiv(float(dx[i + 1] - dx[i]))
 
         j = 0
 
@@ -209,8 +209,8 @@ def _compiled_interp(x: Ptr[X],
             elif j == lenxp - 1 or dx[j] == x_val:
                 dres[i] = dy[j]
             else:
-                slope = slopes[j] if slopes is not None else (
-                    dy[j + 1] - dy[j]) / (dx[j + 1] - dx[j])
+                slope = slopes[j] if slopes is not None else float(
+                    dy[j + 1] - dy[j]).cdiv(float(dx[j + 1] - dx[j]))
                 dres[i] = slope * (x_val - dx[j]) + dy[j]
 
                 if util.isnan(dres[i]):

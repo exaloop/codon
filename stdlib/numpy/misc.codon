@@ -28,7 +28,7 @@ def _euclid(a1: int, a2: int):
 
     while True:
         if a2 > 0:
-            r = a1 // a2
+            r = a1.cdiv(a2)
             a1 -= r * a2
             gamma1 -= r * gamma2
             epsilon1 -= r * epsilon2
@@ -39,7 +39,7 @@ def _euclid(a1: int, a2: int):
             break
 
         if a1 > 0:
-            r = a2 // a1
+            r = a2.cdiv(a1)
             a2 -= r * a1
             gamma2 -= r * gamma1
             epsilon2 -= r * epsilon1
@@ -135,8 +135,8 @@ def _diophantine_precompute(n: int,
     Epsilon[0] = epsilon
 
     if n > 2:
-        c1 = E[0].a // a_gcd
-        c2 = E[1].a // a_gcd
+        c1 = E[0].a.cdiv(a_gcd)
+        c2 = E[1].a.cdiv(a_gcd)
         x1, o1 = _safe_mul(E[0].ub, c1)
         x2, o2 = _safe_mul(E[1].ub, c2)
         x3, o3 = _safe_add(x1, x2)
@@ -151,8 +151,8 @@ def _diophantine_precompute(n: int,
         Epsilon[j - 1] = epsilon
 
         if j < n - 1:
-            c1 = Ep[j - 2].a // a_gcd
-            c2 = E[j].a // a_gcd
+            c1 = Ep[j - 2].a.cdiv(a_gcd)
+            c2 = E[j].a.cdiv(a_gcd)
             x1, o1 = _safe_mul(c1, Ep[j - 2].ub)
             x2, o2 = _safe_mul(c2, E[j].ub)
             x3, o3 = _safe_add(x1, x2)
@@ -164,14 +164,14 @@ def _diophantine_precompute(n: int,
 
 def _floordiv(a: i128, b: int):
     b = i128(b)
-    result, remainder = a // b, a % b
+    result, remainder = a.cdiv(b), a.cmod(b)
     if a < i128(0) and remainder != i128(0):
         result -= i128(1)
     return result
 
 def _ceildiv(a: i128, b: int):
     b = i128(b)
-    result, remainder = a // b, a % b
+    result, remainder = a.cdiv(b), a.cmod(b)
     if a > i128(0) and remainder != i128(0):
         result += i128(1)
     return result
@@ -211,14 +211,14 @@ def _diophantine_dfs(n: int,
     gamma = Gamma[v - 1]
     epsilon = Epsilon[v - 1]
 
-    c = b // a_gcd
-    r = b % a_gcd
+    c = b.cdiv(a_gcd)
+    r = b.cmod(a_gcd)
     if r != 0:
         count[0] += 1
         return _MEM_OVERLAP_NO
 
-    c1 = a2 // a_gcd
-    c2 = a1 // a_gcd
+    c1 = a2.cdiv(a_gcd)
+    c2 = a1.cdiv(a_gcd)
 
     x10 = i128(gamma) * i128(c)
     x20 = i128(epsilon) * i128(c)
@@ -265,7 +265,7 @@ def _diophantine_dfs(n: int,
             if require_ub_nontrivial:
                 is_ub_nontrivial = True
                 for j in range(n):
-                    if x[j] != E[j].ub // 2:
+                    if x[j] != E[j].ub.cdiv(2):
                         is_ub_nontrivial = False
                         break
 
@@ -313,10 +313,10 @@ def _solve_diophantine(n: int,
         ub_sum = 0
         o = False
         for j in range(n):
-            if E[j].ub % 2 != 0:
+            if E[j].ub.cmod(2) != 0:
                 return _MEM_OVERLAP_ERROR
 
-            v1, o1 = _safe_mul(E[j].a, E[j].ub // 2)
+            v1, o1 = _safe_mul(E[j].a, E[j].ub.cdiv(2))
             v2, o2 = _safe_add(ub_sum, v1)
             ub_sum = v2
             o = o or o1 or o2
@@ -340,8 +340,8 @@ def _solve_diophantine(n: int,
         if require_ub_nontrivial:
             return _MEM_OVERLAP_NO
 
-        if b % E[0].a == 0:
-            x[0] = b // E[0].a
+        if b.cmod(E[0].a) == 0:
+            x[0] = b.cdiv(E[0].a)
             if x[0] >= 0 and x[0] <= E[0].ub:
                 return _MEM_OVERLAP_YES
 
@@ -390,7 +390,7 @@ def _diophantine_simplify(n: Ptr[int], E: Ptr[DiophantineTerm], b: int):
     m = n[0]
     i = 0
     for j in range(m):
-        E[j] = E[j].with_ub(min(E[j].ub, b // E[j].a))
+        E[j] = E[j].with_ub(min(E[j].ub, b.cdiv(E[j].a)))
         if E[j].ub == 0:
             n[0] -= 1
         else:

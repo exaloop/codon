@@ -19,7 +19,7 @@
 #    3. This notice may not be removed or altered from any source distribution.
 
 def _med3(
-    a: int, b: int, c: int, d: Array[T], k: CallableTrait[[T], S], T: type, S: type
+    a: int, b: int, c: int, d: Ptr[T], k: CallableTrait[[T], S], T: type, S: type
 ) -> int:
     if k(d[a]) < k(d[b]):
         return b if (k(d[b]) < k(d[c])) else (c if k(d[a]) < k(d[c]) else a)
@@ -30,10 +30,10 @@ def _med3(
             else (c if not (k(d[a]) < k(d[c]) or k(d[a]) == k(d[c])) else a)
         )
 
-def _swap(i: int, j: int, a: Array[T], T: type):
+def _swap(i: int, j: int, a: Ptr[T], T: type):
     a[i], a[j] = a[j], a[i]
 
-def _vecswap(i: int, j: int, n: int, a: Array[T], T: type):
+def _vecswap(i: int, j: int, n: int, a: Ptr[T], T: type):
     while n > 0:
         _swap(i, j, a)
         i += 1
@@ -41,7 +41,7 @@ def _vecswap(i: int, j: int, n: int, a: Array[T], T: type):
         n -= 1
 
 def _qsort(
-    arr: Array[T], frm: int, cnt: int, key: CallableTrait[[T], S], T: type, S: type
+    arr: Ptr[T], frm: int, cnt: int, key: CallableTrait[[T], S], T: type, S: type
 ):
     if cnt <= 7:
         i = frm + 1
@@ -55,12 +55,12 @@ def _qsort(
             i += 1
         return
 
-    mid = cnt // 2
+    mid = cnt.cdiv(2)
     lo = frm
     hi = frm + cnt - 1
 
     if cnt > 40:
-        s = cnt // 8
+        s = cnt.cdiv(8)
         lo = _med3(lo, lo + s, lo + 2 * s, arr, key)
         mid = _med3(mid - s, mid, mid + s, arr, key)
         hi = _med3(hi - 2 * s, hi - s, hi, arr, key)
@@ -109,16 +109,16 @@ def _qsort(
         _qsort(arr, hi - span, span, key)
 
 def qsort_array(
-    collection: Array[T], size: int, key: CallableTrait[[T], S], T: type, S: type
+    collection: Ptr[T], size: int, key: CallableTrait[[T], S], T: type, S: type
 ):
     _qsort(collection, 0, size, key)
 
 def qsort_inplace(
     collection: List[T], key: CallableTrait[[T], S], T: type, S: type
 ):
-    qsort_array(collection.arr, collection.len, key)
+    qsort_array(collection._ptr, collection._len, key)
 
 def qsort(collection: List[T], key: CallableTrait[[T], S], T: type, S: type) -> List[T]:
-    collection = collection[:]
+    collection = collection.__copy__()
     qsort_inplace(collection, key)
     return collection

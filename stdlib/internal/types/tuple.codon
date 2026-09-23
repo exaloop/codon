@@ -39,51 +39,41 @@ class Tuple:
 
     def _str(strs: Ptr[str], names: Ptr[str], n: int) -> str:
         # special case of 1-element plain tuple: format as "(x,)"
-        if n == 1 and names[0].len == 0:
-            total = strs[0].len + 3
-            buf = Ptr[byte](total)
-            buf[0] = byte(40)  # '('
-            str.memcpy(buf + 1, strs[0].ptr, strs[0].len)
-            buf[total - 2] = byte(44)  # ','
-            buf[total - 1] = byte(41)  # ')'
-            return str(buf, total)
+        if n == 1 and len(names[0]) == 0:
+            buf = _strbuf(len(strs[0]) + 3, strs[0]._kind())
+            buf.append("(")
+            buf.append(strs[0])
+            buf.append(",)")
+            return str(buf)
 
         total = 2  # one for each of '(' and ')'
+        kind = 0
         i = 0
         while i < n:
-            total += strs[i].len
-            if names[i].len:
-                total += names[i].len + 2  # extra : and space
+            total += len(strs[i])
+            if strs[i]._kind() > kind:
+                kind = strs[i]._kind()
+            if len(names[i]):
+                total += len(names[i]) + 2  # extra : and space
+                if names[i]._kind() > kind:
+                    kind = names[i]._kind()
             if i < n - 1:
                 total += 2  # ", "
             i += 1
-        buf = Ptr[byte](total)
-        where = 0
-        buf[where] = byte(40)  # '('
-        where += 1
+
+        buf = _strbuf(total, kind)
+        buf.append("(")
         i = 0
         while i < n:
-            s = names[i]
-            l = s.len
-            if l:
-                str.memcpy(buf + where, s.ptr, l)
-                where += l
-                buf[where] = byte(58)  # ':'
-                where += 1
-                buf[where] = byte(32)  # ' '
-                where += 1
-            s = strs[i]
-            l = s.len
-            str.memcpy(buf + where, s.ptr, l)
-            where += l
+            if len(names[i]):
+                buf.append(names[i])
+                buf.append(": ")
+            buf.append(strs[i])
             if i < n - 1:
-                buf[where] = byte(44)  # ','
-                where += 1
-                buf[where] = byte(32)  # ' '
-                where += 1
+                buf.append(", ")
             i += 1
-        buf[where] = byte(41)  # ')'
-        return str(buf, total)
+        buf.append(")")
+        return str(buf)
 
 
 @extend

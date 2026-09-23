@@ -9,6 +9,7 @@
 
 #include "codon/cir/pyextension.h"
 #include "codon/cir/util/irtools.h"
+#include "codon/compiler/compiler.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
 #include "codon/parser/match.h"
@@ -88,7 +89,7 @@ Stmt *TypecheckVisitor::apply(
   suite->items.push_back(preamble);
   suite->items.push_back(n);
 
-  if (cast<SuiteStmt>(n))
+  if (cast<SuiteStmt>(n) && !cache->compiler->getOptions()->pyext)
     tv.prepareVTables();
 
   if (!ctx->cache->errors.empty())
@@ -133,7 +134,12 @@ void TypecheckVisitor::loadStdLibrary(
   if (auto err = ScopingVisitor::apply(stdlib->cache, core))
     throw exc::ParserException(std::move(err));
   auto tv = TypecheckVisitor(stdlib, preamble);
-  core = tv.inferTypes(core, true);
+  if (auto n = tv.inferTypes(core, true)) {
+    core = n;
+  } else {
+    auto errors = tv.findTypecheckErrors(core);
+    throw exc::ParserException(errors);
+  }
   preamble->addStmt(core);
 
   // 2. Load early compile-time defines (for standard library)
@@ -165,19 +171,24 @@ void TypecheckVisitor::loadStdLibrary(
   if (auto err = ScopingVisitor::apply(stdlib->cache, std, &stdlib->globalShadows))
     throw exc::ParserException(std::move(err));
   tv = TypecheckVisitor(stdlib, preamble);
-  std = tv.inferTypes(std, true);
+  if (auto n = tv.inferTypes(std, true)) {
+    std = n;
+  } else {
+    auto errors = tv.findTypecheckErrors(std);
+    throw exc::ParserException(errors);
+  }
   preamble->addStmt(std);
   stdlib->isStdlibLoading = false;
 }
 
 /// Simplify an AST node. Assumes that the standard library is loaded.
 Stmt *TypecheckVisitor::apply(const std::shared_ptr<TypeContext> &ctx, Stmt *node,
-                              const std::string &file) {
+                              const std::string &file, bool sweepForceRealize) {
   auto oldFilename = ctx->getFilename();
   ctx->setFilename(file);
   auto preamble = ctx->cache->N<ast::SuiteStmt>();
   auto tv = TypecheckVisitor(ctx, preamble);
-  auto n = tv.inferTypes(node, true);
+  auto n = tv.inferTypes(node, sweepForceRealize);
   ctx->setFilename(oldFilename);
   if (!n) {
     auto errors = tv.findTypecheckErrors(node);
@@ -486,7 +497,7 @@ int TypecheckVisitor::canCall(types::FuncType *fn, const std::vector<CallArg> &a
   }
 
   std::vector<std::pair<types::Type *, size_t>> reordered;
-  auto niGenerics = fn->ast->getNonInferrableGenerics();
+  const auto &niGenerics = fn->ast->getNonInferrableGenerics();
   auto score = reorderNamedArgs(
       fn, args,
       [&](int s, int k, const std::vector<std::vector<int>> &slots, bool _) {
@@ -604,13 +615,15 @@ bool TypecheckVisitor::wrapExpr(Expr **expr, Type *expectedType, FuncType *calle
   return canWrap;
 }
 
+/// TODO: Fix return true/false logic
 std::tuple<bool, TypePtr, std::function<Expr *(Expr *)>>
 TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *callee,
                               bool allowUnwrap, bool isEllipsis) {
   auto expectedClass = expectedType->getClass();
   auto exprClass = exprType->getClass();
-  auto doArgWrap = !callee || !callee->ast->hasFunctionAttribute(getMangledFunc(
-                                  "std.internal.attributes", "no_argument_wrap"));
+  static const auto noArgumentWrap =
+      getMangledFunc("std.internal.attributes", "no_argument_wrap");
+  auto doArgWrap = !callee || !callee->ast->hasFunctionAttribute(noArgumentWrap);
   if (!doArgWrap)
     return {true, expectedType ? expectedType->shared_from_this() : nullptr, nullptr};
 
@@ -688,7 +701,7 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     };
   }
 
-  else if (expectedClass && expectedClass->is("float") && exprClass->is("int")) {
+  else if (expectedClass && expectedClass->is("float") && exprClass->is("Int")) {
     type = instantiateType(expectedClass);
     fn = [&](Expr *expr) -> Expr * { return N<CallExpr>(N<IdExpr>("float"), expr); };
   }
@@ -1007,10 +1020,11 @@ TypecheckVisitor::extractNamedTuple(Expr *expr) {
 
 std::vector<Cache::Class::ClassField>
 TypecheckVisitor::getClassFields(types::ClassType *t) const {
-  auto f = getClass(t->name)->fields;
+  // Tuple has MAX_TUPLE fields; copy only the requested prefix, not the whole table.
+  const auto &f = getClass(t->name)->fields;
   if (t->is(StdlibTypes::Tuple))
-    f = std::vector<Cache::Class::ClassField>(f.begin(),
-                                              f.begin() + t->generics.size());
+    return std::vector<Cache::Class::ClassField>(f.begin(),
+                                                 f.begin() + t->generics.size());
   return f;
 }
 
@@ -1098,12 +1112,13 @@ Cache::Class *TypecheckVisitor::getClass(const std::string &t) const {
 }
 
 Cache::Class *TypecheckVisitor::getClass(types::Type *t) const {
+  Cache::Class *cp = nullptr;
   if (t) {
     if (auto c = t->getClass())
-      return getClass(c->name);
+      cp = getClass(c->name);
   }
-  seqassert(false, "bad class");
-  return nullptr;
+  seqassert(cp, "bad class");
+  return cp;
 }
 
 Cache::Function *TypecheckVisitor::getFunction(const std::string &n) const {
@@ -1368,6 +1383,8 @@ types::TypePtr TypecheckVisitor::instantiateType(const SrcInfo &srcInfo,
   seqassert(type, "type is null");
   std::unordered_map<int, types::TypePtr> genericCache;
   if (generics) {
+    if (generics->getIntStatic())
+      generics = getStdLibType("Int[64]");
     for (auto &g : generics->hiddenGenerics)
       if (g.type &&
           !(g.type->getLink() && g.type->getLink()->kind == types::LinkType::Generic)) {

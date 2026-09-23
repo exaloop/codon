@@ -65,7 +65,7 @@ public:
   void visit(DirectiveStmt *) override {}
 
 private:
-  ir::types::Type *getType(types::Type *t) const;
+  ir::Type *getType(types::Type *t) const;
 
   void transformFunctionRealizations(const std::string &name, bool isLLVM);
   void transformFunction(const types::FuncType *type, FunctionStmt *ast,

@@ -67,10 +67,10 @@ class Slice:
 
         if step < 0:
             if stop < start:
-                return start, stop, step, (start - stop - 1) // (-step) + 1
+                return start, stop, step, (start - stop - 1).cdiv(-step) + 1
         else:
             if start < stop:
-                return start, stop, step, (stop - start - 1) // step + 1
+                return start, stop, step, (stop - start - 1).cdiv(step) + 1
 
         return start, stop, step, 0
 

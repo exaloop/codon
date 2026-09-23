@@ -361,6 +361,16 @@ class int:
         OP_COUNT = inc(OP_COUNT)
         return I.__mod__(self, b)
 
+    def cdiv(self, b: int) -> int:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__floordiv__(self, b)
+
+    def cmod(self, b: int) -> int:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__mod__(self, b)
+
     def __invert__(self) -> int:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
@@ -517,6 +527,9 @@ def test_int_simple_fold():
     assert eq(foo(x + 1), 2)
     assert eq(foo(y * 2), 6)
     assert eq(foo(z // 3), 1)
+    assert eq(foo(z.cdiv(3)), 1)
+    assert eq(foo(z % 3), 1)
+    assert eq(foo(z.cmod(3)), 1)
     assert eq(foo(x >> 2), 0)
     assert eq(foo(x << y), 8)
     assert eq(foo(x | y), 3)
@@ -542,6 +555,9 @@ def test_tuple_simple_fold():
     assert eq(foo(x[0] + 1), 2)
     assert eq(foo(y * 2), 6)
     assert eq(foo(z // 3), 1)
+    assert eq(foo(z.cdiv(3)), 1)
+    assert eq(foo(z % 3), 1)
+    assert eq(foo(z.cmod(3)), 1)
     assert eq(foo(x[0] >> 2), 0)
     assert eq(foo(x[0] << y), 8)
     assert eq(foo(x[0] | y), 3)
@@ -656,6 +672,7 @@ def test_algebraic_simplification():
     assert eq(0+n, n)
     assert eq(n-0, n)
     assert eq(0//n, 0)
+    assert eq((0).cdiv(n), 0)
     assert eq(op_count, OP_COUNT)
 test_algebraic_simplification()
 

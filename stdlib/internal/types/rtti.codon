@@ -51,7 +51,7 @@ class VTable:
 
 @extend
 class RTTIType:
-    def _new(data: Ptr[byte], typeinfo: Ptr[byte], T: type) -> T:
+    def _new(data: Ptr[u8], typeinfo: Ptr[u8], T: type) -> T:
         """
         Creates a new RTTIType wrapper for data and casts it to T.
 

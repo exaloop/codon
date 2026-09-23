@@ -25,7 +25,7 @@ print y.__add__(1)[0] #: 3
 print (y + 3).__sub__(y + 1) #: 2
 print y.__eq__(z) #: True
 print y.__eq__(zz) #: True
-print y.as_byte().__eq__('abc'.ptr) #: False
+print y.as_byte().__eq__('abc'._ptr) #: False
 print y.__ne__(z) #: False
 print y.__lt__(y+1) #: True
 print y.__gt__(y+1) #: False
@@ -44,7 +44,7 @@ y.__prefetch_w3__()
 a = int()
 b = int(5)
 c = int(True)
-d = int(byte(1))
+d = int(u8(1))
 e = int(1.1)
 print a, b, c, d, e #: 0 5 1 1 1
 print a.__repr__() #: 0
@@ -57,7 +57,7 @@ print (-b).__abs__() #: 5
 print c.__truediv__(5) #: 0.2
 print b.__lshift__(1) #: 10
 print b.__rshift__(1) #: 2
-print b.__truediv__(5.15) #: 0.970874
+print b.__truediv__(5.15) #: 0.9708737864077669
 print a.__add__(1) #: 1
 print a.__add__(1.1) #: 1.1
 print a.__sub__(1) #: -1
@@ -65,9 +65,9 @@ print a.__sub__(1.1) #: -1.1
 print b.__mul__(1) #: 5
 print b.__mul__(1.1) #: 5.5
 print b.__floordiv__(2) #: 2
-print b.__floordiv__(1.1) #: 4
+print b.__floordiv__(1.1) #: 4.0
 print b.__mod__(2) #: 1
-print b.__mod__(1.1) #: 0.6
+print b.__mod__(1.1) #: 0.5999999999999996
 print a.__eq__(1) #: False
 print a.__eq__(1.1) #: False
 print a.__ne__(1) #: True
@@ -125,12 +125,12 @@ print z.__repr__() #: 5.5
 print z.__copy__() #: 5.5
 print z.__bool__(), z.__pos__(), z.__neg__() #: True 5.5 -5.5
 f = 1.3
-print z.__floordiv__(f), z.__floordiv__(2) #: 4 2
-print z.__truediv__(f), z.__truediv__(2) #: 4.23077 2.75
-print z.__pow__(2.2), z.__pow__(2) #: 42.54 30.25
+print z.__floordiv__(f), z.__floordiv__(2) #: 4.0 2.0
+print z.__truediv__(f), z.__truediv__(2) #: 4.230769230769231 2.75
+print z.__pow__(2.2), z.__pow__(2) #: 42.540042248725975 30.25
 print z.__add__(2) #: 7.5
 print z.__sub__(2) #: 3.5
-print z.__mul__(2) #: 11
+print z.__mul__(2) #: 11.0
 print z.__truediv__(2) #: 2.75
 print z.__mod__(2) #: 1.5
 print z.__eq__(2) #: False
@@ -154,29 +154,15 @@ print z.__ge__(True) #: False
 print z.__and__(True), z.__or__(True), z.__xor__(True) #: False True True
 
 #%% byte,barebones
-z = byte.__new__()
-z = byte(65)
-print z.__repr__() #: byte('A')
+z = u8.__new__()
+z = u8(65)
 print z.__bool__() #: True
-print z.__eq__(byte(5)) #: False
-print z.__ne__(byte(5)) #: True
-print z.__lt__(byte(5)) #: False
-print z.__gt__(byte(5)) #: True
-print z.__le__(byte(5)) #: False
-print z.__ge__(byte(5)) #: True
-
-#%% array,barebones
-a = Array[float](5)
-pa = Ptr[float](3)
-z = Array[float](pa, 3)
-z.__copy__()
-print z.__len__() #: 3
-print z.__bool__() #: True
-z.__setitem__(0, 1.0)
-z.__setitem__(1, 2.0)
-z.__setitem__(2, 3.0)
-print z.__getitem__(1) #: 2
-print z.slice(0, 2).len #: 2
+print z.__eq__(u8(5)) #: False
+print z.__ne__(u8(5)) #: True
+print z.__lt__(u8(5)) #: False
+print z.__gt__(u8(5)) #: True
+print z.__le__(u8(5)) #: False
+print z.__ge__(u8(5)) #: True
 
 #%% optional,barebones
 a = Optional[float]()

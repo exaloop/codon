@@ -42,6 +42,11 @@ y = i32(20)
 print(x + y)  # 30
 ```
 
+The shift operators `<<` and `>>` also accept a standard `int` (`Int[64]`)
+as the right-hand operand for any `Int[N]` or `UInt[N]`. In this case, the
+result keeps the left-hand operand's type rather than promoting the operands
+to a common integer type. For example, `i8(3) << 2` has type `i8` and value `12`.
+
 ## Floating-point types
 
 Codon's standard `float` type represents a 64-bit floating-point value

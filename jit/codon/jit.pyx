@@ -6,6 +6,7 @@
 # cython: c_string_encoding=utf8
 
 cimport codon.jit
+import json
 from libc.stdlib cimport malloc, calloc, free
 from libc.string cimport strcpy
 from libc.stdint cimport int32_t, uint8_t
@@ -26,14 +27,37 @@ cdef str get_free_str(char *s):
 
 cdef class JITWrapper:
     cdef void* jit
+    cdef bytes options
 
-    def __cinit__(self):
-        self.jit = codon.jit.jit_init(b"codon jit")
+    def __cinit__(self, **options):
+        self.jit = NULL
+        self.options = b"{}"
+        self.set_options(**options)
 
     def __dealloc__(self):
         codon.jit.jit_exit(self.jit)
 
+    def set_options(self, **options):
+        """Set compiler options before this JIT's first execution."""
+        if self.jit is not NULL:
+            raise RuntimeError("JIT options must be set before the first execution")
+        settings = json.loads(self.options)
+        settings.update(options)
+        cdef bytes encoded = json.dumps(settings).encode('utf-8')
+        result = codon.jit.jit_validate_options(encoded)
+        if result.error is not NULL:
+            raise ValueError(get_free_str(result.error))
+        self.options = encoded
+
+    cdef initialize(self):
+        if self.jit is NULL:
+            result = codon.jit.jit_init_with_options(b"codon jit", self.options)
+            if result.error is not NULL:
+                raise JITError(get_free_str(result.error))
+            self.jit = result.result
+
     def execute(self, code: str, filename: str, fileno: int, debug) -> str:
+        self.initialize()
         result = codon.jit.jit_execute_safe(
             self.jit, code.encode('utf-8'), filename.encode('utf-8'), fileno, <uint8_t>debug
         )
@@ -44,6 +68,7 @@ cdef class JITWrapper:
             raise JITError(msg)
 
     def run_wrapper(self, name: str, types: list[str], module: str, pyvars: list[str], args, debug) -> object:
+        self.initialize()
         cdef char** c_types = <char**>calloc(len(types), sizeof(char*))
         cdef char** c_pyvars = <char**>calloc(len(pyvars), sizeof(char*))
         if not c_types or not c_pyvars:

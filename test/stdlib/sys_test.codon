@@ -1,0 +1,322 @@
+import sys
+import internal.static as static
+
+
+@test
+def test_metadata():
+    assert sys.platform == static.platform()
+    assert sys.maxsize == (1 << 63) - 1
+    assert sys.maxunicode == 0x10FFFF
+    value = 1
+    expected = "little" if __ptr__(value).as_byte()[0] == u8(1) else "big"
+    assert sys.byteorder == expected
+    assert sys.float_repr_style == "short"
+    info = sys.float_info
+    assert len(info) == 11
+    assert info[0] == info.max
+    assert info[-11] == info.max and info[10] == info.rounds
+    assert info[-1] == info.rounds
+    assert type(info[0]) is float and type(info[1]) is int
+    assert info.max == (2.0 - 2.0 ** -52) * 2.0 ** 1023
+    assert info.min == 2.0 ** -1022
+    assert info.max_exp == 1024 and info.max_10_exp == 308
+    assert info.min_exp == -1021 and info.min_10_exp == -307
+    assert info.dig == 15 and info.mant_dig == 53
+    assert info.epsilon == 2.0 ** -52
+    assert info.radix == 2 and info.rounds == 1
+
+
+@test
+def test_encodings():
+    assert sys.getdefaultencoding() == "utf-8"
+    assert sys.getfilesystemencoding() == "utf-8"
+    expected = "surrogatepass" if static.platform() == "win32" else "surrogateescape"
+    assert sys.getfilesystemencodeerrors() == expected
+
+
+@test
+def test_version():
+    info = sys.version_info
+    assert info.major == __codon_version_major__
+    assert info.minor == __codon_version_minor__
+    assert info.micro == __codon_version_micro__
+    assert info.releaselevel == "final" and info.serial == 0
+    assert len(info) == 5 and info[3] == "final" and info[-1] == 0
+    assert type(info[0]) is int and type(info[3]) is str
+    assert sys.version == f"{info.major}.{info.minor}.{info.micro} (Codon)"
+    assert sys.hexversion == (info.major << 24) | (info.minor << 16) | (info.micro << 8) | 0xF0
+    assert sys.implementation.name == "codon"
+    assert sys.implementation.version == info
+    assert sys.implementation.hexversion == sys.hexversion
+    assert sys.implementation.cache_tag is None
+    assert info[-5] == info.major and info[4] == info.serial
+
+
+@test
+def test_streams():
+    assert sys.stdin._state is sys.__stdin__._state
+    assert sys.stdout._state is sys.__stdout__._state
+    assert sys.stderr._state is sys.__stderr__._state
+
+
+@test
+def test_standard_stream_writes_are_visible():
+    from C import remove(cobj) -> i32
+
+    for name, stream in (("stdout", sys.stdout), ("stderr", sys.stderr)):
+        path = "sys-" + name + "-write-through.txt"
+        target = open(path, "w")
+        stream.flush()
+        original_fp = stream._state._fp
+        stream._state._fp = target._state._fp
+        observed: List[str] = []
+        expected: List[str] = []
+        output = ""
+        try:
+            for value in ("prompt: ", "caf\u00e9 \U0001f600", "\n", "x" * 131073, ""):
+                written = stream.write(value)
+                output += value
+                expected.append(output)
+                with open(path) as reader:
+                    observed.append(reader.read())
+                assert written == len(value)
+            print("print", "output", sep="-", end="", file=stream, flush=True)
+            expected.append(output + "print-output")
+            with open(path) as reader:
+                observed.append(reader.read())
+        finally:
+            try:
+                stream.flush()
+            finally:
+                stream._state._fp = original_fp
+                target.close()
+                remove(path.c_str())
+        assert observed == expected
+
+
+@test
+def test_default_print_is_visible():
+    if static.platform() == "win32":
+        return
+
+    from C import dup(i32) -> i32
+    from C import dup2(i32, i32) -> i32
+    from C import close(i32) -> i32
+    from C import fileno(cobj) -> i32
+    from C import remove(cobj) -> i32
+
+    path = "sys-print-write-through.txt"
+    target = open(path, "w")
+    sys.stdout.flush()
+    descriptor = fileno(sys.stdout._state._fp)
+    saved = dup(descriptor)
+    assert saved >= 0
+    output = ""
+    try:
+        assert dup2(fileno(target._state._fp), descriptor) == descriptor
+        print("prompt", "ready", sep=": ", end="", flush=True)
+        with open(path) as reader:
+            output = reader.read()
+    finally:
+        try:
+            sys.stdout.flush()
+        finally:
+            dup2(saved, descriptor)
+            close(saved)
+            target.close()
+            remove(path.c_str())
+    assert output == "prompt: ready"
+
+
+@test
+def test_input_prompt_is_visible_before_read():
+    if static.platform() == "win32":
+        return
+
+    from C import pipe(Ptr[i32]) -> i32
+    from C import read(i32, cobj, int) -> int
+    from C import write(i32, cobj, int) -> int
+    from C import dup2(i32, i32) -> i32
+    from C import fileno(cobj) -> i32
+    from C import close(i32) -> i32
+    from C import fork() -> i32
+    from C import waitpid(i32, Ptr[i32], i32) -> i32
+    from C import alarm(u32) -> u32
+    from C import _exit(i32)
+
+    incoming = __array__[i32](2)
+    outgoing = __array__[i32](2)
+    assert pipe(incoming) == 0
+    assert pipe(outgoing) == 0
+    sys.stdout.flush()
+    sys.stderr.flush()
+    process = fork()
+    assert process >= 0
+    if process == 0:
+        if dup2(incoming[0], fileno(sys.stdin._state._fp)) < 0:
+            _exit(i32(1))
+        if dup2(outgoing[1], fileno(sys.stdout._state._fp)) < 0:
+            _exit(i32(1))
+        for descriptor in (incoming[0], incoming[1], outgoing[0], outgoing[1]):
+            close(descriptor)
+        try:
+            response = input("prompt: ")
+        except EOFError:
+            _exit(i32(1))
+        if type(response) is not str:
+            _exit(i32(1))
+        _exit(i32(0 if response == "caf\u00e9 \U0001f600" else 1))
+
+    close(incoming[0])
+    close(outgoing[1])
+    child_status = i32(0)
+    alarm(u32(10))
+    try:
+        prompt = Ptr[u8](8)
+        received = 0
+        while received < 8:
+            count = read(outgoing[0], prompt + received, 8 - received)
+            assert count > 0
+            received += count
+        assert bytes(prompt, received) == b"prompt: "
+        response = "caf\u00e9 \U0001f600\n".encode("utf-8")
+        assert write(incoming[1], response._ptr, len(response)) == len(response)
+    finally:
+        close(incoming[1])
+        close(outgoing[0])
+        assert waitpid(process, __ptr__(child_status), i32(0)) == process
+        alarm(u32(0))
+    assert child_status == 0
+
+
+@test
+def test_stdin_reads_without_waiting_for_eof():
+    if static.platform() == "win32":
+        return
+
+    from C import pipe(Ptr[i32]) -> i32
+    from C import write(i32, cobj, int) -> int
+    from C import close(i32) -> i32
+    from C import alarm(u32) -> u32
+    from C import fork() -> i32
+    from C import waitpid(i32, Ptr[i32], i32) -> i32
+    from C import _exit(i32)
+
+    descriptors = __array__[i32](2)
+    assert pipe(descriptors) == 0
+    reader = File[str](int(descriptors[0]), "r")
+    original_fp = sys.stdin._state._fp
+    sys.stdin._state._fp = reader._state._fp
+    writer_open = True
+    alarm(u32(10))
+    try:
+        assert sys.stdin.read(0) == ""
+        retained: List[str] = []
+        for value in ("A", "\u00e9", "B", "\U0001f600", "C"):
+            data = value.encode()
+            assert write(descriptors[1], data._ptr, len(data)) == len(data)
+            retained.append(sys.stdin.read(1))
+        assert retained == ["A", "\u00e9", "B", "\U0001f600", "C"]
+        for value in ("\u00e9A\U0001f600!", "ascii", "\r", "\nX"):
+            data = value.encode()
+            assert write(descriptors[1], data._ptr, len(data)) == len(data)
+            expected = "\n" if value == "\r" else "X" if value == "\nX" else value
+            assert sys.stdin.read(len(expected)) == expected
+        for line in ("line\n", "caf\u00e9\n", "\U0001f600\r\n", "CR\r", "next\n",
+                 "long" * 256 + "\n", "\U0001f600" * 200 + "\r\n", "\n"):
+            data = line.encode()
+            assert write(descriptors[1], data._ptr, len(data)) == len(data)
+            assert sys.stdin.readline() == line.replace("\r\n", "\n").replace("\r", "\n")
+        data = b"first\nsecond\n"
+        assert write(descriptors[1], data._ptr, len(data)) == len(data)
+        iterator = iter(sys.stdin)
+        assert next(iterator) == "first\n"
+        assert next(iterator) == "second\n"
+
+        value = "A\u00e9\U0001f600B" * 20000
+        data = value.encode()
+        process = fork()
+        assert process >= 0
+        if process == 0:
+            offset = 0
+            while offset < len(data):
+                written = write(descriptors[1], data._ptr + offset, len(data) - offset)
+                if written <= 0:
+                    _exit(i32(1))
+                offset += written
+            _exit(i32(0))
+        assert sys.stdin.read(len(value)) == value
+        child_status = i32(0)
+        assert waitpid(process, __ptr__(child_status), i32(0)) == process
+        assert child_status == 0
+
+        tail = b"tail"
+        assert write(descriptors[1], tail._ptr, len(tail)) == len(tail)
+        close(descriptors[1])
+        writer_open = False
+        assert sys.stdin.read(2) == "ta"
+        assert sys.stdin.read(65536) == "il"
+        assert sys.stdin.read() == ""
+        assert sys.stdin.read(1) == ""
+        assert sys.stdin.readline() == ""
+    finally:
+        alarm(u32(0))
+        sys.stdin._state._fp = original_fp
+        reader.close()
+        if writer_open:
+            close(descriptors[1])
+
+
+def check_exit(value, expected: int, message: str = ""):
+    cleaned = False
+    caught = False
+    try:
+        try:
+            sys.exit(value)
+        finally:
+            cleaned = True
+    except SystemExit as error:
+        caught = True
+        assert error.status == expected
+        assert error.message == message
+    assert cleaned and caught
+
+
+@test
+def test_exit():
+    check_exit(None, 0)
+    check_exit(0, 0)
+    check_exit(42, 42)
+    check_exit(-1, -1)
+    check_exit(True, 1)
+    check_exit(False, 0)
+    check_exit(Optional(7), 7)
+    check_exit(Optional[int](), 0)
+    check_exit("input file not found", 1, "input file not found")
+    check_exit("", 1)
+    check_exit("caf\u00e9\n", 1, "caf\u00e9\n")
+    check_exit(Optional("optional message"), 1, "optional message")
+    check_exit(Optional[str](), 0)
+    assert SystemExit().status == 0
+    assert SystemExit(42).status == 42
+    assert SystemExit("").status == 1
+    error = SystemExit("message")
+    assert error.status == 1 and error.message == "message"
+    assert str(error) == "message"
+    assert SystemExit("message", 3).status == 3
+    try:
+        sys.exit()
+        assert False
+    except SystemExit as error:
+        assert error.status == 0
+
+
+test_metadata()
+test_encodings()
+test_version()
+test_streams()
+test_standard_stream_writes_are_visible()
+test_default_print_is_visible()
+test_input_prompt_is_visible_before_read()
+test_stdin_reads_without_waiting_for_eof()
+test_exit()

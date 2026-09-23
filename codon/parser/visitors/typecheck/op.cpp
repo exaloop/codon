@@ -3,6 +3,7 @@
 #include <string>
 #include <tuple>
 
+#include "codon/compiler/compiler.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/common.h"
@@ -392,7 +393,7 @@ void TypecheckVisitor::visit(PipeExpr *expr) {
 ///   expr.itemN or a sub-tuple if index is static (see transformStaticTupleIndex()),
 void TypecheckVisitor::visit(IndexExpr *expr) {
   if (match(expr, M<IndexExpr>(M<IdExpr>(MOr("Literal", "Static")),
-                               M<IdExpr>(MOr("int", "str", "bool"))))) {
+                               M<IdExpr>(MOr("int", "Int", "str", "bool"))))) {
     // Special case: static types.
     auto typ = instantiateUnbound();
     typ->staticKind = getStaticGeneric(expr);
@@ -570,15 +571,15 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
       }
       unify(t.get(), generics[i].getType());
     }
-    unify(expr->getType(), instantiateTypeVar(typ.get()));
-  }
-  // If the type is realizable, use the realized name instead of instantiation
-  // (e.g. use Id("Ptr[byte]") instead of Instantiate(Ptr, {byte}))
-  if (auto rt = realize(expr->getType()); rt && !resultExpr) {
-    auto t = extractType(rt);
-    resultExpr = N<IdExpr>(t->realizedName());
-    resultExpr->setType(rt->shared_from_this());
-    resultExpr->setDone();
+
+    // If the type is realizable, use the realized name instead of instantiation
+    // (e.g. use Id("Ptr[u8]") instead of Instantiate(Ptr, {u8}))
+    if (auto rt = realize(expr->getType()); rt && !resultExpr) {
+      auto t = extractType(rt);
+      resultExpr = N<IdExpr>(t->realizedName());
+      resultExpr->setType(rt->shared_from_this());
+      resultExpr->setDone();
+    }
   }
 
   // Handle side effects
@@ -679,7 +680,7 @@ std::pair<int64_t, int64_t> divMod(const std::shared_ptr<TypeContext> &ctx, int6
   if (!b) {
     E(Error::STATIC_DIV_ZERO, ctx->getSrcInfo());
     return {0, 0};
-  } else if (ctx->cache->pythonCompat) {
+  } else if (ctx->cache->compiler->getOptions()->pynum) {
     // Use Python implementation.
     int64_t d = a / b;
     int64_t m = a - d * b;
@@ -1085,8 +1086,8 @@ TypecheckVisitor::transformStaticTupleIndex(ClassType *tuple, Expr *expr, Expr *
   };
 
   std::string str = isStaticString ? getStrLiteral(expr->getType()) : "";
-  auto sz =
-      static_cast<int64_t>(isStaticString ? str.size() : getClassFields(tuple).size());
+  auto sz = static_cast<int64_t>(isStaticString ? utf8_strlen(str)
+                                                : getClassFields(tuple).size());
   int64_t start = 0, stop = sz, step = 1, multiple = 0;
   if (getInt(&start, index)) {
     // Case: `tuple[int]`
@@ -1113,12 +1114,9 @@ TypecheckVisitor::transformStaticTupleIndex(ClassType *tuple, Expr *expr, Expr *
 
   if (isStaticString) {
     if (!multiple) {
-      return {true, transform(N<StringExpr>(str.substr(start, 1)))};
+      return {true, transform(N<StringExpr>(utf8_substr(str, start, start + 1)))};
     } else {
-      std::string newStr;
-      for (auto i = start; (step > 0) ? (i < stop) : (i > stop); i += step)
-        newStr += str[i];
-      return {true, transform(N<StringExpr>(newStr))};
+      return {true, transform(N<StringExpr>(utf8_substr(str, start, stop, step)))};
     }
   } else {
     auto classFields = getClassFields(tuple);

@@ -40,6 +40,60 @@ def test_pythrow():
 test_pythrow()
 
 @test
+def test_native_exception_conversion():
+    from internal.python import _exception_to_python
+    for native in (FileNotFoundError(2, "missing", "file"),
+                   UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte"),
+                   UnicodeEncodeError("ascii", "\u00e9", 0, 1, "ordinal not in range(128)"),
+                   UnicodeTranslateError("\u1234", 0, 1, "invalid"),
+                   GeneratorExit("stop"), KeyboardInterrupt("stop"),
+                   MemoryError("memory"), ReferenceError("reference"), SystemError("system"),
+                   StopAsyncIteration("stop"), FloatingPointError("floating"),
+                   RecursionError("recursion"), UnicodeError("unicode"),
+                   BlockingIOError("blocked"), ChildProcessError("child"),
+                   ConnectionError("connection"), BrokenPipeError("closed"),
+                   ConnectionAbortedError("aborted"), ConnectionRefusedError("refused"),
+                   ConnectionResetError("reset"), FileExistsError("exists"),
+                   InterruptedError("interrupted"), IsADirectoryError("directory"),
+                   NotADirectoryError("not directory"), PermissionError("permission"),
+                   ProcessLookupError("process"), TimeoutError("timeout")):
+        converted = _exception_to_python(native)
+        assert str(converted._getattr("__class__")._getattr("__name__")) == native.typename
+        assert str(converted) == str(native)
+    converted = _exception_to_python(OSError(2, "missing", "file"))
+    assert int(converted._getattr("errno")) == 2
+    assert str(converted._getattr("filename")) == "file"
+    from python import builtins
+    from internal.python import init_error_py_types
+    from python import sys as python_sys
+    exception_type = builtins.FileNotFoundError
+    before = int(python_sys.getrefcount(exception_type))
+    init_error_py_types()
+    init_error_py_types()
+    assert int(python_sys.getrefcount(exception_type)) == before
+test_native_exception_conversion()
+
+@test
+def test_pysetattr():
+    from python import mymodule
+    # Set an existing attribute and read it back through the pyobj boundary.
+    box = mymodule.Box(1)
+    box.value = 42
+    assert int.__from_py__(box._getattr('value').p) == 42
+    # Create a brand-new attribute.
+    box.extra = 7
+    assert int.__from_py__(box._getattr('extra').p) == 7
+    # A failing __setattr__ must surface the real Python exception, not be swallowed.
+    frozen = mymodule.Frozen()
+    try:
+        frozen.value = 1
+    except PyError as e:
+        assert e.message == "frozen"
+        return
+    assert False
+test_pysetattr()
+
+@test
 def test_pyargs():
     from python import mymodule
     assert str(mymodule.print_args_var(1, 2, 3)) == "a=1, b=2, c=3, args=(), kwargs={}"
@@ -55,9 +109,10 @@ test_roundtrip(42)
 test_roundtrip(3.14)
 test_roundtrip(True)
 test_roundtrip(False)
-test_roundtrip(byte(99))
 test_roundtrip('hello world')
 test_roundtrip('')
+test_roundtrip('café')
+test_roundtrip(b'\x00\xbc\xff')
 test_roundtrip(List[int]())
 test_roundtrip([11, 22, 33])
 test_roundtrip(Set[int]())

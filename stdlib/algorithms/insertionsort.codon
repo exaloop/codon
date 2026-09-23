@@ -1,7 +1,7 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
 def _insertion_sort(
-    arr: Array[T], begin: int, end: int, keyf: CallableTrait[[T], S], T: type, S: type
+    arr: Ptr[T], begin: int, end: int, keyf: CallableTrait[[T], S], T: type, S: type
 ):
     i = begin + 1
     while i < end:
@@ -14,14 +14,14 @@ def _insertion_sort(
         i += 1
 
 def insertion_sort_array(
-    collection: Array[T], size: int, keyf: CallableTrait[[T], S], T: type, S: type
+    collection: Ptr[T], size: int, keyf: CallableTrait[[T], S], T: type, S: type
 ):
     _insertion_sort(collection, 0, size, keyf)
 
 def insertion_sort_inplace(
     collection: List[T], keyf: CallableTrait[[T], S], T: type, S: type
 ):
-    insertion_sort_array(collection.arr, collection.len, keyf)
+    insertion_sort_array(collection._ptr, collection._len, keyf)
 
 def insertion_sort(
     collection: List[T], keyf: CallableTrait[[T], S], T: type, S: type

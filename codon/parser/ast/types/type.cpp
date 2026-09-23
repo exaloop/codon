@@ -54,7 +54,7 @@ LiteralKind Type::getStaticKind() {
 }
 
 LiteralKind Type::literalFromString(const std::string &s) {
-  if (s == "int")
+  if (s == "int" || s == "Int")
     return LiteralKind::Int;
   if (s == "str")
     return LiteralKind::String;

@@ -38,7 +38,7 @@ class type:
     @pure
     @derives
     @llvm
-    def _ref_raw(obj) -> Ptr[byte]:
+    def _ref_raw(obj) -> Ptr[u8]:
         """
         Casts the reference type to a pointer.
         """
@@ -121,7 +121,7 @@ class TypeInfo:
 
     # No __new__/__init__: not supposed to be instantiated at all except via .cache()
 
-    def __raw__(self) -> Ptr[byte]:
+    def __raw__(self) -> Ptr[u8]:
         return __magic__.raw(self)
 
     def cache(vtable, T: type) -> TypeInfo:
@@ -155,11 +155,11 @@ class TypeInfo:
     def _init(self, T: type):
         self.id = T.__id__
         self.raw_name = T.__name__
-        self.nice_name = f"{T}"[8:-2]
+        self.nice_name = T.__name__
 
         # self.repr = Function[[Ptr[byte]], str](cobj())
         # if hasattr(T, "__repr__") or hasattr(T, "__str__"):
-        #     fn = static.function.realized(TypeInfo.wrap(T=T, ...), Ptr[byte])
+        #     fn = static.function.realized(TypeInfo.wrap(T=T, ...), Ptr[u8])
         #     if isinstance(fn.TR, str):
         #         self.repr = fn
 
@@ -201,7 +201,7 @@ class TypeInfo:
                 return True
         return False
 
-    def wrap(arg: Ptr[byte], T: type) -> str:
+    def wrap(arg: Ptr[u8], T: type) -> str:
         if isinstance(T, ByVal):
             p = type._force_cast(arg, Ptr[T])
             return repr(p[0])

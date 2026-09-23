@@ -26,6 +26,6 @@ def test_print():
     print('hello world')               # EXPECT: hello world
     print(str.cat("hello ", "world"))  # EXPECT: hello world
     a, b, c = 3.14, 'xyz', 42
-    print(f'hello {a} world {b=} abc {a+c} zzz', file=stdout, sep='x')  # EXPECT: hello 3.14 world b=xyz abc 45.14 zzz
+    print(f'hello {a} world {b=} abc {a+c} zzz', file=stdout, sep='x')  # EXPECT: hello 3.14 world b='xyz' abc 45.14 zzz
     print(f'hello', f'world', sep='x')  # EXPECT: helloxworld
 test_print()

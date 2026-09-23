@@ -26,6 +26,46 @@ class bool:
     def __hash__(self) -> int:
         return int(self)
 
+    @commutative
+    def __add__(self, other: bool):
+        return self.__int__() + other.__int__()
+
+    def __sub__(self, other: bool):
+        return self.__int__() - other.__int__()
+
+    @commutative
+    def __mul__(self, other: bool):
+        return self.__and__(other).__int__()
+
+    def __lshift__(self, other: bool):
+        return self.__int__() << other.__int__()
+
+    def __rshift__(self, other: bool):
+        return self.__int__() >> other.__int__()
+
+    def __floordiv__(self, other: bool):
+        if not other:
+            raise ZeroDivisionError("division by zero")
+        return self.__int__()
+
+    def __truediv__(self, other: bool):
+        if not other:
+            raise ZeroDivisionError("division by zero")
+        return self.__float__()
+
+    def __mod__(self, other: bool):
+        if not other:
+            raise ZeroDivisionError("division by zero")
+        return 0
+
+    def __divmod__(self, other: bool):
+        if not other:
+            raise ZeroDivisionError("division by zero")
+        return (self.__int__(), 0)
+
+    def __pow__(self, other: bool):
+        return 0 if ((not self) and other) else 0
+
     @pure
     @llvm
     def __invert__(self) -> bool:

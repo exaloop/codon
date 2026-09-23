@@ -1,0 +1,836 @@
+# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
+
+"""Native JSON parsing and encoding with a tagged `JSON` value.
+
+Provides `load`, `loads`, `dump`, `dumps`, `JSONDecoder`, `JSONEncoder`, and
+`JSONDecodeError`. Standard formatting options and non-finite number defaults
+follow Python.
+
+```python
+import json
+
+value = json.loads('{"items": [1, true, null]}')
+number = value["items"][0].as_int()
+value["items"].append("text")
+print(json.dumps(value, indent=2))
+```
+
+**Differences from Python:**
+
+- Decoding returns `JSON`. Use `kind`, `is_null()`, and typed accessors
+    `as_bool()`, `as_int()`, `as_float()`, `as_str()`; wrong kinds raise `TypeError`
+    (`as_float()` also accepts integers). `JSON()` is null; `JSON(value)` converts
+    supported native scalars, optionals, lists, tuples, and string-keyed dicts.
+    `JSON.array()` and `JSON.object()` create empty containers.
+- Use `values()`, `keys()`, or `items()` instead of direct iteration. Containers
+    support indexing and mutation; copies share storage. Scalars are immutable.
+    Equality is structural and kind-sensitive (`JSON(1) != JSON(1.0)`); values
+    are unhashable. `str(value)` serializes JSON, including quotes around strings.
+- Integers are signed 64-bit; oversized literals raise `OverflowError`.
+    Fractional and exponent-form numbers use binary64.
+- Keys must be strings. `skipkeys`, `cls`, `default`, `object_hook`,
+    `object_pairs_hook`, `parse_int`, `parse_float`, and `parse_constant` are
+    unsupported; unsupported native types, including nested members, are
+    compile-time errors.
+- Parsing/encoding use `max_depth=512`, raising `RecursionError` when exceeded,
+    even with `check_circular=False`. Structural comparison also has a 512 limit.
+- I/O is not streaming: `load()` reads the whole stream; `dump()` writes a
+    complete string to a text stream. `iterencode()` is not provided.
+- Decode-error locations use Unicode code points; trailing-comma diagnostics
+    follow CPython 3.14.
+"""
+
+from internal import gc
+from internal.types.str import _UnicodeCodecBuffer, _make_meta, _kind_width, KIND_ASCII
+from algorithms.pdqsort import pdq_sort_array
+import math
+
+_KIND_NULL: Literal[int] = 0
+_KIND_BOOL: Literal[int] = 1
+_KIND_INT: Literal[int] = 2
+_KIND_FLOAT: Literal[int] = 3
+_KIND_STR: Literal[int] = 4
+_KIND_ARRAY: Literal[int] = 5
+_KIND_OBJECT: Literal[int] = 6
+_TAG_BITS: Literal[int] = 3
+_TAG_MASK: Literal[int] = (1 << _TAG_BITS) - 1
+
+@pure
+@llvm
+def _bits_pointer(value: int) -> cobj:
+    %pointer = inttoptr i64 %value to ptr
+    ret ptr %pointer
+
+@pure
+@llvm
+def _float_bits(value: float) -> int:
+    %bits = bitcast double %value to i64
+    ret i64 %bits
+
+@pure
+@llvm
+def _bits_float(value: int) -> float:
+    %number = bitcast i64 %value to double
+    ret double %number
+
+@pure
+@llvm
+def _load_word(pointer: cobj) -> u64:
+    %word = load i64, ptr %pointer, align 1
+    ret i64 %word
+
+def _has_zero_byte(word: u64) -> bool:
+    return ((word - u64(0x0101010101010101)) & ~word & u64(0x8080808080808080)) != u64(0)
+
+def _string_run(value: str, start: int, controls: bool, ascii_only: bool) -> int:
+    end = len(value)
+    if value._width() == 1:
+        while start + 8 <= end:
+            word = _load_word(value._ptr + start)
+            if _has_zero_byte(word ^ u64(0x2222222222222222)) or _has_zero_byte(word ^ u64(0x5C5C5C5C5C5C5C5C)):
+                break
+            if controls and _has_zero_byte(word & u64(0xE0E0E0E0E0E0E0E0)):
+                break
+            if ascii_only and (word & u64(0x8080808080808080)) != u64(0):
+                break
+            start += 8
+    while start < end:
+        code = value._load_codepoint(start)
+        if code == 34 or code == 92 or (controls and code < 32) or (ascii_only and code > 127):
+            break
+        start += 1
+    return start
+
+def _reserve_output(output: _UnicodeCodecBuffer, required: int, kind: int):
+    if required > output.capacity or kind != output.kind:
+        capacity = max(required, max(32, output.capacity * 2))
+        old_kind = output.kind
+        output.data = gc.realloc(output.data, capacity * _kind_width(kind), output.capacity * _kind_width(old_kind))
+        if kind != old_kind:
+            source = str(output.data, _make_meta(output.length, old_kind))
+            destination = str(output.data, _make_meta(capacity, kind))
+            # Widen in place backwards so writes cannot overwrite unread code points.
+            for index in range(output.length - 1, -1, -1):
+                destination._store_codepoint(index, source._load_codepoint(index))
+        output.kind, output.capacity = kind, capacity
+
+def _append_text(output: _UnicodeCodecBuffer, value: str, start: int, end: int,
+                 ascii_only: bool = False):
+    count = end - start
+    if count == 0: return
+    required = output.length + count
+    kind = max(output.kind, KIND_ASCII if ascii_only else value._kind())
+    _reserve_output(output, required, kind)
+    if _kind_width(kind) == value._width():
+        width = value._width()
+        bytes.memcpy(output.data + output.length * width, value._ptr + start * width, count * width)
+    else:
+        destination = str(output.data, _make_meta(output.capacity, kind))
+        for index in range(count):
+            destination._store_codepoint(output.length + index, value._load_codepoint(start + index))
+    output.length = required
+
+@tuple
+class JSON:
+    """Two-word value with a packed tag and string metadata, plus scalar bits or a pointer."""
+    _meta: int
+    _payload: cobj
+
+    def __new__():
+        return JSON(_KIND_NULL, cobj())
+
+    def __new__(value):
+        if isinstance(value, JSON):
+            return value
+        elif isinstance(value, NoneType):
+            return JSON()
+        elif isinstance(value, Optional):
+            return JSON(value.__val__()) if value.__has__() else JSON()
+        elif isinstance(value, bool):
+            return JSON(_KIND_BOOL, _bits_pointer(int(value)))
+        elif isinstance(value, int):
+            return JSON(_KIND_INT, _bits_pointer(value))
+        elif isinstance(value, float):
+            return JSON(_KIND_FLOAT, _bits_pointer(_float_bits(value)))
+        elif isinstance(value, str):
+            return JSON((value._meta << _TAG_BITS) | _KIND_STR, value._ptr)
+        elif isinstance(value, dict):
+            result = JSON.object()
+            for key, item in value.items():
+                if isinstance(key, str):
+                    result[key] = item
+                else:
+                    compile_error("JSON object keys must be strings")
+            return result
+        elif isinstance(value, list) or isinstance(value, tuple) or isinstance(value, DynamicTuple):
+            result = JSON.array()
+            for item in value:
+                result.append(item)
+            return result
+        else:
+            compile_error("JSON requires null, bool, int, float, str, array or string-keyed object")
+
+    def array():
+        return JSON(_KIND_ARRAY, type._force_cast(_Array(), cobj))
+
+    def object():
+        return JSON(_KIND_OBJECT, type._force_cast(_Object(), cobj))
+
+    @property
+    def _tag(self) -> int:
+        return self._meta & _TAG_MASK
+
+    @property
+    def kind(self) -> str:
+        if self._tag == _KIND_NULL: return "null"
+        if self._tag == _KIND_BOOL: return "bool"
+        if self._tag == _KIND_INT: return "int"
+        if self._tag == _KIND_FLOAT: return "float"
+        if self._tag == _KIND_STR: return "str"
+        if self._tag == _KIND_ARRAY: return "array"
+        return "object"
+
+    def is_null(self) -> bool:
+        return self._tag == _KIND_NULL
+
+    def is_number(self) -> bool:
+        return self._tag == _KIND_INT or self._tag == _KIND_FLOAT
+
+    def is_bool(self) -> bool:
+        return self._tag == _KIND_BOOL
+
+    def is_str(self) -> bool:
+        return self._tag == _KIND_STR
+
+    def is_array(self) -> bool:
+        return self._tag == _KIND_ARRAY
+
+    def is_object(self) -> bool:
+        return self._tag == _KIND_OBJECT
+
+    def _require(self, tag: int):
+        if self._tag != tag:
+            raise TypeError("incorrect JSON value kind: " + self.kind)
+
+    def as_bool(self) -> bool:
+        self._require(_KIND_BOOL)
+        return bool(self._payload)
+
+    def as_int(self) -> int:
+        self._require(_KIND_INT)
+        return int(self._payload)
+
+    def as_float(self) -> float:
+        if self._tag == _KIND_INT:
+            return float(int(self._payload))
+        self._require(_KIND_FLOAT)
+        return _bits_float(int(self._payload))
+
+    def as_str(self) -> str:
+        self._require(_KIND_STR)
+        return str(self._payload, self._meta >> _TAG_BITS)
+
+    def _array(self):
+        self._require(_KIND_ARRAY)
+        return type._force_cast(self._payload, _Array)
+
+    def _object(self):
+        self._require(_KIND_OBJECT)
+        return type._force_cast(self._payload, _Object).values
+
+    def __int__(self) -> int:
+        return self.as_int()
+
+    def __float__(self) -> float:
+        return self.as_float()
+
+    def __bool__(self) -> bool:
+        if self._tag == _KIND_NULL: return False
+        if self._tag == _KIND_BOOL or self._tag == _KIND_INT: return bool(self._payload)
+        if self._tag == _KIND_FLOAT: return self.as_float() != 0.0
+        return len(self) != 0
+
+    def __len__(self) -> int:
+        if self._tag == _KIND_STR: return len(self.as_str())
+        if self._tag == _KIND_ARRAY: return self._array().length
+        if self._tag == _KIND_OBJECT: return len(self._object())
+        raise TypeError("JSON scalar has no length")
+
+    def __getitem__(self, index: int) -> JSON:
+        array = self._array()
+        if index < 0: index += array.length
+        if index < 0 or index >= array.length:
+            raise IndexError("JSON array index out of range")
+        return array.data[index]
+
+    def __getitem__(self, key: str) -> JSON:
+        return self._object()[key]
+
+    def __setitem__(self, index: int, value):
+        array = self._array()
+        if index < 0: index += array.length
+        if index < 0 or index >= array.length:
+            raise IndexError("JSON array index out of range")
+        array.data[index] = JSON(value)
+
+    def __setitem__(self, key: str, value):
+        self._object()[key] = JSON(value)
+
+    def __delitem__(self, index: int):
+        array = self._array()
+        if index < 0: index += array.length
+        if index < 0 or index >= array.length:
+            raise IndexError("JSON array index out of range")
+        for offset in range(index, array.length - 1):
+            array.data[offset] = array.data[offset + 1]
+        array.length -= 1
+        array.data[array.length] = JSON()
+
+    def __delitem__(self, key: str):
+        del self._object()[key]
+
+    def append(self, value):
+        self._array().append(JSON(value))
+
+    def get(self, key: str, default=None) -> JSON:
+        return self._object().get(key, JSON(default))
+
+    def __contains__(self, key: str) -> bool:
+        return key in self._object()
+
+    def values(self) -> Generator[JSON]:
+        if self._tag == _KIND_ARRAY:
+            array = self._array()
+            for index in range(array.length):
+                yield array.data[index]
+        else:
+            for value in self._object().values():
+                yield value
+
+    def keys(self) -> Generator[str]:
+        for key in self._object():
+            yield key
+
+    def items(self) -> Generator[Tuple[str, JSON]]:
+        for key, value in self._object().items():
+            yield key, value
+
+    def __str__(self) -> str:
+        return dumps(self)
+
+    def __repr__(self) -> str:
+        return "JSON(" + dumps(self) + ")"
+
+    def _equals(self, other: JSON, depth: int) -> bool:
+        if self._tag != other._tag: return False
+        if self._tag == _KIND_NULL: return True
+        if self._tag == _KIND_BOOL or self._tag == _KIND_INT: return self._payload == other._payload
+        if self._tag == _KIND_FLOAT: return self.as_float() == other.as_float()
+        if self._tag == _KIND_STR: return self.as_str() == other.as_str()
+        if self._payload == other._payload: return True
+        if depth >= 512: raise RecursionError("maximum JSON comparison depth exceeded")
+        if len(self) != len(other): return False
+        if self._tag == _KIND_ARRAY:
+            for index in range(len(self)):
+                if not self[index]._equals(other[index], depth + 1): return False
+        else:
+            for key, value in self.items():
+                if key not in other or not value._equals(other[key], depth + 1): return False
+        return True
+
+    def __eq__(self, other: JSON) -> bool:
+        return self._equals(other, 0)
+
+    def __ne__(self, other: JSON) -> bool:
+        return not self == other
+
+    def __hash__(self) -> int:
+        raise TypeError("unhashable type: 'JSON'")
+
+class _Array:
+    data: Ptr[JSON]
+    length: int
+    capacity: int
+
+    def __init__(self):
+        self.data = Ptr[JSON]()
+        self.length = 0
+        self.capacity = 0
+
+    def append(self, value: JSON):
+        if self.length == self.capacity:
+            capacity = max(4, self.capacity * 2)
+            self.data = Ptr[JSON](gc.realloc(self.data.as_byte(), capacity * JSON.__elemsize__, self.capacity * JSON.__elemsize__))
+            self.capacity = capacity
+        self.data[self.length] = value
+        self.length += 1
+
+class _Object:
+    values: Dict[str, JSON]
+
+    def __init__(self):
+        self.values = Dict[str, JSON]()
+
+class JSONDecodeError(ValueError):
+    msg: str
+    doc: str
+    pos: int
+    lineno: int
+    colno: int
+
+    def __init__(self, msg: str, doc: str, pos: int):
+        self.msg, self.doc, self.pos = msg, doc, pos
+        self.lineno = 1
+        line_start = 0
+        for index in range(min(pos, len(doc))):
+            if doc._load_codepoint(index) == 10:
+                self.lineno += 1
+                line_start = index + 1
+        self.colno = pos - line_start + 1
+        super().__init__(f"{msg}: line {self.lineno} column {self.colno} (char {pos})")
+
+def _hex_digit(code: int) -> int:
+    if 48 <= code <= 57: return code - 48
+    if 65 <= code <= 70: return code - 55
+    if 97 <= code <= 102: return code - 87
+    return -1
+
+class _Parser:
+    doc: str
+    pos: int
+    length: int
+    strict: bool
+    max_depth: int
+
+    def __init__(self, doc: str, strict: bool, max_depth: int):
+        if max_depth < 0:
+            raise ValueError("max_depth must be nonnegative")
+        self.doc, self.pos, self.length = doc, 0, len(doc)
+        self.strict, self.max_depth = strict, max_depth
+
+    def error(self, message: str):
+        raise JSONDecodeError(message, self.doc, self.pos)
+
+    def peek(self) -> int:
+        return self.doc._load_codepoint(self.pos) if self.pos < self.length else -1
+
+    def whitespace(self):
+        while self.pos < self.length:
+            code = self.doc._load_codepoint(self.pos)
+            if code != 32 and code != 9 and code != 10 and code != 13:
+                break
+            self.pos += 1
+
+    def hex4(self) -> int:
+        start = self.pos
+        if self.pos + 4 >= self.length:
+            raise JSONDecodeError("Invalid \\uXXXX escape", self.doc, start - 1)
+        value = 0
+        for offset in range(4):
+            digit = _hex_digit(self.doc._load_codepoint(start + offset))
+            if digit < 0:
+                raise JSONDecodeError("Invalid \\uXXXX escape", self.doc, start - 1)
+            value = (value << 4) | digit
+        self.pos += 4
+        return value
+
+    def string(self) -> str:
+        quote = self.pos
+        self.pos += 1
+        start = self.pos
+        self.pos = _string_run(self.doc, self.pos, self.strict, False)
+        if self.pos == self.length:
+            raise JSONDecodeError("Unterminated string starting at", self.doc, quote)
+        if self.peek() == 34:
+            result = self.doc[start:self.pos]
+            self.pos += 1
+            return result
+        if self.peek() < 32 and self.strict:
+            self.error("Invalid control character at")
+        output = _UnicodeCodecBuffer(min(self.length - start, max(32, self.pos - start)))
+        _append_text(output, self.doc, start, self.pos)
+        while self.pos < self.length:
+            end = _string_run(self.doc, self.pos, self.strict, False)
+            _append_text(output, self.doc, self.pos, end)
+            self.pos = end
+            if self.pos == self.length: break
+            code = self.doc._load_codepoint(self.pos)
+            self.pos += 1
+            if code == 34:
+                return output.finish()
+            if code == 92:
+                if self.pos == self.length:
+                    break
+                escape = self.doc._load_codepoint(self.pos)
+                self.pos += 1
+                if escape == 34 or escape == 92 or escape == 47: code = escape
+                elif escape == 98: code = 8
+                elif escape == 102: code = 12
+                elif escape == 110: code = 10
+                elif escape == 114: code = 13
+                elif escape == 116: code = 9
+                elif escape == 117:
+                    code = self.hex4()
+                    if 0xD800 <= code <= 0xDBFF and self.pos + 6 <= self.length:
+                        if self.doc._load_codepoint(self.pos) == 92 and self.doc._load_codepoint(self.pos + 1) == 117:
+                            saved = self.pos
+                            self.pos += 2
+                            low = self.hex4()
+                            if 0xDC00 <= low <= 0xDFFF:
+                                code = 0x10000 + ((code - 0xD800) << 10) + low - 0xDC00
+                            else:
+                                self.pos = saved
+                else:
+                    raise JSONDecodeError("Invalid \\escape", self.doc, self.pos - 2)
+            elif code < 32 and self.strict:
+                raise JSONDecodeError("Invalid control character at", self.doc, self.pos - 1)
+            output.append(code)
+        raise JSONDecodeError("Unterminated string starting at", self.doc, quote)
+
+    def number(self) -> JSON:
+        start = self.pos
+        negative = self.peek() == 45
+        if negative: self.pos += 1
+        if self.peek() == 48:
+            self.pos += 1
+        elif 49 <= self.peek() <= 57:
+            while 48 <= self.peek() <= 57:
+                self.pos += 1
+        else:
+            self.pos = start
+            self.error("Expecting value")
+        fractional = False
+        if self.peek() == 46 and self.pos + 1 < self.length and 48 <= self.doc._load_codepoint(self.pos + 1) <= 57:
+            fractional = True
+            self.pos += 1
+            while 48 <= self.peek() <= 57:
+                self.pos += 1
+        if self.peek() == 101 or self.peek() == 69:
+            exponent = self.pos
+            self.pos += 1
+            if self.peek() == 43 or self.peek() == 45: self.pos += 1
+            if 48 <= self.peek() <= 57:
+                fractional = True
+                while 48 <= self.peek() <= 57:
+                    self.pos += 1
+            else:
+                self.pos = exponent
+        if fractional:
+            return JSON(float(self.doc[start:self.pos]))
+        magnitude = u64(0)
+        limit = u64(9223372036854775807) + u64(1 if negative else 0)
+        for index in range(start + (1 if negative else 0), self.pos):
+            digit = u64(self.doc._load_codepoint(index) - 48)
+            if magnitude > (limit - digit) // u64(10):
+                raise OverflowError("JSON integer outside signed 64-bit range")
+            magnitude = magnitude * u64(10) + digit
+        return JSON(int(u64(0) - magnitude) if negative else int(magnitude))
+
+    def value(self, depth: int) -> JSON:
+        code = self.peek()
+        if code == 34:
+            return JSON(self.string())
+        if code == 91 or code == 123:
+            if depth >= self.max_depth:
+                raise RecursionError("maximum JSON nesting depth exceeded")
+            self.pos += 1
+            self.whitespace()
+            result = JSON.array() if code == 91 else JSON.object()
+            closing = 93 if code == 91 else 125
+            if self.peek() == closing:
+                self.pos += 1
+                return result
+            while True:
+                if code == 91:
+                    result.append(self.value(depth + 1))
+                else:
+                    if self.peek() != 34:
+                        self.error("Expecting property name enclosed in double quotes")
+                    key = self.string()
+                    self.whitespace()
+                    if self.peek() != 58:
+                        self.error("Expecting ':' delimiter")
+                    self.pos += 1
+                    self.whitespace()
+                    result[key] = self.value(depth + 1)
+                self.whitespace()
+                if self.peek() == closing:
+                    self.pos += 1
+                    return result
+                if self.peek() != 44:
+                    self.error("Expecting ',' delimiter")
+                comma = self.pos
+                self.pos += 1
+                self.whitespace()
+                if self.peek() == closing:
+                    raise JSONDecodeError("Illegal trailing comma before end of " + ("array" if code == 91 else "object"), self.doc, comma)
+        if code == 110 and self.doc.startswith("null", self.pos):
+            self.pos += 4
+            return JSON()
+        if code == 116 and self.doc.startswith("true", self.pos):
+            self.pos += 4
+            return JSON(True)
+        if code == 102 and self.doc.startswith("false", self.pos):
+            self.pos += 5
+            return JSON(False)
+        if code == 78 and self.doc.startswith("NaN", self.pos):
+            self.pos += 3
+            return JSON(float("nan"))
+        if code == 73 and self.doc.startswith("Infinity", self.pos):
+            self.pos += 8
+            return JSON(float("inf"))
+        if code == 45 and self.doc.startswith("-Infinity", self.pos):
+            self.pos += 9
+            return JSON(-float("inf"))
+        if code == 45 or 48 <= code <= 57:
+            return self.number()
+        self.error("Expecting value")
+
+def _text(source) -> str:
+    if isinstance(source, str):
+        return source
+    elif isinstance(source, bytes) or isinstance(source, bytearray):
+        data = bytes(source)
+        if data.startswith(b"\x00\x00\xfe\xff") or data.startswith(b"\xff\xfe\x00\x00"):
+            return data.decode("utf-32", "surrogatepass")
+        if data.startswith(b"\xfe\xff") or data.startswith(b"\xff\xfe"):
+            return data.decode("utf-16", "surrogatepass")
+        if data.startswith(b"\xef\xbb\xbf"):
+            return data[3:].decode("utf-8", "surrogatepass")
+        if len(data) >= 4:
+            if data[0] == 0:
+                return data.decode("utf-32-be" if data[1] == 0 else "utf-16-be", "surrogatepass")
+            if data[1] == 0:
+                return data.decode("utf-32-le" if data[2] == 0 and data[3] == 0 else "utf-16-le", "surrogatepass")
+        elif len(data) == 2:
+            if data[0] == 0: return data.decode("utf-16-be", "surrogatepass")
+            if data[1] == 0: return data.decode("utf-16-le", "surrogatepass")
+        return data.decode("utf-8", "surrogatepass")
+    else:
+        compile_error("json.loads requires str, bytes or bytearray")
+
+class JSONDecoder:
+    strict: bool
+    max_depth: int
+
+    def __init__(self, strict: bool = True, max_depth: int = 512):
+        if max_depth < 0: raise ValueError("max_depth must be nonnegative")
+        self.strict, self.max_depth = strict, max_depth
+
+    def raw_decode(self, source: str, idx: int = 0) -> Tuple[JSON, int]:
+        if idx < 0: raise ValueError("idx cannot be negative")
+        parser = _Parser(source, self.strict, self.max_depth)
+        parser.pos = idx
+        value = parser.value(0)
+        return value, parser.pos
+
+    def decode(self, source: str) -> JSON:
+        parser = _Parser(source, self.strict, self.max_depth)
+        parser.whitespace()
+        value = parser.value(0)
+        parser.whitespace()
+        if parser.pos != parser.length:
+            parser.error("Extra data")
+        return value
+
+def loads(source, strict: bool = True, max_depth: int = 512) -> JSON:
+    text = _text(source)
+    if text and text._load_codepoint(0) == 0xFEFF:
+        raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)", text, 0)
+    return JSONDecoder(strict, max_depth).decode(text)
+
+def load(fp, strict: bool = True, max_depth: int = 512) -> JSON:
+    return loads(fp.read(), strict, max_depth)
+
+def _indent_option(value) -> Tuple[bool, str]:
+    if isinstance(value, NoneType):
+        return False, ""
+    elif isinstance(value, Optional):
+        return _indent_option(value.__val__()) if value.__has__() else (False, "")
+    elif isinstance(value, str):
+        return True, value
+    elif isinstance(value, int):
+        return True, " " * max(0, value)
+    else:
+        compile_error("JSON indent must be None, int or str")
+
+class _Encoder:
+    output: _UnicodeCodecBuffer
+    ensure_ascii: bool
+    allow_nan: bool
+    check_circular: bool
+    sort_keys: bool
+    pretty: bool
+    indent: str
+    item_separator: str
+    key_separator: str
+    max_depth: int
+    ancestors: Ptr[cobj]
+    capacity: int
+
+    def __init__(self, ensure_ascii: bool, allow_nan: bool, check_circular: bool,
+                 sort_keys: bool, pretty: bool, indent: str,
+                 separators: Tuple[str, str], max_depth: int):
+        self.output = _UnicodeCodecBuffer(256)
+        self.ensure_ascii, self.allow_nan = ensure_ascii, allow_nan
+        self.check_circular, self.sort_keys = check_circular, sort_keys
+        self.pretty, self.indent = pretty, indent
+        self.item_separator, self.key_separator = separators
+        self.max_depth = max_depth
+        self.ancestors, self.capacity = Ptr[cobj](), 0
+
+    def text(self, value: str):
+        _append_text(self.output, value, 0, len(value))
+
+    def hex4(self, code: int):
+        output = self.output
+        _reserve_output(output, output.length + 6, output.kind)
+        destination = str(output.data, _make_meta(output.capacity, output.kind))
+        destination._store_codepoint(output.length, 92)
+        destination._store_codepoint(output.length + 1, 117)
+        digits = "0123456789abcdef"
+        for offset in range(4):
+            destination._store_codepoint(output.length + 2 + offset, digits._load_codepoint((code >> (12 - offset * 4)) & 15))
+        output.length += 6
+
+    def string(self, value: str):
+        self.output.append(34)
+        index = 0
+        while index < len(value):
+            end = _string_run(value, index, True, self.ensure_ascii)
+            _append_text(self.output, value, index, end, self.ensure_ascii)
+            index = end
+            if index == len(value): break
+            code = value._load_codepoint(index)
+            index += 1
+            if code == 34 or code == 92:
+                self.output.append(92)
+                self.output.append(code)
+            elif code == 8: self.text("\\b")
+            elif code == 9: self.text("\\t")
+            elif code == 10: self.text("\\n")
+            elif code == 12: self.text("\\f")
+            elif code == 13: self.text("\\r")
+            elif code < 32 or (self.ensure_ascii and code > 127):
+                if code > 0xFFFF:
+                    code -= 0x10000
+                    self.hex4(0xD800 | (code >> 10))
+                    self.hex4(0xDC00 | (code & 1023))
+                else:
+                    self.hex4(code)
+            else:
+                self.output.append(code)
+        self.output.append(34)
+
+    def newline(self, depth: int):
+        self.output.append(10)
+        for level in range(depth):
+            self.text(self.indent)
+
+    def enter(self, value: JSON, depth: int):
+        if depth >= self.max_depth:
+            raise RecursionError("maximum JSON nesting depth exceeded")
+        if self.check_circular:
+            for index in range(depth):
+                if self.ancestors[index] == value._payload:
+                    raise ValueError("Circular reference detected")
+            if depth == self.capacity:
+                capacity = min(self.max_depth, max(16, self.capacity * 2))
+                self.ancestors = Ptr[cobj](gc.realloc(self.ancestors.as_byte(), capacity * cobj.__elemsize__, self.capacity * cobj.__elemsize__))
+                self.capacity = capacity
+            self.ancestors[depth] = value._payload
+
+    def value(self, value: JSON, depth: int):
+        if value._tag == _KIND_NULL: self.text("null")
+        elif value._tag == _KIND_BOOL: self.text("true" if value.as_bool() else "false")
+        elif value._tag == _KIND_INT: self.text(str(value.as_int()))
+        elif value._tag == _KIND_FLOAT:
+            number = value.as_float()
+            if math.isfinite(number):
+                self.text(repr(number))
+            elif not self.allow_nan:
+                raise ValueError("Out of range float values are not JSON compliant")
+            elif math.isnan(number): self.text("NaN")
+            elif number < 0: self.text("-Infinity")
+            else: self.text("Infinity")
+        elif value._tag == _KIND_STR: self.string(value.as_str())
+        else:
+            self.enter(value, depth)
+            is_array = value._tag == _KIND_ARRAY
+            self.output.append(91 if is_array else 123)
+            count = len(value)
+            if count:
+                if self.pretty: self.newline(depth + 1)
+                if is_array:
+                    array = value._array()
+                    for index in range(count):
+                        if index:
+                            self.text(self.item_separator)
+                            if self.pretty: self.newline(depth + 1)
+                        self.value(array.data[index], depth + 1)
+                elif self.sort_keys:
+                    keys = Ptr[str](count)
+                    for index, key in enumerate(value.keys()):
+                        keys[index] = key
+                    pdq_sort_array(keys, count, lambda key: key)
+                    for index in range(count):
+                        key = keys[index]
+                        if index:
+                            self.text(self.item_separator)
+                            if self.pretty: self.newline(depth + 1)
+                        self.string(key)
+                        self.text(self.key_separator)
+                        self.value(value[key], depth + 1)
+                else:
+                    for index, (key, item) in enumerate(value.items()):
+                        if index:
+                            self.text(self.item_separator)
+                            if self.pretty: self.newline(depth + 1)
+                        self.string(key)
+                        self.text(self.key_separator)
+                        self.value(item, depth + 1)
+                if self.pretty: self.newline(depth)
+            self.output.append(93 if is_array else 125)
+            if self.check_circular: self.ancestors[depth] = cobj()
+
+class JSONEncoder:
+    ensure_ascii: bool
+    allow_nan: bool
+    check_circular: bool
+    sort_keys: bool
+    pretty: bool
+    indent: str
+    separators: Tuple[str, str]
+    max_depth: int
+
+    def __init__(self, ensure_ascii: bool = True, check_circular: bool = True,
+                 allow_nan: bool = True, indent=None,
+                 separators: Optional[Tuple[str, str]] = None,
+                 sort_keys: bool = False, max_depth: int = 512):
+        if max_depth < 0: raise ValueError("max_depth must be nonnegative")
+        self.ensure_ascii, self.check_circular = ensure_ascii, check_circular
+        self.allow_nan, self.sort_keys = allow_nan, sort_keys
+        self.pretty, self.indent = _indent_option(indent)
+        self.separators = separators if separators is not None else ("," if self.pretty else ", ", ": ")
+        self.max_depth = max_depth
+
+    def encode(self, value) -> str:
+        encoder = _Encoder(self.ensure_ascii, self.allow_nan, self.check_circular,
+                           self.sort_keys, self.pretty, self.indent,
+                           self.separators, self.max_depth)
+        encoder.value(JSON(value), 0)
+        return encoder.output.finish()
+
+def dumps(value, ensure_ascii: bool = True, check_circular: bool = True,
+          allow_nan: bool = True, indent=None,
+          separators: Optional[Tuple[str, str]] = None,
+          sort_keys: bool = False, max_depth: int = 512) -> str:
+    return JSONEncoder(ensure_ascii, check_circular, allow_nan, indent,
+                       separators, sort_keys, max_depth).encode(value)
+
+def dump(value, fp, ensure_ascii: bool = True, check_circular: bool = True,
+         allow_nan: bool = True, indent=None,
+         separators: Optional[Tuple[str, str]] = None,
+         sort_keys: bool = False, max_depth: int = 512):
+    fp.write(dumps(value, ensure_ascii, check_circular, allow_nan, indent,
+                   separators, sort_keys, max_depth))

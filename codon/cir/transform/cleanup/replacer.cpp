@@ -4,7 +4,7 @@
 
 #include <unordered_set>
 
-#include "codon/cir/types/types.h"
+#include "codon/cir/type.h"
 #include "codon/cir/value.h"
 #include "codon/cir/var.h"
 
@@ -17,7 +17,7 @@ const std::string ReplaceCleanupPass::KEY = "core-cleanup-physical-replace";
 
 void ReplaceCleanupPass::run(Module *module) {
   std::unordered_set<Value *> valuesToDelete;
-  std::unordered_set<types::Type *> typesToDelete;
+  std::unordered_set<Type *> typesToDelete;
   std::unordered_set<Var *> varsToDelete;
 
   {
@@ -43,23 +43,25 @@ void ReplaceCleanupPass::run(Module *module) {
   }
 
   {
-    auto *v = module->getArgVar();
-    for (auto *c : v->getUsedValues()) {
-      if (c->hasReplacement()) {
-        v->replaceUsedValue(c, c->getActual());
-        valuesToDelete.insert(c);
+    const std::vector<Var *> vs = {module->getArgvVar(), module->getArgcVar()};
+    for (auto *v : vs) {
+      for (auto *c : v->getUsedValues()) {
+        if (c->hasReplacement()) {
+          v->replaceUsedValue(c, c->getActual());
+          valuesToDelete.insert(c);
+        }
       }
-    }
-    for (auto *t : v->getUsedTypes()) {
-      if (t->hasReplacement()) {
-        v->replaceUsedType(t, t->getActual());
-        typesToDelete.insert(t);
+      for (auto *t : v->getUsedTypes()) {
+        if (t->hasReplacement()) {
+          v->replaceUsedType(t, t->getActual());
+          typesToDelete.insert(t);
+        }
       }
-    }
-    for (auto *v2 : v->getUsedVariables()) {
-      if (v2->hasReplacement()) {
-        v->replaceUsedVariable(v2, v2->getActual());
-        varsToDelete.insert(v2);
+      for (auto *v2 : v->getUsedVariables()) {
+        if (v2->hasReplacement()) {
+          v->replaceUsedVariable(v2, v2->getActual());
+          varsToDelete.insert(v2);
+        }
       }
     }
   }

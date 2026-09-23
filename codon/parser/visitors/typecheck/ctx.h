@@ -3,6 +3,7 @@
 #pragma once
 
 #include <memory>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -122,6 +123,7 @@ struct TypeContext : public Context<TypecheckItem> {
     std::vector<Loop> loops;
 
     std::map<int, std::set<types::TypePtr>> pendingDefaults;
+    std::set<types::TypePtr> recursiveDependencies;
 
   public:
     Loop *getLoop() { return loops.empty() ? nullptr : &(loops.back()); }

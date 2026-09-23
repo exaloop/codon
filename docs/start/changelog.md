@@ -6,6 +6,35 @@ These release notes generally do not include small bug fixes. See the
 [closed issues](https://github.com/exaloop/codon/issues?q=is%3Aissue+is%3Aclosed)
 for more information.
 
+## v0.20
+
+### Libraries
+
+- Full Unicode support, including Codon-native SIMD Unicode primitives and
+  Unicode-specific compiler optimizations. Learn more in our blog post:
+  [exaloop.io/blog/codon-unicode](https://exaloop.io/blog/codon-unicode)
+- Other complementary additions including `bytes` and `bytearray`.
+- Ordered dictionary type to match CPython (old unordered implementation is
+  still usable via `-unordered-dict` flag).
+
+### NumPy
+
+- Uses ILP64 BLAS (both OpenBLAS and Accelerate) now by default.
+- Numerous other performance improvements including better fusion optimization.
+
+### Type system
+
+- Unified many core numeric types (e.g. `int` and `Int[64]` are now the same
+  type, `byte` and `UInt[8]` are now the same type, etc.).
+- Many types can now be used together without explicit casting (e.g.
+  `u8(1) + i16(2)` now works and casts to the wider type automatically).
+
+### GPU
+
+- Support for `float16` and `bfloat16`.
+- Support for more math functions (e.g. `log1p`, `log1pf`).
+- Improved GPU optimization pipeline.
+
 ## v0.19
 
 ### New type checking engine

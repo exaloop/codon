@@ -40,7 +40,7 @@ struct CaptureInfo {
   /// @param func the function containing this argument
   /// @param type the argument's type
   /// @return an instance denoting unknown capture status
-  static CaptureInfo unknown(const Func *func, types::Type *type);
+  static CaptureInfo unknown(const Func *func, Type *type);
 };
 
 /// Capture analysis result.

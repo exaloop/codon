@@ -48,6 +48,18 @@ This will result in a single Python function `bar()` that dispatches to the
 correct Codon `bar()` at runtime based on the argument's type (or raises a
 `TypeError` on an invalid input type).
 
+## Exceptions
+
+Native runtime exceptions raised by exported functions are converted to their
+Python counterparts. This includes `OSError` subclasses such as
+`FileNotFoundError` and `PermissionError`, with their errno and filename fields,
+and `UnicodeDecodeError`, `UnicodeEncodeError` and `UnicodeTranslateError`.
+Unicode errors retain their original `args` and current encoding, input,
+position and reason attributes, including changes made before raising them.
+
+Ordinary exceptions retain their native message. Custom native exception
+classes are not automatically defined as new Python exception classes.
+
 ## Types
 
 Codon class definitions can also be converted to Python extension types via

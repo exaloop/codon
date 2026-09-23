@@ -21,7 +21,7 @@ using namespace types;
 /// If an identifier is a static variable, evaluate it and replace it with its value
 ///   (e.g., change `N` to `IntExpr(16)`).
 /// If the identifier of a generic is fully qualified, use its qualified name
-///   (e.g., replace `Ptr` with `Ptr[byte]`).
+///   (e.g., replace `Ptr` with `Ptr[u8]`).
 void TypecheckVisitor::visit(IdExpr *expr) {
   auto val = ctx->find(expr->getValue(), getTime());
   if (!val) {

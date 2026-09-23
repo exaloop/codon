@@ -39,7 +39,7 @@ template <typename T> bool shouldTrack(const T *x) {
   return x && !x->getType()->isAtomic();
 }
 
-template <> bool shouldTrack(const types::Type *x) { return x && !x->isAtomic(); }
+template <> bool shouldTrack(const Type *x) { return x && !x->isAtomic(); }
 
 struct CaptureContext;
 
@@ -695,10 +695,10 @@ std::vector<CaptureInfo> CaptureContext::get(const Func *func) {
   // Only Tuple.__new__(...) and Generator.__promise__(self) capture.
   if (isA<InternalFunc>(func)) {
     bool isTupleNew = func->getUnmangledName() == "__new__" &&
-                      isA<types::RecordType>(util::getReturnType(func));
+                      isA<RecordType>(util::getReturnType(func));
     bool isPromise = func->getUnmangledName() == "__promise__" &&
                      std::distance(func->arg_begin(), func->arg_end()) == 1 &&
-                     isA<types::GeneratorType>(func->arg_front()->getType());
+                     isA<GeneratorType>(func->arg_front()->getType());
 
     bool derives = (isTupleNew || isPromise);
     return makeNoCaptureInfo(func, derives);
@@ -739,7 +739,7 @@ void CaptureContext::set(const Func *func, const std::vector<CaptureInfo> &resul
 
 } // namespace
 
-CaptureInfo CaptureInfo::unknown(const Func *func, types::Type *type) {
+CaptureInfo CaptureInfo::unknown(const Func *func, Type *type) {
   if (!shouldTrack(type))
     return CaptureInfo::nothing();
 

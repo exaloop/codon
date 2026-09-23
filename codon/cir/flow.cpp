@@ -24,7 +24,7 @@ int findAndReplace(id_t id, codon::ir::Value *newVal,
 
 const char Flow::NodeId = 0;
 
-types::Type *Flow::doGetType() const { return getModule()->getNoneType(); }
+Type *Flow::doGetType() const { return getModule()->getNoneType(); }
 
 const char SeriesFlow::NodeId = 0;
 
@@ -207,16 +207,16 @@ int TryCatchFlow::doReplaceUsedValue(id_t id, Value *newValue) {
   return replacements;
 }
 
-std::vector<types::Type *> TryCatchFlow::doGetUsedTypes() const {
-  std::vector<types::Type *> ret;
+std::vector<Type *> TryCatchFlow::doGetUsedTypes() const {
+  std::vector<Type *> ret;
   for (auto &c : catches) {
     if (auto *t = c.getType())
-      ret.push_back(const_cast<types::Type *>(t));
+      ret.push_back(const_cast<Type *>(t));
   }
   return ret;
 }
 
-int TryCatchFlow::doReplaceUsedType(const std::string &name, types::Type *newType) {
+int TryCatchFlow::doReplaceUsedType(const std::string &name, Type *newType) {
   auto count = 0;
   for (auto &c : catches) {
     if (c.getType()->getName() == name) {
@@ -249,33 +249,33 @@ int TryCatchFlow::doReplaceUsedVariable(id_t id, Var *newVar) {
 
 const char PipelineFlow::NodeId = 0;
 
-types::Type *PipelineFlow::Stage::getOutputType() const {
+Type *PipelineFlow::Stage::getOutputType() const {
   if (args.empty()) {
     return callee->getType();
   } else {
-    auto *funcType = cast<types::FuncType>(callee->getType());
+    auto *funcType = cast<FuncType>(callee->getType());
     seqassertn(funcType, "{} is not a function type", *callee->getType());
     return funcType->getReturnType();
   }
 }
 
-types::Type *PipelineFlow::Stage::getOutputElementType() const {
+Type *PipelineFlow::Stage::getOutputElementType() const {
   if (isGenerator()) {
-    types::GeneratorType *genType = nullptr;
+    GeneratorType *genType = nullptr;
     if (args.empty()) {
-      genType = cast<types::GeneratorType>(callee->getType());
+      genType = cast<GeneratorType>(callee->getType());
       return genType->getBase();
     } else {
-      auto *funcType = cast<types::FuncType>(callee->getType());
+      auto *funcType = cast<FuncType>(callee->getType());
       seqassertn(funcType, "{} is not a function type", *callee->getType());
-      genType = cast<types::GeneratorType>(funcType->getReturnType());
+      genType = cast<GeneratorType>(funcType->getReturnType());
     }
     seqassertn(genType, "generator type not found");
     return genType->getBase();
   } else if (args.empty()) {
     return callee->getType();
   } else {
-    auto *funcType = cast<types::FuncType>(callee->getType());
+    auto *funcType = cast<FuncType>(callee->getType());
     seqassertn(funcType, "{} is not a function type", *callee->getType());
     return funcType->getReturnType();
   }

@@ -25,7 +25,7 @@ private:
   /// the value being matched against
   ConstantType val;
   /// the type being matched
-  types::Type *type;
+  Type *type;
   /// the magic method name
   std::string magic;
   /// the calculator
@@ -41,7 +41,7 @@ public:
   /// @param kind left, right, or commutative
   /// @param type the matched type
   SingleConstantCommutativeRule(ConstantType val, ConstantType newVal,
-                                std::string magic, Kind kind, types::Type *type)
+                                std::string magic, Kind kind, Type *type)
       : val(val), type(type), magic(std::move(magic)), kind(kind) {
     calc = [=](Value *v) -> Value * {
       return v->getModule()->N<TemplatedConst<ConstantType>>(v->getSrcInfo(), val,
@@ -56,7 +56,7 @@ public:
   /// @param kind left, right, or commutative
   /// @param type the matched type
   SingleConstantCommutativeRule(ConstantType val, Calculator calc, std::string magic,
-                                Kind kind, types::Type *type)
+                                Kind kind, Type *type)
       : val(val), type(type), magic(std::move(magic)), calc(std::move(calc)),
         kind(kind) {}
 
@@ -87,9 +87,9 @@ private:
   /// the calculator
   Func f;
   /// the input type
-  types::Type *inputType;
+  Type *inputType;
   /// the output type
-  types::Type *resultType;
+  Type *resultType;
   /// the magic method name
   std::string magic;
 
@@ -99,8 +99,7 @@ public:
   /// @param magic the magic method name
   /// @param inputType the input type
   /// @param resultType the output type
-  DoubleConstantBinaryRule(Func f, std::string magic, types::Type *inputType,
-                           types::Type *resultType)
+  DoubleConstantBinaryRule(Func f, std::string magic, Type *inputType, Type *resultType)
       : f(std::move(f)), inputType(inputType), resultType(resultType),
         magic(std::move(magic)) {}
 
@@ -135,9 +134,9 @@ private:
   /// the calculator
   Func f;
   /// the input type
-  types::Type *inputType;
+  Type *inputType;
   /// the output type
-  types::Type *resultType;
+  Type *resultType;
   /// the magic method name
   std::string magic;
 
@@ -147,8 +146,7 @@ public:
   /// @param magic the magic method name
   /// @param inputType the input type
   /// @param resultType the output type
-  SingleConstantUnaryRule(Func f, std::string magic, types::Type *inputType,
-                          types::Type *resultType)
+  SingleConstantUnaryRule(Func f, std::string magic, Type *inputType, Type *resultType)
       : f(std::move(f)), inputType(inputType), resultType(resultType),
         magic(std::move(magic)) {}
 
@@ -179,7 +177,7 @@ private:
   /// the calculator
   Func f;
   /// the input type
-  types::Type *inputType;
+  Type *inputType;
   /// the magic method name
   std::string magic;
 
@@ -188,7 +186,7 @@ public:
   /// @param f the calculator
   /// @param magic the magic method name
   /// @param inputType the input type
-  UnaryRule(Func f, std::string magic, types::Type *inputType)
+  UnaryRule(Func f, std::string magic, Type *inputType)
       : f(std::move(f)), inputType(inputType), magic(std::move(magic)) {}
 
   virtual ~UnaryRule() noexcept = default;
@@ -206,7 +204,7 @@ public:
 class NoOpRule : public RewriteRule {
 private:
   /// the input type
-  types::Type *inputType;
+  Type *inputType;
   /// the magic method name
   std::string magic;
 
@@ -214,7 +212,7 @@ public:
   /// Constructs a no-op rule.
   /// @param magic the magic method name
   /// @param inputType the input type
-  NoOpRule(std::string magic, types::Type *inputType)
+  NoOpRule(std::string magic, Type *inputType)
       : inputType(inputType), magic(std::move(magic)) {}
 
   virtual ~NoOpRule() noexcept = default;
@@ -232,7 +230,7 @@ public:
 class DoubleApplicationNoOpRule : public RewriteRule {
 private:
   /// the input type
-  types::Type *inputType;
+  Type *inputType;
   /// the magic method name
   std::string magic;
 
@@ -240,7 +238,7 @@ public:
   /// Constructs a double-application no-op rule.
   /// @param magic the magic method name
   /// @param inputType the input type
-  DoubleApplicationNoOpRule(std::string magic, types::Type *inputType)
+  DoubleApplicationNoOpRule(std::string magic, Type *inputType)
       : inputType(inputType), magic(std::move(magic)) {}
 
   virtual ~DoubleApplicationNoOpRule() noexcept = default;

@@ -6,26 +6,26 @@ import internal.static as static
 
 Routine = Function[[i32, cobj], i32]
 
-_KMP_IDENT_IMB = 0x01
-_KMP_IDENT_KMPC = 0x02
-_KMP_IDENT_AUTOPAR = 0x08
-_KMP_IDENT_ATOMIC_REDUCE = 0x10
-_KMP_IDENT_BARRIER_EXPL = 0x20
-_KMP_IDENT_BARRIER_IMPL = 0x0040
-_KMP_IDENT_BARRIER_IMPL_MASK = 0x01C0
-_KMP_IDENT_BARRIER_IMPL_FOR = 0x0040
-_KMP_IDENT_BARRIER_IMPL_SECTIONS = 0x00C0
-_KMP_IDENT_BARRIER_IMPL_SINGLE = 0x0140
-_KMP_IDENT_BARRIER_IMPL_WORKSHARE = 0x01C0
-_KMP_IDENT_WORK_LOOP = 0x200
-_KMP_IDENT_WORK_SECTIONS = 0x400
-_KMP_IDENT_WORK_DISTRIBUTE = 0x800
-_KMP_IDENT_ATOMIC_HINT_MASK = 0xFF0000
-_KMP_IDENT_ATOMIC_HINT_UNCONTENDED = 0x010000
-_KMP_IDENT_ATOMIC_HINT_CONTENDED = 0x020000
-_KMP_IDENT_ATOMIC_HINT_NONSPECULATIVE = 0x040000
-_KMP_IDENT_ATOMIC_HINT_SPECULATIVE = 0x080000
-_KMP_IDENT_OPENMP_SPEC_VERSION_MASK = 0xFF000000
+_KMP_IDENT_IMB: Literal[int] = 0x01
+_KMP_IDENT_KMPC: Literal[int] = 0x02
+_KMP_IDENT_AUTOPAR: Literal[int] = 0x08
+_KMP_IDENT_ATOMIC_REDUCE: Literal[int] = 0x10
+_KMP_IDENT_BARRIER_EXPL: Literal[int] = 0x20
+_KMP_IDENT_BARRIER_IMPL: Literal[int] = 0x0040
+_KMP_IDENT_BARRIER_IMPL_MASK: Literal[int] = 0x01C0
+_KMP_IDENT_BARRIER_IMPL_FOR: Literal[int] = 0x0040
+_KMP_IDENT_BARRIER_IMPL_SECTIONS: Literal[int] = 0x00C0
+_KMP_IDENT_BARRIER_IMPL_SINGLE: Literal[int] = 0x0140
+_KMP_IDENT_BARRIER_IMPL_WORKSHARE: Literal[int] = 0x01C0
+_KMP_IDENT_WORK_LOOP: Literal[int] = 0x200
+_KMP_IDENT_WORK_SECTIONS: Literal[int] = 0x400
+_KMP_IDENT_WORK_DISTRIBUTE: Literal[int] = 0x800
+_KMP_IDENT_ATOMIC_HINT_MASK: Literal[int] = 0xFF0000
+_KMP_IDENT_ATOMIC_HINT_UNCONTENDED: Literal[int] = 0x010000
+_KMP_IDENT_ATOMIC_HINT_CONTENDED: Literal[int] = 0x020000
+_KMP_IDENT_ATOMIC_HINT_NONSPECULATIVE: Literal[int] = 0x040000
+_KMP_IDENT_ATOMIC_HINT_SPECULATIVE: Literal[int] = 0x080000
+_KMP_IDENT_OPENMP_SPEC_VERSION_MASK: Literal[int] = 0xFF000000
 
 @tuple
 class Lock:
@@ -51,7 +51,7 @@ class Ident:
     psource: cobj
 
     def __new__(flags: int = 0, source: str = ";unknown;unknown;0;0;;") -> Ident:
-        return Ident(i32(0), i32(flags | _KMP_IDENT_KMPC), i32(0), i32(0), source.ptr)
+        return Ident(i32(0), i32(flags | _KMP_IDENT_KMPC), i32(0), i32(0), source._ptr)
 
 @tuple
 class LRData:
@@ -85,14 +85,6 @@ class TaskReductionInput:
                 reduce_init: cobj, reduce_comb: cobj):
         return TaskReductionInput(reduce_shar.as_byte(), reduce_orig.as_byte(), reduce_size,
                                   reduce_init, cobj(), reduce_comb, u32(0))
-
-@tuple
-class TaskReductionInputArray:
-    len: int
-    ptr: Ptr[TaskReductionInput]
-
-    def __setitem__(self, idx: int, x: TaskReductionInput):
-        self.ptr[idx] = x
 
 _DEFAULT_IDENT = Ident()
 _STATIC_LOOP_IDENT = Ident(_KMP_IDENT_WORK_LOOP)
@@ -328,8 +320,10 @@ def _taskred_data(gtid: int, data):
     return T(__kmpc_task_reduction_get_th_data(i32(gtid), cobj(), data.as_byte()))
 
 def _fork_call(microtask: cobj, args):
+    from C import seq_allow_register_threads()
     from C import __kmpc_fork_call(Ptr[Ident], i32, cobj, ...)
     loc_ref = _default_loc()  # TODO: pass real loc?
+    seq_allow_register_threads()
     __kmpc_fork_call(loc_ref, i32(1), microtask, __ptr__(args))
 
 def _static_loop_outline_template(gtid_ptr: Ptr[i32], btid_ptr: Ptr[i32], args):
@@ -608,6 +602,11 @@ def get_thread_num():
     return int(omp_get_thread_num())
 
 @pure
+def _get_gtid():
+    from C import __kmpc_global_thread_num(Ptr[Ident]) -> i32
+    return int(__kmpc_global_thread_num(_default_loc()))
+
+@pure
 def get_max_threads():
     from C import omp_get_max_threads() -> i32
     return int(omp_get_max_threads())
@@ -757,7 +756,7 @@ def get_wtick():
 
 def single(func):
     def _wrapper(*args, **kwargs):
-        gtid = get_thread_num()
+        gtid = _get_gtid()
         loc = _default_loc()
         if _single_begin(loc, gtid) != 0:
             try:
@@ -769,7 +768,7 @@ def single(func):
 
 def master(func):
     def _wrapper(*args, **kwargs):
-        gtid = get_thread_num()
+        gtid = _get_gtid()
         loc = _default_loc()
         if _master_begin(loc, gtid) != 0:
             try:
@@ -781,7 +780,7 @@ def master(func):
 
 def ordered(func):
     def _wrapper(*args, **kwargs):
-        gtid = get_thread_num()
+        gtid = _get_gtid()
         loc = _default_loc()
         _ordered_begin(loc, gtid)
         try:
@@ -795,7 +794,7 @@ _default_lock = Lock()
 
 def critical(func):
     def _wrapper(*args, **kwargs):
-        gtid = get_thread_num()
+        gtid = _get_gtid()
         loc = _default_loc()
         _critical_begin(loc, gtid, __ptr__(_default_lock))
         try:
@@ -807,7 +806,7 @@ def critical(func):
 
 def _push_num_threads(num_threads: int):
     from C import __kmpc_push_num_threads(Ptr[Ident], i32, i32)
-    gtid = get_thread_num()
+    gtid = _get_gtid()
     loc = _default_loc()
     __kmpc_push_num_threads(loc, i32(gtid), i32(num_threads))
 
@@ -879,15 +878,15 @@ def _atomic_float32_max(a: Ptr[float32], b: float32) -> None:
 
 def _range_len(start: int, stop: int, step: int):
     if step > 0 and start < stop:
-        return 1 + (stop - 1 - start) // step
+        return 1 + (stop - 1 - start).cdiv(step)
     elif step < 0 and start > stop:
-        return 1 + (start - 1 - stop) // (-step)
+        return 1 + (start - 1 - stop).cdiv(-step)
     else:
         return 0
 
 def for_par(
     num_threads: int = -1,
-    chunk_size: int = -1,
+    chunk_size: int = 0,
     schedule: Literal[str] = "static",
     ordered: Literal[bool] = False,
     collapse: Literal[int] = 0,

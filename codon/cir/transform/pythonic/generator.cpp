@@ -114,17 +114,17 @@ struct GeneratorAnyAllTransformer : public util::Operator {
   void handle(YieldInInstr *v) override { valid = false; }
 };
 
-Func *genToSum(BodiedFunc *gen, types::Type *startType, types::Type *outType) {
+Func *genToSum(BodiedFunc *gen, Type *startType, Type *outType) {
   if (!gen || !gen->isGenerator())
     return nullptr;
 
   auto *M = gen->getModule();
-  auto *genType = cast<types::FuncType>(gen->getType());
+  auto *genType = cast<FuncType>(gen->getType());
   if (!genType)
     return nullptr;
 
   auto *fn = M->Nr<BodiedFunc>("__sum_wrapper");
-  std::vector<types::Type *> argTypes(genType->begin(), genType->end());
+  std::vector<Type *> argTypes(genType->begin(), genType->end());
   argTypes.push_back(startType);
 
   std::vector<std::string> names;
@@ -174,9 +174,9 @@ Func *genToAnyAll(BodiedFunc *gen, bool any) {
 
   auto *M = gen->getModule();
   auto *fn = M->Nr<BodiedFunc>(any ? "__any_wrapper" : "__all_wrapper");
-  auto *genType = cast<types::FuncType>(gen->getType());
+  auto *genType = cast<FuncType>(gen->getType());
 
-  std::vector<types::Type *> argTypes(genType->begin(), genType->end());
+  std::vector<Type *> argTypes(genType->begin(), genType->end());
   std::vector<std::string> names;
   for (auto it = gen->arg_begin(); it != gen->arg_end(); ++it) {
     names.push_back((*it)->getName());

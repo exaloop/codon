@@ -118,8 +118,8 @@ Value *Value::iter() { return doUnaryOp(Module::ITER_MAGIC_NAME); }
 
 Value *Value::doUnaryOp(const std::string &name) {
   auto *module = getModule();
-  auto *fn = module->getOrRealizeMethod(getType(), name,
-                                        std::vector<types::Type *>{getType()});
+  auto *fn =
+      module->getOrRealizeMethod(getType(), name, std::vector<Type *>{getType()});
 
   if (!fn)
     return nullptr;
@@ -131,7 +131,7 @@ Value *Value::doUnaryOp(const std::string &name) {
 Value *Value::doBinaryOp(const std::string &name, Value &other) {
   auto *module = getModule();
   auto *fn = module->getOrRealizeMethod(
-      getType(), name, std::vector<types::Type *>{getType(), other.getType()});
+      getType(), name, std::vector<Type *>{getType(), other.getType()});
 
   if (!fn)
     return nullptr;

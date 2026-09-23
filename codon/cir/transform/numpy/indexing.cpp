@@ -148,8 +148,8 @@ std::vector<Term> replaceLoopVariable(const std::vector<Term> &terms, Var *loopV
   return ans;
 }
 
-bool isArrayType(types::Type *t, bool dim1 = false) {
-  bool result = t && isA<types::RecordType>(t) &&
+bool isArrayType(Type *t, bool dim1 = false) {
+  bool result = t && isA<RecordType>(t) &&
                 t->getName().rfind(ast::StdlibTypes::NDArray + "[", 0) == 0;
   if (result && dim1) {
     auto generics = t->getGenerics();

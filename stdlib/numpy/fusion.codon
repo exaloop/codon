@@ -54,9 +54,11 @@ def _contig_match(arrs):
 def _ptrset(p: Ptr[T], x: T, T: type):
     p[0] = x
 
+@inline
 def _loop_alloc(arrays, func, extra, dtype: type):
     return ndarray._loop(arrays, func, alloc=Tuple[dtype], extra=extra)[0]
 
+@inline
 def _loop_basic(arrays, func, extra):
     ndarray._loop(arrays, func, extra=extra)
 
@@ -158,9 +160,10 @@ def _apply_vectorized_loop_unary(arr, out, func: Literal[str]):
     arr = broadcast_to(arr, shape)
 
     if arr._contig_match(out):
-        s = util.sizeof(out.dtype)
-        util.call_vectorized_loop(arr.data, s, Ptr[arr.dtype](), 0, out.data,
-                                  s, out.size, func)
+        s1 = util.sizeof(arr.dtype)
+        s2 = util.sizeof(out.dtype)
+        util.call_vectorized_loop(arr.data, s1, Ptr[arr.dtype](), 0, out.data,
+                                  s2, out.size, func)
     else:
         # Find smallest stride to use in vectorized loop
         arr_strides = arr.strides
@@ -290,7 +293,14 @@ def _matmul(x, y):
 
 @inline
 def _true_div(x, y):
-    return x / y
+    X = type(x)
+    Y = type(y)
+    if X is Y and util.isfloat(X):
+        return x.cdiv(y)
+    elif X is Y and util.isint(X):
+        return float(x).cdiv(float(y))
+    else:
+        return x / y
 
 @inline
 def _floor_div(x, y):
@@ -298,6 +308,8 @@ def _floor_div(x, y):
     Y = type(y)
     if isinstance(X, Int) and isinstance(Y, Int):
         return util.pydiv(x, y)
+    elif isinstance(X, UInt) and isinstance(Y, UInt):
+        return x.cdiv(y)
     else:
         return x // y
 
@@ -321,8 +333,8 @@ def _fmod(x, y):
     if isinstance(X, Int) and isinstance(Y, Int):
         return util.cmod_int(x, y)
     elif ((X is float and Y is float) or
-        (X is float32 and Y is float32) or
-        (X is float16 and Y is float16)):
+          (X is float32 and Y is float32) or
+          (X is float16 and Y is float16)):
         return util.cmod(x, y)
     else:
         return x % y
@@ -471,13 +483,13 @@ def _arctanh(x):
     return _apply(x, util.atanh, zmath.atanh)
 
 def _rad2deg(x):
-    r2d = 180.0 / util.PI
+    r2d = (180.0).cdiv(util.PI)
     x = util.to_float(x)
     F = type(x)
     return x * F(r2d)
 
 def _deg2rad(x):
-    d2r = util.PI / 180.0
+    d2r = (util.PI).cdiv(180.0)
     x = util.to_float(x)
     F = type(x)
     return x * F(d2r)
@@ -608,16 +620,15 @@ def _gcd(x, y):
 
 def _lcm(x, y):
     gcd = _gcd(x, y)
-    return x // gcd * y if gcd else 0
+    return x.cdiv(gcd) * y if gcd else 0
 
 def _reciprocal(x: T, T: type):
-    if (
-        isinstance(x, int) or
-        isinstance(x, Int) or
-        isinstance(x, UInt) or
-        isinstance(x, byte)
-    ):
-        return T(1) // x
+    if isinstance(x, Int):
+        return x if (x == T(1) or x == T(-1)) else T(0)
+    elif isinstance(x, UInt):
+        return T(1) if x == T(1) else T(0)
+    elif util.isfloat(T):
+        return T(1).cdiv(x)
     else:
         return T(1) / x
 
@@ -748,6 +759,12 @@ def _divmod(x, y):
 
     if isinstance(x, float) or isinstance(y, float):
         return _divmod_float(util.cast(x, float), util.cast(y, float))
+
+    if isinstance(x, Int) and isinstance(y, Int):
+        return (x.cdiv(y), x.cmod(y))
+
+    if isinstance(x, UInt) and isinstance(y, UInt):
+        return (x.cdiv(y), x.cmod(y))
 
     return (x // y, x % y)
 

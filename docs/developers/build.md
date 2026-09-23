@@ -16,7 +16,19 @@ cmake -S llvm-project/llvm -B llvm-project/build \
     -DLLVM_ENABLE_ZLIB=OFF \
     -DLLVM_ENABLE_ZSTD=OFF \
     -DLLVM_ENABLE_PROJECTS="openmp" \
-    -DLLVM_TARGETS_TO_BUILD=all
+    -DLLVM_TARGETS_TO_BUILD=all \
+    -DLLVM_ENABLE_RUNTIMES="compiler-rt" \
+    -DCOMPILER_RT_BUILD_BUILTINS=ON \
+    -DCOMPILER_RT_BUILD_SANITIZERS=OFF \
+    -DCOMPILER_RT_BUILD_XRAY=OFF \
+    -DCOMPILER_RT_BUILD_LIBFUZZER=OFF \
+    -DCOMPILER_RT_BUILD_PROFILE=OFF \
+    -DCOMPILER_RT_BUILD_MEMPROF=OFF \
+    -DCOMPILER_RT_BUILD_CTX_PROFILE=OFF \
+    -DCOMPILER_RT_BUILD_ORC=OFF \
+    -DCOMPILER_RT_BUILD_CRT=OFF \
+    -DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON \
+    -DCOMPILER_RT_INCLUDE_TESTS=OFF
 cmake --build llvm-project/build
 cmake --install llvm-project/build --prefix=llvm-project/install
 ```
@@ -26,6 +38,12 @@ installed on your system. We also recommend setting a local prefix during
 installation to avoid clashes with the system LLVM.
 
 ## Build
+
+Python 3.8+ is required to verify and unpack the bundled standard-library tables.
+This step is offline and does not depend on Python's Unicode database version.
+Generated tables live in the build tree and are embedded and installed automatically.
+See the [table maintenance guide](https://github.com/exaloop/codon/blob/master/scripts/unicode/README.md)
+for the separate, version-pinned regeneration workflow.
 
 Codon requires `libgfortran`, the parent directory of which must be specified via the
 `CODON_SYSTEM_LIBRARIES` environment variable. For example, on macOS, with a

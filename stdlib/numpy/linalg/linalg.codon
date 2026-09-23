@@ -10,7 +10,7 @@ from ..routines import atleast_2d, asarray, broadcast_shapes, broadcast_to, empt
                        zeros, array
 from ..util import cast, cdiv_int, coerce, eps, exp, free, inf, log, multirange, \
                    nan, normalize_axis_index, sizeof, sort, sqrt as util_sqrt, \
-                   tuple_delete, tuple_insert, tuple_range, tuple_set, zero
+                   tuple_delete, tuple_insert, tuple_range, tuple_set, zero, isfloat
 
 
 #############
@@ -173,7 +173,7 @@ class LinearizeData:
             dst += cdiv_int(self.row_strides, sizeof(T))
 
     def identity_matrix(dst: Ptr[T], n: int, T: type):
-        str.memset(dst.as_byte(), byte(0), n * n * sizeof(T))
+        str.memset(dst.as_byte(), u8(0), n * n * sizeof(T))
         for i in range(n):
             dst[0] = T(1)
             dst += n + 1
@@ -337,13 +337,13 @@ class EighParams:
     LWORK: fint
     LRWORK: fint
     LIWORK: fint
-    JOBZ: byte
-    UPLO: byte
+    JOBZ: u8
+    UPLO: u8
     LDA: fint
     T: type
     B: type
 
-    def _init_real(self, JOBZ: byte, UPLO: byte, N: fint):
+    def _init_real(self, JOBZ: u8, UPLO: u8, N: fint):
         safe_N = int(N)
         alloc_size = safe_N * (safe_N + 1) * sizeof(T)
         lda = N if N else fint(1)
@@ -386,7 +386,7 @@ class EighParams:
         self.LIWORK = fint(liwork)
         self.IWORK = Ptr[fint](iwork)
 
-    def _init_complex(self, JOBZ: byte, UPLO: byte, N: fint):
+    def _init_complex(self, JOBZ: u8, UPLO: u8, N: fint):
         safe_N = int(N)
         lda = N if N else fint(1)
         mem_buff = cobj(safe_N * safe_N * sizeof(T) + safe_N * sizeof(B))
@@ -433,7 +433,7 @@ class EighParams:
         self.LRWORK = fint(lrwork)
         self.LIWORK = fint(liwork)
 
-    def __init__(self, JOBZ: byte, UPLO: byte, N: fint):
+    def __init__(self, JOBZ: u8, UPLO: u8, N: fint):
         if T is complex or T is complex64:
             self._init_complex(JOBZ, UPLO, N)
         else:
@@ -510,7 +510,7 @@ class EighResult[A, B]:
         else:
             compile_error("tuple ('EighResult') index out of range")
 
-def _eigh(a, JOBZ: byte, UPLO: byte, compute_eigenvectors: Literal[bool]):
+def _eigh(a, JOBZ: u8, UPLO: u8, compute_eigenvectors: Literal[bool]):
     a = _asarray(a)
     B = type(_basetype(a.dtype))
 
@@ -563,27 +563,27 @@ def _eigh(a, JOBZ: byte, UPLO: byte, compute_eigenvectors: Literal[bool]):
         return eigenvalues
 
 def eigh(a, UPLO: str = 'L'):
-    uplo_code = byte()
+    uplo_code = u8()
     if UPLO == 'L' or UPLO == 'l':
-        uplo_code = byte(76)
+        uplo_code = u8(76)
     elif UPLO == 'U' or UPLO == 'u':
-        uplo_code = byte(85)
+        uplo_code = u8(85)
     else:
         raise ValueError("UPLO argument must be 'L' or 'U'")
 
-    jobz_code = byte(86)
+    jobz_code = u8(86)
     return _eigh(a, JOBZ=jobz_code, UPLO=uplo_code, compute_eigenvectors=True)
 
 def eigvalsh(a, UPLO: str = 'L'):
-    uplo_code = byte()
+    uplo_code = u8()
     if UPLO == 'L' or UPLO == 'l':
-        uplo_code = byte(76)
+        uplo_code = u8(76)
     elif UPLO == 'U' or UPLO == 'u':
-        uplo_code = byte(85)
+        uplo_code = u8(85)
     else:
         raise ValueError("UPLO argument must be 'L' or 'U'")
 
-    jobz_code = byte(78)
+    jobz_code = u8(78)
     return _eigh(a, JOBZ=jobz_code, UPLO=uplo_code, compute_eigenvectors=False)
 
 
@@ -803,10 +803,10 @@ class PotrfParams:
     A: Ptr[T]
     N: fint
     LDA: fint
-    UPLO: byte
+    UPLO: u8
     T: type
 
-    def __init__(self, UPLO: byte, N: fint):
+    def __init__(self, UPLO: u8, N: fint):
         safe_N = int(N)
         lda = N if N else fint(1)
         mem_buff = cobj(safe_N * safe_N * sizeof(T))
@@ -865,7 +865,7 @@ class PotrfParams:
 
 def cholesky(a, upper: bool = False):
     a = _asarray(a)
-    uplo = byte(85 if upper else 76)  # 'U' / 'L'
+    uplo = u8(85 if upper else 76)  # 'U' / 'L'
     n = _square_rows(a)
 
     params = PotrfParams[a.dtype](uplo, fint(n))
@@ -947,18 +947,18 @@ class GeevParams:
     LDVL: fint
     LDVR: fint
     LWORK: fint
-    JOBVL: byte
-    JOBVR: byte
+    JOBVL: u8
+    JOBVR: u8
     T: type
     B: type
 
-    def _init_real(self, jobvl: byte, jobvr: byte, n: fint):
+    def _init_real(self, jobvl: u8, jobvr: u8, n: fint):
         safe_n = int(n)
         a_size = safe_n * safe_n * sizeof(T)
         wr_size = safe_n * sizeof(T)
         wi_size = safe_n * sizeof(T)
-        vlr_size = safe_n * safe_n * sizeof(T) if jobvl == byte(86) else 0
-        vrr_size = safe_n * safe_n * sizeof(T) if jobvr == byte(86) else 0
+        vlr_size = safe_n * safe_n * sizeof(T) if jobvl == u8(86) else 0
+        vrr_size = safe_n * safe_n * sizeof(T) if jobvr == u8(86) else 0
         w_size = wr_size * 2
         vl_size = vlr_size * 2
         vr_size = vrr_size * 2
@@ -1008,12 +1008,12 @@ class GeevParams:
         self.LWORK = fint(work_count)
         self.WORK = Ptr[T](work)
 
-    def _init_complex(self, jobvl: byte, jobvr: byte, n: fint):
+    def _init_complex(self, jobvl: u8, jobvr: u8, n: fint):
         safe_n = int(n)
         a_size = safe_n * safe_n * sizeof(T)
         w_size = safe_n * sizeof(T)
-        vl_size = safe_n * safe_n * sizeof(T) if jobvl == byte(86) else 0
-        vr_size = safe_n * safe_n * sizeof(T) if jobvr == byte(86) else 0
+        vl_size = safe_n * safe_n * sizeof(T) if jobvl == u8(86) else 0
+        vr_size = safe_n * safe_n * sizeof(T) if jobvr == u8(86) else 0
         rwork_size = 2 * safe_n * sizeof(B)
         total_size = a_size + w_size + vl_size + vr_size + rwork_size
         ld = n if n else fint(1)
@@ -1059,7 +1059,7 @@ class GeevParams:
         self.LWORK = fint(work_count)
         self.WORK = Ptr[T](work)
 
-    def __init__(self, jobvl: byte, jobvr: byte, n: fint):
+    def __init__(self, jobvl: u8, jobvr: u8, n: fint):
         if T is complex or T is complex64:
             self._init_complex(jobvl, jobvr, n)
         else:
@@ -1139,10 +1139,10 @@ class GeevParams:
 
         _mk_complex_array(Ptr[C](self.W.as_byte()), self.WR, self.WI, int(self.N))
 
-        if self.JOBVL == byte(86):
+        if self.JOBVL == u8(86):
             _mk_geev_complex_eigenvectors(Ptr[C](self.VL.as_byte()), self.VLR, self.WI, int(self.N))
 
-        if self.JOBVR == byte(86):
+        if self.JOBVR == u8(86):
             _mk_geev_complex_eigenvectors(Ptr[C](self.VR.as_byte()), self.VRR, self.WI, int(self.N))
 
 @tuple
@@ -1158,7 +1158,7 @@ class EigResult[A, B]:
         else:
             compile_error("tuple ('EigResult') index out of range")
 
-def _eig(a, JOBVL: byte, JOBVR: byte, compute_eigenvectors: Literal[bool]):
+def _eig(a, JOBVL: u8, JOBVR: u8, compute_eigenvectors: Literal[bool]):
     a = _asarray(a)
     B = type(_basetype(a.dtype))
     C = type(_complextype(a.dtype))
@@ -1213,13 +1213,13 @@ def _eig(a, JOBVL: byte, JOBVR: byte, compute_eigenvectors: Literal[bool]):
         return eigenvalues
 
 def eig(a):
-    jobvl_code = byte(78)  # 'N'
-    jobvr_code = byte(86)  # 'V'
+    jobvl_code = u8(78)  # 'N'
+    jobvr_code = u8(86)  # 'V'
     return _eig(a, jobvl_code, jobvr_code, compute_eigenvectors=True)
 
 def eigvals(a):
-    jobvl_code = byte(78)  # 'N'
-    jobvr_code = byte(78)  # 'N'
+    jobvl_code = u8(78)  # 'N'
+    jobvr_code = u8(78)  # 'N'
     return _eig(a, jobvl_code, jobvr_code, compute_eigenvectors=False)
 
 
@@ -1227,10 +1227,10 @@ def eigvals(a):
 # SVD #
 #######
 
-def _compute_urows_vtcolumns(jobz: byte, m: fint, n: fint):
-    if jobz == byte(78):  # 'N'
+def _compute_urows_vtcolumns(jobz: u8, m: fint, n: fint):
+    if jobz == u8(78):  # 'N'
         return (fint(0), fint(0))
-    elif jobz == byte(65):  # 'A'
+    elif jobz == u8(65):  # 'A'
         return (m, n)
     else:  # 'S'
         min_m_n = m if m < n else n
@@ -1250,11 +1250,11 @@ class GesddParams:
     LDU: fint
     LDVT: fint
     LWORK: fint
-    JOBZ: byte
+    JOBZ: u8
     T: type
     B: type
 
-    def _init_real(self, jobz: byte, m: fint, n: fint):
+    def _init_real(self, jobz: u8, m: fint, n: fint):
         safe_m = int(m)
         safe_n = int(n)
         a_size = safe_m * safe_n * sizeof(T)
@@ -1312,7 +1312,7 @@ class GesddParams:
         self.LWORK = fint(work_count)
         self.WORK = Ptr[T](work)
 
-    def _init_complex(self, jobz: byte, m: fint, n: fint):
+    def _init_complex(self, jobz: u8, m: fint, n: fint):
         safe_m = int(m)
         safe_n = int(n)
         min_m_n = m if m < n else n
@@ -1327,7 +1327,7 @@ class GesddParams:
         s_size = safe_min_m_n * sizeof(B)
         u_size = safe_u_row_count * safe_m * sizeof(T)
         vt_size = safe_n * safe_vt_column_count * sizeof(T)
-        rwork_size = (7 * safe_min_m_n if jobz == byte(78) else
+        rwork_size = (7 * safe_min_m_n if jobz == u8(78) else
                       5*safe_min_m_n * safe_min_m_n + 5*safe_min_m_n)
         rwork_size *= sizeof(T)
         iwork_size = 8 * safe_min_m_n * sizeof(fint)
@@ -1380,7 +1380,7 @@ class GesddParams:
         self.LWORK = fint(work_count)
         self.WORK = Ptr[T](work)
 
-    def __init__(self, jobz: byte, m: fint, n: fint):
+    def __init__(self, jobz: u8, m: fint, n: fint):
         if T is complex or T is complex64:
             self._init_complex(jobz, m, n)
         else:
@@ -1467,7 +1467,7 @@ class SVDResult[A1, A2]:
         else:
             compile_error("tuple ('SVDResult') index out of range")
 
-def _svd(a, JOBZ: byte, compute_uv: Literal[bool]):
+def _svd(a, JOBZ: u8, compute_uv: Literal[bool]):
     B = type(_basetype(a.dtype))
     m, n = _rows_cols(a)
     min_m_n = min(m, n)
@@ -1478,7 +1478,7 @@ def _svd(a, JOBZ: byte, compute_uv: Literal[bool]):
     s_out = LinearizeData(1, min_m_n, 0, S.strides[-1])
 
     if compute_uv:
-        if JOBZ == byte(83):  # 'S'
+        if JOBZ == u8(83):  # 'S'
             u_columns = min_m_n
             v_rows = min_m_n
         else:
@@ -1512,7 +1512,7 @@ def _svd(a, JOBZ: byte, compute_uv: Literal[bool]):
 
         if not not_ok:
             if compute_uv:
-                if JOBZ == byte(65) and min_m_n == 0:
+                if JOBZ == u8(65) and min_m_n == 0:
                     LinearizeData.identity_matrix(params.U, m)
                     LinearizeData.identity_matrix(params.VT, n)
 
@@ -1639,10 +1639,10 @@ def svd(a,
             return evh
 
     if compute_uv:
-        jobz_code = byte(65 if full_matrices else 83)  # 'A' / 'S'
+        jobz_code = u8(65 if full_matrices else 83)  # 'A' / 'S'
         return _svd(a, jobz_code, compute_uv=True)
     else:
-        jobz_code = byte(78)  # 'N'
+        jobz_code = u8(78)  # 'N'
         return _svd(a, jobz_code, compute_uv=False)
 
 def svdvals(x):
@@ -1676,7 +1676,7 @@ class GeqrfParams:
         mem_buff = cobj(a_size + tau_size)
         a = mem_buff
         tau = a + a_size
-        str.memset(tau.as_byte(), byte(0), tau_size)
+        str.memset(tau.as_byte(), u8(0), tau_size)
 
         self.M = m
         self.N = n
@@ -1719,7 +1719,7 @@ class GeqrfParams:
         mem_buff = cobj(a_size + tau_size)
         a = mem_buff
         tau = a + a_size
-        str.memset(tau.as_byte(), byte(0), tau_size)
+        str.memset(tau.as_byte(), u8(0), tau_size)
 
         self.M = m
         self.N = n
@@ -2363,7 +2363,7 @@ def lstsq(a, b, rcond = None):
 
     if nrhs == 0:
         b2 = ndarray((m, 1), Ptr[b2.dtype](m))
-        str.memset(b2.data.as_byte(), byte(0), b2.nbytes)
+        str.memset(b2.data.as_byte(), u8(0), b2.nbytes)
         safe_nrhs = 1
     else:
         safe_nrhs = nrhs
@@ -2418,7 +2418,7 @@ def lstsq(a, b, rcond = None):
         raise LinAlgError("SVD did not converge in Linear Least Squares")
 
     if m == 0:
-        str.memset(x.data.as_byte(), byte(0), x.nbytes)
+        str.memset(x.data.as_byte(), u8(0), x.nbytes)
 
     if nrhs == 0:
         free(x.data)
@@ -2460,8 +2460,8 @@ def _dot_noblas(_ip1: Ptr[T1], is1: int, _ip2: Ptr[T2], is2: int, op: Ptr[T3], n
 _CBLAS_INT_MAX: Literal[int] = 0x7fffffff
 
 def _blas_stride(stride: int, itemsize: int):
-    if stride > 0 and stride % itemsize == 0:
-        stride //= itemsize
+    if stride > 0 and stride.cmod(itemsize) == 0:
+        stride = stride.cdiv(itemsize)
         if stride <= _CBLAS_INT_MAX:
             return stride
     return 0
@@ -2493,10 +2493,10 @@ def _is_blasable2d(byte_stride1: int,
                    d1: int,
                    d2: int,
                    itemsize: int):
-    unit_stride1 = byte_stride1 // itemsize
+    unit_stride1 = byte_stride1.cdiv(itemsize)
     if byte_stride2 != itemsize:
         return False
-    if (byte_stride1 % itemsize == 0 and
+    if (byte_stride1.cmod(itemsize) == 0 and
         unit_stride1 >= d2 and
         unit_stride1 <= BLAS_MAXSIZE):
         return True
@@ -2509,10 +2509,10 @@ def _gemv(ip1: Ptr[T], is1_m: int, is1_n: int,
     itemsize = sizeof(T)
     if _is_blasable2d(is1_m, is1_n, m, n, itemsize):
         order = fint(CBLAS_COL_MAJOR)
-        lda = is1_m // itemsize
+        lda = is1_m.cdiv(itemsize)
     else:
         order = fint(CBLAS_ROW_MAJOR)
-        lda = is1_n // itemsize
+        lda = is1_n.cdiv(itemsize)
 
     one_dtype = cast(1, T)
     zero_dtype = cast(0, T)
@@ -2526,8 +2526,8 @@ def _gemv(ip1: Ptr[T], is1_m: int, is1_n: int,
 
     args = (order, fint(CBLAS_TRANS), fint(n), fint(m),
             one, ip1.as_byte(), fint(lda), ip2.as_byte(),
-            fint(is2_n // itemsize), zero, op.as_byte(),
-            fint(op_m // itemsize))
+            fint(is2_n.cdiv(itemsize)), zero, op.as_byte(),
+            fint(op_m.cdiv(itemsize)))
 
     if T is float:
         cblas_dgemv(*args)
@@ -2546,21 +2546,21 @@ def _matmul_matrixmatrix(ip1: Ptr[T], is1_m: int, is1_n: int,
                          m: int, n: int, p: int, T: type):
     order = fint(CBLAS_ROW_MAJOR)
     itemsize = sizeof(T)
-    ldc = os_m // itemsize
+    ldc = os_m.cdiv(itemsize)
 
     if _is_blasable2d(is1_m, is1_n, m, n, itemsize):
         trans1 = fint(CBLAS_NO_TRANS)
-        lda = is1_m // itemsize
+        lda = is1_m.cdiv(itemsize)
     else:
         trans1 = fint(CBLAS_TRANS)
-        lda = is1_n // itemsize
+        lda = is1_n.cdiv(itemsize)
 
     if _is_blasable2d(is2_n, is2_p, n, p, itemsize):
         trans2 = fint(CBLAS_NO_TRANS)
-        ldb = is2_n // itemsize
+        ldb = is2_n.cdiv(itemsize)
     else:
         trans2 = fint(CBLAS_TRANS)
-        ldb = is2_p // itemsize
+        ldb = is2_p.cdiv(itemsize)
 
     one_dtype = cast(1, T)
     zero_dtype = cast(0, T)
@@ -3130,8 +3130,8 @@ def vdot(a, b):
         mismatch()
 
     if static.len(a.shape) == 1 and static.len(b.shape) == 1:
-        inca = a.strides[0] // a.itemsize
-        incb = b.strides[0] // b.itemsize
+        inca = a.strides[0].cdiv(a.itemsize)
+        incb = b.strides[0].cdiv(b.itemsize)
         return _vdot_ptr(a.data, b.data, n, inca, incb)
 
     if a._contig_match(b):
@@ -3692,7 +3692,7 @@ def _vector_norm_g(x: ndarray, axis: int, g, R: type):
             elem = _norm_cast((Ptr[dtype](data.as_byte() + (st * i)))[0])
             curr += abs(elem) ** R(g)
 
-        return curr ** (R(1) / R(g))
+        return curr ** (R(1).cdiv(R(g)))
     else:
         s = x.shape
         n = s[axis]
@@ -3709,7 +3709,7 @@ def _vector_norm_g(x: ndarray, axis: int, g, R: type):
                 elem = _norm_cast(x._ptr(idx1)[0])
                 curr += abs(elem) ** R(g)
 
-            q[0] = curr ** (R(1) / R(g))
+            q[0] = curr ** (R(1).cdiv(R(g)))
 
         return ans
 
@@ -4266,10 +4266,24 @@ def matrix_rank(A, tol = None, hermitian: bool = False):
 def cond(x, p = None):
     def cond_r_1(x, p: int):
         s = svd(x, compute_uv=False)
-        if p == -2:
-            return s[..., -1] / s[..., 0]
+        s0 = s[..., 0]
+        s1 = s[..., -1]
+
+        if isinstance(s0, Int) or isinstance(s0, UInt):
+            if p == -2:
+                return float(s1).cdiv(float(s0))
+            else:
+                return float(s0).cdiv(float(s1))
+        elif isfloat(type(s0)):
+            if p == -2:
+                return s1.cdiv(s0)
+            else:
+                return s0.cdiv(s1)
         else:
-            return s[..., 0] / s[..., -1]
+            if p == -2:
+                return s1 / s0
+            else:
+                return s0 / s1
 
     def cond_r_2(x, p):
         invx = _inv(x, ignore_errors=True)

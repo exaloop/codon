@@ -15,14 +15,11 @@ namespace folding {
 
 class FoldingPass : public OperatorPass, public Rewriter {
 private:
-  bool pyNumerics;
-
   void registerStandardRules(Module *m);
 
 public:
   /// Constructs a folding pass.
-  FoldingPass(bool pyNumerics = false)
-      : OperatorPass(/*childrenFirst=*/true), pyNumerics(pyNumerics) {}
+  FoldingPass() : OperatorPass(/*childrenFirst=*/true) {}
 
   static const std::string KEY;
   std::string getKey() const override { return KEY; }

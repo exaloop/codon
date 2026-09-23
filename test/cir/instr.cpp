@@ -35,7 +35,7 @@ TEST_F(CIRCoreTest, AssignInstrCloning) {
 
 TEST_F(CIRCoreTest, ExtractInstrQueryAndReplace) {
   auto FIELD = "foo";
-  auto *type = cast<types::RecordType>(module->unsafeGetMemberedType("**internal**"));
+  auto *type = cast<RecordType>(module->unsafeGetMemberedType("**internal**"));
   type->realize({module->getIntType()}, {FIELD});
   auto *var = module->Nr<Var>(type);
   auto *val = module->Nr<VarValue>(var);
@@ -54,7 +54,7 @@ TEST_F(CIRCoreTest, ExtractInstrQueryAndReplace) {
 
 TEST_F(CIRCoreTest, ExtractInstrCloning) {
   auto FIELD = "foo";
-  auto *type = cast<types::RecordType>(module->unsafeGetMemberedType("**internal**"));
+  auto *type = cast<RecordType>(module->unsafeGetMemberedType("**internal**"));
   type->realize({module->getIntType()}, {FIELD});
   auto *var = module->Nr<Var>(type);
   auto *val = module->Nr<VarValue>(var);
@@ -65,8 +65,7 @@ TEST_F(CIRCoreTest, ExtractInstrCloning) {
 
 TEST_F(CIRCoreTest, InsertInstrQueryAndReplace) {
   auto FIELD = "foo";
-  auto *type =
-      cast<types::RefType>(module->unsafeGetMemberedType("**internal**", true));
+  auto *type = cast<RefType>(module->unsafeGetMemberedType("**internal**", true));
   type->realize({module->getIntType()}, {FIELD});
   auto *var = module->Nr<Var>(type);
   auto *lhs = module->Nr<VarValue>(var);
@@ -85,8 +84,7 @@ TEST_F(CIRCoreTest, InsertInstrQueryAndReplace) {
 
 TEST_F(CIRCoreTest, InsertInstrCloning) {
   auto FIELD = "foo";
-  auto *type =
-      cast<types::RefType>(module->unsafeGetMemberedType("**internal**", true));
+  auto *type = cast<RefType>(module->unsafeGetMemberedType("**internal**", true));
   type->realize({module->getIntType()}, {FIELD});
   auto *var = module->Nr<Var>(type);
   auto *lhs = module->Nr<VarValue>(var);
@@ -97,7 +95,8 @@ TEST_F(CIRCoreTest, InsertInstrCloning) {
 }
 
 TEST_F(CIRCoreTest, CallInstrQueryAndReplace) {
-  auto *type = cast<types::FuncType>(module->unsafeGetDummyFuncType());
+  auto *type = cast<FuncType>(
+      module->unsafeGetFuncType("<internal_func_type>", module->getIntType(), {}));
   auto *func = module->Nr<BodiedFunc>();
   func->realize(type, {});
   auto *funcVal = module->Nr<VarValue>(func);
@@ -112,7 +111,8 @@ TEST_F(CIRCoreTest, CallInstrQueryAndReplace) {
 }
 
 TEST_F(CIRCoreTest, CallInstrCloning) {
-  auto *type = module->unsafeGetDummyFuncType();
+  auto *type =
+      module->unsafeGetFuncType("<internal_func_type>", module->getIntType(), {});
   auto *func = module->Nr<BodiedFunc>();
   func->realize(type, {});
   auto *funcVal = module->Nr<VarValue>(func);
@@ -124,7 +124,7 @@ TEST_F(CIRCoreTest, CallInstrCloning) {
 TEST_F(CIRCoreTest, StackAllocInstrQueryAndReplace) {
   auto COUNT = 1;
 
-  auto *arrayType = module->unsafeGetArrayType(module->getIntType());
+  auto *arrayType = module->unsafeGetPointerType(module->getIntType());
   auto *instr = module->Nr<StackAllocInstr>(arrayType, COUNT);
 
   ASSERT_EQ(COUNT, instr->getCount());
@@ -135,18 +135,18 @@ TEST_F(CIRCoreTest, StackAllocInstrQueryAndReplace) {
   ASSERT_EQ(arrayType, usedTypes[0]);
 
   ASSERT_EQ(1, instr->replaceUsedType(
-                   arrayType, module->unsafeGetArrayType(module->getFloatType())));
+                   arrayType, module->unsafeGetPointerType(module->getFloatType())));
 }
 
 TEST_F(CIRCoreTest, StackAllocInstrCloning) {
   auto COUNT = 1;
-  auto *arrayType = module->unsafeGetArrayType(module->getIntType());
+  auto *arrayType = module->unsafeGetPointerType(module->getIntType());
   auto *instr = module->Nr<StackAllocInstr>(arrayType, COUNT);
   ASSERT_TRUE(util::match(instr, cv->clone(instr)));
 }
 
 TEST_F(CIRCoreTest, TypePropertyInstrQueryAndReplace) {
-  auto *type = module->unsafeGetArrayType(module->getIntType());
+  auto *type = module->unsafeGetPointerType(module->getIntType());
   auto *instr =
       module->Nr<TypePropertyInstr>(type, TypePropertyInstr::Property::IS_ATOMIC);
 
@@ -162,18 +162,18 @@ TEST_F(CIRCoreTest, TypePropertyInstrQueryAndReplace) {
   ASSERT_EQ(type, usedTypes[0]);
 
   ASSERT_EQ(1, instr->replaceUsedType(
-                   type, module->unsafeGetArrayType(module->getFloatType())));
+                   type, module->unsafeGetPointerType(module->getFloatType())));
 }
 
 TEST_F(CIRCoreTest, TypePropertyInstrCloning) {
-  auto *type = module->unsafeGetArrayType(module->getIntType());
+  auto *type = module->unsafeGetPointerType(module->getIntType());
   auto *instr =
       module->Nr<TypePropertyInstr>(type, TypePropertyInstr::Property::IS_ATOMIC);
   ASSERT_TRUE(util::match(instr, cv->clone(instr)));
 }
 
 TEST_F(CIRCoreTest, YieldInInstrQueryAndReplace) {
-  auto *type = module->unsafeGetArrayType(module->getIntType());
+  auto *type = module->unsafeGetPointerType(module->getIntType());
   auto *instr = module->Nr<YieldInInstr>(type);
 
   ASSERT_EQ(type, instr->getType());
@@ -183,11 +183,11 @@ TEST_F(CIRCoreTest, YieldInInstrQueryAndReplace) {
   ASSERT_EQ(type, usedTypes[0]);
 
   ASSERT_EQ(1, instr->replaceUsedType(
-                   type, module->unsafeGetArrayType(module->getFloatType())));
+                   type, module->unsafeGetPointerType(module->getFloatType())));
 }
 
 TEST_F(CIRCoreTest, YieldInInstrCloning) {
-  auto *type = module->unsafeGetArrayType(module->getIntType());
+  auto *type = module->unsafeGetPointerType(module->getIntType());
   auto *instr = module->Nr<YieldInInstr>(type);
   ASSERT_TRUE(util::match(instr, cv->clone(instr)));
 }

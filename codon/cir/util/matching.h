@@ -18,7 +18,7 @@ public:
   using AcceptorExtend::AcceptorExtend;
 
 private:
-  types::Type *doGetType() const override { return getModule()->getVoidType(); }
+  Type *doGetType() const override { return getModule()->getIntType(); }
 };
 
 /// Any flow.

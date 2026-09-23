@@ -77,9 +77,9 @@ endif()
 
 CPMAddPackage(
     NAME bdwgc
-    GITHUB_REPOSITORY "exaloop/bdwgc"
-    VERSION 8.0.5
-    GIT_TAG e16c67244aff26802203060422545d38305e0160
+    GITHUB_REPOSITORY "bdwgc/bdwgc"
+    VERSION 8.2.12
+    GIT_TAG v8.2.12
     EXCLUDE_FROM_ALL YES
     OPTIONS "CMAKE_POSITION_INDEPENDENT_CODE ON"
             "BUILD_SHARED_LIBS OFF"
@@ -94,7 +94,7 @@ endif()
 CPMAddPackage(
     NAME backtrace
     GITHUB_REPOSITORY "ianlancetaylor/libbacktrace"
-    GIT_TAG d0f5e95a87a4d3e0a1ed6c069b5dae7cbab3ed2a
+    GIT_TAG 6f8310e238fc3ce68f42f391cbe93fd156bb2c23
     DOWNLOAD_ONLY YES)
 if(backtrace_ADDED)
     set(backtrace_SOURCES
@@ -118,6 +118,7 @@ if(backtrace_ADDED)
     set(BACKTRACE_SUPPORTS_THREADS 1)
     set(BACKTRACE_SUPPORTS_DATA 1)
     set(HAVE_SYNC_FUNCTIONS 1)
+    set(HAVE_LINK_H 1)
     if(APPLE)
         set(HAVE_MACH_O_DYLD_H 1)
         list(APPEND backtrace_SOURCES "${backtrace_SOURCE_DIR}/macho.c")
@@ -160,11 +161,13 @@ if(NOT SYSTEM_BLAS)
     CPMAddPackage(
         NAME openblas
         GITHUB_REPOSITORY "OpenMathLib/OpenBLAS"
-        GIT_TAG v0.3.29
+        GIT_TAG v0.3.33
         EXCLUDE_FROM_ALL YES
         OPTIONS "DYNAMIC_ARCH ON"
                 "BUILD_TESTING OFF"
                 "BUILD_BENCHMARKS OFF"
+                "INTERFACE64 ON"
+                "SYMBOLSUFFIX 64_"
                 "NUM_THREADS 64"
                 "CCOMMON_OPT -O3")
 endif()

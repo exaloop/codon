@@ -41,6 +41,7 @@ class Compiler;
 namespace codon::ast {
 
 extern const std::string VAR_ARGV;
+extern const std::string VAR_ARGC;
 extern const std::string FN_OPTIONAL_UNWRAP;
 
 /// Forward declarations
@@ -154,7 +155,7 @@ struct Cache {
       /// A list of field names and realization's realized field types.
       std::vector<std::pair<std::string, types::TypePtr>> fields;
       /// IR type pointer.
-      codon::ir::types::Type *ir = nullptr;
+      codon::ir::Type *ir = nullptr;
       // Bases (in MRO order)
       std::vector<std::shared_ptr<types::ClassType>> bases;
 
@@ -253,8 +254,6 @@ struct Cache {
                      std::function<Stmt *(ast::TypecheckVisitor *, ast::CustomStmt *)>>
       customExprStmts;
 
-  /// Set if the Codon is running in JIT mode.
-  bool isJit = false;
   int jitCell = 0;
 
   std::unordered_set<size_t> generatedTuples;
@@ -262,13 +261,9 @@ struct Cache {
   std::vector<std::vector<std::string>> generatedTupleNames = {{}};
   ParserErrors errors;
 
-  /// Set if Codon operates in Python compatibility mode (e.g., with Python numerics)
-  bool pythonCompat = false;
-  /// Set if Codon operates in Python extension mode
-  bool pythonExt = false;
-
 public:
-  explicit Cache(std::string argv0 = "",
+  explicit Cache(std::vector<std::unique_ptr<ast::ASTNode>> &nodes,
+                 std::string argv0 = "",
                  const std::shared_ptr<IFilesystem> &fs = nullptr);
 
   /// Return a uniquely named temporary variable of a format
@@ -301,8 +296,8 @@ public:
 
   /// Given a class type and the matching generic vector, instantiate the type and
   /// realize it.
-  ir::types::Type *realizeType(types::ClassType *type,
-                               const std::vector<types::TypePtr> &generics = {});
+  ir::Type *realizeType(types::ClassType *type,
+                        const std::vector<types::TypePtr> &generics = {});
   /// Given a function type and function arguments, instantiate the type and
   /// realize it. The first argument is the function return type.
   /// You can also pass function generics if a function has one (e.g. T in def
@@ -313,9 +308,9 @@ public:
                             const std::vector<types::TypePtr> &generics = {},
                             types::ClassType *parentClass = nullptr);
 
-  ir::types::Type *makeTuple(const std::vector<types::TypePtr> &types);
-  ir::types::Type *makeFunction(const std::vector<types::TypePtr> &types);
-  ir::types::Type *makeUnion(const std::vector<types::TypePtr> &types);
+  ir::Type *makeTuple(const std::vector<types::TypePtr> &types);
+  ir::Type *makeFunction(const std::vector<types::TypePtr> &types);
+  ir::Type *makeUnion(const std::vector<types::TypePtr> &types);
 
   size_t getRealizationId(types::ClassType *type);
   std::vector<size_t> getBaseRealizationIds(types::ClassType *type);

@@ -12,6 +12,8 @@ analyze::Result *Pass::doGetAnalysis(const std::string &key) {
   return manager ? manager->getAnalysisResult(key) : nullptr;
 }
 
+Options *Pass::getOptions() const { return manager ? manager->getOptions() : nullptr; }
+
 void PassGroup::run(Module *module) {
   for (auto &p : passes)
     p->run(module);

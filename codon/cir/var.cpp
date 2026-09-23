@@ -9,11 +9,11 @@ namespace ir {
 
 const char Var::NodeId = 0;
 
-Var::Var(types::Type *type, bool global, bool external, bool tls, std::string name)
+Var::Var(Type *type, bool global, bool external, bool tls, std::string name)
     : ReplaceableNodeBase(std::move(name)), type(type), global(global),
       external(external), tls(tls) {}
 
-int Var::doReplaceUsedType(const std::string &name, types::Type *newType) {
+int Var::doReplaceUsedType(const std::string &name, Type *newType) {
   if (type->getName() == name) {
     type = newType;
     return 1;
@@ -33,7 +33,7 @@ int VarValue::doReplaceUsedVariable(id_t id, Var *newVar) {
 
 const char PointerValue::NodeId = 0;
 
-types::Type *PointerValue::doGetType() const {
+Type *PointerValue::doGetType() const {
   return getModule()->getPointerType(val->getType());
 }
 
