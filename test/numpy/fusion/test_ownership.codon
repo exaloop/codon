@@ -158,7 +158,8 @@ def retained_filtered_tuple(values, count):
 
 @test
 def test_filtered_replacement():
-    for original in (np.arange(16.), np.arange(16.)[::-1], np.arange(32.)[::2], np.arange(0.)):
+    for original in (np.arange(16.), np.arange(16.)[::-1], np.arange(32.)[::2], np.arange(0.),
+                     np.arange(63.), np.arange(64.), np.arange(65.), np.arange(96.)[::-1]):
         for count in (0, 1, 7):
             for stop in (-1, 0, 3):
                 snapshot = original.copy()
@@ -203,7 +204,8 @@ def test_filtered_replacement():
 
 @test
 def test_prompt_release():
-    for original in (np.arange(17.), np.arange(34.)[::2], np.arange(17.)[::-1], np.arange(0.)):
+    for original in (np.arange(17.), np.arange(34.)[::2], np.arange(17.)[::-1], np.arange(0.),
+                     np.arange(63.), np.arange(64.), np.arange(65.)):
         for values in (original.copy(), original.copy()[::-1], np.repeat(original, 2)[::2]):
             snapshot = values.copy()
             expected = snapshot + 2.0 * snapshot[::-1]

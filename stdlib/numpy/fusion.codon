@@ -140,6 +140,7 @@ def _clip_layout(arrays, dtype: type):
     shape = broadcast_shapes(*tuple(array.shape for array in arrays))
     return ndarray(shape, Ptr[dtype]())
 
+@inline
 def _loop_alloc_layout(arrays, func, extra, layout, dtype: type):
     if layout.data != Ptr[dtype]():
         return layout
@@ -675,6 +676,11 @@ def _shape(x):
 
 def _free(x):
     util.free(x.data)
+
+@inline
+def _free_replacement(x, threshold: int):
+    if x.nbytes >= threshold:
+        util.free(x.data)
 
 def _free_copy_source(source, result):
     # Layout-aware copy/cast helpers can return the source; only a distinct result

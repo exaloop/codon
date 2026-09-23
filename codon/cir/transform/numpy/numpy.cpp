@@ -44,6 +44,12 @@ llvm::cl::opt<bool> FuseMatmul(
     llvm::cl::desc("Fuse compatible matmul additions and subtractions into BLAS"),
     llvm::cl::init(true));
 
+llvm::cl::opt<unsigned> ReplacementFreeThreshold(
+    "npfree-threshold",
+    llvm::cl::desc("Minimum NumPy loop-replacement buffer size in bytes to free "
+                   "(0 always frees eligible buffers)"),
+    llvm::cl::init(512));
+
 llvm::cl::opt<bool> Verbose("npfuse-verbose",
                             llvm::cl::desc("Print information about fused expressions"),
                             llvm::cl::init(false));
@@ -2034,8 +2040,9 @@ void NumPyLifetimePass::visit(BodiedFunc *func) {
       body->insert(body->begin(),
                    module->Nr<AssignInstr>(owned, module->getBool(false)));
       replacedVariables.insert(entry.first);
-      auto *release =
-          module->getOrRealizeFunc("_free", {variable->getType()}, {}, FUSION_MODULE);
+      auto *release = module->getOrRealizeFunc(
+          "_free_replacement", {variable->getType(), module->getIntType()}, {},
+          FUSION_MODULE);
       seqassertn(release, "NumPy release function not found");
       for (const auto &replacement : entry.second) {
         auto *series = module->Nr<SeriesFlow>();
@@ -2045,7 +2052,9 @@ void NumPyLifetimePass::visit(BodiedFunc *func) {
         auto *result = util::makeVar(replacement.assignment->getRhs(), series, func);
         series->push_back(module->Nr<IfFlow>(
             module->Nr<VarValue>(owned),
-            util::series(util::call(release, {module->Nr<VarValue>(owner)}))));
+            util::series(
+                util::call(release, {module->Nr<VarValue>(owner),
+                                     module->getInt(ReplacementFreeThreshold)}))));
         if (replacement.owned)
           series->push_back(
               module->Nr<AssignInstr>(owner, module->Nr<VarValue>(result)));

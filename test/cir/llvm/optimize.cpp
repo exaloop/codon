@@ -536,6 +536,91 @@ def retain_filtered_tuple(values: np.ndarray[float, 1], mask: np.ndarray[bool, 1
       testing::ExitedWithCode(EXIT_SUCCESS), "");
 }
 
+TEST(LLVMOptimizationTest, ThresholdsNumpyReplacementCleanup) {
+  for (unsigned threshold : {512u, 0u, 1024u}) {
+    SCOPED_TRACE(threshold);
+    ASSERT_EXIT(
+        {
+          if (threshold != 512) {
+            auto *option = llvm::cl::getRegisteredOptions().lookup("npfree-threshold");
+            ASSERT_NE(nullptr, option);
+            ASSERT_FALSE(option->addOccurrence(0, "npfree-threshold",
+                                               std::to_string(threshold)));
+          }
+          auto compiler = compileAndOptimize(R"(
+import numpy as np
+from numpy.fusion import _free, _free_replacement
+
+@export
+def below_threshold(data: Ptr[byte]):
+    _free_replacement(np.ndarray[np.uint8, 1]((511,), data), 512)
+
+@export
+def at_threshold(data: Ptr[byte]):
+    _free_replacement(np.ndarray[np.uint8, 1]((512,), data), 512)
+
+@export
+def above_threshold(data: Ptr[byte]):
+    _free_replacement(np.ndarray[np.uint8, 1]((513,), data), 512)
+
+@export
+def matrix_at_threshold(data: Ptr[float]):
+    _free_replacement(np.ndarray[float, 2]((8, 8), data), 512)
+
+@export
+def ordinary_small_free(data: Ptr[byte]):
+    _free(np.ndarray[np.uint8, 1]((511,), data))
+
+@export
+def replace_small(data: Ptr[float], count: int):
+  values = np.ndarray[float, 1]((63,), data)
+  for iteration in range(count):
+    temporary = values * values + 1.0
+    values[:] = temporary
+    values[:] = temporary
+
+@export
+def replace_large(data: Ptr[float], count: int):
+  values = np.ndarray[float, 1]((64,), data)
+  for iteration in range(count):
+    temporary = values * values + 1.0
+    values[:] = temporary
+    values[:] = temporary
+)");
+          auto *module = compiler->getLLVMVisitor()->getModule();
+          for (auto name : {"below_threshold", "at_threshold", "above_threshold",
+                            "matrix_at_threshold", "ordinary_small_free",
+                            "replace_small", "replace_large"}) {
+            auto *function = module->getFunction(name);
+            ASSERT_NE(nullptr, function);
+            unsigned releases = 0;
+            for (auto &block : *function) {
+              for (auto &instruction : block) {
+                auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+                auto *callee = call ? call->getCalledFunction() : nullptr;
+                if (!callee)
+                  continue;
+                EXPECT_FALSE(callee->getName().contains("_free_replacement"));
+                releases += callee->getName() == "seq_free";
+              }
+            }
+            unsigned expected = llvm::StringRef(name) != "below_threshold";
+            if (llvm::StringRef(name) == "replace_small")
+              expected = threshold <= 63 * sizeof(double);
+            else if (llvm::StringRef(name) == "replace_large")
+              expected = threshold <= 64 * sizeof(double);
+            if (releases != expected)
+              llvm::errs() << name << ": releases=" << releases
+                           << ", expected=" << expected << '\n'
+                           << *function;
+            EXPECT_EQ(expected, releases) << name;
+          }
+          std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+        },
+        testing::ExitedWithCode(EXIT_SUCCESS), "");
+  }
+}
+
 TEST(LLVMOptimizationTest, PacksAndReleasesReversedDotOperands) {
   ASSERT_EXIT(
       {
@@ -785,6 +870,125 @@ def helper_nodes_over(values):
         EXPECT_EQ(1, inspection->occurrenceCalls);
         EXPECT_GT(inspection->irBudgetCalls, 4);
         EXPECT_LT(inspection->irBudgetCalls, 20);
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(LLVMOptimizationTest, InlinesLayoutSensitiveFusionCallbacks) {
+  ASSERT_EXIT(
+      {
+        auto compiler = compileAndOptimize(R"(
+import numpy as np
+
+@export
+def layout_stencil(steps: int, left: np.ndarray[float, 3], right: np.ndarray[float, 3]):
+  for step in range(1, steps):
+    right[1:-1, 1:-1, 1:-1] = (
+      0.125 * (left[2:, 1:-1, 1:-1] - 2.0 * left[1:-1, 1:-1, 1:-1] + left[:-2, 1:-1, 1:-1])
+      + 0.125 * (left[1:-1, 2:, 1:-1] - 2.0 * left[1:-1, 1:-1, 1:-1] + left[1:-1, :-2, 1:-1])
+      + 0.125 * (left[1:-1, 1:-1, 2:] - 2.0 * left[1:-1, 1:-1, 1:-1] + left[1:-1, 1:-1, :-2])
+      + left[1:-1, 1:-1, 1:-1])
+    left[1:-1, 1:-1, 1:-1] = (
+      0.125 * (right[2:, 1:-1, 1:-1] - 2.0 * right[1:-1, 1:-1, 1:-1] + right[:-2, 1:-1, 1:-1])
+      + 0.125 * (right[1:-1, 2:, 1:-1] - 2.0 * right[1:-1, 1:-1, 1:-1] + right[1:-1, :-2, 1:-1])
+      + 0.125 * (right[1:-1, 1:-1, 2:] - 2.0 * right[1:-1, 1:-1, 1:-1] + right[1:-1, 1:-1, :-2])
+      + right[1:-1, 1:-1, 1:-1])
+)");
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        auto *stencil = module->getFunction("layout_stencil");
+        ASSERT_NE(stencil, nullptr);
+        EXPECT_FALSE(stencil->isDeclaration());
+        for (auto &function : *module) {
+          if (function.getName().contains("_loop_alloc_layout") ||
+              function.getName().starts_with("__numpy_fusion_scalar_fn"))
+            llvm::errs() << "Outlined fusion helper: " << function.getName() << '\n';
+          EXPECT_FALSE(function.getName().contains("_loop_alloc_layout"))
+              << function.getName().str();
+          EXPECT_FALSE(function.getName().starts_with("__numpy_fusion_scalar_fn"))
+              << function.getName().str();
+        }
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(LLVMOptimizationTest, VectorizesNumpyUfuncOuter) {
+  ASSERT_EXIT(
+      {
+        auto compiler = compileAndOptimize(R"(
+import numpy as np
+
+@export
+def outer_sum(left: np.ndarray[np.int32, 1], right: np.ndarray[np.int32, 1]):
+  return np.add.outer(left, right)
+)");
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        auto *outer = module->getFunction("outer_sum");
+        ASSERT_NE(outer, nullptr);
+        bool vectorAdd = false;
+        for (auto &block : *outer) {
+          for (auto &instruction : block) {
+            if (instruction.getOpcode() == llvm::Instruction::Add &&
+                instruction.getType()->isVectorTy() &&
+                instruction.getType()->getScalarType()->isIntegerTy(32))
+              vectorAdd = true;
+          }
+        }
+        if (!vectorAdd)
+          llvm::errs() << "Missing vector int32 addition in ufunc outer\n";
+        EXPECT_TRUE(vectorAdd);
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(LLVMOptimizationTest, VectorizesNumpyUfuncAxisLoops) {
+  ASSERT_EXIT(
+      {
+        auto compiler = compileAndOptimize(R"(
+import numpy as np
+
+@export
+def reduce_int(values: np.ndarray[np.int32, 2]):
+  return np.add.reduce(values, axis=0, initial=np.int32(0))
+
+@export
+def scan_int(values: np.ndarray[np.int32, 2]):
+  return np.add.accumulate(values, axis=0)
+
+@export
+def reduce_float(values: np.ndarray[float, 2]):
+  return np.add.reduce(values, axis=0, initial=0.)
+
+@export
+def scan_float(values: np.ndarray[float, 2]):
+  return np.add.accumulate(values, axis=0)
+)");
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        for (auto name : {"reduce_int", "scan_int", "reduce_float", "scan_float"}) {
+          auto *function = module->getFunction(name);
+          ASSERT_NE(function, nullptr);
+          bool vectorAdd = false;
+          for (auto &block : *function) {
+            for (auto &instruction : block) {
+              if (instruction.getOpcode() == llvm::Instruction::FAdd) {
+                EXPECT_FALSE(instruction.getFastMathFlags().allowReassoc());
+                vectorAdd |= instruction.getType()->isVectorTy();
+              } else if (instruction.getOpcode() == llvm::Instruction::Add &&
+                         instruction.getType()->isVectorTy() &&
+                         instruction.getType()->getScalarType()->isIntegerTy(32)) {
+                vectorAdd = true;
+              }
+            }
+          }
+          if (!vectorAdd)
+            llvm::errs() << "Missing vector addition in " << name << '\n';
+          EXPECT_TRUE(vectorAdd);
+        }
         std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
       },
       testing::ExitedWithCode(EXIT_SUCCESS), "");

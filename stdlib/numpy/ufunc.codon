@@ -799,9 +799,11 @@ class BinaryUFunc:
 
         fn = self._op
         new_shape = (0, ) * (static.len(shape) - static.len(axis))
+        lane_strides = (0, ) * static.len(new_shape)
         idx_bound = (0, ) * static.len(axis)
         mask = (False, ) * static.len(shape)
         ptr_new_shape = Ptr[int](__ptr__(new_shape).as_byte())
+        ptr_lane_strides = Ptr[int](__ptr__(lane_strides).as_byte())
         ptr_idx_bound = Ptr[int](__ptr__(idx_bound).as_byte())
         ptr_mask = Ptr[bool](__ptr__(mask).as_byte())
 
@@ -821,6 +823,7 @@ class BinaryUFunc:
             else:
                 shape_size *= s
                 ptr_new_shape[b] = s
+                ptr_lane_strides[b] = array.strides[i]
                 ptr_mask[i] = True
                 b += 1
 
@@ -836,6 +839,33 @@ class BinaryUFunc:
         else:
             where = routines.asarray(where)
             util.broadcast(where.shape, array.shape)  # error check
+
+        if out is None and isinstance(where, bool) and static.len(new_shape) > 0:
+            if (where and shape_size > 0 and bound_size > 0 and
+                new_shape[-1] >= max(16, 64 // array.itemsize) and
+                (lane_strides[-1] == array.itemsize or lane_strides[-1] == 0)):
+                if initial is None:
+                    first = ndarray(new_shape, lane_strides, array.data)
+                    result[:] = first
+                else:
+                    result[:] = initial
+                functor = _BinaryFunctor(self, dtype, dtype, NoneType)
+                first_step = True
+                for reduced_index in util.multirange(idx_bound):
+                    if initial is None:
+                        if first_step:
+                            first_step = False
+                            continue
+                    index = util.reconstruct_index((0,) * static.len(new_shape),
+                                                   reduced_index, mask)
+                    values = ndarray(new_shape, lane_strides, array._ptr(index))
+                    ndarray._loop((result, result, values), functor,
+                                  broadcast='none', optimize_order=False, alias=True)
+                if keepdims:
+                    ones = (1,) * static.len(idx_bound)
+                    return result.reshape(util.reconstruct_index(new_shape, ones, mask))
+                else:
+                    return result
 
         if calc:
             for t1 in util.multirange(new_shape):
@@ -933,6 +963,25 @@ class BinaryUFunc:
             util.broadcast(array.shape, out.shape)  # error check
             result = out
 
+        if out is None and dtype is array.dtype and static.len(new_shape) > 0:
+            lane_strides = util.tuple_delete(array.strides, axis)
+            if (array.size > 0 and new_shape[-1] >= max(16, 64 // array.itemsize) and
+                (lane_strides[-1] == array.itemsize or lane_strides[-1] == 0)):
+                output_strides = util.tuple_delete(result.strides, axis)
+                previous = ndarray(new_shape, output_strides, result.data)
+                first = ndarray(new_shape, lane_strides, array.data)
+                previous[:] = first
+                functor = _BinaryFunctor(self, dtype, dtype, NoneType)
+                for step in range(1, idx_bound):
+                    index = util.reconstruct_index((0,) * static.len(new_shape),
+                                                   (step,), mask)
+                    values = ndarray(new_shape, lane_strides, array._ptr(index))
+                    destination = ndarray(new_shape, output_strides, result._ptr(index))
+                    ndarray._loop((destination, previous, values), functor,
+                                  broadcast='none', optimize_order=False)
+                    previous = destination
+                return result
+
         for t1 in util.multirange(new_shape):
             idx = util.reconstruct_index(t1, (0, ), mask)
             curr = array._ptr(idx)[0]
@@ -984,10 +1033,10 @@ class BinaryUFunc:
         else:
             out = routines.empty(sc, dtype=dtype)
 
-        for idx1 in util.multirange(sa):
-            for idx2 in util.multirange(sb):
-                xa = util.cast(A._ptr(idx1)[0], R1)
-                xb = util.cast(B._ptr(idx2)[0], R2)
-                out._ptr(idx1 + idx2)[0] = util.cast(fn(xa, xb), out.dtype)
+        left = ndarray(sc, A.strides + (0,) * static.len(sb), A.data)
+        right = ndarray(sc, (0,) * static.len(sa) + B.strides, B.data)
+        functor = _BinaryFunctor(self, R1, R2, NoneType)
+        ndarray._loop((out, left, right), functor,
+                      broadcast='none', optimize_order=False)
 
         return out
