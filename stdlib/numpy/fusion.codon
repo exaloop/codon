@@ -603,18 +603,21 @@ def _matmul_add_fallback(left, right, bias, output, mode: Literal[int]):
 
         ndarray._loop((product, bias), accumulate, broadcast='first')
         result = product
-    elif mode == 0:
-        result = product + bias
-    elif mode == 1:
-        result = bias + product
-    elif mode == 2:
-        result = product - bias
     else:
-        result = bias - product
+        if mode == 0:
+            result = product + bias
+        elif mode == 1:
+            result = bias + product
+        elif mode == 2:
+            result = product - bias
+        else:
+            result = bias - product
+        _free(product)
     if output is None:
         return result
     else:
         output[:] = result
+        _free(result)
         return output
 
 def _matmul_add(left, right, bias, output=None, mode: Literal[int] = 0):

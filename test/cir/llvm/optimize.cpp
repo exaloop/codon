@@ -1928,6 +1928,66 @@ def syrk_out(values: Ptr[np.float32]):
       testing::ExitedWithCode(EXIT_SUCCESS), "");
 }
 
+TEST(LLVMOptimizationTest, ReleasesMatmulFallbackTemporaries) {
+  ASSERT_EXIT(
+      {
+        auto compiler = compileAndOptimize(R"(
+import numpy as np
+from numpy.fusion import _matmul_add_fallback
+
+@export
+def fallback_return(values: Ptr[float], addend: Ptr[float]):
+  left = np.ndarray((8, 0), values)
+  bias = np.ndarray((8, 8), addend)
+  return _matmul_add_fallback(left, left.T, bias, None, 0)
+
+@export
+def fallback_into(values: Ptr[float], addend: Ptr[float]):
+  left = np.ndarray((8, 0), values)
+  bias = np.ndarray((8, 8), addend)
+  return _matmul_add_fallback(left, left.T, bias, bias, 1)
+
+@export
+def expanded_return(values: Ptr[float], addend: Ptr[float]):
+  left = np.ndarray((1, 0), values)
+  right = np.ndarray((0, 8), values)
+  bias = np.ndarray((8, 8), addend)
+  return _matmul_add_fallback(left, right, bias, None, 2)
+
+@export
+def expanded_into(values: Ptr[float], addend: Ptr[float]):
+  left = np.ndarray((1, 0), values)
+  right = np.ndarray((0, 8), values)
+  bias = np.ndarray((8, 8), addend)
+  return _matmul_add_fallback(left, right, bias, bias, 3)
+)");
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        for (auto [name, expected] : {std::pair{"fallback_return", 1},
+                                      {"fallback_into", 2},
+                                      {"expanded_return", 1},
+                                      {"expanded_into", 2}}) {
+          auto *function = module->getFunction(name);
+          ASSERT_NE(nullptr, function);
+          unsigned releases = 0;
+          for (auto &block : *function) {
+            for (auto &instruction : block) {
+              auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+              auto *callee = call ? call->getCalledFunction() : nullptr;
+              if (callee && callee->getName() == "seq_free")
+                ++releases;
+            }
+          }
+          if (releases != expected)
+            llvm::errs() << name << ": releases=" << releases
+                         << ", expected=" << expected << '\n';
+          EXPECT_EQ(expected, releases) << name;
+        }
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
 TEST(LLVMOptimizationTest, ReusesOpenMPThreadIds) {
   ASSERT_EXIT(
       {

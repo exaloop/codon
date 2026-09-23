@@ -176,5 +176,55 @@ def test_syrk_add_values():
         check_syrk_add_dtype(np.float32, mode)
         check_syrk_add_dtype(np.float64, mode)
 
+@noinline
+def fallback_churn(shape, dtype: type):
+    return np.full(shape, dtype(-12345))
+
+def check_fallback_lifetime(dtype: type, mode: Literal[int]):
+    from numpy.fusion import _matmul_add_fallback
+
+    matrix = np.arange(24, dtype=dtype).reshape(4, 6)
+    for left, right in ((matrix, matrix.T), (matrix[:1], matrix.T),
+                        (matrix, matrix.T[:, :1]),
+                        (matrix[:, :0], matrix.T[:0, :]),
+                        (matrix[:0], matrix.T)):
+        rows = 0 if left.shape[0] == 0 else 4
+        bias = np.arange(rows * 4, dtype=dtype).reshape(rows, 4)
+        original_left, original_right = left.copy(), right.copy()
+        original_bias = bias.copy()
+        expected = matmul_add_reference(left, right, bias, mode)
+        result = _matmul_add_fallback(left, right, bias, None, mode)
+        churn = fallback_churn(result.shape, dtype)
+        assert result.data != churn.data
+        assert result.data != bias.data
+        assert np.array_equal(result, expected)
+        assert np.all(churn == dtype(-12345))
+        for order in ('C', 'F'):
+            storage = np.empty(bias.shape, dtype=dtype, order=order)
+            for output in (storage, storage[:, ::-1]):
+                result = _matmul_add_fallback(left, right, bias, output, mode)
+                churn = fallback_churn(result.shape, dtype)
+                assert result.data == output.data
+                assert result.data != churn.data
+                assert np.array_equal(result, expected)
+                assert np.all(churn == dtype(-12345))
+                output[:] = bias
+                result = _matmul_add_fallback(left, right, output, output, mode)
+                churn = fallback_churn(result.shape, dtype)
+                assert result.data == output.data
+                assert result.data != churn.data
+                assert np.array_equal(result, expected)
+                assert np.all(churn == dtype(-12345))
+        assert np.array_equal(left, original_left)
+        assert np.array_equal(right, original_right)
+        assert np.array_equal(bias, original_bias)
+
+@test
+def test_matmul_fallback_lifetime():
+    for mode in static.range(4):
+        check_fallback_lifetime(np.float32, mode)
+        check_fallback_lifetime(np.float64, mode)
+
 test_matmul_add_values()
 test_syrk_add_values()
+test_matmul_fallback_lifetime()
