@@ -484,6 +484,7 @@ INSTANTIATE_TEST_SUITE_P(
         "stdlib/math_test.codon",
         "stdlib/cmath_test.codon",
         "stdlib/datetime_test.codon",
+        "stdlib/getopt_test.codon",
         "stdlib/itertools_test.codon",
         "stdlib/json_test.codon",
         "stdlib/bisect_test.codon",
