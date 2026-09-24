@@ -593,24 +593,25 @@ def _reduce(arr,
     for i in static.range(static.len(shape)):
         s = shape[i]
         stride = strides[i]
+        magnitude = abs(stride)
 
         if i in ax:
             bound_size *= s
             ptr_idx_bound[a] = s
             ptr_sub_strides[a] = stride
             ptr_mask[i] = False
-            if (stride and
-                (min_stride_bound == -1 or abs(stride) < min_stride_bound)):
-                min_stride_bound = stride
+            if (magnitude and
+                (min_stride_bound == -1 or magnitude < min_stride_bound)):
+                min_stride_bound = magnitude
             a += 1
         else:
             shape_size *= s
             ptr_new_shape[b] = s
             ptr_out_strides[b] = stride
             ptr_mask[i] = True
-            if (stride and
-                (min_stride_shape == -1 or abs(stride) < min_stride_shape)):
-                min_stride_shape = stride
+            if (magnitude and
+                (min_stride_shape == -1 or magnitude < min_stride_shape)):
+                min_stride_shape = magnitude
             b += 1
 
     if hasattr(type(

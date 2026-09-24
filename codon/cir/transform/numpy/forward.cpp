@@ -74,38 +74,25 @@ struct GetAllUses : public util::Operator {
   }
 };
 
-bool canForwardExpressionAlongPath(
+bool canForwardExpressionInBlock(
     Value *source, Value *destination, std::unordered_set<id_t> &vids,
-    const std::unordered_map<id_t, NumPyExpr *> &parsedValues, SE *se,
-    const std::vector<CFBlock *> &path) {
-  if (path.empty())
-    return true;
-
-  bool go = false;
-  for (auto *block : path) {
-    for (const auto *value : *block) {
-      // Skip things before 'source' in first block
-      if (!go && block == path.front() && value == source) {
-        go = true;
-        continue;
-      }
-
-      // Skip things after 'destination' in last block
-      if (go && block == path.back() && value == destination) {
-        go = false;
-        break;
-      }
-
-      if (!go)
-        continue;
-
-      OkToForwardPast check(vids, parsedValues, se);
-      const_cast<Value *>(value)->accept(check);
-      if (!check.ok)
-        return false;
+    const std::unordered_map<id_t, NumPyExpr *> &parsedValues, SE *se, CFBlock *block) {
+  bool go = source == nullptr;
+  for (const auto *value : *block) {
+    if (!go) {
+      go = value == source;
+      continue;
     }
+
+    if (value == destination)
+      return true;
+
+    OkToForwardPast check(vids, parsedValues, se);
+    const_cast<Value *>(value)->accept(check);
+    if (!check.ok)
+      return false;
   }
-  return true;
+  return go && destination == nullptr;
 }
 
 bool canForwardExpression(NumPyOptimizationUnit *expr, Value *target,
@@ -133,27 +120,60 @@ bool canForwardExpression(NumPyOptimizationUnit *expr, Value *target,
   auto *end = cfg->getBlock(target);
   seqassertn(start, "start CFG block not found");
   seqassertn(end, "end CFG block not found");
-  bool ok = true;
+  // A consumer must not run again without reexecuting its producer. Single-use
+  // syntax alone does not prove this when the consumer is inside a loop.
+  std::unordered_set<CFBlock *> visited;
+  std::vector<CFBlock *> pending(end->successors_begin(), end->successors_end());
+  while (!pending.empty()) {
+    auto *curr = pending.back();
+    pending.pop_back();
+    if (curr == start)
+      continue;
+    if (curr == end)
+      return false;
+    if (visited.insert(curr).second)
+      pending.insert(pending.end(), curr->successors_begin(), curr->successors_end());
+  }
 
-  std::function<void(CFBlock *, std::vector<CFBlock *> &)> dfs =
-      [&](CFBlock *curr, std::vector<CFBlock *> &path) {
-        path.push_back(curr);
-        if (curr == end) {
-          if (!canForwardExpressionAlongPath(source, target, vids, parsedValues, se,
-                                             path))
-            ok = false;
-        } else {
-          for (auto it = curr->successors_begin(); it != curr->successors_end(); ++it) {
-            if (std::find(path.begin(), path.end(), *it) != path.end())
-              dfs(*it, path);
-          }
-        }
-        path.pop_back();
-      };
+  // Every path must reach the consumer, or forwarding could suppress an eager
+  // shape error. Also reject cycles and intervening writes/effects.
+  std::vector<CFBlock *> blocks = {start};
+  std::unordered_map<CFBlock *, size_t> incoming = {{start, 0}};
+  for (size_t index = 0; index < blocks.size(); ++index) {
+    auto *block = blocks[index];
+    if (!canForwardExpressionInBlock(block == start ? source : nullptr,
+                                     block == end ? target : nullptr, vids,
+                                     parsedValues, se, block))
+      return false;
+    if (block == end)
+      continue;
+    if (block->successors_begin() == block->successors_end())
+      return false;
+    for (auto successor = block->successors_begin();
+         successor != block->successors_end(); ++successor) {
+      auto inserted = incoming.emplace(*successor, 0);
+      ++inserted.first->second;
+      if (inserted.second)
+        blocks.push_back(*successor);
+    }
+  }
+  if (!incoming.count(end))
+    return false;
 
-  std::vector<CFBlock *> path;
-  dfs(start, path);
-  return ok;
+  std::vector<CFBlock *> ready;
+  for (auto &entry : incoming)
+    if (entry.second == 0)
+      ready.push_back(entry.first);
+  for (size_t index = 0; index < ready.size(); ++index) {
+    auto *block = ready[index];
+    if (block == end)
+      continue;
+    for (auto successor = block->successors_begin();
+         successor != block->successors_end(); ++successor)
+      if (--incoming[*successor] == 0)
+        ready.push_back(*successor);
+  }
+  return ready.size() == blocks.size();
 }
 
 bool canForwardVariable(AssignInstr *assign, Value *destination, BodiedFunc *func,
@@ -165,8 +185,8 @@ bool canForwardVariable(AssignInstr *assign, Value *destination, BodiedFunc *fun
   if (reaching.size() != 1 || reaching[0].assignment->getId() != assign->getId())
     return false;
 
-  // Check 2: There should be no other uses of the variable that the given assignment
-  // reaches.
+  // Check 2: There should be no other uses reached by this assignment. These are
+  // individual references, so even repeated operands in one consumer disqualify it.
   std::vector<Value *> uses;
   GetAllUses gu(var, uses);
   func->accept(gu);
@@ -183,10 +203,17 @@ bool canForwardVariable(AssignInstr *assign, Value *destination, BodiedFunc *fun
   return true;
 }
 
+// Edges point from a consumer to a producer that can replace one of its leaves.
+// Reaching definitions establish single-use; CFG/effect checks require the consumer
+// on every path and reject intervening writes before moving the producer.
 ForwardingDAG buildForwardingDAG(BodiedFunc *func, RD *rd, CFG *cfg, SE *se,
                                  std::vector<NumPyOptimizationUnit> &exprs) {
   std::unordered_map<id_t, NumPyExpr *> parsedValues;
   for (auto &e : exprs) {
+    // A summarized helper still occupies its original call site in the CFG.
+    // Its proven expression, rather than the opaque call's effects, determines
+    // whether another producer may move past it.
+    parsedValues.emplace(e.value->getId(), e.expr.get());
     e.expr->apply([&](NumPyExpr &e) {
       if (e.val)
         parsedValues.emplace(e.val->getId(), &e);
@@ -200,23 +227,32 @@ ForwardingDAG buildForwardingDAG(BodiedFunc *func, RD *rd, CFG *cfg, SE *se,
     auto &forwardingVec = dag[&dst];
 
     std::vector<std::pair<Var *, NumPyExpr *>> vars;
+    std::unordered_map<Value *, unsigned> occurrences;
     target->apply([&](NumPyExpr &e) {
       if (e.isLeaf()) {
         if (auto *v = cast<VarValue>(e.val)) {
           vars.emplace_back(v->getVar(), &e);
+          ++occurrences[e.val];
         }
       }
     });
 
     for (auto &p : vars) {
+      // A composed helper may read one actual more than once (e.g. square(t)).
+      // Those leaves share the original call-site read so RD remains valid, but
+      // forwarding its producer into both would duplicate work and allocations.
+      if (occurrences[p.second->val] != 1)
+        continue;
       int64_t srcId = 0;
       for (auto &src : exprs) {
         if (srcId != dstId && src.assign && src.assign->getLhs() == p.first) {
           auto checkFwdVar = canForwardVariable(src.assign, p.second->val, func, rd);
-          auto checkFwdExpr =
-              canForwardExpression(&src, p.second->val, parsedValues, cfg, se);
-          if (checkFwdVar && checkFwdExpr)
+          // Keep reductions materialized. Their buffers can be reused later
+          // without moving the reduction itself into another expression.
+          if (checkFwdVar && !src.expr->isReduction() &&
+              canForwardExpression(&src, p.second->val, parsedValues, cfg, se)) {
             forwardingVec.push_back({&dst, &src, p.first, p.second, dstId, srcId});
+          }
         }
         ++srcId;
       }
@@ -326,22 +362,105 @@ bool hasCycle(ForwardingDAG &dag, std::vector<NumPyOptimizationUnit> &exprs) {
 
 void doForwardingHelper(ForwardingDAG &dag, NumPyOptimizationUnit *curr,
                         std::unordered_set<NumPyOptimizationUnit *> &done,
-                        std::vector<AssignInstr *> &assignsToDelete) {
+                        std::vector<AssignInstr *> &assignsToDelete,
+                        std::vector<std::pair<Value *, Value *>> *substitutions) {
   if (done.count(curr))
     return;
 
   auto forwardings = dag[curr];
   for (auto &fwd : forwardings) {
-    doForwardingHelper(dag, fwd.src, done, assignsToDelete);
+    doForwardingHelper(dag, fwd.src, done, assignsToDelete, substitutions);
     // Note that order of leaves here doesn't matter since they're guaranteed to have no
     // side effects based on forwarding checks.
     fwd.dst->leaves.insert(fwd.dst->leaves.end(), fwd.src->leaves.begin(),
                            fwd.src->leaves.end());
+    if (substitutions)
+      substitutions->emplace_back(fwd.dstLeaf->val, fwd.src->value);
     fwd.dstLeaf->replace(*fwd.src->expr);
     assignsToDelete.push_back(fwd.src->assign);
   }
 
   done.insert(curr);
+}
+
+NumPyOptimizationUnit *getForwardingRoot(ForwardingDAG &dag) {
+  std::unordered_set<NumPyOptimizationUnit *> notRoot;
+  for (auto &entry : dag) {
+    for (auto &forwarding : entry.second)
+      notRoot.insert(forwarding.src);
+  }
+  seqassertn(notRoot.size() == dag.size() - 1,
+             "multiple roots found in forwarding DAG");
+  for (auto &entry : dag) {
+    if (!notRoot.count(entry.first))
+      return entry.first;
+  }
+  seqassertn(false, "could not find root in forwarding DAG");
+  return nullptr;
+}
+
+// Allow a final pointwise consumer to reuse a buffer after earlier reductions
+// have finished reading it. Any other reached use prevents this ownership transfer.
+bool canReuseAfterReads(NumPyOptimizationUnit &source, NumPyExpr &destination,
+                        NumPyOptimizationUnit &consumer,
+                        std::vector<NumPyOptimizationUnit> &exprs, CFG *cfg, RD *rd,
+                        SE *se) {
+  if (consumer.expr->isReduction() || consumer.expr->depth() != 2 ||
+      (&destination != consumer.expr->lhs.get() &&
+       &destination != consumer.expr->rhs.get()))
+    return false;
+  auto *assign = source.assign;
+  auto *var = assign->getLhs();
+  auto reaching = rd->getReachingDefinitions(var, destination.val);
+  if (reaching.size() != 1 || reaching[0].assignment->getId() != assign->getId())
+    return false;
+
+  auto *block = cfg->getBlock(assign);
+  std::unordered_map<id_t, size_t> positions;
+  for (const auto *value : *block)
+    positions.emplace(value->getId(), positions.size());
+  auto target = positions.find(destination.val->getId());
+  if (target == positions.end())
+    return false;
+
+  std::unordered_set<id_t> completedReads;
+  for (auto &reader : exprs) {
+    auto &expr = *reader.expr;
+    if (!expr.isReduction() || !expr.lhs->isLeaf())
+      continue;
+    auto position = positions.find(reader.value->getId());
+    if (position == positions.end() ||
+        position->second <= positions.at(assign->getId()) ||
+        position->second >= target->second)
+      continue;
+    auto *operand = cast<VarValue>(expr.lhs->val);
+    auto *call = cast<CallInstr>(expr.val);
+    if (!operand || operand->getVar() != var || !call)
+      continue;
+    bool pureArguments = true;
+    for (auto argument = std::next(call->begin()); argument != call->end(); ++argument)
+      pureArguments &= !se->hasSideEffect(*argument);
+    if (pureArguments)
+      completedReads.insert(operand->getId());
+  }
+  if (completedReads.empty())
+    return false;
+
+  // Alias/view creation is also a use. Reject it even if the alias is not returned:
+  // it could mutate or retain the allocation without reading this variable again.
+  std::vector<Value *> uses;
+  GetAllUses collect(var, uses);
+  consumer.func->accept(collect);
+  for (auto *use : uses) {
+    if (use == destination.val || use->getId() == assign->getId())
+      continue;
+    for (auto &definition : rd->getReachingDefinitions(var, use)) {
+      if (definition.assignment->getId() == assign->getId() &&
+          !completedReads.count(use->getId()))
+        return false;
+    }
+  }
+  return true;
 }
 } // namespace
 
@@ -353,34 +472,60 @@ getForwardingDAGs(BodiedFunc *func, RD *rd, CFG *cfg, SE *se,
   dags.erase(std::remove_if(dags.begin(), dags.end(),
                             [&](ForwardingDAG &dag) { return hasCycle(dag, exprs); }),
              dags.end());
+  // Transfer ownership separately from expression forwarding. An ownedLastUse leaf
+  // proves ownership and no subsequent alias access, permitting reuse or release
+  // without moving the source computation or adding a forwarding edge.
+  for (auto &component : dags) {
+    auto *root = getForwardingRoot(component);
+    auto *block = cfg->getBlock(root->value);
+    std::unordered_map<Var *, unsigned> leafOccurrences;
+    for (auto &entry : component) {
+      entry.first->expr->apply([&](NumPyExpr &element) {
+        if (auto *variable = element.isLeaf() ? cast<VarValue>(element.val) : nullptr)
+          ++leafOccurrences[variable->getVar()];
+      });
+    }
+    for (auto &source : exprs) {
+      if (!block || !source.assign || component.count(&source) ||
+          leafOccurrences[source.assign->getLhs()] != 1 ||
+          !hasOwnedResult(*source.expr) || source.assign->getLhs()->isGlobal() ||
+          cfg->getBlock(source.assign) != block)
+        continue;
+      bool available = false;
+      for (const auto *value : *block) {
+        if (value == root->value)
+          break;
+        if (value == source.assign)
+          available = true;
+      }
+      if (!available)
+        continue;
+      for (auto &entry : component) {
+        entry.first->expr->apply([&](NumPyExpr &element) {
+          auto *variable = element.isLeaf() ? cast<VarValue>(element.val) : nullptr;
+          if (variable && variable->getVar() == source.assign->getLhs() &&
+              ((source.expr->isReduction() &&
+                canForwardVariable(source.assign, element.val, func, rd)) ||
+               (entry.first == root &&
+                canReuseAfterReads(source, element, *root, exprs, cfg, rd, se))))
+            element.ownedLastUse = true;
+        });
+      }
+    }
+  }
   return dags;
 }
 
-NumPyOptimizationUnit *doForwarding(ForwardingDAG &dag,
-                                    std::vector<AssignInstr *> &assignsToDelete) {
+NumPyOptimizationUnit *
+doForwarding(ForwardingDAG &dag, std::vector<AssignInstr *> &assignsToDelete,
+             std::vector<std::pair<Value *, Value *>> *substitutions) {
   seqassertn(!dag.empty(), "empty forwarding DAG encountered");
   std::unordered_set<NumPyOptimizationUnit *> done;
   for (auto &e : dag) {
-    doForwardingHelper(dag, e.first, done, assignsToDelete);
+    doForwardingHelper(dag, e.first, done, assignsToDelete, substitutions);
   }
 
-  // Find the root
-  std::unordered_set<NumPyOptimizationUnit *> notRoot;
-  for (auto &e : dag) {
-    for (auto &f : e.second) {
-      notRoot.insert(f.src);
-    }
-  }
-  seqassertn(notRoot.size() == dag.size() - 1,
-             "multiple roots found in forwarding DAG");
-
-  for (auto &e : dag) {
-    if (notRoot.count(e.first) == 0)
-      return e.first;
-  }
-
-  seqassertn(false, "could not find root in forwarding DAG");
-  return nullptr;
+  return getForwardingRoot(dag);
 }
 
 } // namespace numpy

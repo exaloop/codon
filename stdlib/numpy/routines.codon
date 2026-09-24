@@ -182,6 +182,9 @@ def empty_like(prototype, dtype: type = NoneType, order: str = 'K', shape = None
     if shape is None:
         return empty_like(prototype, dtype=dtype, order=order, shape=prototype.shape)
 
+    return _empty_like(prototype, dtype, order, shape, True)
+
+def _empty_like(prototype, dtype: type, order: str, shape, allocate: Literal[bool]):
     cc, fc = prototype._contig
 
     if order == 'A':
@@ -205,12 +208,14 @@ def empty_like(prototype, dtype: type = NoneType, order: str = 'K', shape = None
                     pstrides[iperm] = stride
                     stride *= shape[iperm]
 
-                data = Ptr[dtype](util.count(shape))
+                data = Ptr[dtype](util.count(shape)) if allocate else Ptr[dtype]()
                 return ndarray(shape, strides, data)
         else:
             order = 'C'
 
-    return empty(shape, dtype, order)
+    if allocate:
+        return empty(shape, dtype, order)
+    return ndarray(shape, Ptr[dtype](), fcontig=order == 'F')
 
 def zeros(shape, dtype: type = float, order: str = 'C'):
     result = empty(shape, dtype, order)
@@ -3173,10 +3178,11 @@ def where(condition, x, y):
     x = asarray(x)
     y = asarray(y)
     T = type(util.coerce(x.dtype, y.dtype))
+    bshape = broadcast_shapes(condition.shape, x.shape, y.shape)
 
     if condition._contig_match(x) and condition._contig_match(y):
         cc, fc = condition._contig
-        ans = empty(condition.shape, dtype=T, order=('C' if cc else 'F'))
+        ans = empty(bshape, dtype=T, order=('C' if cc else 'F'))
 
         sz = condition.size
         pc = condition.data
@@ -3192,7 +3198,6 @@ def where(condition, x, y):
 
         return ans
     else:
-        bshape = broadcast_shapes(condition.shape, x.shape, y.shape)
         ans = empty(bshape, dtype=T)
 
         for idx in util.multirange(bshape):

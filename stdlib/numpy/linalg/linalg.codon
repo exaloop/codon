@@ -2466,25 +2466,73 @@ def _blas_stride(stride: int, itemsize: int):
             return stride
     return 0
 
+@inline
+def _dot_blas(ip1: Ptr[T1], ib1: int, ip2: Ptr[T2], ib2: int, op: Ptr[T3], n: int,
+              T1: type, T2: type, T3: type):
+    args = (fint(n), ip1.as_byte(), fint(ib1), ip2.as_byte(), fint(ib2))
+    if T1 is float:
+        op[0] = cblas_ddot(*args)
+    elif T1 is float32:
+        op[0] = cblas_sdot(*args)
+    elif T1 is complex:
+        cblas_zdotu_sub(*args, op)
+    elif T1 is complex64:
+        cblas_cdotu_sub(*args, op)
+
 def _dot(ip1: Ptr[T1], is1: int, ip2: Ptr[T2], is2: int, op: Ptr[T3], n: int,
          T1: type, T2: type, T3: type):
+    if not ((T1 is float and T2 is float and T3 is float) or
+            (T1 is float32 and T2 is float32 and T3 is float32) or
+            (T1 is complex and T2 is complex and T3 is complex) or
+            (T1 is complex64 and T2 is complex64 and T3 is complex64)):
+        _dot_noblas(ip1, is1, ip2, is2, op, n)
+        return
+
+    if n <= 0:
+        op[0] = zero(T3)
+        return
+
     ib1 = _blas_stride(is1, sizeof(T1))
     ib2 = _blas_stride(is2, sizeof(T2))
-    args = (fint(n), ip1.as_byte(), fint(ib1), ip2.as_byte(), fint(ib2))
-
-    if ib1 == 0 or ib2 == 0:
-        _dot_noblas(ip1, is1, ip2, is2, op, n)
+    # Keep packing and scalar fallbacks out of the common call chain so matmul can inline
+    # into its caller and specialize the positive strides and shape checks.
+    if n > _CBLAS_INT_MAX or ib1 == 0 or ib2 == 0:
+        _dot_strided(ip1, is1, ip2, is2, op, n)
     else:
-        if T1 is float and T2 is float and T3 is float:
-            op[0] = cblas_ddot(*args)
-        elif T1 is float32 and T2 is float32 and T3 is float32:
-            op[0] = cblas_sdot(*args)
-        elif T1 is complex and T2 is complex and T3 is complex:
-            cblas_zdotu_sub(*args, op)
-        elif T1 is complex64 and T2 is complex64 and T3 is complex64:
-            cblas_cdotu_sub(*args, op)
-        else:
-            _dot_noblas(ip1, is1, ip2, is2, op, n)
+        _dot_blas(ip1, ib1, ip2, ib2, op, n)
+
+def _dot_strided(ip1: Ptr[T1], is1: int, ip2: Ptr[T2], is2: int, op: Ptr[T3], n: int,
+                 T1: type, T2: type, T3: type):
+    ib1 = _blas_stride(is1, sizeof(T1))
+    ib2 = _blas_stride(is2, sizeof(T2))
+    if (n > _CBLAS_INT_MAX or (ib1 == 0 and is1 >= 0) or
+        (ib2 == 0 and is2 >= 0)):
+        _dot_noblas(ip1, is1, ip2, is2, op, n)
+        return
+
+    if is1 < 0:
+        packed1 = Ptr[T1](n)
+        source1 = ip1.as_byte()
+        for index in range(n):
+            packed1[index] = Ptr[T1](source1)[0]
+            source1 += is1
+        ip1 = packed1
+        ib1 = 1
+    if is2 < 0:
+        packed2 = Ptr[T2](n)
+        source2 = ip2.as_byte()
+        for index in range(n):
+            packed2[index] = Ptr[T2](source2)[0]
+            source2 += is2
+        ip2 = packed2
+        ib2 = 1
+
+    _dot_blas(ip1, ib1, ip2, ib2, op, n)
+
+    if is1 < 0:
+        free(ip1)
+    if is2 < 0:
+        free(ip2)
 
 BLAS_MAXSIZE: Literal[int] = 2147483646  # 2^31 - 1
 
@@ -2505,7 +2553,8 @@ def _is_blasable2d(byte_stride1: int,
 def _gemv(ip1: Ptr[T], is1_m: int, is1_n: int,
           ip2: Ptr[T], is2_n: int,
           op: Ptr[T],  op_m: int,
-          m: int, n: int, T: type):
+          m: int, n: int, T: type, accumulate: Literal[bool] = False,
+          product_sign: Literal[int] = 1, bias_sign: Literal[int] = 1):
     itemsize = sizeof(T)
     if _is_blasable2d(is1_m, is1_n, m, n, itemsize):
         order = fint(CBLAS_COL_MAJOR)
@@ -2514,19 +2563,19 @@ def _gemv(ip1: Ptr[T], is1_m: int, is1_n: int,
         order = fint(CBLAS_ROW_MAJOR)
         lda = is1_n.cdiv(itemsize)
 
-    one_dtype = cast(1, T)
-    zero_dtype = cast(0, T)
+    alpha_dtype = cast(product_sign, T)
+    beta_dtype = cast(bias_sign if accumulate else 0, T)
 
     if T is float or T is float32:
-        one = one_dtype
-        zero = zero_dtype
+        alpha = alpha_dtype
+        beta = beta_dtype
     else:
-        one = __ptr__(one_dtype).as_byte()
-        zero = __ptr__(zero_dtype).as_byte()
+        alpha = __ptr__(alpha_dtype).as_byte()
+        beta = __ptr__(beta_dtype).as_byte()
 
     args = (order, fint(CBLAS_TRANS), fint(n), fint(m),
-            one, ip1.as_byte(), fint(lda), ip2.as_byte(),
-            fint(is2_n.cdiv(itemsize)), zero, op.as_byte(),
+            alpha, ip1.as_byte(), fint(lda), ip2.as_byte(),
+            fint(is2_n.cdiv(itemsize)), beta, op.as_byte(),
             fint(op_m.cdiv(itemsize)))
 
     if T is float:
@@ -2543,7 +2592,9 @@ def _gemv(ip1: Ptr[T], is1_m: int, is1_n: int,
 def _matmul_matrixmatrix(ip1: Ptr[T], is1_m: int, is1_n: int,
                          ip2: Ptr[T], is2_n: int, is2_p: int,
                          op: Ptr[T],  os_m: int, os_p: int,
-                         m: int, n: int, p: int, T: type):
+                         m: int, n: int, p: int, T: type,
+                         accumulate: Literal[bool] = False,
+                         product_sign: Literal[int] = 1, bias_sign: Literal[int] = 1):
     order = fint(CBLAS_ROW_MAJOR)
     itemsize = sizeof(T)
     ldc = os_m.cdiv(itemsize)
@@ -2562,17 +2613,17 @@ def _matmul_matrixmatrix(ip1: Ptr[T], is1_m: int, is1_n: int,
         trans2 = fint(CBLAS_TRANS)
         ldb = is2_p.cdiv(itemsize)
 
-    one_dtype = cast(1, T)
-    zero_dtype = cast(0, T)
+    alpha_dtype = cast(product_sign, T)
+    beta_dtype = cast(bias_sign if accumulate else 0, T)
 
     if T is float or T is float32:
-        one = one_dtype
-        zero = zero_dtype
+        alpha = alpha_dtype
+        beta = beta_dtype
     else:
-        one = __ptr__(one_dtype).as_byte()
-        zero = __ptr__(zero_dtype).as_byte()
+        alpha = __ptr__(alpha_dtype).as_byte()
+        beta = __ptr__(beta_dtype).as_byte()
 
-    if (ip1 == ip2 and
+    if (not accumulate and ip1 == ip2 and
         m == p and
         is1_m == is2_p and
         is1_n == is2_n and
@@ -2580,8 +2631,8 @@ def _matmul_matrixmatrix(ip1: Ptr[T], is1_m: int, is1_n: int,
 
         ld = lda if trans1 == fint(CBLAS_NO_TRANS) else ldb
         args = (order, fint(CBLAS_UPPER), trans1, fint(p),
-                fint(n), one, ip1, fint(ld),
-                zero, op, fint(ldc))
+                fint(n), alpha, ip1, fint(ld),
+                beta, op, fint(ldc))
 
         if T is float:
             cblas_dsyrk(*args)
@@ -2600,8 +2651,8 @@ def _matmul_matrixmatrix(ip1: Ptr[T], is1_m: int, is1_n: int,
                 op[j * ldc + i] = op[i * ldc + j]
     else:
         args = (order, trans1, trans2, fint(m), fint(p), fint(n),
-                one, ip1, fint(lda), ip2,
-                fint(ldb), zero, op, fint(ldc))
+                alpha, ip1, fint(lda), ip2,
+                fint(ldb), beta, op, fint(ldc))
 
         if T is float:
             cblas_dgemm(*args)
@@ -2762,6 +2813,30 @@ def _check_out(out, ans_shape, dtype: type):
     if out.shape != ans_shape:
         raise ValueError("'out' array has incorrect shape")
 
+def _matmul_shape(left, right):
+    left_rank: Literal[int] = static.len(left)
+    right_rank: Literal[int] = static.len(right)
+    if left_rank == 0:
+        compile_error("first argument is 0-dimensional; must be at least 1-d")
+    if right_rank == 0:
+        compile_error("second argument is 0-dimensional; must be at least 1-d")
+    if left_rank == 1 and right_rank == 1:
+        if left != right:
+            raise ValueError("matmul: vectors have different lengths")
+        return ()
+    left_matrix = (1,) + left if left_rank == 1 else left
+    right_matrix = right + (1,) if right_rank == 1 else right
+    if left_matrix[-1] != right_matrix[-2]:
+        raise ValueError("matmul: last dimension of first argument does not "
+                         "match second-to-last dimension of second argument")
+    batch = broadcast_shapes(left_matrix[:-2], right_matrix[:-2])
+    if left_rank == 1:
+        return batch + (right_matrix[-1],)
+    elif right_rank == 1:
+        return batch + (left_matrix[-2],)
+    else:
+        return batch + (left_matrix[-2], right_matrix[-1])
+
 def _matmul_ufunc(x1, x2, out = None, dtype: type = NoneType):
     if not isinstance(x1, ndarray) or not isinstance(x2, ndarray):
         y1 = asarray(x1)
@@ -2776,15 +2851,8 @@ def _matmul_ufunc(x1, x2, out = None, dtype: type = NoneType):
     if dtype is NoneType:
         return _matmul_ufunc(x1, x2, out=out, dtype=type(coerce(T1, T2)))
 
-    if x1d == 0:
-        compile_error("first argument is 0-dimensional; must be at least 1-d")
-
-    if x2d == 0:
-        compile_error("second argument is 0-dimensional; must be at least 1-d")
-
+    ans_shape = _matmul_shape(x1.shape, x2.shape)
     if x1d == 1 and x2d == 1:
-        if x1.shape != x2.shape:
-            raise ValueError("matmul: vectors have different lengths")
         op = zero(dtype)
         _dot(x1.data, x1.strides[0], x2.data, x2.strides[0], __ptr__(op), x1.size)
         return op
@@ -2798,34 +2866,6 @@ def _matmul_ufunc(x1, x2, out = None, dtype: type = NoneType):
         y2 = x2.reshape((-1, 1))
     else:
         y2 = x2
-
-    y1s = y1.shape
-    y2s = y2.shape
-    y1d: Literal[int] = y1.ndim
-    y2d: Literal[int] = y2.ndim
-
-    base1s = y1s[:-2]
-    base2s = y2s[:-2]
-    mat1s = y1s[-2:]
-    mat2s = y2s[-2:]
-
-    m = mat1s[0]
-    k = mat1s[1]
-    n = mat2s[1]
-
-    if k != mat2s[0]:
-        raise ValueError("matmul: last dimension of first argument does not "
-                         "match second-to-last dimension of second argument")
-
-    ans_base = broadcast_shapes(base1s, base2s)
-    if x1d == 1 and x2d == 1:
-        ans_shape = ans_base
-    elif x1d == 1:
-        ans_shape = ans_base + (mat2s[1],)
-    elif x2d == 1:
-        ans_shape = ans_base + (mat1s[0],)
-    else:
-        ans_shape = ans_base + (mat1s[0], mat2s[1])
 
     if out is None:
         ans = zeros(ans_shape, dtype=dtype)

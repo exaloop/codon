@@ -1,0 +1,237 @@
+import numpy as np
+
+from helpers import check_axis_result, materialize
+
+def last_use_square(values):
+    return values * values
+
+def last_use_nested_square(values):
+    return last_use_square(values)
+
+def last_use_deep_square(values):
+    return last_use_nested_square(values)
+
+@noinline
+def last_use_reduced_square(values, mode: Literal[int]):
+    reduced = values.sum(axis=0)
+    if mode == 0:
+        return last_use_nested_square(reduced)
+    elif mode == 1:
+        return last_use_deep_square(reduced)
+    else:
+        return last_use_nested_square(reduced) + 1
+
+@noinline
+def last_use_read_square(values):
+    temporary = values + 1
+    total = temporary.sum()
+    return last_use_nested_square(temporary), total
+
+@noinline
+def last_use_overwrite(count, dtype: type):
+    return np.full(count, -12345., dtype=dtype)
+
+def check_live_square(result, count, expected):
+    replacement = last_use_overwrite(count, result.dtype)
+    if count:
+        assert result.data != replacement.data
+    assert np.all(result == expected)
+    assert np.all(replacement == -12345.)
+
+def check_nested_last_use(dtype: type):
+    for count in (0, 1, 16, 64, 128, 1024):
+        values = np.ones((3, count), dtype=dtype)
+        check_live_square(last_use_reduced_square(values, 0), count, 9.)
+        check_live_square(last_use_reduced_square(values, 1), count, 9.)
+        check_live_square(last_use_reduced_square(values, 2), count, 10.)
+        assert np.all(values == 1.)
+        values = np.ones(count, dtype=dtype)
+        result, total = last_use_read_square(values)
+        check_live_square(result, count, 4.)
+        assert total == 2 * count
+        assert np.all(values == 1.)
+
+@test
+def test_nested_last_use():
+    check_nested_last_use(np.float32)
+    check_nested_last_use(np.float64)
+
+@noinline
+def last_use_normalize(values, axis, keepdims: Literal[bool]):
+    temporary = np.exp(values)
+    total = temporary.sum(axis=axis, keepdims=keepdims)
+    return temporary / total
+
+@noinline
+def last_use_retained(values):
+    temporary = np.exp(values)
+    alias = temporary
+    view = temporary[:, ::-1]
+    total = temporary.sum(axis=1, keepdims=True)
+    result = temporary / total
+    return result, alias, view
+
+@noinline
+def last_use_later_read(values, read_later):
+    temporary = np.exp(values)
+    total = temporary.sum(axis=1, keepdims=True)
+    result = temporary / total
+    if read_later:
+        return result, temporary.sum()
+    return result, np.float32(0)
+
+@noinline
+def last_use_repeated(values):
+    temporary = np.exp(values)
+    total = temporary.sum(axis=1, keepdims=True)
+    result = np.zeros_like(values)
+    for iteration in range(3):
+        result = materialize(temporary / total)
+    return result
+
+escaped_temporaries: List[np.ndarray[np.float32, 2]] = []
+
+@noinline
+def retain_temporary(values):
+    escaped_temporaries.append(values)
+
+@noinline
+def last_use_escaped(values):
+    temporary = np.exp(values)
+    retain_temporary(temporary)
+    total = temporary.sum(axis=1, keepdims=True)
+    return temporary / total
+
+@noinline
+def last_use_alias_mutation(values):
+    temporary = np.exp(values)
+    alias = temporary
+    total = temporary.sum(axis=1, keepdims=True)
+    alias[0, :] = 123.
+    return temporary / total
+
+@noinline
+def last_use_view_mutation(values):
+    temporary = np.exp(values)
+    view = temporary[::-1]
+    total = temporary.sum(axis=1, keepdims=True)
+    view[0, :] = 123.
+    return temporary / total
+
+@noinline
+def mutate_last_use_alias(values):
+    values[0, :] = 123.
+
+@noinline
+def last_use_indirect_mutation(values):
+    temporary = np.exp(values)
+    alias = temporary[::-1]
+    total = temporary.sum(axis=1, keepdims=True)
+    mutate_last_use_alias(alias)
+    return temporary / total
+
+def check_last_use_mutation(dtype: type):
+    for rows, columns in ((1, 1), (3, 17), (5, 129)):
+        values = np.linspace(-2., 2., rows * columns, dtype=dtype).reshape(rows, columns)
+        for array in (values, values.copy(order='F'), values[::-1, ::-1],
+                      values[:, ::2], values[:, :0]):
+            snapshot = array.copy()
+            exponential = materialize(np.exp(array))
+            total = materialize(exponential.sum(axis=1, keepdims=True))
+            mutated = materialize(np.exp(array))
+            mutated[0, :] = 123.
+            expected = materialize(mutated / total)
+            check_axis_result(last_use_alias_mutation(array), expected)
+            mutated = materialize(np.exp(array))
+            mutated[-1, :] = 123.
+            expected = materialize(mutated / total)
+            check_axis_result(last_use_view_mutation(array), expected)
+            check_axis_result(last_use_indirect_mutation(array), expected)
+            assert np.array_equal(array, snapshot)
+
+@test
+def test_last_use_mutation():
+    check_last_use_mutation(np.float32)
+    check_last_use_mutation(np.float64)
+
+@test
+def test_last_use_normalization():
+    from numpy.fusion import _broadcast, _loop_basic
+
+    def subtract_into(output, left, right, extra):
+        output[0] = left[0] - right[0]
+
+    for order in ('C', 'F'):
+        left = np.arange(15, dtype=float).reshape(3, 5).copy(order=order)
+        right = np.full((3, 1), 2.)
+        expected = materialize(left - right)
+        _loop_basic((left, left, right), subtract_into, ())
+        assert np.array_equal(left, expected)
+        right = np.arange(15, dtype=float).reshape(3, 5).copy(order=order)
+        left = np.full((1, 5), 2.)
+        expected = materialize(left - right)
+        _loop_basic((right, left, right), subtract_into, ())
+        assert np.array_equal(right, expected)
+        output = np.empty_like(right)
+        _loop_basic((output, left, right), subtract_into, ())
+        assert np.array_equal(output, left - right)
+
+    assert _broadcast((3, 0), (3, 1)) == (3, 0)
+    assert _broadcast((3, 1), (3, 0)) == (3, 0)
+    assert _broadcast((0,), (2, 1)) == (2, 0)
+    values = np.arange(3 * 129, dtype=np.float32).reshape(3, 129) * 0.001
+    for array in (values, values.copy(order='F'), values[:, ::-1],
+                  values[:, ::2], values[:, :0], values[:0, :],
+                  values[:0, :0], values[:1, :]):
+        snapshot = array.copy()
+        exponential = materialize(np.exp(array))
+        check_axis_result(last_use_normalize(array, 1, True),
+                          exponential / materialize(exponential.sum(axis=1, keepdims=True)))
+        check_axis_result(last_use_normalize(array, None, False),
+                          exponential / materialize(exponential.sum()))
+        assert np.array_equal(array, snapshot)
+
+    exponential = materialize(np.exp(values))
+    total = materialize(exponential.sum(axis=1, keepdims=True))
+    expected = materialize(exponential / total)
+    result, alias, view = last_use_retained(values)
+    check_axis_result(result, expected)
+    assert result.data != alias.data
+    assert np.array_equal(alias, exponential)
+    assert np.array_equal(view, exponential[:, ::-1])
+    result, later = last_use_later_read(values, True)
+    check_axis_result(result, expected)
+    assert later == exponential.sum()
+    check_axis_result(last_use_repeated(values), expected)
+    escaped_temporaries.clear()
+    check_axis_result(last_use_escaped(values), expected)
+    assert len(escaped_temporaries) == 1
+    assert np.array_equal(escaped_temporaries[0], exponential)
+    escaped_temporaries.clear()
+
+    snapshot = values.copy()
+    total = values.sum(axis=1, keepdims=True)
+    result = values / total
+    check_axis_result(result, snapshot / materialize(snapshot.sum(axis=1, keepdims=True)))
+    assert np.array_equal(values, snapshot)
+    borrowed = values.astype(np.float32, copy=False)
+    total = borrowed.sum(axis=1, keepdims=True)
+    result = borrowed / total
+    assert np.array_equal(values, snapshot)
+    check_axis_result(result, snapshot / materialize(snapshot.sum(axis=1, keepdims=True)))
+    borrowed = values.T
+    total = borrowed.sum(axis=0, keepdims=True)
+    result = borrowed / total
+    assert np.array_equal(values, snapshot)
+    check_axis_result(result, snapshot.T / materialize(snapshot.T.sum(axis=0, keepdims=True)))
+
+    temporary = np.exp(values)
+    total = temporary.sum(axis=1, dtype=np.float64, keepdims=True)
+    result = temporary / total
+    assert type(result) is np.ndarray[np.float64, 2]
+    check_axis_result(result, exponential /
+                      materialize(exponential.sum(axis=1, dtype=np.float64, keepdims=True)))
+
+test_nested_last_use()
+test_last_use_mutation()
+test_last_use_normalization()
