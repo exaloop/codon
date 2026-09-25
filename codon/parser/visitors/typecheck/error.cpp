@@ -224,25 +224,33 @@ void TypecheckVisitor::visit(WithStmt *stmt) {
 
   std::vector<Stmt *> content;
   for (auto i = stmt->items.size(); i-- > 0;) {
-    std::string var = stmt->vars[i].empty() ? getTemporaryVar("with") : stmt->vars[i];
-    auto as = N<AssignStmt>(N<IdExpr>(var), (*stmt)[i], nullptr,
-                            (*stmt)[i]->hasAttribute(Attr::ExprDominated)
-                                ? AssignStmt::UpdateMode::Update
-                                : AssignStmt::UpdateMode::Assign);
+    std::string manager = getTemporaryVar("with");
+    std::string var = stmt->vars[i];
+    auto managerAssign = N<AssignStmt>(N<IdExpr>(manager), (*stmt)[i], nullptr,
+                                       AssignStmt::UpdateMode::Assign);
 
     Expr *enter =
-        N<CallExpr>(N<DotExpr>(N<IdExpr>(var), isAsync ? "__aenter__" : "__enter__"));
+        N<CallExpr>(N<DotExpr>(N<IdExpr>(manager), isAsync ? "__aenter__" : "__enter__"));
     Expr *exit =
-        N<CallExpr>(N<DotExpr>(N<IdExpr>(var), isAsync ? "__aexit__" : "__exit__"));
+        N<CallExpr>(N<DotExpr>(N<IdExpr>(manager), isAsync ? "__aexit__" : "__exit__"));
     if (isAsync) {
       enter = N<AwaitExpr>(enter);
       exit = N<AwaitExpr>(exit);
     }
-    content = std::vector<Stmt *>{
-        as, N<ExprStmt>(enter),
+    std::vector<Stmt *> wrapped{managerAssign};
+    if (var.empty()) {
+      wrapped.push_back(N<ExprStmt>(enter));
+    } else {
+      wrapped.push_back(N<AssignStmt>(
+          N<IdExpr>(var), enter, nullptr,
+          (*stmt)[i]->hasAttribute(Attr::ExprDominated) ? AssignStmt::UpdateMode::Update
+                                                        : AssignStmt::UpdateMode::Assign));
+    }
+    wrapped.push_back(
         N<TryStmt>(!content.empty() ? N<SuiteStmt>(content) : clone(stmt->getSuite()),
                    std::vector<ExceptStmt *>{}, nullptr,
-                   N<SuiteStmt>(N<ExprStmt>(exit)))};
+                   N<SuiteStmt>(N<ExprStmt>(exit))));
+    content = std::move(wrapped);
   }
   resultStmt = transform(N<SuiteStmt>(content));
 }
