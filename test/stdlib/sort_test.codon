@@ -95,6 +95,82 @@ def test_standard_sort():
 test_standard_sort()
 
 
+def check_native_sort_type(T: type, lowest: T, highest: T):
+    for size in (0, 1, 2, 7, 15, 16, 17, 63, 64, 65, 127, 128, 129, 1024):
+        original = [T((index * 17) % 31 + 1) for index in range(size)]
+        if size > 0:
+            original[0] = highest
+        if size > 1:
+            original[-1] = lowest
+        expected = sorted(original, algorithm="tim")
+        actual = original.copy()
+        alias = actual
+        actual.sort()
+        assert actual is alias
+        assert alias == expected, f"{T.__name__}, size {size}: {alias} != {expected}"
+        actual.sort(reverse=True)
+        assert actual == expected[::-1]
+        assert sorted(value for value in original) == expected
+        keyed_expected = original.copy()
+        tim_sort_inplace(keyed_expected, lambda value: 0)
+        actual = original.copy()
+        actual.sort(key=lambda value: 0)
+        assert actual == keyed_expected
+        actual.sort(algorithm="pdq")
+        assert actual == expected
+        assert original == [highest if index == 0 else lowest if index == size - 1
+                            else T((index * 17) % 31 + 1) for index in range(size)]
+
+
+def check_special_float_sort(T: type):
+    from math import copysign, isnan
+    for original in ([T(3), T(-0.0), T(0.0), T(1), T(-2)],
+                     [T("nan"), T(3), T(-1), T("nan"), T(2)],
+                     [T(3), T("nan"), T(-1), T("inf"), T("-inf")]):
+        for reverse in (False, True):
+            expected = sorted(original, reverse=reverse, algorithm="pdq")
+            actual = original.copy()
+            actual.sort(reverse=reverse)
+            assert len(actual) == len(expected)
+            for value, reference in zip(actual, expected):
+                if isnan(float(reference)):
+                    assert isnan(float(value))
+                else:
+                    assert value == reference
+                    assert copysign(1.0, float(value)) == copysign(1.0, float(reference))
+
+
+@test
+def test_native_sort():
+    from internal.sort import _try_native_sort
+
+    check_native_sort_type(int, -9223372036854775808, 9223372036854775807)
+    check_native_sort_type(i16, i16(-32768), i16(32767))
+    check_native_sort_type(u16, u16(0), u16(65535))
+    check_native_sort_type(i32, i32(-2147483648), i32(2147483647))
+    check_native_sort_type(u32, u32(0), u32(4294967295))
+    check_native_sort_type(i64, i64(-9223372036854775808), i64(9223372036854775807))
+    check_native_sort_type(u64, u64(0), u64(18446744073709551615))
+    check_native_sort_type(float32, float32("-inf"), float32("inf"))
+    check_native_sort_type(float, float("-inf"), float("inf"))
+    check_native_sort_type(i8, i8(-128), i8(127))
+    check_native_sort_type(u8, u8(0), u8(255))
+    check_native_sort_type(i128, -(i128(1) << 100), i128(1) << 100)
+    check_native_sort_type(u128, u128(0), u128(1) << 100)
+    wide = [u128(1) << 127, (u128(1) << 64) + u128(1),
+            u128(1) << 64, ~u128(0), u128(0)]
+    native_sorted = _try_native_sort(wide._ptr, len(wide))
+    assert native_sorted
+    assert wide == [u128(0), u128(1) << 64, (u128(1) << 64) + u128(1),
+                    u128(1) << 127, ~u128(0)]
+    check_native_sort_type(bool, False, True)
+    check_special_float_sort(float32)
+    check_special_float_sort(float)
+
+
+test_native_sort()
+
+
 @test
 def test_timsort_minrun():
     from algorithms.timsort import _tim_sort

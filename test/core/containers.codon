@@ -479,6 +479,50 @@ def test_list():
 test_list()
 
 @test
+def test_list_index_errors():
+    for size in (0, 1, 3):
+        values = list(range(size))
+        for index in range(-size, size):
+            assert values[index] == index % size
+        for index in (-9223372036854775807 - 1, -size - 1, size, 9223372036854775807):
+            try:
+                values[index]
+                assert False, "out-of-range read succeeded"
+            except IndexError as error:
+                assert error.message == "list index out of range"
+            try:
+                values[index] = 99
+                assert False, "out-of-range assignment succeeded"
+            except IndexError as error:
+                assert error.message == "list assignment index out of range"
+            try:
+                del values[index]
+                assert False, "out-of-range deletion succeeded"
+            except IndexError as error:
+                assert error.message == "list assignment index out of range"
+            assert values == list(range(size))
+
+    def paired_values(data):
+        for index in range(len(data)):
+            yield data[index]
+            yield data[index] * 3
+
+    assert list(paired_values(list[int]())) == []
+    assert list(paired_values([2, 5])) == [2, 6, 5, 15]
+    values = [2, 5]
+    items = paired_values(values)
+    assert next(items) == 2
+    values[0] = 7
+    assert next(items) == 21
+    values.clear()
+    try:
+        next(items)
+        assert False, "generator missed list mutation"
+    except IndexError as error:
+        assert error.message == "list index out of range"
+test_list_index_errors()
+
+@test
 def test_setslice():
     l = [0, 1]
     a = l

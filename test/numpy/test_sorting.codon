@@ -63,6 +63,28 @@ def test_sorts(dtype: type):
         for length in (0, 1, 10, 101, 1111, 12345, 1000000):
             test_sort(g, length, kind, dtype)
 
+@test
+def test_sort_float_specials(dtype: type):
+    from math import isnan
+    nan = float("nan")
+    inf = float("inf")
+    for values, expected in (([3.0, nan, -2.0, inf, -inf, nan],
+                              [-inf, -2.0, 3.0, inf, nan, nan]),
+                             ([3.0, -0.0, 0.0, -2.0], [-2.0, 0.0, 0.0, 3.0]),
+                             ([inf, 3.0, -inf, -2.0], [-inf, -2.0, 3.0, inf]),
+                             ([nan], [nan]), ([-0.0], [0.0])):
+        data = np.array(values, dtype=dtype)
+        inplace = data.copy()
+        inplace.sort(kind="quick")
+        for actual in (np.sort(data, kind="quick"), inplace):
+            assert len(actual) == len(expected)
+            for index, reference in enumerate(expected):
+                value = float(actual[index])
+                assert value == reference or (isnan(value) and isnan(reference))
+        for index, reference in enumerate(values):
+            value = float(data[index])
+            assert value == reference or (isnan(value) and isnan(reference))
+
 def check_partitioned(vec, kth):
     if isinstance(kth, int):
         return check_partitioned(vec, (kth, ))
@@ -168,12 +190,16 @@ test_sorts(int)
 test_sorts(u64)
 test_sorts(u32)
 test_sorts(i32)
+test_sorts(u16)
+test_sorts(i16)
 test_sorts(u8)
 test_sorts(i8)
 test_sorts(u128)
 test_sorts(i128)
 test_sorts(float)
 test_sorts(float32)
+test_sort_float_specials(float)
+test_sort_float_specials(float32)
 test_sorts(complex)
 test_sorts(complex64)
 test_partition()

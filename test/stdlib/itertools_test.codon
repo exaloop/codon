@@ -1207,6 +1207,66 @@ def test_islice_from_cpython():
             events.append(index)
             yield index
 
+    def selected(value, period, predicates):
+        predicates.append(value)
+        return (value + 1) % period == 0
+
+    for count in (0, 1, 2, 7, 8, 9, 15, 16, 17, 31, 32, 33, 129):
+        for period in (1, 2, 7, 300):
+            matches = [index for index in range(count) if (index + 1) % period == 0]
+            for stop in (0, 1, 2, 7, 8, 9, 16, 17, count, count + 3):
+                expected = matches[:stop]
+                consumed = (0 if stop == 0 else matches[stop - 1] + 1
+                            if stop <= len(matches) else count)
+                for explicit_loop in (False, True):
+                    events = list[int]()
+                    predicates = list[int]()
+                    source = observed(events, count)
+                    filtered = (value for value in source
+                                if selected(value, period, predicates))
+                    sliced = islice(filtered, stop)
+                    assert events == [] and predicates == []
+                    if explicit_loop:
+                        total = 0
+                        for value in sliced:
+                            total += value
+                    else:
+                        total = sum(sliced)
+                    assert total == sum(expected)
+                    assert events == list(range(consumed))
+                    assert predicates == events
+                    assert list(sliced) == []
+                    following = next(source, -1)
+                    assert following == (consumed if consumed < count else -1)
+
+    def raises_after_prefix(limit):
+        for value in range(1, limit + 1):
+            yield value
+        raise ValueError('past prefix')
+
+    def checked_predicate(value, limit):
+        if value > limit:
+            raise ValueError('past predicate boundary')
+        return value > 0 and value % 3 == 0
+
+    for stop in [0, 1, 7, 8, 9, 16, 17]:
+        limit = stop * 3
+        for source_raises in [False, True]:
+            events = list[int]()
+            source = (raises_after_prefix(limit) if source_raises
+                      else observed(events, limit + 2))
+            result = sum(islice((value for value in source
+                                 if checked_predicate(value, limit)), stop))
+            assert result == 3 * stop * (stop + 1) // 2
+            if source_raises:
+                try:
+                    next(source)
+                    assert False
+                except ValueError as error:
+                    assert error.message == 'past prefix'
+            else:
+                assert events == ([] if stop == 0 else list(range(limit + 1)))
+
     events = list[int]()
     assert sum(islice(observed(events, 7), 3)) == 3
     assert events == [0, 1, 2]
