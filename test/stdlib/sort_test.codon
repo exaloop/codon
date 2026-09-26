@@ -93,3 +93,32 @@ def test_standard_sort():
 
 
 test_standard_sort()
+
+
+@test
+def test_timsort_minrun():
+    from algorithms.timsort import _tim_sort
+
+    for size in (0, 1, 2, 3, 7, 31, 32, 63, 64, 65, 127, 128):
+        ordered = list(range(size))
+        for values in (ordered, ordered[::-1], ordered[size // 2:] + ordered[:size // 2],
+                       [index % 7 for index in range(size)]):
+            expected = sorted(values)
+            actual = values.copy()
+            tim_sort_inplace(actual, lambda value: value)
+            assert actual == expected
+
+            actual = values.copy()
+            tim_sort_inplace(actual, lambda value: -value)
+            assert actual == expected[::-1]
+
+            actual = [-1] + values + [-2]
+            _tim_sort(actual._ptr, 1, size + 1, lambda value: value)
+            assert actual == [-1] + expected + [-2]
+
+            nested = [[value] for value in values]
+            nested.sort()
+            assert nested == [[value] for value in expected]
+
+
+test_timsort_minrun()

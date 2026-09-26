@@ -850,6 +850,17 @@ def test_join():
     assert "xyz".join(["00", "1", "22", "3", "44"]) == "00xyz1xyz22xyz3xyz44"
     assert "xyz".join(iter(["00", "", "22", "3", ""])) == "00xyzxyz22xyz3xyz"
 
+    for separator in ("", "|", "é", "Ω", "😀"):
+        for pieces in (List[str](), ["a"], ["", "", ""],
+                       ["a", "\x00", "", "bc"], ["é", "ß", "x"],
+                       ["a", "Ω", ""], ["😀ab"[1:], "c"]):
+            expected = ""
+            for index, piece in enumerate(pieces):
+                if index > 0:
+                    expected += separator
+                expected += piece
+            assert separator.join(pieces) == expected
+
 
 @test
 def test_repr():

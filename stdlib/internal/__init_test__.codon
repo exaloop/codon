@@ -119,12 +119,12 @@ from internal.types.str import *
 from internal.format import *
 
 def next(g: Generator[T], default: Optional[T] = None, T: type) -> T:
-    if g.done():
-        if default:
-            return unwrap(default)
+    if not g._advance():
+        if default is not None:
+            return default.__val__()
         else:
             raise StopIteration()
-    return g.__next__()
+    return g._get()
 
 from C import seq_print_full(str, cobj)
 

@@ -221,6 +221,43 @@ def test_list():
     assert [a for a in l2] == [1, 2, 1, 2]
     assert 2 * [1, 2] == l2
 
+    for count in (-2, 0, 1, 2, 17, 129):
+        assert [7] * count == [7 for index in range(max(0, count))]
+        assert [1.25] * count == [1.25 for index in range(max(0, count))]
+        assert ["value"] * count == ["value" for index in range(max(0, count))]
+        assert [(1, "x")] * count == [(1, "x") for index in range(max(0, count))]
+        assert [None] * count == [None for index in range(max(0, count))]
+        assert List[int]() * count == []
+        assert [1, 2, 3] * count == [value for index in range(max(0, count)) for value in (1, 2, 3)]
+        assert [1.25, 2.5] * count == [value for index in range(max(0, count)) for value in (1.25, 2.5)]
+        assert ["first", "second"] * count == [value for index in range(max(0, count)) for value in ("first", "second")]
+        assert [(1, "x"), (2, "y")] * count == [value for index in range(max(0, count)) for value in ((1, "x"), (2, "y"))]
+        assert [None, None] * count == [None for index in range(max(0, 2 * count))]
+    assert List[int]() * 0x7FFFFFFFFFFFFFFF == []
+    source = [1]
+    repeated = [source] * 7
+    source.append(2)
+    assert all(value is source and value == [1, 2] for value in repeated)
+    repeated.append([3])
+    assert len(repeated) == 8
+    assert source == [1, 2]
+
+    other = [3]
+    original = [source, other]
+    repeated = 17 * original
+    assert repeated is not original
+    assert len(repeated) == 34
+    for index in range(17):
+        assert repeated[2 * index] is source
+        assert repeated[2 * index + 1] is other
+    repeated[0] = [99]
+    other.append(4)
+    repeated.append([5])
+    assert original == [[1, 2], [3, 4]]
+    assert repeated[0] == [99] and repeated[2] is source
+    assert repeated[1] == [3, 4] and repeated[-1] == [5]
+    assert len(repeated) == 35
+
     l1 = [i*2 for i in range(3)]
     l1.insert(0, 99)
     l1[0] += 1

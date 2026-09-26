@@ -14,15 +14,24 @@ class Generator:
     def __promise__(self) -> Ptr[T]:
         pass
 
-    def done(self) -> bool:
+    def _advance(self) -> bool:
+        """Resume once unless exhausted; return whether a value was yielded."""
+        if self.__done__():
+            return False
         self.__resume__()
-        return self.__done__()
+        return not self.__done__()
 
-    def __next__(self: Generator[T]) -> T:
+    def _get(self: Generator[T]) -> T:
+        """Read the current value after a successful `_advance()`, without resuming."""
         if isinstance(T, None):
             pass
         else:
             return self.__promise__()[0]
+
+    def __next__(self: Generator[T]) -> T:
+        if not self._advance():
+            raise StopIteration()
+        return self._get()
 
     def __iter__(self) -> Generator[T]:
         return self
@@ -62,14 +71,15 @@ class Generator:
         return Ptr._ptr_to_str(self.__raw__(), "generator")
 
     def send(self, what: T) -> T:
-        p = self.__promise__()
-        p[0] = what
-        self.__resume__()
-        return p[0]
+        if self.__done__():
+            raise StopIteration()
+        if not isinstance(T, None):
+            self.__promise__()[0] = what
+        return self.__next__()
 
     @nocapture
     @llvm
-    def destroy(self) -> None:
+    def _destroy(self) -> None:
         declare void @llvm.coro.destroy(ptr)
         call void @llvm.coro.destroy(ptr %self)
         ret {} {}

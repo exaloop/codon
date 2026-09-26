@@ -5099,6 +5099,18 @@ def _unicode_join_impl(sep: str, values: List[str]) -> str:
     result = _unicode_new_uninit(total_len, maxchar)
     out = 0
 
+    if result._kind() <= KIND_LATIN1:
+        for index in range(len(values)):
+            if index > 0 and len(sep) > 0:
+                str.memcpy(result._ptr + out, sep._ptr, len(sep))
+                out += len(sep)
+
+            piece = values[index]
+            str.memcpy(result._ptr + out, piece._ptr, len(piece))
+            out += len(piece)
+
+        return result
+
     for i in range(len(values)):
         if i > 0 and len(sep) > 0:
             _unicode_copy_range(result, sep, out, 0, len(sep))

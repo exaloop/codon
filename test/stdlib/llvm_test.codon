@@ -179,13 +179,15 @@ def foo():
     yield 3
 z = foo()
 y = z.__iter__()
+print hasattr(y, 'destroy') #: False
+print hasattr(y, '_destroy') #: True
 print str(y.__raw__())[:2] #: 0x
 print y.__done__() #: False
 print y.__promise__()[0] #: 0
 y.__resume__()
 print y.__repr__()[:16] #: <generator at 0x
-print y.__next__() #: 1
-print y.done() #: False
+print y._get() #: 1
+print y.__next__() #: 2
 y.send(1)
-y.destroy()
-print y.done() #: True
+y._destroy()
+print y._advance() #: False

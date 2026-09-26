@@ -488,9 +488,9 @@ def tee(iterable, n=2):
     def gen(mydeque):
         while True:
             if not mydeque:             # when the local deque is empty
-                if it.done():
+                if not it._advance():
                     return
-                newval = it.__next__()
+                newval = it._get()
                 for d in deques:        # load it to all the deques
                     d.append(newval)
             yield mydeque.popleft()

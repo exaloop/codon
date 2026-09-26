@@ -19,32 +19,17 @@ inf = _inf()
 nan = _nan()
 
 def factorial(x: int) -> int:
-    _F = (
-        1,
-        1,
-        2,
-        6,
-        24,
-        120,
-        720,
-        5040,
-        40320,
-        362880,
-        3628800,
-        39916800,
-        479001600,
-        6227020800,
-        87178291200,
-        1307674368000,
-        20922789888000,
-        355687428096000,
-        6402373705728000,
-        121645100408832000,
-        2432902008176640000,
-    )
+    @pure
+    @llvm
+    def lookup(index: int) -> int:
+        @data = private unnamed_addr constant [21 x i64] [i64 1, i64 1, i64 2, i64 6, i64 24, i64 120, i64 720, i64 5040, i64 40320, i64 362880, i64 3628800, i64 39916800, i64 479001600, i64 6227020800, i64 87178291200, i64 1307674368000, i64 20922789888000, i64 355687428096000, i64 6402373705728000, i64 121645100408832000, i64 2432902008176640000], align 8
+        %pointer = getelementptr inbounds [21 x i64], ptr @data, i64 0, i64 %index
+        %value = load i64, ptr %pointer, align 8, !range !{i64 1, i64 2432902008176640001}
+        ret i64 %value
+
     if not (0 <= x <= 20):
         raise ValueError("factorial is only supported for 0 <= x <= 20")
-    return _F[x]
+    return lookup(x)
 
 def isnan(x: float) -> bool:
     @pure

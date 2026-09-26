@@ -22,6 +22,7 @@
 #include "codon/cir/transform/parallel/openmp.h"
 #include "codon/cir/transform/pass.h"
 #include "codon/cir/transform/pythonic/dict.h"
+#include "codon/cir/transform/pythonic/enumerate.h"
 #include "codon/cir/transform/pythonic/format.h"
 #include "codon/cir/transform/pythonic/generator.h"
 #include "codon/cir/transform/pythonic/io.h"
@@ -168,6 +169,7 @@ void PassManager::registerStandardPasses() {
     registerPass(std::make_unique<pythonic::ListAdditionOptimization>());
     registerPass(std::make_unique<pythonic::StrAdditionOptimization>());
     registerPass(std::make_unique<pythonic::GeneratorArgumentOptimization>());
+    registerPass(std::make_unique<pythonic::EnumerateOptimization>());
     registerPass(std::make_unique<pythonic::IOCatOptimization>());
     registerPass(std::make_unique<pythonic::FormattingOptimization>());
 
@@ -210,6 +212,11 @@ void PassManager::registerStandardPasses() {
     registerPass(std::make_unique<numpy::NumPyFusionPass>(numpyKey, seKey2),
                  /*insertBefore=*/"", {numpyKey, seKey2},
                  {seKey1, rdKey, cfgKey, globalKey, capKey});
+    // Expose whole producer/consumer loops before lowering. LLVM's suspension-aware
+    // unroll guard alone does not eliminate nested scan/consumer loop structure.
+    registerPass(std::make_unique<pythonic::GeneratorLoopFusion>(),
+                 /*insertBefore=*/"", {},
+                 {seKey1, seKey2, rdKey, cfgKey, globalKey, capKey});
     registerPass(std::make_unique<numpy::NumPyLifetimePass>(rdKey),
                  /*insertBefore=*/"", {rdKey},
                  {seKey1, seKey2, rdKey, cfgKey, globalKey, capKey});

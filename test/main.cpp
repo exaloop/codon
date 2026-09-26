@@ -536,6 +536,7 @@ INSTANTIATE_TEST_SUITE_P(
         testing::Values(
             "transform/canonical.codon",
             "transform/dict_opt.codon",
+            "transform/enumerate.codon",
             "transform/escapes.codon",
             "transform/folding.codon",
             "transform/for_lowering.codon",

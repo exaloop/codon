@@ -8,6 +8,22 @@ NINF = -math.inf
 def close(a: float, b: float, epsilon: float = 1e-7):
     return abs(a - b) <= epsilon
 
+@test
+def test_factorial_table():
+    expected = 1
+    for value in range(21):
+        if value:
+            expected *= value
+        assert math.factorial(value) == expected
+    for value in (-9223372036854775807 - 1, -1, 21, 9223372036854775807):
+        try:
+            math.factorial(value)
+            assert False
+        except ValueError as error:
+            assert str(error) == "factorial is only supported for 0 <= x <= 20"
+
+test_factorial_table()
+
 if __py_numerics__:
     ### Python semantics tests
 

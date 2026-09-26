@@ -407,6 +407,18 @@ def test_unicode_spans_and_bounds():
     assert [m.span() for m in re.finditer("", "é😀")] == [
         (0, 0), (1, 1), (2, 2),
     ]
+    for subject in ("ab12cd34", "\u0100ab12cd34"[1:], "\U0001f600ab12cd34"[1:]):
+        matches = list(re.finditer(r"(\d+)(x)?", subject))
+        assert [match.span() for match in matches] == [(2, 4), (6, 8)]
+        assert [match.span(1) for match in matches] == [(2, 4), (6, 8)]
+        assert [match.span(2) for match in matches] == [(-1, -1), (-1, -1)]
+        assert [match.group() for match in matches] == ["12", "34"]
+        assert re.compile(r"\d+").search(subject, pos=3, endpos=7).group() == "2"
+        assert re.sub(r"\d+", "X", subject) == "abXcdX"
+        assert [match.span() for match in re.finditer("", subject)] == [
+            (index, index) for index in range(9)
+        ]
+    assert [match.span() for match in re.finditer(rb"\d+", b"\xff12\x80")] == [(1, 3)]
 test_unicode_spans_and_bounds()
 
 @test

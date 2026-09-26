@@ -1109,6 +1109,78 @@ struct AllocationAutoFree : public llvm::PassInfoMixin<AllocationAutoFree> {
 /// function pointer comparisons. This pass puts them into a somewhat
 /// easier-to-analyze form.
 struct CoroBranchSimplifier : public llvm::PassInfoMixin<CoroBranchSimplifier> {
+  static bool mergeGuardedState(llvm::Loop &loop) {
+    llvm::SmallVector<llvm::PHINode *, 8> states;
+    for (auto &phi : loop.getHeader()->phis())
+      if (phi.getType()->isPointerTy())
+        states.push_back(&phi);
+    if (states.size() > 8)
+      return false;
+    for (unsigned first = 0; first < states.size(); ++first) {
+      for (unsigned second = first + 1; second < states.size(); ++second) {
+        auto *leftRoot = states[first];
+        auto *rightRoot = states[second];
+        llvm::SmallVector<std::pair<llvm::Value *, llvm::Value *>, 16> visited;
+        std::function<bool(llvm::Value *, llvm::Value *, llvm::BasicBlock *,
+                           llvm::BasicBlock *)>
+            equivalent = [&](llvm::Value *left, llvm::Value *right,
+                             llvm::BasicBlock *predecessor,
+                             llvm::BasicBlock *successor) {
+              if (left == right)
+                return true;
+              if (predecessor) {
+                auto *branch =
+                    llvm::dyn_cast<llvm::BranchInst>(predecessor->getTerminator());
+                auto *compare =
+                    branch && branch->isConditional()
+                        ? llvm::dyn_cast<llvm::ICmpInst>(branch->getCondition())
+                        : nullptr;
+                if (compare && compare->isEquality()) {
+                  auto *tested =
+                      getNonNullOperand(compare->getOperand(0), compare->getOperand(1));
+                  auto *other = getNonNullOperand(left, right);
+                  bool same =
+                      tested && other &&
+                      (tested == other || (tested == leftRoot && other == rightRoot) ||
+                       (tested == rightRoot && other == leftRoot));
+                  unsigned nullEdge =
+                      compare->getPredicate() == llvm::CmpInst::ICMP_EQ ? 0 : 1;
+                  if (same && branch->getSuccessor(nullEdge) == successor &&
+                      branch->getSuccessor(1 - nullEdge) != successor)
+                    return true;
+                }
+              }
+              auto *leftPhi = llvm::dyn_cast<llvm::PHINode>(left);
+              auto *rightPhi = llvm::dyn_cast<llvm::PHINode>(right);
+              if (!leftPhi || !rightPhi ||
+                  leftPhi->getParent() != rightPhi->getParent())
+                return false;
+              auto pair = std::make_pair(left, right);
+              if (llvm::is_contained(visited, pair))
+                return true;
+              if (visited.size() == 16)
+                return false;
+              visited.push_back(pair);
+              for (unsigned index = 0; index < leftPhi->getNumIncomingValues();
+                   ++index) {
+                auto *block = leftPhi->getIncomingBlock(index);
+                if (!equivalent(leftPhi->getIncomingValue(index),
+                                rightPhi->getIncomingValueForBlock(block), block,
+                                leftPhi->getParent()))
+                  return false;
+              }
+              return true;
+            };
+        if (equivalent(leftRoot, rightRoot, nullptr, nullptr)) {
+          rightRoot->replaceAllUsesWith(leftRoot);
+          rightRoot->eraseFromParent();
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   static llvm::Value *getNonNullOperand(llvm::Value *op1, llvm::Value *op2) {
     auto *ptr = llvm::dyn_cast<llvm::PointerType>(op1->getType());
     if (!ptr)
@@ -1126,6 +1198,42 @@ struct CoroBranchSimplifier : public llvm::PassInfoMixin<CoroBranchSimplifier> {
   llvm::PreservedAnalyses run(llvm::Loop &loop, llvm::LoopAnalysisManager &am,
                               llvm::LoopStandardAnalysisResults &ar,
                               llvm::LPMUpdater &u) {
+    bool changed = mergeGuardedState(loop);
+    for (auto *block : loop.blocks()) {
+      for (auto &instruction : llvm::make_early_inc_range(*block)) {
+        auto *compare = llvm::dyn_cast<llvm::ICmpInst>(&instruction);
+        if (!compare || !compare->isEquality())
+          continue;
+        auto *phi = llvm::dyn_cast_or_null<llvm::PHINode>(
+            getNonNullOperand(compare->getOperand(0), compare->getOperand(1)));
+        if (!phi || phi->getNumIncomingValues() > 8)
+          continue;
+        llvm::SmallVector<llvm::Constant *, 8> values;
+        for (unsigned index = 0; index < phi->getNumIncomingValues(); ++index) {
+          auto *value = phi->getIncomingValue(index);
+          bool isNull = llvm::isa<llvm::ConstantPointerNull>(value);
+          auto *predecessor = phi->getIncomingBlock(index);
+          llvm::SimplifyQuery query(phi->getModule()->getDataLayout(), &ar.DT, &ar.AC,
+                                    predecessor->getTerminator());
+          if (!isNull && !llvm::isKnownNonZero(value, query))
+            break;
+          values.push_back(llvm::ConstantInt::get(
+              compare->getType(),
+              isNull == (compare->getPredicate() == llvm::CmpInst::ICMP_EQ)));
+        }
+        if (values.size() != phi->getNumIncomingValues())
+          continue;
+        auto *condition = llvm::PHINode::Create(compare->getType(), values.size(),
+                                                "coro.done", phi->getIterator());
+        for (unsigned index = 0; index < values.size(); ++index)
+          condition->addIncoming(values[index], phi->getIncomingBlock(index));
+        compare->replaceAllUsesWith(condition);
+        compare->eraseFromParent();
+        changed = true;
+      }
+    }
+    if (changed)
+      return llvm::PreservedAnalyses::none();
     if (auto *exit = loop.getExitingBlock()) {
       if (auto *br = llvm::dyn_cast<llvm::BranchInst>(exit->getTerminator())) {
         if (!br->isConditional() || br->getNumSuccessors() != 2 ||
@@ -1177,6 +1285,89 @@ struct CoroBranchSimplifier : public llvm::PassInfoMixin<CoroBranchSimplifier> {
       }
     }
     return llvm::PreservedAnalyses::all();
+  }
+};
+
+// Unrolling before coroutine lowering duplicates suspension states, which can leave
+// a dispatch switch that prevents otherwise constant generator reductions from
+// folding. Delay unrolling until those suspension points have been lowered away.
+struct CoroUnrollControl : public llvm::PassInfoMixin<CoroUnrollControl> {
+  static bool hasSuspension(llvm::BasicBlock &block) {
+    for (auto &instruction : block)
+      if (auto *intrinsic = llvm::dyn_cast<llvm::IntrinsicInst>(&instruction))
+        if (intrinsic->getIntrinsicID() == llvm::Intrinsic::coro_suspend)
+          return true;
+    return false;
+  }
+
+  static llvm::MDNode *updateMetadata(llvm::LLVMContext &context,
+                                      llvm::MDNode *identifier, bool suspends) {
+    auto nameOf = [](llvm::Metadata *metadata) -> llvm::StringRef {
+      auto *node = llvm::dyn_cast_or_null<llvm::MDNode>(metadata);
+      auto *name = node && node->getNumOperands()
+                       ? llvm::dyn_cast_or_null<llvm::MDString>(node->getOperand(0))
+                       : nullptr;
+      return name ? name->getString() : llvm::StringRef();
+    };
+    bool protectedLoop = false;
+    bool disabled = false;
+    if (identifier)
+      for (unsigned index = 1; index < identifier->getNumOperands(); ++index) {
+        auto name = nameOf(identifier->getOperand(index));
+        protectedLoop |= name == "codon.coro.unroll";
+        disabled |= name == "llvm.loop.unroll.disable";
+      }
+    // Do not claim an existing disable hint: only our ownership marker authorizes
+    // removing it later. Repeated visits to an already protected loop are a no-op.
+    if ((suspends && disabled) || (!suspends && !protectedLoop))
+      return identifier;
+
+    // Preserve unrelated hints. Operand zero must refer to the new loop ID itself,
+    // so reserve it here and fill it after constructing the distinct metadata node.
+    llvm::SmallVector<llvm::Metadata *, 8> metadata{nullptr};
+    if (identifier)
+      for (unsigned index = 1; index < identifier->getNumOperands(); ++index) {
+        auto name = nameOf(identifier->getOperand(index));
+        if (name != "codon.coro.unroll" && name != "llvm.loop.unroll.disable")
+          metadata.push_back(identifier->getOperand(index));
+      }
+    if (suspends)
+      for (auto name : {"codon.coro.unroll", "llvm.loop.unroll.disable"})
+        metadata.push_back(
+            llvm::MDNode::get(context, llvm::MDString::get(context, name)));
+    auto *replacement =
+        metadata.size() > 1 ? llvm::MDNode::getDistinct(context, metadata) : nullptr;
+    if (replacement)
+      replacement->replaceOperandWith(0, replacement);
+    return replacement;
+  }
+
+  llvm::PreservedAnalyses run(llvm::Loop &loop, llvm::LoopAnalysisManager &,
+                              llvm::LoopStandardAnalysisResults &, llvm::LPMUpdater &) {
+    // Check this loop, not the whole function: non-suspending inner loops in a
+    // generator should retain ordinary unrolling even while its outer loop yields.
+    bool suspends = false;
+    for (auto *block : loop.blocks())
+      suspends |= hasSuspension(*block);
+    loop.setLoopID(
+        updateMetadata(loop.getHeader()->getContext(), loop.getLoopID(), suspends));
+    return llvm::PreservedAnalyses::all();
+  }
+
+  static void cleanup(llvm::Module &module) {
+    for (auto &function : module) {
+      if (llvm::any_of(function, hasSuspension))
+        continue;
+      // Lowering can leave loop metadata on branches that are no longer latches.
+      // Once the function has no suspends, scan attachments directly so these
+      // stale guards cannot survive merely because LoopInfo no longer sees them.
+      for (auto &block : function)
+        for (auto &instruction : block)
+          if (auto *identifier = instruction.getMetadata(llvm::LLVMContext::MD_loop))
+            instruction.setMetadata(
+                llvm::LLVMContext::MD_loop,
+                updateMetadata(module.getContext(), identifier, false));
+    }
   }
 };
 
@@ -1248,10 +1439,13 @@ struct OpenMPThreadIdOptimizer : public llvm::PassInfoMixin<OpenMPThreadIdOptimi
 
 void registerCodonLLVMOptimizationPasses(llvm::PassBuilder &pb, PluginManager *plugins,
                                          Options *options) {
+  // This extension point runs before LLVM's full-unroll pass.
   pb.registerLateLoopOptimizationsEPCallback(
       [](llvm::LoopPassManager &pm, llvm::OptimizationLevel opt) {
-        if (opt.isOptimizingForSpeed())
+        if (opt.isOptimizingForSpeed()) {
+          pm.addPass(CoroUnrollControl());
           pm.addPass(CoroBranchSimplifier());
+        }
       });
 
   pb.registerPeepholeEPCallback(
@@ -1314,6 +1508,9 @@ void runLLVMOptimizationPasses(llvm::Module *module, PluginManager *plugins,
     mpm.run(*module, mam);
   }
 
+  // Release owned guards between the existing O3 runs, allowing the next pipeline
+  // to optimize ordinary loops exposed by coroutine lowering in this one.
+  CoroUnrollControl::cleanup(*module);
   applyDebugTransformations(module, options->debug, options->jit);
 }
 

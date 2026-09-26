@@ -2616,6 +2616,7 @@ void LLVMVisitor::visit(const ForFlow *x) {
 
   auto *condBlock = llvm::BasicBlock::Create(*context, "for.cond", func);
   auto *bodyBlock = llvm::BasicBlock::Create(*context, "for.body", func);
+  auto *checkBlock = llvm::BasicBlock::Create(*context, "for.check", func);
   auto *cleanupBlock = llvm::BasicBlock::Create(*context, "for.cleanup", func);
   auto *exitBlock = llvm::BasicBlock::Create(*context, "for.exit", func);
 
@@ -2633,7 +2634,10 @@ void LLVMVisitor::visit(const ForFlow *x) {
   process(x->getIter());
   auto *iter = value;
   B->SetInsertPoint(block);
-  B->CreateBr(condBlock);
+  B->CreateCondBr(B->CreateCall(coroDone, iter), exitBlock, condBlock);
+
+  B->SetInsertPoint(checkBlock);
+  B->CreateCondBr(B->CreateCall(coroDone, iter), exitBlock, condBlock);
 
   block = condBlock;
   call(coroResume, {iter});
@@ -2653,11 +2657,11 @@ void LLVMVisitor::visit(const ForFlow *x) {
 
   block = bodyBlock;
   enterLoop(
-      {/*breakBlock=*/exitBlock, /*continueBlock=*/condBlock, /*loopId=*/x->getId()});
+      {/*breakBlock=*/exitBlock, /*continueBlock=*/checkBlock, /*loopId=*/x->getId()});
   process(x->getBody());
   exitLoop();
   B->SetInsertPoint(block);
-  B->CreateBr(condBlock);
+  B->CreateBr(checkBlock);
 
   B->SetInsertPoint(cleanupBlock);
   B->CreateCall(coroDestroy, iter);
@@ -3139,6 +3143,7 @@ void LLVMVisitor::codegenPipeline(
 
     auto *condBlock = llvm::BasicBlock::Create(*context, "pipeline.cond", func);
     auto *bodyBlock = llvm::BasicBlock::Create(*context, "pipeline.body", func);
+    auto *checkBlock = llvm::BasicBlock::Create(*context, "pipeline.check", func);
     auto *cleanupBlock = llvm::BasicBlock::Create(*context, "pipeline.cleanup", func);
     auto *exitBlock = llvm::BasicBlock::Create(*context, "pipeline.exit", func);
 
@@ -3155,7 +3160,10 @@ void LLVMVisitor::codegenPipeline(
 
     auto *iter = value;
     B->SetInsertPoint(block);
-    B->CreateBr(condBlock);
+    B->CreateCondBr(B->CreateCall(coroDone, iter), exitBlock, condBlock);
+
+    B->SetInsertPoint(checkBlock);
+    B->CreateCondBr(B->CreateCall(coroDone, iter), exitBlock, condBlock);
 
     block = condBlock;
     call(coroResume, {iter});
@@ -3175,7 +3183,7 @@ void LLVMVisitor::codegenPipeline(
     codegenPipeline(stages, where + 1);
 
     B->SetInsertPoint(block);
-    B->CreateBr(condBlock);
+    B->CreateBr(checkBlock);
 
     B->SetInsertPoint(cleanupBlock);
     B->CreateCall(coroDestroy, iter);

@@ -365,6 +365,14 @@ def _tim_sort(
     if end - begin < 2:
         return
 
+    if end - begin < 64:
+        run_length, inorder = _count_run(arr, begin, end, keyf)
+        if not inorder:
+            _reverse_sortslice(arr, begin, begin + run_length)
+        if run_length < end - begin:
+            _insertion_sort(arr, begin, end, keyf)
+        return
+
     merge_pending = List[Tuple[int, int]]()
     minrun = _merge_compute_minrun(end - begin)
     i = begin

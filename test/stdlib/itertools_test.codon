@@ -417,6 +417,23 @@ def test_chain():
     assert list(itertools.chain(["abc", "def"])) == ["abc", "def"]
     assert list(itertools.chain(["abc"])) == ["abc"]
     assert list(itertools.chain(["a", "b", "c"])) == ["a", "b", "c"]
+    assert list(itertools.chain([1, 2], range(3, 5))) == [1, 2, 3, 4]
+    assert list(itertools.chain(list[int](), [1], list[int]())) == [1]
+
+    def source(events, tag):
+        events.append(tag)
+        yield tag
+        events.append(tag + 10)
+
+    events = list[int]()
+    items = itertools.chain(source(events, 1), source(events, 2))
+    assert events == []
+    assert next(items) == 1
+    assert events == [1]
+    assert list(items) == [2]
+    assert events == [1, 11, 2, 12]
+    shared = iter([4, 5])
+    assert list(itertools.chain(shared, shared)) == [4, 5]
 
 
 @test
@@ -1184,6 +1201,99 @@ def test_islice_from_cpython():
     assert list(islice(range(10), None, None, None)) == list(range(10))
     assert list(islice(range(10), 2, None)) == list(range(2, 10))
     assert list(islice(range(10), 1, None, 2)) == list(range(1, 10, 2))
+
+    def observed(events, count):
+        for index in range(count):
+            events.append(index)
+            yield index
+
+    events = list[int]()
+    assert sum(islice(observed(events, 7), 3)) == 3
+    assert events == [0, 1, 2]
+    events = list[int]()
+    total = 0
+    for value in islice(observed(events, 7), 1, 6, 2):
+        total += value
+    assert total == 9
+    assert events == [0, 1, 2, 3, 4, 5]
+
+    def bound(events, tag, value):
+        events.append(tag)
+        return value
+
+    events = list[int]()
+    assert sum(islice(observed(events, 7), bound(events, -1, 1),
+                      bound(events, -2, 5), bound(events, -3, 2))) == 4
+    assert events == [-1, -2, -3, 0, 1, 2, 3, 4]
+
+    def empty_values(events):
+        for index in range(4):
+            events.append(index)
+            yield None
+
+    events = list[int]()
+    for value in islice(empty_values(events), 1, 3):
+        pass
+    assert events == [0, 1, 2]
+
+    for start in [0, 1, 4, 8]:
+        for stop in [0, 2, 5, 10]:
+            for step in [1, 2, 4, 9223372036854775807]:
+                events = list[int]()
+                source = observed(events, 7)
+                sliced = islice(source, start, stop, step)
+                assert events == []
+                assert list(sliced) == [index for index in range(7)
+                                        if start <= index < stop
+                                        and (index - start) % step == 0]
+                consumed = min(7, max(start, stop))
+                assert events == list(range(consumed))
+                assert next(source, -1) == (consumed if consumed < 7 else -1)
+                assert list(sliced) == []
+
+    for stop in [0, 1, 4, 7, 10]:
+        events = list[int]()
+        source = observed(events, 7)
+        sliced = islice(source, stop)
+        assert events == []
+        assert list(sliced) == list(range(min(7, stop)))
+        assert events == list(range(min(7, stop)))
+        assert next(source, -1) == (stop if stop < 7 else -1)
+
+    events = list[int]()
+    source = observed(events, 7)
+    sliced = islice(source, 2, None, 3)
+    assert next(sliced) == 2
+    assert events == [0, 1, 2]
+    assert next(source) == 3
+    assert next(sliced) == 6
+    assert events == list(range(7))
+    assert list(sliced) == []
+
+    events = list[int]()
+    source = observed(events, 0)
+    assert list(islice(source, None)) == []
+    assert list(islice(source, None, None, None)) == []
+    assert events == []
+
+    for start, stop, step in [(-1, 3, 1), (0, -1, 1), (0, 3, 0), (0, 3, -1)]:
+        events = list[int]()
+        try:
+            list(islice(observed(events, 7), start, stop, step))
+            assert False
+        except ValueError:
+            pass
+        assert events == []
+
+    def raises_while_skipping():
+        yield 0
+        raise ValueError('skipped input')
+
+    try:
+        list(islice(raises_while_skipping(), 3, 5))
+        assert False
+    except ValueError as error:
+        assert error.message == 'skipped input'
 
 
 @test
