@@ -13,10 +13,12 @@
 #include <limits>
 #include <type_traits>
 
+// clang-format off
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "codon/runtime/numpy/sort.cpp"
-#include "hwy/contrib/sort/vqsort-inl.h"
 #include "hwy/foreach_target.h"
+#include "hwy/contrib/sort/vqsort-inl.h"
+// clang-format on
 
 HWY_BEFORE_NAMESPACE();
 namespace {
