@@ -14,9 +14,12 @@ namespace ir {
 namespace transform {
 namespace pythonic {
 namespace {
+
 // Two complementary rewrites avoid the generator protocol: turn direct
 // sum/any/all calls into ordinary functions, and splice a producer's body into
 // its sole for-loop consumer. The helpers below first build the reducer functions.
+// The sketches below use fresh local names and omit type conversions and
+// eligibility checks; they illustrate successful rewrites, not arbitrary generators.
 bool isSum(Func *f) {
   return f &&
          f->getName().rfind(ast::getMangledFunc("std.internal.builtin", "sum"), 0) == 0;
@@ -106,6 +109,7 @@ struct GeneratorAnyAllTransformer : public util::Operator {
     // Leave the short-circuit returns inserted at yield sites unchanged.
     if (saw(v))
       return;
+
     auto *M = v->getModule();
     auto *newReturn = M->Nr<ReturnInstr>(M->getBool(!any));
     see(newReturn);
@@ -121,6 +125,27 @@ struct GeneratorAnyAllTransformer : public util::Operator {
 
 // Clone rather than mutate the producer, which may still be used as a generator
 // elsewhere. The wrapper takes the same arguments plus the initial accumulator.
+// For example:
+//
+//   def gen(items):
+//       for item in items:
+//           if keep(item):
+//               yield compute(item)
+//   result = sum(gen(items), start)
+//
+// becomes:
+//
+//   def sum_gen(items, start):
+//       total = start
+//       for item in items:
+//           if keep(item):
+//               total = total + compute(item)
+//       return total
+//   result = sum_gen(items, start)
+//
+// There is no generator object at this call site: each yielded value contributes
+// directly to the result. An early producer return instead returns total, after
+// evaluating any return expression for its effects.
 Func *genToSum(BodiedFunc *gen, Type *startType, Type *outType) {
   if (!gen || !gen->isGenerator())
     return nullptr;
@@ -177,6 +202,24 @@ Func *genToSum(BodiedFunc *gen, Type *startType, Type *outType) {
 
 // Use the same cloning scheme for short-circuit reducers. Original returns and
 // fallthrough mean exhaustion, whose answer is false for any and true for all.
+// For the producer above, any(gen(items)) becomes any_gen(items):
+//
+//   def any_gen(items):
+//       for item in items:
+//           if keep(item) and bool(compute(item)):
+//               return True
+//       return False
+//
+// Likewise, all(gen(items)) becomes all_gen(items):
+//
+//   def all_gen(items):
+//       for item in items:
+//           if keep(item) and not bool(compute(item)):
+//               return False
+//       return True
+//
+// Only the needed prefix of the producer runs; finding the answer skips the
+// remaining producer code rather than first collecting all yielded values.
 Func *genToAnyAll(BodiedFunc *gen, bool any) {
   if (!gen || !gen->isGenerator())
     return nullptr;
@@ -218,6 +261,7 @@ Func *genToAnyAll(BodiedFunc *gen, bool any) {
 } // namespace
 
 namespace {
+
 // Restrict fusion to small synchronous bodies. Extra suspension protocols,
 // exception regions, and exposed local storage need lifetime/control-flow
 // handling that the substitution below does not implement.
@@ -227,15 +271,18 @@ struct FusionVerifier : public util::Operator {
   bool valid = true;
 
   void preHook(Node *) override { valid &= ++nodes <= 256; }
+
   void handle(YieldInstr *value) override {
     valid &= value->getValue() && !value->isFinal();
     ++yields;
   }
+
   void handle(YieldInInstr *) override { valid = false; }
   void handle(AwaitInstr *) override { valid = false; }
   void handle(TryCatchFlow *) override { valid = false; }
   void handle(PointerValue *value) override { valid &= value->getVar()->isGlobal(); }
   void handle(StackAllocInstr *) override { valid = false; }
+
   void handle(ForFlow *loop) override {
     valid &= !loop->isParallel() && !loop->isAsync();
   }
@@ -246,11 +293,14 @@ struct FusionVerifier : public util::Operator {
 struct ConsumerVerifier : public util::Operator {
   const std::unordered_set<id_t> &wrappers;
   bool valid = true;
+
   explicit ConsumerVerifier(const std::unordered_set<id_t> &wrappers)
       : wrappers(wrappers) {}
+
   void handle(BreakInstr *value) override {
     valid &= value->getLoop() && wrappers.count(value->getLoop()->getId());
   }
+
   void handle(ContinueInstr *) override { valid = false; }
 };
 
@@ -270,9 +320,11 @@ struct IteratorUseVerifier : public util::Operator {
   bool addressTaken = false;
   std::vector<id_t> creationLoops;
   std::vector<id_t> consumptionLoops;
+
   IteratorUseVerifier(Var *iterator, ForFlow *consumer,
                       const std::unordered_set<id_t> &wrappers)
       : iterator(iterator), consumer(consumer), wrappers(wrappers) {}
+
   std::vector<id_t> enclosingLoops() {
     // Ignore exit wrappers introduced by this pass. Include branch identities
     // so creation in one if/try arm cannot be paired with consumption in another.
@@ -291,15 +343,18 @@ struct IteratorUseVerifier : public util::Operator {
     }
     return result;
   }
+
   void preHook(Node *node) override {
     ++position;
     auto *value = cast<Value>(node);
     if (!value || isA<VarValue>(value) || isA<PointerValue>(value) ||
         isA<AssignInstr>(value))
       return;
+
     for (auto *variable : value->getUsedVariables())
       addressTaken |= variable->getId() == iterator->getId();
   }
+
   void handle(VarValue *value) override {
     if (value->getVar()->getId() == iterator->getId()) {
       ++reads;
@@ -307,9 +362,11 @@ struct IteratorUseVerifier : public util::Operator {
       consumptionLoops = enclosingLoops();
     }
   }
+
   void handle(PointerValue *value) override {
     addressTaken |= value->getVar()->getId() == iterator->getId();
   }
+
   void handle(AssignInstr *value) override {
     if (value->getLhs()->getId() == iterator->getId()) {
       assignment = value;
@@ -318,6 +375,7 @@ struct IteratorUseVerifier : public util::Operator {
       creationLoops = enclosingLoops();
     }
   }
+
   bool valid() const {
     return reads == 1 && writes == 1 && !addressTaken &&
            creationPosition < consumptionPosition && creationLoops == consumptionLoops;
@@ -330,6 +388,7 @@ struct IteratorUseVerifier : public util::Operator {
 struct FusionTransformer : public util::Operator {
   ForFlow *consumer;
   WhileFlow *exit;
+
   FusionTransformer(ForFlow *consumer, WhileFlow *exit)
       : util::Operator(true), consumer(consumer), exit(exit) {}
 
@@ -339,9 +398,11 @@ struct FusionTransformer : public util::Operator {
         util::series(module->Nr<AssignInstr>(consumer->getVar(), value->getValue()),
                      consumer->getBody()));
   }
+
   void handle(ReturnInstr *value) override {
     auto *module = value->getModule();
     auto *replacement = module->Nr<SeriesFlow>();
+
     // Exhaustion discards the producer's return value, but not its side effects.
     if (value->getValue())
       replacement->push_back(value->getValue());
@@ -356,55 +417,123 @@ const std::string GeneratorLoopFusion::KEY = "core-pythonic-generator-loop-fusio
 // Reducer specialization can hide another producer/consumer pair behind this
 // compiler-generated call. Inline only that wrapper to expose further fusion,
 // charging the same per-caller growth budget used for producer substitution.
+// For a producer mapped(source) that yields transform(value) for each source value:
+//
+//   result = sum(mapped(gen(args)), start)
+//
+// becomes, after specializing the reducer and inlining its wrapper:
+//
+//   source = gen(args)
+//   total = start
+//   for value in source:
+//       total = total + transform(value)
+//   result = total
+//
+// The inner gen/source pair is now visible to the loop-fusion rewrite below.
 void GeneratorLoopFusion::handle(CallInstr *call) {
   auto *parent = cast<BodiedFunc>(getParentFunc());
   auto *function = cast<BodiedFunc>(util::getFunc(call->getCallee()));
   if (!parent || !function || function->getName() != "__sum_wrapper")
     return;
+
   FusionVerifier verifier;
   verifier.process(function->getBody());
   if (!verifier.valid || growth[parent->getId()] + verifier.nodes > 1024)
     return;
+
   auto inlined = util::inlineCall(call, /*aggressive=*/true);
   if (!inlined)
     return;
+
   for (auto *variable : inlined.newVars)
     parent->push_back(variable);
+
   // The inliner implements early returns with a one-shot loop. Remember it so
   // later fusion accepts its targeted breaks and ignores it as a lifetime boundary.
   if (auto *expression = cast<FlowInstr>(inlined.result))
     if (auto *body = cast<SeriesFlow>(expression->getFlow()))
       if (auto *wrapper = cast<WhileFlow>(body->back()))
         wrappers.insert(wrapper->getId());
+
   growth[parent->getId()] += verifier.nodes;
   call->replaceAll(inlined.result);
 }
 
+// Fuse a producer with its sole consumer, interleaving their ordinary code instead
+// of suspending and resuming a generator. For example:
+//
+//   def gen(limit):
+//       for item in range(limit):
+//           if stop(item):
+//               return finish()
+//           yield compute(item)
+//   iterator = gen(get_limit())
+//   between()
+//   for value in iterator:
+//       consume(value)
+//   after()
+//
+// becomes (using labeled-break pseudocode):
+//
+//   limit = get_limit()
+//   between()
+//   done: while True:
+//       for item in range(limit):
+//           if stop(item):
+//               finish()
+//               break done
+//           value = compute(item)
+//           consume(value)
+//       break
+//   after()
+//
+// Arguments are still evaluated at creation, but the producer body runs only at
+// consumption. Its return ends iteration, not the caller. The consumer body is
+// inserted unchanged, so a return there still exits the consuming function.
 void GeneratorLoopFusion::handle(ForFlow *loop) {
   if (loop->isParallel() || loop->isAsync())
     return;
+
   auto *parent = cast<BodiedFunc>(getParentFunc());
   if (!parent)
     return;
+
   // Unpack a single-use tuple that forwards an iterator. Capture every element
   // at the original assignment, in order, even if only one feeds this loop;
   // dropping the other elements could discard effects. Then retry the direct case.
+  //
+  //   packed = (gen(args), side_effect())
+  //   between()
+  //   for value in packed[0]: consume(value)
+  //
+  // becomes:
+  //
+  //   iterator = gen(args)
+  //   unused = side_effect()
+  //   between()
+  //   for value in iterator: consume(value)
+  //
+  // This removes tuple forwarding, not side_effect(); iterator can now be fused.
   if (auto *extract = cast<ExtractInstr>(loop->getIter())) {
     auto *variable = util::getVar(extract->getVal());
     if (!variable || variable->isGlobal())
       return;
+
     IteratorUseVerifier uses(variable, loop, wrappers);
     uses.process(parent->getBody());
+
     auto *tuple = uses.valid() ? cast<CallInstr>(uses.assignment->getRhs()) : nullptr;
     auto *constructor = tuple ? util::getFunc(tuple->getCallee()) : nullptr;
     auto *type = constructor ? cast<RecordType>(constructor->getParentType()) : nullptr;
     if (!type || type->getName() != "Tuple" ||
         constructor->getUnmangledName() != Module::NEW_MAGIC_NAME)
       return;
+
     auto index = cast<RecordType>(extract->getVal()->getType())
                      ->getMemberIndex(extract->getField());
     if (index < 0 || index >= tuple->numArgs())
       return;
+
     auto *setup = loop->getModule()->Nr<SeriesFlow>();
     Var *selected = nullptr;
     int position = 0;
@@ -413,11 +542,13 @@ void GeneratorLoopFusion::handle(ForFlow *loop) {
       if (position++ == index)
         selected = variable;
     }
+
     uses.assignment->replaceAll(setup);
     loop->setIter(loop->getModule()->Nr<VarValue>(selected));
     handle(loop);
     return;
   }
+
   // Accept either an immediate generator call or a uniquely owned local handle.
   // Retain the latter's assignment so argument evaluation stays at creation time.
   auto *call = cast<CallInstr>(loop->getIter());
@@ -425,6 +556,7 @@ void GeneratorLoopFusion::handle(ForFlow *loop) {
   if (auto *iterator = util::getVar(loop->getIter())) {
     if (iterator->isGlobal())
       return;
+
     IteratorUseVerifier uses(iterator, loop, wrappers);
     uses.process(parent->getBody());
     if (uses.valid()) {
@@ -432,6 +564,7 @@ void GeneratorLoopFusion::handle(ForFlow *loop) {
       call = cast<CallInstr>(creation->getRhs());
     }
   }
+
   auto *generator = call ? cast<BodiedFunc>(util::getFunc(call->getCallee())) : nullptr;
   if (!generator || !generator->isGenerator() || !generator->getBody() ||
       generator->isAsync() || parent == generator ||
@@ -439,10 +572,12 @@ void GeneratorLoopFusion::handle(ForFlow *loop) {
       util::hasAttribute(generator,
                          ast::getMangledFunc("std.internal.attributes", "noinline")))
     return;
+
   FusionVerifier verifier;
   verifier.process(generator->getBody());
   ConsumerVerifier consumerVerifier(wrappers);
   consumerVerifier.process(loop->getBody());
+
   // One yield site lets us move, rather than duplicate, the consumer body.
   // The cumulative budget bounds growth when nested generators are fused in turn.
   if (!verifier.valid || verifier.yields != 1 || !consumerVerifier.valid ||
@@ -454,23 +589,29 @@ void GeneratorLoopFusion::handle(ForFlow *loop) {
   auto *setup = module->Nr<SeriesFlow>();
   std::unordered_map<id_t, Var *> arguments;
   auto argument = generator->arg_begin();
+
   // Snapshot arguments once, left-to-right. For a named handle this setup replaces
   // its creation, not its use, preserving mutations and exceptions between the two.
   for (auto *value : *call)
     arguments.emplace((*argument++)->getId(), util::makeVar(value, setup, parent));
+
   if (creation) {
     creation->replaceAll(setup);
     setup = module->Nr<SeriesFlow>();
   }
+
   util::CloneVisitor clone(module);
   auto *body = cast<Flow>(clone.clone(generator->getBody(), parent, arguments));
+
   // A one-shot loop gives producer returns a common exit without returning from
   // the caller. Reaching the end also exits; only the producer's own loops repeat.
   auto *wrapper = module->Nr<SeriesFlow>();
   auto *exit = module->Nr<WhileFlow>(module->getBool(true), wrapper);
   wrappers.insert(exit->getId());
+
   FusionTransformer transformer(loop, exit);
   transformer.process(body);
+
   wrapper->push_back(body);
   wrapper->push_back(module->Nr<BreakInstr>(exit));
   setup->push_back(exit);
