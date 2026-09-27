@@ -489,7 +489,7 @@ def _pdq_sort(
         leftmost = False
 
 def quicksort(start: Ptr[T], n: int, T: type):
-    if not _try_native_sort(start, n):
+    if not _try_native_sort(start, n, nan_last=True):
         _pdq_sort(start, 0, n, _floor_log2(n), True)
 
 def _apartial_insertion_sort(arr: Ptr[T], tosort: Ptr[int], begin: int, end: int, T: type):

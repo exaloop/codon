@@ -8,7 +8,7 @@ test_dir = "test/numpy/data"
 
 @test
 def test_array():
-    a = np.array(np.empty((1, )), dtype=float)
+    a = np.array([1.25], dtype=float)
     f = test_dir + "/bin_0.npy"
     np.save(f, a)
     l = np.load(f, dtype=float)
@@ -1708,10 +1708,11 @@ test_load_mismatched_dtype_v1()
 @test
 def test_load_empty_array_v1():
     # Save an empty array and load
-    array = np.array(np.empty((1, )), dtype=int)
+    array = np.empty((0, ), dtype=int)
     filename = test_dir + "/binary_empty_array_v1.npy"
     np.save(filename, array)
-    loaded_array = np.load(filename)
+    loaded_array = np.load(filename, dtype=int)
+    assert loaded_array.shape == (0, )
     assert np.array_equal(array, loaded_array)
 
 test_load_empty_array_v1()

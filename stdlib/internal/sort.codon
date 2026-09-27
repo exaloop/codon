@@ -15,8 +15,17 @@ from C import cnp_sort_uint64(cobj, int)
 from C import cnp_sort_uint128(cobj, int)
 from C import cnp_sort_float32(cobj, int)
 from C import cnp_sort_float64(cobj, int)
+from C import cnp_sort_float32_nan_last(cobj, int)
+from C import cnp_sort_float64_nan_last(cobj, int)
 
-def _try_native_sort(start: Ptr[T], n: int, T: type) -> bool:
+def _try_native_sort(start: Ptr[T], n: int, nan_last: Literal[bool] = False,
+                     T: type) -> bool:
+    """Try a native sort, returning False for unsupported types.
+
+    For floats, the default List policy preserves signed-zero counts and leaves
+    NaN placement unspecified. nan_last selects NumPy's NaN-last policy, which
+    leaves zero signs unspecified.
+    """
     if T is int or T is i64:
         cnp_sort_int64(start.as_byte(), n)
     elif T is i16:
@@ -32,9 +41,15 @@ def _try_native_sort(start: Ptr[T], n: int, T: type) -> bool:
     elif T is u128:
         cnp_sort_uint128(start.as_byte(), n)
     elif T is float32:
-        cnp_sort_float32(start.as_byte(), n)
+        if nan_last:
+            cnp_sort_float32_nan_last(start.as_byte(), n)
+        else:
+            cnp_sort_float32(start.as_byte(), n)
     elif T is float:
-        cnp_sort_float64(start.as_byte(), n)
+        if nan_last:
+            cnp_sort_float64_nan_last(start.as_byte(), n)
+        else:
+            cnp_sort_float64(start.as_byte(), n)
     else:
         return False
     return True

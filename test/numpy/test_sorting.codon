@@ -85,6 +85,25 @@ def test_sort_float_specials(dtype: type):
             value = float(data[index])
             assert value == reference or (isnan(value) and isnan(reference))
 
+    special = [nan, -0.0, 3.0, -nan, inf, 0.0, -2.0, -inf]
+    for size in (0, 1, 2, 7, 15, 16, 17, 63, 64, 65, 127, 128, 129, 1024):
+        values = [special[index % len(special)] for index in range(size)]
+        expected = sorted(value for value in values if not isnan(value))
+        data = np.empty((size,), dtype=dtype)
+        for index, value in enumerate(values):
+            data[index] = value
+        inplace = data.copy()
+        inplace.sort()
+        for actual in (np.sort(data), inplace, np.sort(data[::-1])):
+            assert actual.shape == data.shape
+            for index, reference in enumerate(expected):
+                assert actual[index] == reference
+            for index in range(len(expected), size):
+                assert isnan(float(actual[index]))
+        for index, reference in enumerate(values):
+            value = float(data[index])
+            assert value == reference or (isnan(value) and isnan(reference))
+
 def check_partitioned(vec, kth):
     if isinstance(kth, int):
         return check_partitioned(vec, (kth, ))

@@ -95,6 +95,7 @@ def test_standard_sort():
 test_standard_sort()
 
 
+@test
 def check_native_sort_type(T: type, lowest: T, highest: T):
     for size in (0, 1, 2, 7, 15, 16, 17, 63, 64, 65, 127, 128, 129, 1024):
         original = [T((index * 17) % 31 + 1) for index in range(size)]
@@ -122,13 +123,27 @@ def check_native_sort_type(T: type, lowest: T, highest: T):
                             else T((index * 17) % 31 + 1) for index in range(size)]
 
 
+@test
 def check_special_float_sort(T: type):
     from math import copysign, isnan
-    for original in ([T(3), T(-0.0), T(0.0), T(1), T(-2)],
-                     [T(-0.0), T(0.0), T(0.0), T(-0.0)],
-                     [T("nan"), T("nan")],
-                     [T("nan"), T(3), T(-1), T("nan"), T(2)],
-                     [T(3), T("nan"), T(-1), T("inf"), T("-inf")]):
+    from random import Random
+    originals = [[T(3), T(-0.0), T(0.0), T(1), T(-2)],
+                 [T(-0.0), T(0.0), T(0.0), T(-0.0)],
+                 [T("nan"), T("nan")],
+                 [T("nan"), T(3), T(-1), T("nan"), T(2)],
+                 [T(3), T("nan"), T(-1), T("inf"), T("-inf")]]
+    mixed = [T("nan"), T(-0.0), T(3), T("inf"), T(0.0), T(-2), T("-inf")]
+    for size in (0, 1, 2, 7, 15, 16, 17, 63, 64, 65, 127, 128, 129, 1024,
+                 4097, 65536):
+        originals.append([T(-0.0) if index % 3 == 0 else T(0.0)
+                          for index in range(size)])
+        originals.append([mixed[index % len(mixed)] for index in range(size)])
+    generator = Random(173)
+    stress = [T(generator.uniform(-1.0, 1.0)) for index in range(65536)]
+    for index in range(0, len(stress), 2):
+        stress[index] = mixed[generator.randrange(0, len(mixed))]
+    originals.append(stress)
+    for original in originals:
         for reverse in (False, True):
             expected = sorted((value for value in original if not isnan(float(value))),
                               reverse=reverse, algorithm="pdq")
@@ -139,7 +154,8 @@ def check_special_float_sort(T: type):
             assert sum(1 for value in actual
                        if value == 0 and copysign(1.0, float(value)) < 0) == sum(
                            1 for value in original
-                           if value == 0 and copysign(1.0, float(value)) < 0)
+                           if value == 0 and copysign(1.0, float(value)) < 0), \
+                f"{T.__name__}, size {len(original)}, reverse {reverse}: signed zeros changed"
 
 
 @test
