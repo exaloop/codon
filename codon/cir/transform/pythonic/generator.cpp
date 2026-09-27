@@ -14,6 +14,9 @@ namespace ir {
 namespace transform {
 namespace pythonic {
 namespace {
+// Two complementary rewrites avoid the generator protocol: turn direct
+// sum/any/all calls into ordinary functions, and splice a producer's body into
+// its sole for-loop consumer. The helpers below first build the reducer functions.
 bool isSum(Func *f) {
   return f &&
          f->getName().rfind(ast::getMangledFunc("std.internal.builtin", "sum"), 0) == 0;
@@ -100,6 +103,7 @@ struct GeneratorAnyAllTransformer : public util::Operator {
   }
 
   void handle(ReturnInstr *v) override {
+    // Leave the short-circuit returns inserted at yield sites unchanged.
     if (saw(v))
       return;
     auto *M = v->getModule();
@@ -115,6 +119,8 @@ struct GeneratorAnyAllTransformer : public util::Operator {
   void handle(YieldInInstr *v) override { valid = false; }
 };
 
+// Clone rather than mutate the producer, which may still be used as a generator
+// elsewhere. The wrapper takes the same arguments plus the initial accumulator.
 Func *genToSum(BodiedFunc *gen, Type *startType, Type *outType) {
   if (!gen || !gen->isGenerator())
     return nullptr;
@@ -169,6 +175,8 @@ Func *genToSum(BodiedFunc *gen, Type *startType, Type *outType) {
   return fn;
 }
 
+// Use the same cloning scheme for short-circuit reducers. Original returns and
+// fallthrough mean exhaustion, whose answer is false for any and true for all.
 Func *genToAnyAll(BodiedFunc *gen, bool any) {
   if (!gen || !gen->isGenerator())
     return nullptr;
@@ -210,6 +218,9 @@ Func *genToAnyAll(BodiedFunc *gen, bool any) {
 } // namespace
 
 namespace {
+// Restrict fusion to small synchronous bodies. Extra suspension protocols,
+// exception regions, and exposed local storage need lifetime/control-flow
+// handling that the substitution below does not implement.
 struct FusionVerifier : public util::Operator {
   int nodes = 0;
   int yields = 0;
@@ -230,6 +241,8 @@ struct FusionVerifier : public util::Operator {
   }
 };
 
+// Moving a consumer body into the producer changes its enclosing loops. Reject
+// user break/continue, but allow breaks targeting compiler-created exit wrappers.
 struct ConsumerVerifier : public util::Operator {
   const std::unordered_set<id_t> &wrappers;
   bool valid = true;
@@ -241,6 +254,9 @@ struct ConsumerVerifier : public util::Operator {
   void handle(ContinueInstr *) override { valid = false; }
 };
 
+// A named iterator is eligible only when one assignment feeds one later read,
+// with no exposed handle and matching enclosing control-flow contexts. This
+// prevents fusion from changing the lifetime of shared or repeatedly used iterators.
 struct IteratorUseVerifier : public util::Operator {
   Var *iterator;
   ForFlow *consumer;
@@ -258,6 +274,8 @@ struct IteratorUseVerifier : public util::Operator {
                       const std::unordered_set<id_t> &wrappers)
       : iterator(iterator), consumer(consumer), wrappers(wrappers) {}
   std::vector<id_t> enclosingLoops() {
+    // Ignore exit wrappers introduced by this pass. Include branch identities
+    // so creation in one if/try arm cannot be paired with consumption in another.
     std::vector<id_t> result;
     for (auto position = parent_begin(); position != parent_end(); ++position) {
       auto *node = cast<Flow>(*position);
@@ -306,6 +324,9 @@ struct IteratorUseVerifier : public util::Operator {
   }
 };
 
+// Traverse the producer bottom-up: the consumer body inserted at a yield must
+// not itself be rewritten. In particular, its returns still exit the caller,
+// while the producer's returns become exits from the synthetic wrapper loop.
 struct FusionTransformer : public util::Operator {
   ForFlow *consumer;
   WhileFlow *exit;
@@ -321,6 +342,7 @@ struct FusionTransformer : public util::Operator {
   void handle(ReturnInstr *value) override {
     auto *module = value->getModule();
     auto *replacement = module->Nr<SeriesFlow>();
+    // Exhaustion discards the producer's return value, but not its side effects.
     if (value->getValue())
       replacement->push_back(value->getValue());
     replacement->push_back(module->Nr<BreakInstr>(exit));
@@ -331,6 +353,9 @@ struct FusionTransformer : public util::Operator {
 
 const std::string GeneratorLoopFusion::KEY = "core-pythonic-generator-loop-fusion";
 
+// Reducer specialization can hide another producer/consumer pair behind this
+// compiler-generated call. Inline only that wrapper to expose further fusion,
+// charging the same per-caller growth budget used for producer substitution.
 void GeneratorLoopFusion::handle(CallInstr *call) {
   auto *parent = cast<BodiedFunc>(getParentFunc());
   auto *function = cast<BodiedFunc>(util::getFunc(call->getCallee()));
@@ -345,6 +370,8 @@ void GeneratorLoopFusion::handle(CallInstr *call) {
     return;
   for (auto *variable : inlined.newVars)
     parent->push_back(variable);
+  // The inliner implements early returns with a one-shot loop. Remember it so
+  // later fusion accepts its targeted breaks and ignores it as a lifetime boundary.
   if (auto *expression = cast<FlowInstr>(inlined.result))
     if (auto *body = cast<SeriesFlow>(expression->getFlow()))
       if (auto *wrapper = cast<WhileFlow>(body->back()))
@@ -359,6 +386,9 @@ void GeneratorLoopFusion::handle(ForFlow *loop) {
   auto *parent = cast<BodiedFunc>(getParentFunc());
   if (!parent)
     return;
+  // Unpack a single-use tuple that forwards an iterator. Capture every element
+  // at the original assignment, in order, even if only one feeds this loop;
+  // dropping the other elements could discard effects. Then retry the direct case.
   if (auto *extract = cast<ExtractInstr>(loop->getIter())) {
     auto *variable = util::getVar(extract->getVal());
     if (!variable || variable->isGlobal())
@@ -388,6 +418,8 @@ void GeneratorLoopFusion::handle(ForFlow *loop) {
     handle(loop);
     return;
   }
+  // Accept either an immediate generator call or a uniquely owned local handle.
+  // Retain the latter's assignment so argument evaluation stays at creation time.
   auto *call = cast<CallInstr>(loop->getIter());
   AssignInstr *creation = nullptr;
   if (auto *iterator = util::getVar(loop->getIter())) {
@@ -411,6 +443,8 @@ void GeneratorLoopFusion::handle(ForFlow *loop) {
   verifier.process(generator->getBody());
   ConsumerVerifier consumerVerifier(wrappers);
   consumerVerifier.process(loop->getBody());
+  // One yield site lets us move, rather than duplicate, the consumer body.
+  // The cumulative budget bounds growth when nested generators are fused in turn.
   if (!verifier.valid || verifier.yields != 1 || !consumerVerifier.valid ||
       growth[parent->getId()] + verifier.nodes > 1024)
     return;
@@ -420,6 +454,8 @@ void GeneratorLoopFusion::handle(ForFlow *loop) {
   auto *setup = module->Nr<SeriesFlow>();
   std::unordered_map<id_t, Var *> arguments;
   auto argument = generator->arg_begin();
+  // Snapshot arguments once, left-to-right. For a named handle this setup replaces
+  // its creation, not its use, preserving mutations and exceptions between the two.
   for (auto *value : *call)
     arguments.emplace((*argument++)->getId(), util::makeVar(value, setup, parent));
   if (creation) {
@@ -428,6 +464,8 @@ void GeneratorLoopFusion::handle(ForFlow *loop) {
   }
   util::CloneVisitor clone(module);
   auto *body = cast<Flow>(clone.clone(generator->getBody(), parent, arguments));
+  // A one-shot loop gives producer returns a common exit without returning from
+  // the caller. Reaching the end also exits; only the producer's own loops repeat.
   auto *wrapper = module->Nr<SeriesFlow>();
   auto *exit = module->Nr<WhileFlow>(module->getBool(true), wrapper);
   wrappers.insert(exit->getId());
@@ -442,6 +480,8 @@ void GeneratorLoopFusion::handle(ForFlow *loop) {
 const std::string GeneratorArgumentOptimization::KEY =
     "core-pythonic-generator-argument-opt";
 
+// Specialize only reducers applied directly to a generator call, where its
+// construction arguments can be forwarded to the wrapper without using a handle.
 void GeneratorArgumentOptimization::handle(CallInstr *v) {
   auto *M = v->getModule();
   auto *func = util::getFunc(v->getCallee());
