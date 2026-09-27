@@ -125,19 +125,21 @@ def check_native_sort_type(T: type, lowest: T, highest: T):
 def check_special_float_sort(T: type):
     from math import copysign, isnan
     for original in ([T(3), T(-0.0), T(0.0), T(1), T(-2)],
+                     [T(-0.0), T(0.0), T(0.0), T(-0.0)],
+                     [T("nan"), T("nan")],
                      [T("nan"), T(3), T(-1), T("nan"), T(2)],
                      [T(3), T("nan"), T(-1), T("inf"), T("-inf")]):
         for reverse in (False, True):
-            expected = sorted(original, reverse=reverse, algorithm="pdq")
+            expected = sorted((value for value in original if not isnan(float(value))),
+                              reverse=reverse, algorithm="pdq")
             actual = original.copy()
             actual.sort(reverse=reverse)
-            assert len(actual) == len(expected)
-            for value, reference in zip(actual, expected):
-                if isnan(float(reference)):
-                    assert isnan(float(value))
-                else:
-                    assert value == reference
-                    assert copysign(1.0, float(value)) == copysign(1.0, float(reference))
+            assert len(actual) == len(original)
+            assert [value for value in actual if not isnan(float(value))] == expected
+            assert sum(1 for value in actual
+                       if value == 0 and copysign(1.0, float(value)) < 0) == sum(
+                           1 for value in original
+                           if value == 0 and copysign(1.0, float(value)) < 0)
 
 
 @test

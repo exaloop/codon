@@ -39,14 +39,6 @@ def _try_native_sort(start: Ptr[T], n: int, T: type) -> bool:
         return False
     return True
 
-def _try_native_sort_list(start: Ptr[T], n: int, T: type) -> bool:
-    if T is float or T is float32:
-        for index in range(n):
-            value = start[index]
-            if value != value or value == 0:
-                return False
-    return _try_native_sort(start, n)
-
 def sorted(
     v: Generator[T],
     key=Optional[int](),
@@ -107,7 +99,7 @@ class List:
         if isinstance(key, Optional):
             if algorithm == "auto":
                 if self:
-                    if _try_native_sort_list(self._ptr, self._len):
+                    if _try_native_sort(self._ptr, self._len):
                         pass
                     elif _is_pdq_compatible(self[0]):
                         pdq_sort_inplace(self, lambda x: x)
