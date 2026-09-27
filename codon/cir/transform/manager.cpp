@@ -212,8 +212,6 @@ void PassManager::registerStandardPasses() {
     registerPass(std::make_unique<numpy::NumPyFusionPass>(numpyKey, seKey2),
                  /*insertBefore=*/"", {numpyKey, seKey2},
                  {seKey1, rdKey, cfgKey, globalKey, capKey});
-    // Expose whole producer/consumer loops before lowering. LLVM's suspension-aware
-    // unroll guard alone does not eliminate nested scan/consumer loop structure.
     registerPass(std::make_unique<pythonic::GeneratorLoopFusion>(),
                  /*insertBefore=*/"", {},
                  {seKey1, seKey2, rdKey, cfgKey, globalKey, capKey});
