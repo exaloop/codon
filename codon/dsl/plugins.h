@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "codon/cir/util/iterators.h"
@@ -34,6 +35,7 @@ private:
   std::string argv0;
   /// vector of loaded plugins
   std::vector<std::unique_ptr<Plugin>> plugins;
+  mutable std::unordered_set<std::string> loadedRuntimeLibraries;
 
 public:
   /// Constructs a plugin manager
@@ -52,6 +54,8 @@ public:
   /// @param path path to plugin directory containing "plugin.toml" file
   /// @return plugin pointer if successful, plugin error otherwise
   llvm::Expected<Plugin *> load(const std::string &path);
+
+  llvm::Error loadRuntimeLibraries() const;
 };
 
 } // namespace codon

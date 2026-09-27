@@ -1490,13 +1490,13 @@ void runLLVMOptimizationPasses(llvm::Module *module, PluginManager *plugins,
   llvm::TargetLibraryInfoImpl tlii(moduleTriple);
   fam.registerPass([&] { return llvm::TargetLibraryAnalysis(tlii); });
 
+  registerCodonLLVMOptimizationPasses(pb, plugins, options);
+
   pb.registerModuleAnalyses(mam);
   pb.registerCGSCCAnalyses(cgam);
   pb.registerFunctionAnalyses(fam);
   pb.registerLoopAnalyses(lam);
   pb.crossRegisterProxies(lam, fam, cgam, mam);
-
-  registerCodonLLVMOptimizationPasses(pb, plugins, options);
 
   if (options->debug) {
     llvm::ModulePassManager mpm =

@@ -546,8 +546,17 @@ set(CODON_TEST_CPPFILES
     test/cir/util/matching.cpp
     test/cir/value.cpp
     test/cir/var.cpp
+    test/dsl/plugins.cpp
     test/types.cpp)
+add_library(codon_test_compiler_plugin SHARED EXCLUDE_FROM_ALL test/dsl/library.cpp)
+target_compile_definitions(codon_test_compiler_plugin PRIVATE CODON_TEST_COMPILER_PLUGIN)
+target_include_directories(codon_test_compiler_plugin PRIVATE
+                "${CMAKE_CURRENT_SOURCE_DIR}" ${LLVM_INCLUDE_DIRS}
+                "${peglib_SOURCE_DIR}")
+target_link_libraries(codon_test_compiler_plugin PRIVATE codonc fmt)
+add_library(codon_test_runtime_plugin SHARED EXCLUDE_FROM_ALL test/dsl/library.cpp)
 add_executable(codon_test ${CODON_TEST_CPPFILES})
+add_dependencies(codon_test codon codon_test_compiler_plugin codon_test_runtime_plugin)
 target_include_directories(codon_test PRIVATE test/cir "${gc_SOURCE_DIR}/include")
 target_link_libraries(codon_test PRIVATE fmt codonc codonrt gtest_main)
 if(ASAN)
@@ -559,7 +568,10 @@ if(ASAN)
                        "-fsanitize-recover=address")
 endif()
 target_compile_definitions(codon_test
-                           PRIVATE TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test")
+                           PRIVATE TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test"
+                           TEST_CODON="$<TARGET_FILE:codon>"
+                           TEST_PLUGIN_COMPILER="$<TARGET_FILE:codon_test_compiler_plugin>"
+                           TEST_PLUGIN_RUNTIME="$<TARGET_FILE:codon_test_runtime_plugin>")
 
 if(APPLE)
   set_target_properties(
