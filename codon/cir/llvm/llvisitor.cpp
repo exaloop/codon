@@ -535,7 +535,7 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
 
   if (plugins) {
     for (auto *plugin : *plugins) {
-      auto dylibPath = plugin->info.dylibPath;
+      const auto &dylibPath = plugin->info.getRuntimeDylibPath();
       if (dylibPath.empty())
         continue;
 
@@ -556,7 +556,7 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
   if (plugins) {
     for (auto *plugin : *plugins) {
       if (plugin->info.linkArgs.empty()) {
-        auto dylibPath = plugin->info.dylibPath;
+        const auto &dylibPath = plugin->info.getRuntimeDylibPath();
         if (dylibPath.empty())
           continue;
 
@@ -1203,6 +1203,10 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
   runLLVMPipeline();
 
   Timer t1("llvm/jitlink");
+  if (plugins) {
+    if (auto error = plugins->loadRuntimeLibraries())
+      compilationError(llvm::toString(std::move(error)));
+  }
   for (auto &lib : libs) {
     std::string err;
     if (llvm::sys::DynamicLibrary::LoadLibraryPermanently(lib.c_str(), &err)) {
