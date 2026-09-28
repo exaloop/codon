@@ -93,10 +93,13 @@ int countLazyFixedAllocationCaches(llvm::Module *module, uint64_t size) {
   return count;
 }
 
-std::unique_ptr<Compiler> compileAndOptimize(const std::string &code) {
+std::unique_ptr<Compiler>
+compileAndOptimize(const std::string &code,
+                   const std::vector<std::string> &disabled = {}) {
   auto options = Options::getDefault("build/codon_test");
   options->debug = false;
   options->standalone = true;
+  options->disabled.insert(options->disabled.end(), disabled.begin(), disabled.end());
   auto compiler = std::make_unique<Compiler>(*options);
   llvm::cantFail(compiler->parseCode("allocation_phi_test.codon", code));
   llvm::cantFail(compiler->compile());
@@ -304,6 +307,609 @@ TEST(LLVMOptimizationTest, RemovesUnusedStandardStreamInitialization) {
     definitions += !function.isDeclaration();
   }
   EXPECT_EQ(1, definitions);
+}
+
+TEST(LLVMOptimizationTest, ElidesSafeGeneratorAndZipIteration) {
+  ASSERT_EXIT(
+      {
+        auto compiler = compileAndOptimize(R"(
+def generator_values(data: Ptr[int], count: int):
+  index = 0
+  while index < count:
+    yield data[index]
+    index += 1
+
+@export
+def consume_generator(data: Ptr[int], count: int) -> int:
+  total = 0
+  for value in generator_values(data, count):
+    total += value
+  return total
+
+@export
+def consume_zip(data: Ptr[int], count: int) -> int:
+  total = 0
+  for left, right in zip(generator_values(data, count), generator_values(data, count)):
+    total += left + right
+  return total
+
+@export
+def consume_aliased_zip(data: Ptr[int], count: int) -> int:
+  total = 0
+  items = generator_values(data, count)
+  for left, right in zip(items, items):
+    total += left + right
+  return total
+
+def range_values(data: Ptr[int], count: int):
+  for index in range(count):
+    yield data[index]
+
+def delegated_values(data: Ptr[int], count: int):
+  yield from range_values(data, count)
+  yield from range_values(data + 1, count)
+
+@export
+def consume_delegated(data: Ptr[int], count: int) -> int:
+  total = 0
+  for value in delegated_values(data, count):
+    total += value
+  return total
+
+@export
+def consume_nested_zip(data: Ptr[int], count: int) -> int:
+  total = 0
+  inner = zip(range_values(data, count), range_values(data + 1, count))
+  for pair, third in zip(inner, range_values(data + 2, count)):
+    total += pair[0] * pair[1] + third
+  return total
+
+@export
+def escaping_generator(data: Ptr[int], count: int):
+  return generator_values(data, count)
+)");
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        for (const auto &name :
+             {"consume_generator", "consume_zip", "consume_aliased_zip",
+              "consume_delegated", "consume_nested_zip"}) {
+          SCOPED_TRACE(name);
+          auto *function = module->getFunction(name);
+          ASSERT_NE(nullptr, function);
+          for (auto &block : *function) {
+            for (auto &instruction : block) {
+              if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction)) {
+                auto *callee = call->getCalledFunction();
+                EXPECT_TRUE(callee && callee->isIntrinsic() &&
+                            !callee->getName().starts_with("llvm.coro."))
+                    << "generator iteration retained a call in " << name;
+              }
+            }
+          }
+        }
+        for (const auto *name : {"consume_delegated", "consume_nested_zip"}) {
+          SCOPED_TRACE(name);
+          bool vectorized = false;
+          for (auto &block : *module->getFunction(name))
+            for (auto &instruction : block)
+              vectorized |= llvm::isa<llvm::BinaryOperator>(instruction) &&
+                            instruction.getType()->isVectorTy();
+          EXPECT_TRUE(vectorized);
+        }
+        auto *escaping = module->getFunction("escaping_generator");
+        ASSERT_NE(nullptr, escaping);
+        bool allocates = false;
+        for (auto &block : *escaping) {
+          for (auto &instruction : block) {
+            if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction)) {
+              auto *callee = call->getCalledFunction();
+              allocates |= callee && callee->getName() == "seq_alloc";
+            }
+          }
+        }
+        EXPECT_TRUE(allocates);
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(LLVMOptimizationTest, ElidesChainedAndSlicedGenerators) {
+  ASSERT_EXIT(
+      {
+        auto compiler = compileAndOptimize(R"(
+from itertools import chain, islice
+
+def slice_values(data: Ptr[int], count: int):
+  for index in range(count):
+    yield data[index]
+
+@export
+def chained_sum(data: Ptr[int], count: int) -> int:
+  return sum(chain(slice_values(data, count), slice_values(data + 1, count)))
+
+@export
+def chained_loop(data: Ptr[int], count: int) -> int:
+  total = 0
+  for value in chain(slice_values(data, count), slice_values(data + 1, count)):
+    total += value
+  return total
+
+@export
+def prefix_sum(data: Ptr[int], count: int) -> int:
+  return sum(islice(slice_values(data, count), max(count // 2, 0)))
+
+@export
+def prefix_loop(data: Ptr[int], count: int) -> int:
+  total = 0
+  for value in islice(slice_values(data, count), max(count // 2, 0)):
+    total += value
+  return total
+
+@export
+def prefix_manual(data: Ptr[int], count: int) -> int:
+  total = 0
+  for index in range(max(count // 2, 0)):
+    total += data[index]
+  return total
+
+@export
+def strided_sum(data: Ptr[int], count: int) -> int:
+  return sum(islice(slice_values(data, count), 1, max(count, 0), 2))
+
+@export
+def strided_loop(data: Ptr[int], count: int) -> int:
+  total = 0
+  for value in islice(slice_values(data, count), 1, max(count, 0), 2):
+    total += value
+  return total
+
+@export
+def sliced_chain_loop(data: Ptr[int], count: int) -> int:
+  total = 0
+  items = chain(slice_values(data, count), slice_values(data + 1, count))
+  for value in islice(items, 1, max(count, 0)):
+    total += value
+  return total
+)");
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        for (auto *name : {"chained_sum", "chained_loop", "prefix_sum", "prefix_loop",
+                           "strided_sum", "strided_loop", "sliced_chain_loop"}) {
+          SCOPED_TRACE(name);
+          auto *function = module->getFunction(name);
+          ASSERT_NE(nullptr, function);
+          for (auto &block : *function)
+            for (auto &instruction : block) {
+              EXPECT_FALSE(llvm::isa<llvm::AllocaInst>(instruction));
+              if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction)) {
+                auto *callee = call->getCalledFunction();
+                EXPECT_TRUE(callee && callee->isIntrinsic() &&
+                            !callee->getName().starts_with("llvm.coro."))
+                    << (callee ? callee->getName().str() : "indirect call");
+              }
+            }
+        }
+        auto vectorAccumulators = [](llvm::Function *function) {
+          unsigned maximum = 0;
+          for (auto &block : *function) {
+            unsigned count = 0;
+            for (auto &instruction : block)
+              count += llvm::isa<llvm::PHINode>(instruction) &&
+                       instruction.getType()->isVectorTy();
+            maximum = std::max(maximum, count);
+          }
+          return maximum;
+        };
+        auto expected = vectorAccumulators(module->getFunction("prefix_manual"));
+        EXPECT_GT(expected, 0u);
+        EXPECT_EQ(expected, vectorAccumulators(module->getFunction("prefix_sum")));
+        EXPECT_EQ(expected, vectorAccumulators(module->getFunction("prefix_loop")));
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(LLVMOptimizationTest, PreservesUserUnrollMetadata) {
+  // Without our ownership marker, the disable hint and unrelated metadata must
+  // survive cleanup. Volatile loads keep the control loop from disappearing.
+  ASSERT_EXIT(
+      {
+        auto result = compileAndOptimizeIR(R"(
+define i64 @user_unroll_guard(ptr %data, i64 %count) {
+entry:
+  br label %loop
+
+loop:
+  %index = phi i64 [ 0, %entry ], [ %next, %loop ]
+  %total = phi i64 [ 0, %entry ], [ %updated, %loop ]
+  %address = getelementptr i64, ptr %data, i64 %index
+  %value = load volatile i64, ptr %address
+  %updated = add i64 %total, %value
+  %next = add i64 %index, 1
+  %again = icmp ult i64 %next, %count
+  br i1 %again, label %loop, label %exit, !llvm.loop !0
+
+exit:
+  ret i64 %updated
+}
+
+!0 = distinct !{!0, !1, !2}
+!1 = !{!"llvm.loop.unroll.disable"}
+!2 = !{!"codon.test.preserve"}
+)");
+        ASSERT_NE(nullptr, result.module);
+        auto *function = result.module->getFunction("user_unroll_guard");
+        ASSERT_NE(nullptr, function);
+        llvm::DominatorTree dominators(*function);
+        llvm::LoopInfo loops(dominators);
+        ASSERT_FALSE(loops.empty());
+        auto *identifier = (*loops.begin())->getLoopID();
+        ASSERT_NE(nullptr, identifier);
+        bool disabled = false;
+        bool preserved = false;
+        for (unsigned index = 1; index < identifier->getNumOperands(); ++index) {
+          auto *node = llvm::dyn_cast<llvm::MDNode>(identifier->getOperand(index));
+          if (!node || !node->getNumOperands())
+            continue;
+          auto *name = llvm::dyn_cast<llvm::MDString>(node->getOperand(0));
+          if (!name)
+            continue;
+          disabled |= name->getString() == "llvm.loop.unroll.disable";
+          preserved |= name->getString() == "codon.test.preserve";
+        }
+        EXPECT_TRUE(disabled);
+        EXPECT_TRUE(preserved);
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(LLVMOptimizationTest, FoldsFilteredGeneratorsWithoutPrematureUnrolling) {
+  // The LLVM fix must fold the reducer independently of CIR producer/consumer fusion.
+  for (bool disableFusion : {false, true}) {
+    SCOPED_TRACE(disableFusion);
+    ASSERT_EXIT(
+        {
+          std::vector<std::string> disabled;
+          if (disableFusion)
+            disabled.push_back("core-pythonic-generator-loop-fusion");
+          std::string code = R"(
+@export
+def filtered_start() -> int:
+  return sum(filter(lambda value: value % 2 == 0,
+                    (index for index in range(25))), 7)
+
+@export
+def filtered_reject() -> int:
+  return sum(filter(lambda value: value < 0,
+                    (index for index in range(25))))
+
+@export
+def unfiltered() -> int:
+  return sum(index for index in range(25))
+
+@export
+def consumed() -> int:
+  total = 0
+  for value in filter(lambda value: value % 2 == 0,
+                      (index for index in range(25))):
+    total += value
+  return total
+
+@export
+def ordinary(data: Ptr[int]) -> int:
+  total = 0
+  for index in range(4):
+    total += data[index]
+  return total
+
+def yielding(data: Ptr[int]):
+  for value in range(25):
+    total = 0
+    for index in range(4):
+      total += data[index]
+    yield total + value
+
+@export
+def escaping(data: Ptr[int]):
+  return yielding(data)
+)";
+          for (int count : {0, 1, 2, 24, 25, 26, 64})
+            code += "\n@export\ndef filtered_" + std::to_string(count) +
+                    "() -> int:\n"
+                    "  return sum(filter(lambda value: value % 2 == 0, "
+                    "(index for index in range(" +
+                    std::to_string(count) + "))))\n";
+          auto compiler = compileAndOptimize(code, disabled);
+          auto *module = compiler->getLLVMVisitor()->getModule();
+          EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+          std::string ir;
+          llvm::raw_string_ostream output(ir);
+          module->print(output, nullptr);
+          // The unfused direct consumer exercises metadata left on non-loop branches.
+          EXPECT_EQ(ir.find("codon.coro.unroll"), std::string::npos);
+          auto expectConstant = [&](const std::string &name, int64_t expected) {
+            auto *function = module->getFunction(name);
+            ASSERT_NE(nullptr, function);
+            ASSERT_EQ(function->size(), 1u) << name;
+            ASSERT_EQ(function->front().size(), 1u) << name;
+            auto *result =
+                llvm::dyn_cast<llvm::ReturnInst>(function->front().getTerminator());
+            ASSERT_NE(nullptr, result);
+            auto *value = llvm::dyn_cast<llvm::ConstantInt>(result->getReturnValue());
+            ASSERT_NE(nullptr, value) << name;
+            EXPECT_EQ(value->getSExtValue(), expected) << name;
+          };
+          for (int count : {0, 1, 2, 24, 25, 26, 64}) {
+            int64_t expected = 0;
+            for (int index = 0; index < count; index += 2)
+              expected += index;
+            expectConstant("filtered_" + std::to_string(count), expected);
+          }
+          expectConstant("filtered_start", 163);
+          expectConstant("filtered_reject", 0);
+          expectConstant("unfiltered", 300);
+          if (!disableFusion)
+            expectConstant("consumed", 156);
+          // Guard against accidentally disabling ordinary unrolling globally or
+          // throughout an entire coroutine function instead of just yielding loops.
+          auto *ordinary = module->getFunction("ordinary");
+          ASSERT_NE(nullptr, ordinary);
+          llvm::DominatorTree dominators(*ordinary);
+          llvm::LoopInfo loops(dominators);
+          EXPECT_TRUE(loops.empty());
+          bool sawResume = false;
+          for (auto &function : *module) {
+            if (!function.getName().contains("yielding") ||
+                !function.getName().ends_with(".resume"))
+              continue;
+            sawResume = true;
+            llvm::DominatorTree resumeDominators(function);
+            llvm::LoopInfo resumeLoops(resumeDominators);
+            EXPECT_TRUE(resumeLoops.empty());
+          }
+          EXPECT_TRUE(sawResume);
+          std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+        },
+        testing::ExitedWithCode(EXIT_SUCCESS), "");
+  }
+}
+
+TEST(LLVMOptimizationTest, FusesNestedGeneratorsIntoHandwrittenLoopStructure) {
+  ASSERT_EXIT(
+      {
+        auto compiler = compileAndOptimize(R"(
+def fusion_values(data: Ptr[int], count: int):
+  for index in range(count):
+    yield data[index]
+
+def fusion_positive(items):
+  for value in items:
+    if value > 0:
+      yield value
+
+def fusion_triple(items):
+  for value in items:
+    yield value * 3
+
+@export
+def fusion_handwritten(data: Ptr[int], count: int) -> int:
+  total = 0
+  for index in range(count):
+    value = data[index]
+    if value > 0:
+      total += value * 3
+  return total
+
+@export
+def fusion_builtins(data: Ptr[int], count: int) -> int:
+  total = 0
+  for value in map(lambda value: value * 3,
+                   filter(lambda value: value > 0, fusion_values(data, count))):
+    total += value
+  return total
+
+@export
+def fusion_nested(data: Ptr[int], count: int) -> int:
+  total = 0
+  for value in fusion_triple(fusion_positive(fusion_values(data, count))):
+    total += value
+  return total
+
+@export
+def fusion_expression(data: Ptr[int], count: int) -> int:
+  total = 0
+  for value in (value * 3 for value in fusion_values(data, count) if value > 0):
+    total += value
+  return total
+
+@export
+def fusion_deep(data: Ptr[int], count: int) -> int:
+  total = 0
+  for value in fusion_triple(fusion_positive(fusion_positive(
+                 fusion_positive(fusion_values(data, count))))):
+    total += value
+  return total
+
+def fusion_frame_local(value: int):
+  local = value
+  yield __ptr__(local)
+
+@export
+def fusion_frame_address(value: int) -> Ptr[int]:
+  for address in fusion_frame_local(value):
+    return address
+  return Ptr[int]()
+)");
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        auto structure = [](llvm::Function *function) {
+          std::vector<std::vector<unsigned>> result;
+          llvm::DominatorTree dominators(*function);
+          llvm::LoopInfo loops(dominators);
+          for (auto &block : *function) {
+            EXPECT_LE(loops.getLoopDepth(&block), 1u);
+            std::vector<unsigned> signature;
+            signature.push_back(loops.getLoopDepth(&block));
+            for (auto &instruction : block) {
+              signature.push_back(instruction.getOpcode());
+              if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction)) {
+                auto *callee = call->getCalledFunction();
+                EXPECT_TRUE(callee && callee->isIntrinsic() &&
+                            !callee->getName().starts_with("llvm.coro."));
+              }
+              EXPECT_FALSE(llvm::isa<llvm::AllocaInst>(instruction));
+            }
+            for (auto *successor : llvm::successors(&block))
+              signature.push_back(
+                  std::distance(function->begin(), successor->getIterator()));
+            result.push_back(std::move(signature));
+          }
+          return result;
+        };
+        auto expected = structure(module->getFunction("fusion_handwritten"));
+        for (auto *name :
+             {"fusion_builtins", "fusion_nested", "fusion_expression", "fusion_deep"}) {
+          SCOPED_TRACE(name);
+          auto *function = module->getFunction(name);
+          ASSERT_NE(nullptr, function);
+          EXPECT_EQ(expected, structure(function));
+        }
+        bool retainsFrame = false;
+        for (auto *value : *compiler->getModule()) {
+          auto *function = ir::cast<ir::BodiedFunc>(value);
+          if (!function || function->getUnmangledName() != "fusion_frame_address")
+            continue;
+          std::vector<ir::Value *> pending{function->getBody()};
+          while (!pending.empty()) {
+            auto *node = pending.back();
+            pending.pop_back();
+            retainsFrame |= ir::isA<ir::ForFlow>(node);
+            auto children = node->getUsedValues();
+            pending.insert(pending.end(), children.begin(), children.end());
+          }
+        }
+        EXPECT_TRUE(retainsFrame);
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(LLVMOptimizationTest, MergesEquivalentGuardedPointerStates) {
+  for (bool sameInitial : {true, false}) {
+    for (bool nullEdge : {true, false}) {
+      SCOPED_TRACE(sameInitial);
+      SCOPED_TRACE(nullEdge);
+      std::string code = R"(
+declare ptr @advance(ptr)
+define i1 @test(ptr %initial, ptr %other, i64 %count) {
+entry:
+  br label %header
+header:
+  %left = phi ptr [ %initial, %entry ], [ %left.next, %latch ]
+  %right = phi ptr [ INITIAL, %entry ], [ %right.next, %latch ]
+  %index = phi i64 [ 0, %entry ], [ %next, %latch ]
+  %finished = icmp eq i64 %index, %count
+  br i1 %finished, label %exit, label %pull
+pull:
+  %done = icmp PREDICATE ptr %right, null
+  br i1 %done, label %latch, label %resume
+resume:
+  %value = call ptr @advance(ptr %left)
+  br label %latch
+latch:
+  %left.next = phi ptr [ %left, %pull ], [ %value, %resume ]
+  %right.next = phi ptr [ null, %pull ], [ %value, %resume ]
+  %next = add i64 %index, 1
+  br label %header
+exit:
+  %equal = icmp eq ptr %left, %right
+  ret i1 %equal
+}
+)";
+      code.replace(code.find("INITIAL"), 7, sameInitial ? "%initial" : "%other");
+      code.replace(code.find("PREDICATE"), 9, nullEdge ? "eq" : "ne");
+      auto optimized = compileAndOptimizeIR(code);
+      ASSERT_NE(nullptr, optimized.module);
+      auto *function = optimized.module->getFunction("test");
+      ASSERT_NE(nullptr, function);
+      bool alwaysEqual = true;
+      bool returns = false;
+      for (auto &block : *function) {
+        if (auto *result = llvm::dyn_cast<llvm::ReturnInst>(block.getTerminator())) {
+          auto *constant = llvm::dyn_cast<llvm::ConstantInt>(result->getReturnValue());
+          alwaysEqual &= constant && constant->isOne();
+          returns = true;
+        }
+      }
+      EXPECT_TRUE(returns);
+      EXPECT_EQ(sameInitial && nullEdge, alwaysEqual);
+    }
+  }
+}
+
+TEST(LLVMOptimizationTest, ElidesRepeatedGeneratorPulls) {
+  ASSERT_EXIT(
+      {
+        std::string code = R"(
+def values(data: Ptr[int], count: int):
+  for index in range(count):
+    yield data[index]
+
+@export
+def return_generator(data: Ptr[int], count: int):
+  return values(data, count)
+
+@export
+def store_generator(data: Ptr[int], count: int, output: Ptr[Generator[int]]):
+  output[0] = values(data, count)
+)";
+        for (int pulls : {16, 32, 64}) {
+          code += "\n@export\ndef pull_" + std::to_string(pulls) +
+                  "(data: Ptr[int], count: int) -> int:\n"
+                  "  items = values(data, count)\n  total = 0\n";
+          for (int index = 0; index < pulls; ++index)
+            code += "  total += next(items, -1)\n";
+          code += "  return total\n";
+        }
+        auto compiler = compileAndOptimize(code);
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        for (int pulls : {16, 32, 64}) {
+          auto name = "pull_" + std::to_string(pulls);
+          SCOPED_TRACE(name);
+          auto *function = module->getFunction(name);
+          ASSERT_NE(nullptr, function);
+          for (auto &block : *function) {
+            for (auto &instruction : block) {
+              EXPECT_FALSE(llvm::isa<llvm::AllocaInst>(instruction));
+              if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction)) {
+                auto *callee = call->getCalledFunction();
+                EXPECT_TRUE(callee && callee->isIntrinsic() &&
+                            !callee->getName().starts_with("llvm.coro."))
+                    << (callee ? callee->getName().str() : "indirect call");
+              }
+            }
+          }
+        }
+        for (const auto *name : {"return_generator", "store_generator"}) {
+          SCOPED_TRACE(name);
+          auto *function = module->getFunction(name);
+          ASSERT_NE(nullptr, function);
+          bool allocates = false;
+          for (auto &block : *function) {
+            for (auto &instruction : block) {
+              if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction)) {
+                auto *callee = call->getCalledFunction();
+                allocates |= callee && callee->getName() == "seq_alloc";
+              }
+            }
+          }
+          EXPECT_TRUE(allocates);
+        }
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
 }
 
 TEST(LLVMOptimizationTest, RequiresKnownNumpyOwnership) {

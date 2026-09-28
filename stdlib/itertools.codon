@@ -54,8 +54,8 @@ class chain:
 
     @inline
     def __new__(*iterables):
-        for it in iterables:
-            for element in it:
+        for index in static.range(static.len(iterables)):
+            for element in iterables[index]:
                 yield element
 
     @inline
@@ -91,14 +91,13 @@ def filterfalse(
         if not predicate(x):
             yield x
 
-# TODO: fix key
 @inline
-def groupby(iterable, key=Optional[int]()):
+def groupby(iterable, key=None):
     currkey = None
     group = []
 
     for currvalue in iterable:
-        k = currvalue if isinstance(key, Optional) else key(currvalue)
+        k = currvalue if key is None else key(currvalue)
         if currkey is None:
             currkey = k
         if k != unwrap(currkey):
@@ -114,12 +113,14 @@ def islice(iterable: Generator[T], stop: Optional[int], T: type) -> Generator[T]
         raise ValueError(
             "Indices for islice() must be None or an integer: 0 <= x <= sys.maxsize."
         )
-    i = 0
-    for x in iterable:
-        if stop is not None and i >= stop.__val__():
-            break
-        yield x
-        i += 1
+    if stop is not None and stop.__val__() == 0:
+        return
+    index = 0
+    for value in iterable:
+        yield value
+        index += 1
+        if stop is not None and index >= stop.__val__():
+            return
 
 @overload
 def islice(
@@ -132,40 +133,27 @@ def islice(
     from sys import maxsize
 
     start: int = 0 if start is None else start
-    stop: int = maxsize if stop is None else stop
     step: int = 1 if step is None else step
-    have_stop = False
 
-    if start < 0 or stop < 0:
+    if start < 0 or (stop is not None and stop.__val__() < 0):
         raise ValueError(
             "Indices for islice() must be None or an integer: 0 <= x <= sys.maxsize."
         )
-    elif step < 0:
+    elif step <= 0:
         raise ValueError("Step for islice() must be a positive integer or None.")
 
-    it = range(start, stop, step)
-    N = len(it)
-    idx = 0
-    b = -1
-
-    if N == 0:
-        for i, element in zip(range(start), iterable):
-            pass
+    limit = 0 if stop is None else max(start, stop.__val__())
+    if stop is not None and limit == 0:
         return
-
-    nexti = it[0]
-    for i, element in enumerate(iterable):
-        if i == nexti:
-            yield element
-            idx += 1
-            if idx >= N:
-                b = i
-                break
-            nexti = it[idx]
-
-    if b >= 0:
-        for i, element in zip(range(b + 1, stop), iterable):
-            pass
+    index = 0
+    next_index = start
+    for value in iterable:
+        if index == next_index:
+            yield value
+            next_index = next_index + step if step <= maxsize - next_index else -1
+        index += 1
+        if stop is not None and index >= limit:
+            return
 
 @inline
 def starmap(function, iterable):
@@ -191,12 +179,9 @@ def tee(iterable: Generator[T], n: int = 2, T: type) -> List[Generator[T]]:
     def gen(mydeque: deque[T], T: type) -> Generator[T]:
         while True:
             if not mydeque:  # when the local deque is empty
-                if it.__done__():
+                if not it._advance():
                     return
-                it.__resume__()
-                if it.__done__():
-                    return
-                newval = it.__next__()
+                newval = it._get()
                 for d in deques:  # load it to all the deques
                     d.append(newval)
             yield mydeque.popleft()
@@ -211,21 +196,21 @@ def zip_longest(*iterables, fillvalue):
         a_done = False
         b_done = False
 
-        while not a.done():
-            a_val = a.__next__()
+        while a._advance():
+            a_val = a._get()
             b_val = fillvalue
             if not b_done:
-                b_done = b.done()
+                b_done = not b._advance()
             if not b_done:
-                b_val = b.__next__()
+                b_val = b._get()
             yield a_val, b_val
 
         if not b_done:
-            while not b.done():
-                yield fillvalue, b.__next__()
+            while b._advance():
+                yield fillvalue, b._get()
 
-        a.destroy()
-        b.destroy()
+        a._destroy()
+        b._destroy()
     else:
         iterators = tuple(iter(it) for it in iterables)
         num_active = len(iterators)
@@ -236,13 +221,13 @@ def zip_longest(*iterables, fillvalue):
             for it in iterators:
                 if it.__done__():  # already done
                     values.append(fillvalue)
-                elif it.done():  # resume and check
+                elif not it._advance():
                     num_active -= 1
                     if not num_active:
                         return
                     values.append(fillvalue)
                 else:
-                    values.append(it.__next__())
+                    values.append(it._get())
             yield values
 
 @inline
@@ -250,9 +235,9 @@ def zip_longest(*iterables, fillvalue):
 def zip_longest(*args):
 
     def get_next(it):
-        if it.__done__() or it.done():
+        if not it._advance():
             return None
-        return it.__next__()
+        return it._get()
 
     iters = tuple(iter(arg) for arg in args)
     while True:
@@ -266,7 +251,7 @@ def zip_longest(*args):
             return
         yield result
     for it in iters:
-        it.destroy()
+        it._destroy()
 
 # Combinatoric iterators
 

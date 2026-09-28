@@ -63,6 +63,8 @@ void collectExecutableStmts(ast::Stmt *s, ast::SuiteStmt *final) {
 }
 
 llvm::Error JIT::init(bool forgetful) {
+  if (auto error = compiler->getPluginManager()->loadRuntimeLibraries())
+    return error;
   if (forgetful) {
     this->forgetful = true;
     auto fs =
@@ -106,6 +108,8 @@ llvm::Error JIT::init(bool forgetful) {
 }
 
 llvm::Error JIT::compile(const ir::Func *input, llvm::orc::ResourceTrackerSP rt) {
+  if (auto error = compiler->getPluginManager()->loadRuntimeLibraries())
+    return error;
   auto *module = compiler->getModule();
   auto *pm = compiler->getPassManager();
   auto *llvisitor = compiler->getLLVMVisitor();

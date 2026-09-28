@@ -402,6 +402,20 @@ def test_codon_extensions(m):
     assert list(iter(x)) == ['x']
     assert list(iter(x+y+y)) == list('((x+y)+y)')
 
+    iterator = iter(x)
+    assert next(iterator) == 'x'
+    assert list(iterator) == []
+    assert list(iterator) == []
+    assert list(zip(iterator, iterator)) == []
+    assert next(iterator, None) is None
+    for attempt in range(2):
+        try:
+            iterator.__next__()
+        except StopIteration:
+            pass
+        else:
+            raise AssertionError('exhausted iterator produced a value')
+
     assert 100 in y
     assert 1000 in y
     assert 100.5 not in y

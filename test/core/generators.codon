@@ -88,6 +88,70 @@ print(fadder.send(-1.0))  # EXPECT: 45.0
 
 
 @test
+def test_generator_send():
+    def exchange(events):
+        value = (yield)
+        events.append(value)
+        yield value + 1
+        events.append(99)
+
+    events = list[int]()
+    items = exchange(events)
+    next(items)
+    assert items.send(10) == 11
+    for repeat in range(3):
+        try:
+            items.send(100)
+            assert False
+        except StopIteration:
+            pass
+        assert events == [10, 99]
+        assert next(items, -1) == -1
+
+    def source(count):
+        for value in range(count):
+            yield value
+
+    for count in [0, 1]:
+        items = source(count)
+        assert list(items) == list(range(count))
+        for repeat in range(3):
+            try:
+                items.send(100)
+                assert False
+            except StopIteration:
+                pass
+
+    items = source(0)
+    try:
+        items.send(100)
+        assert False
+    except StopIteration:
+        pass
+
+    def empty_values(events):
+        events.append(1)
+        yield None
+        events.append(2)
+        yield None
+        events.append(3)
+
+    events = list[int]()
+    items = empty_values(events)
+    next(items)
+    items.send(None)
+    assert events == [1, 2]
+    for repeat in range(3):
+        try:
+            items.send(None)
+            assert False
+        except StopIteration:
+            pass
+        assert events == [1, 2, 3]
+test_generator_send()
+
+
+@test
 def test_generator_in_finally():
     def foo(n):
         if not n:
@@ -108,3 +172,315 @@ def test_generator_in_finally():
         assert e.message == 'not n'
     assert b
 test_generator_in_finally()
+
+@test
+def test_generator_loop_fusion():
+    def source(data):
+        for value in data:
+            yield value
+
+    def positive(items):
+        for value in items:
+            if value > 0:
+                yield value
+
+    def triple(items):
+        for value in items:
+            yield value * 3
+
+    def builtin_total(data):
+        total = 0
+        for value in map(lambda value: value * 3,
+                         filter(lambda value: value > 0, source(data))):
+            total += value
+        return total
+
+    def nested_total(data):
+        total = 0
+        for value in triple(positive(source(data))):
+            total += value
+        return total
+
+    def expression_total(data):
+        total = 0
+        for value in (value * 3 for value in source(data) if value > 0):
+            total += value
+        return total
+
+    for data in [[], [0], [1], [-1], [1, 2, 3], [-1, -2, -3],
+                 [-3, 0, 4, -2, 5, 1]]:
+        expected = 0
+        for value in data:
+            if value > 0:
+                expected += value * 3
+        assert builtin_total(data) == expected
+        assert nested_total(data) == expected
+        assert expression_total(data) == expected
+
+    items = source([1, 2, 3])
+    totals = []
+    for repeat in range(3):
+        total = 0
+        for value in items:
+            total += value
+        totals.append(total)
+    assert totals == [6, 0, 0]
+
+    def first(data: list[int]):
+        for value in positive(source(data)):
+            return value
+        return -1
+    assert first([-1, 2, 3]) == 2
+    assert first([]) == -1
+
+    total = 0
+    for value in source([1, 2, 3, 4]):
+        if value == 2:
+            continue
+        if value == 4:
+            break
+        total += value
+    assert total == 4
+test_generator_loop_fusion()
+
+@test
+def test_generator_fusion_order_and_exceptions():
+    def capture(events, label, value):
+        events.append(label)
+        return value
+
+    def source(events, count):
+        for value in range(count):
+            events.append(10 + value)
+            yield value
+            events.append(20 + value)
+
+    def selected(events, items):
+        for value in items:
+            events.append(30 + value)
+            if value % 2 == 0:
+                yield value
+
+    events = list[int]()
+    count = 3
+    items = selected(capture(events, 1, events),
+                     source(events, capture(events, 2, count)))
+    count = 0
+    events.append(3)
+    for value in items:
+        events.append(40 + value)
+    assert events == [1, 2, 3, 10, 30, 40, 20, 11, 31, 21, 12, 32, 42, 22]
+
+    def raising(value):
+        if value == 2:
+            raise ValueError('callback')
+        return value * 3
+
+    events = list[int]()
+    try:
+        for value in map(raising, source(events, 4)):
+            events.append(40 + value)
+        assert False
+    except ValueError as error:
+        assert error.message == 'callback'
+    assert events == [10, 40, 20, 11, 43, 21, 12]
+
+    def protected(events):
+        try:
+            for value in range(3):
+                yield value
+        except ValueError:
+            events.append(99)
+
+    events = list[int]()
+    try:
+        for value in protected(events):
+            raise ValueError('consumer')
+        assert False
+    except ValueError as error:
+        assert error.message == 'consumer'
+    assert events == []
+
+    def truncated():
+        for value in range(5):
+            if value == 3:
+                return
+            yield value
+
+    total = 0
+    for value in truncated():
+        total += value
+    assert total == 3
+test_generator_fusion_order_and_exceptions()
+
+@test
+def test_generator_exhaustion():
+    def values():
+        yield 1
+        yield 2
+
+    items = values()
+    assert not hasattr(items, 'done')
+    assert iter(items).__raw__() == items.__raw__()
+    assert items.__next__() == 1
+    assert next(items) == 2
+    for attempt in range(3):
+        assert next(items, -1) == -1
+        assert list(items) == []
+        try:
+            items.__next__()
+            assert False
+        except StopIteration:
+            pass
+
+    items = values()
+    assert list(items) == [1, 2]
+    assert list(items) == []
+    assert next(items, 0) == 0
+    assert min(items, default=0) == 0
+    assert max(items, default=0) == 0
+
+    items = values()
+    seen = []
+    for value in items:
+        seen.append(value)
+        assert list(items) == [2]
+    assert seen == [1]
+
+    items = values()
+    seen = []
+    for value in items:
+        seen.append(value)
+        assert list(items) == [2]
+        continue
+    assert seen == [1]
+
+test_generator_exhaustion()
+
+@test
+def test_zip_generators():
+    def values(count):
+        for value in range(count):
+            yield value
+
+    items = [1, 2, 3]
+    pairs = zip(items, items)
+    assert list(pairs) == [(1, 1), (2, 2), (3, 3)]
+    assert list(zip(pairs, pairs)) == []
+    assert list(zip()) == []
+    assert list(zip([1, 2])) == [(1,), (2,)]
+    assert list(zip(['a', 'b'], [1, 2], [True, False])) == [('a', 1, True), ('b', 2, False)]
+
+    shared = values(5)
+    assert list(zip(shared, shared)) == [(0, 1), (2, 3)]
+    assert next(shared, -1) == -1
+    shared = values(8)
+    assert list(zip(shared, shared, shared)) == [(0, 1, 2), (3, 4, 5)]
+
+    first = values(1)
+    second = values(3)
+    assert list(zip(first, second)) == [(0, 0)]
+    assert next(second) == 1
+    assert list(second) == [2]
+
+    first = values(0)
+    second = values(3)
+    assert list(zip(first, second)) == []
+    assert next(second) == 0
+
+    first = values(3)
+    second = values(1)
+    third = values(3)
+    assert list(zip(first, second, third)) == [(0, 0, 0)]
+    assert next(first) == 2
+    assert next(third) == 1
+
+    nullable: List[Optional[int]] = [None, 1]
+    rows = list(zip(nullable, ['a', 'b']))
+    assert len(rows) == 2
+    assert rows[0][0] is None and rows[0][1] == 'a'
+    assert rows[1][0] == 1 and rows[1][1] == 'b'
+
+    class Payload:
+        data: List[int]
+
+        def __init__(self, data: List[int]):
+            self.data = data
+
+    payload = Payload([10])
+    rows = list(zip([payload], ['value'], [(1, NoneType())]))
+    assert rows[0][0] is payload
+    rows[0][0].data.append(20)
+    assert payload.data == [10, 20]
+    assert rows[0][1] == 'value' and rows[0][2][0] == 1
+
+test_zip_generators()
+
+@test
+def test_zip_advancement_order():
+    def values(events, tag, count):
+        events.append(tag + '-start')
+        for value in range(count):
+            events.append(tag + str(value))
+            yield value
+        events.append(tag + '-end')
+
+    events = []
+    first = values(events, 'a', 1)
+    second = values(events, 'b', 3)
+    pairs = zip(first, second)
+    assert events == []
+    assert next(pairs) == (0, 0)
+    assert events == ['a-start', 'a0', 'b-start', 'b0']
+    assert list(pairs) == []
+    assert events == ['a-start', 'a0', 'b-start', 'b0', 'a-end']
+    assert next(second) == 1
+    assert events[-1] == 'b1'
+
+    def raising():
+        yield 1
+        raise ValueError('iterator failed')
+
+    events = []
+    pairs = zip(raising(), values(events, 'b', 3))
+    assert next(pairs) == (1, 0)
+    try:
+        next(pairs)
+        assert False
+    except ValueError as error:
+        assert error.message == 'iterator failed'
+    assert events == ['b-start', 'b0']
+
+    def void_values():
+        yield
+        yield
+
+    assert len(list(zip(void_values(), range(3)))) == 2
+
+test_zip_advancement_order()
+
+@test
+def test_exhausted_generator_pipeline():
+    def values():
+        yield 1
+        yield 2
+
+    def collect(value, result):
+        result.append(value)
+
+    items = values()
+    result = []
+    items |> collect(..., result)
+    items |> collect(..., result)
+    assert result == [1, 2]
+
+    def drain(value, items, result):
+        result.append(value)
+        assert list(items) == [2]
+
+    items = values()
+    result = []
+    items |> drain(..., items, result)
+    assert result == [1]
+
+test_exhausted_generator_pipeline()
