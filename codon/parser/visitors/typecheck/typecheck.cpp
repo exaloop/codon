@@ -1249,7 +1249,8 @@ TypecheckVisitor::addClassGenerics(types::ClassType *typ, bool func, bool onlyMa
 }
 
 types::TypePtr TypecheckVisitor::instantiateTypeVar(types::Type *t) {
-  return instantiateType(ctx->forceFind(StdlibTypes::Type)->getType(), {t});
+  // A local variable named "type" must not replace the standard type constructor.
+  return instantiateType(getStdLibType(StdlibTypes::Type), {t});
 }
 
 void TypecheckVisitor::registerGlobal(const std::string &name) const {

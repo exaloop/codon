@@ -3,40 +3,49 @@
 import internal.static as static
 import internal.gc as gc
 
-
 class VTable:
     class Item:
         typeinfo: TypeInfo
-        thunks: Array[cobj]
+        thunks: Ptr[cobj]
+        thunks_len: int
         min_thunk: int
 
-    data: Array[Item]
+    data: Ptr[Item]
+    data_len: int
 
-    def _resize(arr, new_cap):
-        p = Ptr[arr.T](gc.realloc(arr.ptr.as_byte(), new_cap * gc.sizeof(arr.T), arr.len * gc.sizeof(arr.T)))
-        str.memset((p + arr.len).as_byte(), byte(0), (new_cap - arr.len) * gc.sizeof(arr.T))
-        return Array[arr.T](p, new_cap)
+
+    @llvm
+    def memset(dest: Ptr[u8], val: u8, len: int) -> None:
+        declare void @llvm.memset.p0i8.i64(ptr %dest, i8 %val, i64 %len, i32 %align, i1 %isvolatile)
+        call void @llvm.memset.p0i8.i64(ptr %dest, i8 %val, i64 %len, i32 0, i1 false)
+        ret {} {}
+
+    def _resize(arr: Ptr[T], old_cap, new_cap, T: type):
+        p = Ptr[T](gc.realloc(arr.as_byte(), new_cap * gc.sizeof(T), old_cap * gc.sizeof(T)))
+        VTable.memset((p + old_cap).as_byte(), byte(0), (new_cap - old_cap) * gc.sizeof(T))
+        return (p, new_cap)
 
     def __init__(self):
-        self.data = Array[VTable.Item](1000)
-        str.memset(self.data.ptr.as_byte(), byte(0), self.data.len * gc.sizeof(self.data.T))
+        self.data_len = 1000
+        self.data = Ptr[VTable.Item](1000)
+        VTable.memset(self.data.as_byte(), byte(0), self.data_len * gc.sizeof(VTable.Item))
 
     def __getitem__(self, cls: int) -> VTable.Item:
         assert cls in self
         return self.data[cls]
 
     def __contains__(self, cls: int) -> bool:
-        return cls < self.data.len and self.data[cls].__raw__() != cobj()
+        return cls < self.data_len and self.data[cls].__raw__() != cobj()
 
     def set_type(self, ti: TypeInfo):
-        if self.data.len <= ti.id:
-            self.data = VTable._resize(self.data, ti.id + 100)
-        self.data[ti.id] = VTable.Item(ti, Array[cobj](1000), 0)
+        if self.data_len <= ti.id:
+            self.data, self.data_len = VTable._resize(self.data, self.data_len, ti.id + 100)
+        self.data[ti.id] = VTable.Item(ti, Ptr[cobj](1000), 1000, 0)
 
     def get_thunk(self, cls: int, thunk: int):
         item = self.data[cls]
         thunk -= item.min_thunk
-        assert thunk >= 0 and thunk < item.thunks.len
+        assert thunk >= 0 and thunk < item.thunks_len
         return item.thunks[thunk]
 
     def set_thunk(self, cls: int, thunk: int, fn: cobj):
@@ -44,8 +53,8 @@ class VTable:
         if item.min_thunk == 0:
             item.min_thunk = thunk
         thunk -= item.min_thunk
-        if item.thunks.len <= thunk:
-            item.thunks = VTable._resize(item.thunks, thunk + 100)
+        if item.thunks_len <= thunk:
+            item.thunks, item.thunks_len = VTable._resize(item.thunks, item.thunks_len, thunk + 100)
         item.thunks[thunk] = fn
 
 

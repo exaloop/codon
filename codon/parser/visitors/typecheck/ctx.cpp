@@ -157,9 +157,9 @@ void TypeContext::dump() { dump(0); }
 
 std::string TypeContext::generateCanonicalName(const std::string &name,
                                                bool includeBase, bool noSuffix) const {
-  std::string newName = name;
   if (name.find('.') != std::string::npos)
     return name;
+  std::string newName = name;
   includeBase &= !(!name.empty() && name[0] == '%');
   if (includeBase) {
     std::string base = getBaseName();

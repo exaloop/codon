@@ -269,15 +269,16 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
     constructorArgs.push_back(N<IntExpr>(items.size()));
   }
   auto t = N<IdExpr>(type);
-  auto ta = instantiateType(getStdLibType(type));
+  auto root = getStdLibType(type);
+  auto ta = instantiateType(root);
   if (isDict && collectionTyp->getClass()) {
     seqassert(collectionTyp->getClass()->isRecord(), "bad dict");
     std::vector<types::Type *> nt;
     for (auto &g : collectionTyp->getClass()->generics)
       nt.push_back(g.getType());
-    ta = instantiateType(getStdLibType(type), nt);
+    ta = instantiateType(getStdLibType(root->name), nt);
   } else if (!isDict) {
-    ta = instantiateType(getStdLibType(type), {collectionTyp.get()});
+    ta = instantiateType(root, {collectionTyp.get()});
   }
   t->setType(instantiateTypeVar(ta.get()));
   stmts.push_back(N<AssignStmt>(clone(var), N<CallExpr>(t, constructorArgs)));

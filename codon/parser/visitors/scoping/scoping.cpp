@@ -222,7 +222,7 @@ ScopingVisitor::unpackFString(const std::string &value) {
             return items;
           items.back().format = val->second;
 
-          auto &debugText = items.back().format.text;
+          auto &debugText = items.back().value;
           if (!debugText.empty()) {
             int leadingWhitespace = 0;
             while (leadingWhitespace < code.size() &&

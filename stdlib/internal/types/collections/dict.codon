@@ -67,8 +67,8 @@ class OrderedDict:
     _active: Ptr[u8]
     _log2_size: u8
     _log2_index_bytes: u8
-    K: type
-    V: type
+    K: type = NoneType
+    V: type = NoneType
 
     @property
     def _log_size(self):

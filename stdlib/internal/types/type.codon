@@ -112,7 +112,7 @@ class TypeInfo:
     nice_name: str
 
     _base_name: str
-    _parent_offsets: List[int]
+    _parent_offsets: Ptr[int]
     _params: List[int]  # generics
     _fields: List[Tuple[str, int, int]]
     _size: int
@@ -169,14 +169,14 @@ class TypeInfo:
 
         if num_mro > 0:
             self._parent_ids = Ptr[int](num_mro + 1)
-            self._parent_offsets = [0] * num_mro
+            self._parent_offsets = Ptr[int](num_mro)
             for i in static.range(num_mro):
                 self._parent_ids[i] = mro[i + 1].T.__id__
                 self._parent_offsets[i] = RTTIType._dist(mro[i + 1].T, T)  # Assumes T's MRO as its final position!
             self._parent_ids[num_mro] = 0
         else:
             self._parent_ids = Ptr[int]()
-            self._parent_offsets = []
+            self._parent_offsets = Ptr[int]()
 
         self._params = []
         self._fields = []

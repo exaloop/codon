@@ -331,7 +331,7 @@ z = defdict()
 z[1.1] #! 'float' does not match expected type 'str'
 
 #%% inherit_class_err_1,barebones
-class defdict(Array[int]):
+class defdict(DictEntry[int, int]):
     pass #! reference classes cannot inherit tuple classes
 
 #%% inherit_class_err_2,barebones
@@ -340,7 +340,7 @@ class defdict(TypeInfo):
 
 #%% inherit_class_err_3,barebones
 class defdict(Dict[int, float, float]):
-    pass #! Dict takes 2 generics (3 given)
+    pass #! OrderedDict takes 2 generics (3 given)
 
 #%% inherit_class_err_4,barebones
 class Foo:

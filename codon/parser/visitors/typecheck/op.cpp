@@ -571,6 +571,7 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
       }
       unify(t.get(), generics[i].getType());
     }
+    unify(expr->getType(), instantiateTypeVar(typ.get()));
 
     // If the type is realizable, use the realized name instead of instantiation
     // (e.g. use Id("Ptr[u8]") instead of Instantiate(Ptr, {u8}))

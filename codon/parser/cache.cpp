@@ -323,13 +323,13 @@ const std::string Complex = getMangledClass("std.internal.types.complex", "compl
 const std::string Complex64 =
     getMangledClass("std.internal.types.complex", "complex64");
 const std::string Coroutine = getMangledClass("", "Coroutine");
-const std::string Dict = getMangledClass("std.internal.types.array", "Dict");
+const std::string Dict = getMangledVar("", "Dict");
 const std::string Float = getMangledClass("", "float");
 const std::string Float16 = getMangledClass("", "float16");
 const std::string Function = getMangledClass("", "Function");
 const std::string Generator = getMangledClass("", "Generator");
 const std::string Int = getMangledClass("", "Int");
-const std::string List = getMangledClass("std.internal.types.array", "List");
+const std::string List = getMangledClass("std.internal.types.collections.list", "List");
 const std::string NamedTuple = getMangledClass("", "NamedTuple");
 const std::string NDArray = getMangledClass("std.numpy.ndarray", "ndarray");
 const std::string NoneType = getMangledClass("", "NoneType");

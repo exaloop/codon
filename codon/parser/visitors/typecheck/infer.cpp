@@ -606,7 +606,7 @@ ir::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
     handle = module->getBytesType();
   } else if (t->name == StdlibTypes::Int || t->name == StdlibTypes::UInt) {
     handle = module->unsafeGetIntType(getIntLiteral(statics[0]), t->name == StdlibTypes::Int);
-  } else if (t->name == "Ptr") {
+  } else if (t->name == StdlibTypes::Ptr) {
     seqassert(types.size() == 1, "bad generics/statics");
     handle = module->unsafeGetPointerType(types[0]);
   } else if (t->name == StdlibTypes::Generator || t->name == "AsyncGenerator") {
