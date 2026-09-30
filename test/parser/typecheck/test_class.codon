@@ -339,7 +339,7 @@ class defdict(TypeInfo):
     pass #! internal classes cannot inherit other classes
 
 #%% inherit_class_err_3,barebones
-class defdict(Dict[int, float, float]):
+class defdict(OrderedDict[int, float, float]):
     pass #! OrderedDict takes 2 generics (3 given)
 
 #%% inherit_class_err_4,barebones

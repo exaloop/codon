@@ -268,8 +268,8 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
     // Optimization: pre-allocate the list with the exact number of elements
     constructorArgs.push_back(N<IntExpr>(items.size()));
   }
-  auto t = N<IdExpr>(type);
   auto root = getStdLibType(type);
+  auto t = N<IdExpr>(isDict ? root->name : type);
   auto ta = instantiateType(root);
   if (isDict && collectionTyp->getClass()) {
     seqassert(collectionTyp->getClass()->isRecord(), "bad dict");

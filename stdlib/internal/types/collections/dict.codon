@@ -58,7 +58,7 @@ class LookupResult:
     slot: int
     found: bool
 
-class OrderedDict:
+class OrderedDict(object):
     _used: int
     _usable: int
     _indices: cobj
@@ -470,11 +470,11 @@ class OrderedDict:
 
     def __or__(self, other):
         new = self.__copy__()
-        new.update(other)
+        OrderedDict.update(new, other)
         return new
 
     def __ior__(self, other):
-        self.update(other)
+        OrderedDict.update(self, other)
         return self
 
     def __repr__(self):
@@ -571,7 +571,7 @@ class OrderedDict:
 # Unordered #
 #############
 
-class UnorderedDict:
+class UnorderedDict(object):
     _n_buckets: int
     _size: int
     _n_occupied: int
@@ -677,11 +677,11 @@ class UnorderedDict:
 
     def __or__(self, other):
         new = self.__copy__()
-        new.update(other)
+        UnorderedDict.update(new, other)
         return new
 
     def __ior__(self, other):
-        self.update(other)
+        UnorderedDict.update(self, other)
         return self
 
     def __copy__(self):
