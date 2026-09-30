@@ -622,7 +622,9 @@ class ndarray[dtype, ndim: Literal[int]]:
     @inline
     def _loop(arrays, func, broadcast: Literal[str] = 'all',
               check: Literal[bool] = True, alloc: type = type(()),
-              optimize_order: Literal[bool] = True, extra = None):
+              optimize_order: Literal[bool] = True, extra = None,
+              plan: Literal[bool] = False, preserve_shape: Literal[bool] = False,
+              alias: Literal[bool] = False):
         def call(func, args, extra):
             if extra is None:
                 return func(*args)
@@ -637,6 +639,29 @@ class ndarray[dtype, ndim: Literal[int]]:
                 call(func, ptrs, extra)
             elif static.len(shape) == 1:
                 n = shape[0]
+
+                # Collapse only exact pointer-and-stride aliases. The resulting
+                # two-pointer loop exposes in-place updates to vectorization;
+                # equal base pointers alone do not prove identical element access.
+                if alias and static.len(ptrs) == 3:
+                    if type(ptrs[0]) is type(ptrs[1]):
+                        if ptrs[0] == ptrs[1] and strides[0] == strides[1]:
+                            def inplace_left(destination, source, context):
+                                callback, extra = context
+                                call(callback, (destination, destination, source), extra)
+
+                            loop(shape, (strides[0], strides[2]),
+                                 (ptrs[0], ptrs[2]), inplace_left, (func, extra))
+                            return
+                    if type(ptrs[0]) is type(ptrs[2]):
+                        if ptrs[0] == ptrs[2] and strides[0] == strides[2]:
+                            def inplace_right(destination, source, context):
+                                callback, extra = context
+                                call(callback, (destination, source, destination), extra)
+
+                            loop(shape, (strides[0], strides[1]),
+                                 (ptrs[0], ptrs[1]), inplace_right, (func, extra))
+                            return
 
                 # Common cases are:
                 #   - len(ptrs) == 1 ; i.e. in-place unary operation
@@ -870,6 +895,27 @@ class ndarray[dtype, ndim: Literal[int]]:
 
         alloc_tuple = util.zero(alloc)
 
+        # Planning shares broadcasting/layout rules with execution, but neither
+        # allocates nor invokes the callback. Axis reductions need preserve_shape
+        # so axis numbers still refer to the original dimensions after planning.
+        if plan:
+            if static.len(alloc_tuple) != 0:
+                compile_error("iteration plans cannot allocate arrays")
+            if all_contig and not preserve_shape:
+                shape = (1,) * (static.len(shape) - 1) + (arrays[0].size,)
+                strides = tuple((0,) * (static.len(shape) - 1) + (arr.itemsize,)
+                                for arr in arrays)
+                output_strides = ndarray(shape, Ptr[u8]()).strides
+            elif all_contig:
+                output_strides = ndarray(shape, Ptr[u8](), fcontig=not ccontig).strides
+            else:
+                perm = reorder_loops(max_arr.strides) if optimize_order else None
+                perm_shape = util.tuple_perm(shape, perm)
+                output_strides = ndarray(perm_shape, Ptr[u8]()).strides
+                if perm is not None:
+                    output_strides = util.tuple_perm(output_strides, util.tuple_perm_inv(perm))
+            return shape, strides, tuple(arr.data for arr in arrays), output_strides
+
         if static.len(alloc_tuple) > 0:
             if optimize_order:
                 perm0 = reorder_loops(max_arr.strides)
@@ -885,10 +931,17 @@ class ndarray[dtype, ndim: Literal[int]]:
             allocated = ()
 
         if all_contig:
-            for i in range(arrays[0].size):
-                call(func,
-                     tuple(tup[0] + i for tup in allocated) + tuple(arr.data + i for arr in arrays),
-                     extra)
+            if alias:
+                loop((arrays[0].size,),
+                     tuple((util.sizeof(type(tup[0][0])),) for tup in allocated) +
+                     tuple((arr.itemsize,) for arr in arrays),
+                     tuple(tup[0] for tup in allocated) + tuple(arr.data for arr in arrays),
+                     func, extra)
+            else:
+                for i in range(arrays[0].size):
+                    call(func,
+                         tuple(tup[0] + i for tup in allocated) + tuple(arr.data + i for arr in arrays),
+                         extra)
             return tuple(ndarray(shape, tup[0], fcontig=(not ccontig)) for tup in allocated)
 
         shape0 = shape

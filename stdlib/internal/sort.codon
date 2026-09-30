@@ -6,6 +6,54 @@ from algorithms.heapsort import heap_sort_inplace
 from algorithms.qsort import qsort_inplace
 from algorithms.timsort import tim_sort_inplace
 
+from C import cnp_sort_int16(cobj, int)
+from C import cnp_sort_uint16(cobj, int)
+from C import cnp_sort_int32(cobj, int)
+from C import cnp_sort_uint32(cobj, int)
+from C import cnp_sort_int64(cobj, int)
+from C import cnp_sort_uint64(cobj, int)
+from C import cnp_sort_uint128(cobj, int)
+from C import cnp_sort_float32(cobj, int)
+from C import cnp_sort_float64(cobj, int)
+from C import cnp_sort_float32_nan_last(cobj, int)
+from C import cnp_sort_float64_nan_last(cobj, int)
+
+def _try_native_sort(start: Ptr[T], n: int, nan_last: Literal[bool] = False,
+                     T: type) -> bool:
+    """Try a native sort, returning False for unsupported types.
+
+    For floats, the default List policy preserves signed-zero counts and leaves
+    NaN placement unspecified. nan_last selects NumPy's NaN-last policy, which
+    leaves zero signs unspecified.
+    """
+    if T is int or T is i64:
+        cnp_sort_int64(start.as_byte(), n)
+    elif T is i16:
+        cnp_sort_int16(start.as_byte(), n)
+    elif T is u16:
+        cnp_sort_uint16(start.as_byte(), n)
+    elif T is i32:
+        cnp_sort_int32(start.as_byte(), n)
+    elif T is u32:
+        cnp_sort_uint32(start.as_byte(), n)
+    elif T is u64:
+        cnp_sort_uint64(start.as_byte(), n)
+    elif T is u128:
+        cnp_sort_uint128(start.as_byte(), n)
+    elif T is float32:
+        if nan_last:
+            cnp_sort_float32_nan_last(start.as_byte(), n)
+        else:
+            cnp_sort_float32(start.as_byte(), n)
+    elif T is float:
+        if nan_last:
+            cnp_sort_float64_nan_last(start.as_byte(), n)
+        else:
+            cnp_sort_float64(start.as_byte(), n)
+    else:
+        return False
+    return True
+
 def sorted(
     v: Generator[T],
     key=Optional[int](),
@@ -65,13 +113,10 @@ class List:
     ):
         if isinstance(key, Optional):
             if algorithm == "auto":
-                # Python uses Timsort in all cases, but if we
-                # know stability does not matter (i.e. sorting
-                # primitive type with no key), we will use
-                # faster PDQ instead. PDQ is ~50% faster than
-                # Timsort for sorting 1B 64-bit ints.
                 if self:
-                    if _is_pdq_compatible(self[0]):
+                    if _try_native_sort(self._ptr, self._len):
+                        pass
+                    elif _is_pdq_compatible(self[0]):
                         pdq_sort_inplace(self, lambda x: x)
                     else:
                         tim_sort_inplace(self, lambda x: x)

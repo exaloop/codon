@@ -80,10 +80,13 @@ def foo():
     yield
     print 1
 y = foo()
-print y.done()  #: False
-y.__next__()  #: 1
-# TODO: next() should work here!
-print y.done()  #: True
+next(y)
+print y.__done__()  #: False
+try:
+    next(y)  #: 1
+except StopIteration:
+    pass
+print y.__done__()  #: True
 
 #%% yield_return,barebones
 def foo():

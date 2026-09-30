@@ -8,6 +8,7 @@
 #include "codon/parser/cache.h"
 #include "llvm/Passes/PassBuilder.h"
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -32,10 +33,21 @@ public:
     std::string supported;
     /// Plugin stdlib path
     std::string stdlibPath;
-    /// Plugin dynamic library path
+    /// Legacy library path, used for both compiler and runtime by default.
     std::string dylibPath;
-    /// Linker arguments (to replace "-l dylibPath" if present)
+    /// Linker arguments (to replace the default runtime library argument if present).
     std::vector<std::string> linkArgs;
+    /// Compiler library: unset inherits dylibPath; empty disables loading.
+    std::optional<std::string> compilerDylibPath;
+    /// Runtime library: unset inherits dylibPath; empty disables default linking.
+    std::optional<std::string> runtimeDylibPath;
+
+    const std::string &getCompilerDylibPath() const {
+      return compilerDylibPath ? *compilerDylibPath : dylibPath;
+    }
+    const std::string &getRuntimeDylibPath() const {
+      return runtimeDylibPath ? *runtimeDylibPath : dylibPath;
+    }
   };
 
   using KeywordCallback =
@@ -60,6 +72,8 @@ public:
   virtual void addIRPasses(ir::transform::PassManager *pm, bool debug) {}
 
   /// Registers this DSL's LLVM passes with the given pass builder.
+  /// Called before analysis registration and pipeline construction, allowing
+  /// plugins to register analyses as well as passes.
   /// @param pb the pass builder to add the passes to
   /// @param debug true if compiling in debug mode
   virtual void addLLVMPasses(llvm::PassBuilder *pb, bool debug) {}

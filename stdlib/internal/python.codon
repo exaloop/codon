@@ -2281,11 +2281,11 @@ class _PyWrap:
                 return cobj()
 
             gt = TO(pt._gen)
-            if gt.done():
+            if not gt._advance():
                 pt._gen = cobj()
                 return cobj()
             else:
-                return gt.__next__().__to_py__()
+                return gt._get().__to_py__()
 
         def __to_py__(self):
             return _PyWrap.wrap_to_py(self)

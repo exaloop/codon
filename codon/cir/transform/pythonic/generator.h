@@ -2,6 +2,9 @@
 
 #pragma once
 
+#include <unordered_map>
+#include <unordered_set>
+
 #include "codon/cir/transform/pass.h"
 
 namespace codon {
@@ -17,6 +20,22 @@ public:
   static const std::string KEY;
   std::string getKey() const override { return KEY; }
   void handle(CallInstr *v) override;
+};
+
+class GeneratorLoopFusion : public OperatorPass {
+  std::unordered_set<id_t> wrappers;
+  std::unordered_map<id_t, int> growth;
+
+public:
+  static const std::string KEY;
+  std::string getKey() const override { return KEY; }
+  void run(Module *module) override {
+    wrappers.clear();
+    growth.clear();
+    OperatorPass::run(module);
+  }
+  void handle(CallInstr *call) override;
+  void handle(ForFlow *loop) override;
 };
 
 } // namespace pythonic

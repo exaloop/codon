@@ -2,6 +2,7 @@
 
 from .ndarray import ndarray
 from .routines import array, asarray, empty, zeros
+from internal.sort import _try_native_sort
 
 import util
 import internal.static as static
@@ -487,37 +488,8 @@ def _pdq_sort(
         begin = pivot_pos + 1
         leftmost = False
 
-# C stubs for vectorized quicksort from Highway
-from C import cnp_sort_int16(cobj, int)
-from C import cnp_sort_uint16(cobj, int)
-from C import cnp_sort_int32(cobj, int)
-from C import cnp_sort_uint32(cobj, int)
-from C import cnp_sort_int64(cobj, int)
-from C import cnp_sort_uint64(cobj, int)
-from C import cnp_sort_uint128(cobj, int)
-from C import cnp_sort_float32(cobj, int)
-from C import cnp_sort_float64(cobj, int)
-
 def quicksort(start: Ptr[T], n: int, T: type):
-    if T is int:
-        cnp_sort_int64(start.as_byte(), n)
-    elif T is i16:
-        cnp_sort_int16(start.as_byte(), n)
-    elif T is u16:
-        cnp_sort_uint16(start.as_byte(), n)
-    elif T is i32:
-        cnp_sort_int32(start.as_byte(), n)
-    elif T is u32:
-        cnp_sort_uint32(start.as_byte(), n)
-    elif T is i64:
-        cnp_sort_int64(start.as_byte(), n)
-    elif T is u64:
-        cnp_sort_uint64(start.as_byte(), n)
-    elif T is float32:
-        cnp_sort_float32(start.as_byte(), n)
-    elif T is float:
-        cnp_sort_float64(start.as_byte(), n)
-    else:
+    if not _try_native_sort(start, n, nan_last=True):
         _pdq_sort(start, 0, n, _floor_log2(n), True)
 
 def _apartial_insertion_sort(arr: Ptr[T], tosort: Ptr[int], begin: int, end: int, T: type):
