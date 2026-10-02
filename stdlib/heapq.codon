@@ -150,12 +150,12 @@ def nsmallest(n: int, iterable: Generator[T], key=Optional[int](), T: type) -> L
         result = List(n)
         done = False
         for i in range(n):
-            if it.done():
+            if not it._advance():
                 done = True
                 break
-            result.append((it.__next__(), i))
+            result.append((it._get(), i))
         if not result:
-            it.destroy()
+            it._destroy()
             return []
         _heapify_max(result)
         top = result[0][0]
@@ -167,7 +167,7 @@ def nsmallest(n: int, iterable: Generator[T], key=Optional[int](), T: type) -> L
                     top, _order = result[0]
                     order += 1
         else:
-            it.destroy()
+            it._destroy()
         result.sort()
         return [elem for elem, order in result]
     else:
@@ -176,13 +176,13 @@ def nsmallest(n: int, iterable: Generator[T], key=Optional[int](), T: type) -> L
         result = List(n)
         done = False
         for i in range(n):
-            if it.done():
+            if not it._advance():
                 done = True
                 break
-            elem = it.__next__()
+            elem = it._get()
             result.append((key(elem), i, elem))
         if not result:
-            it.destroy()
+            it._destroy()
             return []
         _heapify_max(result)
         top = result[0][0]
@@ -195,7 +195,7 @@ def nsmallest(n: int, iterable: Generator[T], key=Optional[int](), T: type) -> L
                     top, _order, _elem = result[0]
                     order += 1
         else:
-            it.destroy()
+            it._destroy()
         result.sort()
         return [elem for k, order, elem in result]
 
@@ -219,12 +219,12 @@ def nlargest(n: int, iterable: Generator[T], key=Optional[int](), T: type) -> Li
         result = List(n)
         done = False
         for i in range(0, -n, -1):
-            if it.done():
+            if not it._advance():
                 done = True
                 break
-            result.append((it.__next__(), i))
+            result.append((it._get(), i))
         if not result:
-            it.destroy()
+            it._destroy()
             return []
         heapify(result)
         top = result[0][0]
@@ -236,7 +236,7 @@ def nlargest(n: int, iterable: Generator[T], key=Optional[int](), T: type) -> Li
                     top, _order = result[0]
                     order -= 1
         else:
-            it.destroy()
+            it._destroy()
         result.sort()
         return [elem for elem, order in reversed(result)]
     else:
@@ -245,10 +245,10 @@ def nlargest(n: int, iterable: Generator[T], key=Optional[int](), T: type) -> Li
         result = List(n)
         done = False
         for i in range(0, -n, -1):
-            if it.done():
+            if not it._advance():
                 done = True
                 break
-            elem = it.__next__()
+            elem = it._get()
             result.append((key(elem), i, elem))
         if not result:
             return []
@@ -263,7 +263,7 @@ def nlargest(n: int, iterable: Generator[T], key=Optional[int](), T: type) -> Li
                     top, _order, _elem = result[0]
                     order -= 1
         else:
-            it.destroy()
+            it._destroy()
         result.sort()
         return [elem for k, order, elem in reversed(result)]
 
@@ -304,8 +304,8 @@ def merge(*iterables, key=Optional[int](), reverse: bool = False):
     order = 0
     for it in iterables:
         gen = iter(it)
-        if not gen.done():
-            items.append(_MergeItem(gen.__next__(), order * direction, gen, key))
+        if gen._advance():
+            items.append(_MergeItem(gen._get(), order * direction, gen, key))
         order += 1
     _heapify(items)
     while len(items) > 1:
@@ -313,10 +313,10 @@ def merge(*iterables, key=Optional[int](), reverse: bool = False):
             # TODO: @tuple unpacking does not work
             value, order, gen = items[0].value, items[0].order, items[0].gen
             yield value
-            if gen.done():
+            if not gen._advance():
                 _heappop(items)
                 break
-            _heapreplace(items, _MergeItem(gen.__next__(), order, gen, key))
+            _heapreplace(items, _MergeItem(gen._get(), order, gen, key))
     if items:
         # fast case when only a single iterator remains
         value, order, gen = items[0].value, items[0].order, items[0].gen

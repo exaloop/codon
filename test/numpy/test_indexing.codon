@@ -2,6 +2,54 @@ import numpy as np
 from numpy import *
 
 @test
+def test_enumerate_indexing():
+    data = np.arange(12).reshape(3, 4)
+    for index, row in enumerate(data, 5):
+        assert np.array_equal(row, data[index - 5])
+        row[0] = 100 + index
+    assert list(data[:, 0]) == [105, 106, 107]
+
+    for index, column in enumerate(data.T):
+        assert np.array_equal(column, data[:, index])
+
+    result = []
+    for index, value in enumerate(data[1, ::-2], -1):
+        result.append((index, value))
+        index = 99
+        continue
+    assert result == [(-1, 7), (0, 5)]
+
+    for index, value in enumerate(np.arange(0)):
+        assert False
+    for index, row in enumerate(np.empty((0, 3))):
+        assert False
+    for index, row in enumerate(np.empty((2, 0)), -3):
+        assert row.shape == (0,)
+        assert index == -3 or index == -2
+
+    def source(events):
+        events.append('source')
+        return np.arange(3)
+
+    def start(events):
+        events.append('start')
+        return 8
+
+    events = []
+    result = []
+    for index, value in enumerate(source(events), start(events)):
+        result.append((index, value))
+        if value == 1:
+            break
+    else:
+        assert False
+    assert events == ['source', 'start']
+    assert result == [(8, 0), (9, 1)]
+    assert index == 9 and value == 1
+
+test_enumerate_indexing()
+
+@test
 def test_basic_indexing():
     #Single element indexing
     arr = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]])

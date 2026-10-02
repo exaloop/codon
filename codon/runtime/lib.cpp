@@ -250,15 +250,8 @@ SEQ_FUNC void seq_init(int flags) {
   GC_INIT();
   GC_set_warn_proc(GC_ignore_warn_proc);
   GC_allow_register_threads();
-#ifdef _WIN32
-  // GC_remove_roots does not exist on Win32 (bdwgc manages regions itself), so pass
-  // nullptr instead of referencing a missing symbol.
-  __kmpc_set_gc_callbacks(GC_get_stack_base, (gc_setup_callback)GC_register_my_thread,
-                          GC_add_roots, nullptr);
-#else
   __kmpc_set_gc_callbacks(GC_get_stack_base, (gc_setup_callback)GC_register_my_thread,
                           GC_add_roots, GC_remove_roots);
-#endif
 #endif
 
   seq_exc_init(flags);
@@ -489,10 +482,9 @@ SEQ_FUNC void seq_gc_add_roots(void *start, void *end) {
 }
 
 SEQ_FUNC void seq_gc_remove_roots(void *start, void *end) {
-#if !USE_STANDARD_MALLOC && !defined(_WIN32)
+#if !USE_STANDARD_MALLOC
   GC_remove_roots(start, end);
 #endif
-  // Win32 bdwgc does not support dynamic root removal; roots remain registered.
 }
 
 SEQ_FUNC void seq_gc_clear_roots() {

@@ -49,15 +49,23 @@ llvm::Expected<Plugin *> PluginManager::load(const std::string &path) {
   auto about = tml["about"];
   auto library = tml["library"];
 
-  std::string cppLib = library["cpp"].value_or("");
-  std::string dylibPath;
-  if (!cppLib.empty()) {
+  auto libraryPath = [&](const std::string &name) -> std::string {
+    if (name.empty())
+      return {};
     llvm::SmallString<128> p = llvm::sys::path::parent_path(tomlPath);
-    llvm::sys::path::append(p, cppLib + "." + libExt);
-    dylibPath = p.str();
+    llvm::sys::path::append(p, name + "." + libExt);
+    return std::string(p.str());
+  };
+  for (const char *key : {"compiler", "runtime"}) {
+    if (library[key] && !library[key].is_string())
+      return pluginError(fmt::format("library.{} must be a string", key));
   }
+  auto compilerLib = library["compiler"].value<std::string>();
+  auto runtimeLib = library["runtime"].value<std::string>();
 
   auto link = library["link"];
+  if (!runtimeLib && link.is_boolean() && !link.value_or(true))
+    runtimeLib = "";
   std::vector<std::string> linkArgs;
   if (auto arr = link.as_array()) {
     arr->for_each([&linkArgs](auto &&el) {
@@ -82,14 +90,17 @@ llvm::Expected<Plugin *> PluginManager::load(const std::string &path) {
     stdlibPath = p.str();
   }
 
-  DSL::Info info = {about["name"].value_or(""),
-                    about["description"].value_or(""),
-                    about["version"].value_or(""),
-                    about["url"].value_or(""),
-                    about["supported"].value_or(""),
-                    stdlibPath,
-                    dylibPath,
-                    linkArgs};
+  DSL::Info info = {
+      about["name"].value_or(""),
+      about["description"].value_or(""),
+      about["version"].value_or(""),
+      about["url"].value_or(""),
+      about["supported"].value_or(""),
+      stdlibPath,
+      libraryPath(library["cpp"].value_or("")),
+      linkArgs,
+      compilerLib ? std::make_optional(libraryPath(*compilerLib)) : std::nullopt,
+      runtimeLib ? std::make_optional(libraryPath(*runtimeLib)) : std::nullopt};
 
   bool versionOk = false;
   try {
@@ -104,6 +115,7 @@ llvm::Expected<Plugin *> PluginManager::load(const std::string &path) {
     return pluginError(fmt::format("unsupported version {} (supported: {})",
                                    CODON_VERSION, info.supported));
 
+  const auto &dylibPath = info.getCompilerDylibPath();
   if (!dylibPath.empty()) {
     std::string libLoadErrorMsg;
     auto handle = llvm::sys::DynamicLibrary::getPermanentLibrary(dylibPath.c_str(),
@@ -125,6 +137,22 @@ llvm::Expected<Plugin *> PluginManager::load(const std::string &path) {
                                                llvm::sys::DynamicLibrary()));
   }
   return plugins.back().get();
+}
+
+llvm::Error PluginManager::loadRuntimeLibraries() const {
+  for (const auto &plugin : plugins) {
+    const auto &runtimePath = plugin->info.getRuntimeDylibPath();
+    if (runtimePath.empty() || runtimePath == plugin->info.getCompilerDylibPath() ||
+        loadedRuntimeLibraries.count(runtimePath))
+      continue;
+    std::string message;
+    if (llvm::sys::DynamicLibrary::LoadLibraryPermanently(runtimePath.c_str(),
+                                                          &message))
+      return llvm::make_error<error::PluginErrorInfo>(
+          fmt::format("could not load runtime library '{}': {}", runtimePath, message));
+    loadedRuntimeLibraries.insert(runtimePath);
+  }
+  return llvm::Error::success();
 }
 
 } // namespace codon

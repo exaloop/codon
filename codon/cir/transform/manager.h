@@ -92,9 +92,6 @@ private:
   /// map of valid analysis results
   std::unordered_map<std::string, std::unique_ptr<analyze::Result>> results;
 
-  /// passes to avoid registering
-  std::vector<std::string> disabled;
-
 public:
   explicit PassManager(Options *options)
       : options(options), km(), passes(), analyses(), executionOrder(), results() {
@@ -161,6 +158,7 @@ public:
   /// @param key the (unique'd) pass or analysis key
   /// @return true if the pass or analysis is disabled
   bool isDisabled(const std::string &key) {
+    const auto &disabled = options->disabled;
     return std::find(disabled.begin(), disabled.end(), key) != disabled.end();
   }
 

@@ -12,17 +12,46 @@ called `plugin.toml`. The following fields are supported:
 - `about.version`: Plugin version, using [semantic versioning](https://semver.org)
 - `about.url`: Plugin URL
 - `about.supported`: Supported Codon versions, using semantic versioning ranges
-- `library.cpp`: Shared library to be loaded upon loading the plugin, which includes
-  the plugin implementation (see below) and any necessary runtime functions. The
-  library extension (i.e. `.so` or `.dylib`) will be added automatically, and should
-  not be included.
+- `library.cpp`: Legacy shared library, used for both the compiler implementation
+  and runtime functions unless overridden below. Existing configurations retain
+  their behavior.
+- `library.compiler`: Shared library containing the compiler plugin implementation
+  and its `load()` entry point. It is loaded into the compiler and is linked into
+  generated programs only if also selected as the runtime library. An omitted value
+  inherits `library.cpp`; an empty string disables compiler-library loading.
+- `library.runtime`: Shared library containing runtime functions used by generated
+  code. It is linked into executables and shared libraries, and loaded for execution
+  by `codon run` or the JIT. It does not need a `load()` entry point and is not loaded
+  during ordinary compilation. An omitted value inherits `library.cpp`; an empty
+  string disables automatic runtime linking and runtime-library loading.
+  All three library paths are relative to the manifest directory. Their extensions
+  (`.so` or `.dylib`) are added automatically and should not be included.
 - `library.codon`: Standard library code that should be included with the plugin.
   It is recommended to put this code in directory `stdlib/<plugin_name>`, whereupon
   the value of this parameter would be `"stdlib"`.
 - `library.link`: Libraries to be linked when compiling to an executable. The string
   `{root}` will be replaced with the path to the TOML configuration file. For example,
   a value similar to `{root}/build/libmyplugin.a` might be used, assuming the plugin
-  also builds a static library containing necessary runtime functions.
+  also builds a static library containing necessary runtime functions. A string or
+  array of strings overrides the default runtime library argument. Explicit link
+  arguments remain usable even without a runtime library. For compatibility,
+  `library.link = false` means `library.runtime = ""` when `library.runtime` is omitted.
+  Search paths come from the runtime library, not the compiler library.
+
+For separate compiler and runtime libraries:
+
+```toml
+[library]
+compiler = "build/libmyplugin_compiler"
+runtime = "build/libmyplugin_runtime"
+```
+
+For a compiler-only plugin, set `runtime = ""`. A runtime-only plugin can omit both
+`compiler` and `cpp`. In C++, `DSL::Info::compilerDylibPath` and `runtimeDylibPath`
+are optional: unset values inherit `dylibPath`, while empty strings disable the
+corresponding library. This preserves legacy configuration and normal source
+initializers, not the binary layout of `DSL::Info`; plugins using that metadata
+must be rebuilt against the matching headers.
 
 Here is an example configuration file for the validate pass shown in the
 [Codon IR docs](ir.md#bidirectionality):
@@ -79,4 +108,6 @@ can be found [on GitHub](https://github.com/exaloop/example-codon-plugin).
 Plugins can add new LLVM passes by overriding the `void addLLVMPasses(llvm::PassBuilder *pb, bool debug)`
 method of the `codon::DSL` class. Refer to the
 [`llvm::PassBuilder` docs](https://llvm.org/doxygen/classllvm_1_1PassBuilder.html) for details on adding
-passes.
+passes. This hook runs before analysis registration and pipeline construction, so
+plugins can also use `registerAnalysisRegistrationCallback` to register analyses. The hook is called for
+each LLVM pipeline construction. Callbacks should not modify global LLVM command-line options.

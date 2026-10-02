@@ -244,19 +244,21 @@ class List:
         return self
 
     def __mul__(self, n: int) -> List[T]:
-        if n <= 0:
+        if n <= 0 or self._len == 0:
             return List[T]()
 
         new_len = self._len * n
-        v = List[T](new_len)
-        i = 0
-        while i < n:
-            j = 0
-            while j < self._len:
-                v.append(self._get(j))
-                j += 1
-            i += 1
-        return v
+        data = Ptr[T](new_len)
+        if self._len == 1:
+            value = self._get(0)
+            for index in range(n):
+                data[index] = value
+        else:
+            block_size = self._len * gc.sizeof(T)
+            for index in range(n):
+                str.memcpy((data + index * self._len).as_byte(),
+                           self._ptr.as_byte(), block_size)
+        return List[T](data, new_len)
 
     def __rmul__(self, n: int) -> List[T]:
         return self.__mul__(n)

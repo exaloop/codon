@@ -301,6 +301,9 @@ class Match[T]:
         return r.__str__()
 
     def expand(self, template: str):
+        if "\\" not in template:
+            return template
+
         def get_or_empty(s: Optional[str]):
             return s if s is not None else ''
 
@@ -434,10 +437,7 @@ class Pattern:
         return spans
 
     def _raw_spans(self, raw_spans: Ptr[Span]):
-        spans = Ptr[Span](self.groups + 1)
-        for i in range(self.groups + 1):
-            spans[i] = Span(raw_spans[i].start, raw_spans[i].end)
-        return spans
+        return raw_spans
 
     def _match_one(
         self, anchor: int, string: T, pos: Optional[int], endpos: Optional[int]
@@ -449,9 +449,10 @@ class Pattern:
             return None
 
         encoded = string.encode() if isinstance(string, str) else string
-        byte_pos = _utf8_byte_offset(encoded, posx) if isinstance(string, str) else posx
+        unicode_offsets = len(encoded) != len(string)
+        byte_pos = _utf8_byte_offset(encoded, posx) if unicode_offsets else posx
         byte_endpos = len(encoded) if endposx == len(string) else (
-            _utf8_byte_offset(encoded, endposx) if isinstance(string, str) else endposx
+            _utf8_byte_offset(encoded, endposx) if unicode_offsets else endposx
         )
         raw_spans = seq_re_match(self._re, anchor, encoded, byte_pos, byte_endpos)
 
@@ -460,7 +461,7 @@ class Pattern:
 
         spans = (
             self._match_spans(raw_spans, encoded, byte_pos, posx)
-            if isinstance(string, str) else self._raw_spans(raw_spans)
+            if unicode_offsets else self._raw_spans(raw_spans)
         )
         return Match[T](spans, posx, endposx, self, string)
 
@@ -474,9 +475,10 @@ class Pattern:
             return
 
         encoded = string.encode() if isinstance(string, str) else string
-        byte_pos = _utf8_byte_offset(encoded, posx) if isinstance(string, str) else posx
+        unicode_offsets = len(encoded) != len(string)
+        byte_pos = _utf8_byte_offset(encoded, posx) if unicode_offsets else posx
         byte_endpos = len(encoded) if endposx == len(string) else (
-            _utf8_byte_offset(encoded, endposx) if isinstance(string, str) else endposx
+            _utf8_byte_offset(encoded, endposx) if unicode_offsets else endposx
         )
         codepoint_pos = posx
 
@@ -488,7 +490,7 @@ class Pattern:
 
             spans = (
                 self._match_spans(raw_spans, encoded, byte_pos, codepoint_pos)
-                if isinstance(string, str) else self._raw_spans(raw_spans)
+                if unicode_offsets else self._raw_spans(raw_spans)
             )
 
             yield Match[T](spans, posx, endposx, self, string)
@@ -501,7 +503,7 @@ class Pattern:
                 byte_pos = raw_spans[0].end
                 posx = spans[0].end
                 codepoint_pos = posx
-                if isinstance(string, str):
+                if unicode_offsets:
                     c = int(encoded._ptr[byte_pos])
                     byte_pos += 1 if c < 0x80 else 2 if c < 0xE0 else 3 if c < 0xF0 else 4
                 else:
@@ -580,7 +582,7 @@ class Pattern:
             return repl(match)
 
     def subn(self, repl, string: T, count: int = 0):
-        cb = lambda match: [Pattern._repl(match, repl)]
+        cb = lambda match: (Pattern._repl(match, repl),)
         pieces, numsplit = self._split(cb, string, count)
         joined_pieces = str.cat(pieces) if isinstance(string, str) else bytes.cat(pieces)
         return joined_pieces, numsplit

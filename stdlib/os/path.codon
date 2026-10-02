@@ -76,7 +76,7 @@ def expanduser(path: str) -> str:
         return _ntpath.expanduser(path)
     if not path.startswith("~"):
         return path
-    from os import environ, _cstring, _errno, _error
+    from os import environ, _cstring
     end = path.find("/")
     if end < 0:
         end = len(path)
@@ -87,8 +87,6 @@ def expanduser(path: str) -> str:
         from C import free(cobj)
         pointer = seq_os_home(cobj() if end == 1 else _cstring(path[1:end]))
         if not pointer:
-            if _errno() != 0:
-                _error("expanduser")
             return path
         try:
             home = bytes.from_ptr(pointer).decode("utf-8", "surrogateescape")

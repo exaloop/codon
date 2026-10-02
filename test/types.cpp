@@ -17,6 +17,7 @@
 #include <unistd.h>
 #endif
 
+#include "codon/cir/transform/manager.h"
 #include "codon/compiler/compiler.h"
 #include "codon/compiler/jit.h"
 #include "codon/compiler/jit_extern.h"
@@ -34,6 +35,29 @@ TEST(TypeCoreTest, NewFunctionRealizationIsIncomplete) {
   EXPECT_EQ(realization->ast, nullptr);
   EXPECT_EQ(realization->ir, nullptr);
   EXPECT_TRUE(realization->captures.empty());
+}
+
+TEST(PassManagerTest, HonorsDisabledPassesAtRegistration) {
+  auto options = codon::Options::getDefault("build/codon_test");
+  options->debug = false;
+  codon::ir::transform::PassManager enabled(options.get());
+  EXPECT_TRUE(enabled.hasPass("core-numpy-fusion"));
+  EXPECT_TRUE(enabled.hasPass("core-numpy-lifetime"));
+  EXPECT_TRUE(enabled.hasPass("core-numpy-inline"));
+  EXPECT_FALSE(enabled.isDisabled("core-numpy-fusion"));
+
+  options->disabled = {"core-numpy-fusion", "core-numpy-lifetime", "not-a-pass"};
+  EXPECT_TRUE(enabled.isDisabled("core-numpy-fusion"));
+  EXPECT_TRUE(enabled.hasPass("core-numpy-fusion"));
+  codon::ir::transform::PassManager disabled(options.get());
+  EXPECT_FALSE(disabled.hasPass("core-numpy-fusion"));
+  EXPECT_FALSE(disabled.hasPass("core-numpy-lifetime"));
+  EXPECT_TRUE(disabled.hasPass("core-numpy-inline"));
+  EXPECT_TRUE(disabled.isDisabled("not-a-pass"));
+
+  options->disabled.clear();
+  EXPECT_FALSE(disabled.isDisabled("core-numpy-fusion"));
+  EXPECT_FALSE(disabled.hasPass("core-numpy-fusion"));
 }
 
 TEST(JITOptionsTest, RejectsInvalidOptions) {

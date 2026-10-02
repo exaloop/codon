@@ -480,12 +480,10 @@ void BinaryLoop(const T *in1, size_t is1, const T *in2, size_t is2, T *out, size
     for (; i < n; ++i)
       out[i] = F::scalar(in1[i], in2[i]);
   } else if (is1 == 0 && is2 == sizeof(T) && os == sizeof(T)) {
-    for (size_t j = 0; j < L; ++j)
-      tmp1[j] = in1[0];
+    const auto vec1 = hn::Set(d, in1[0]);
 
     for (i = 0; i + L <= n; i += L) {
       memcpy(tmp2, in2 + i, L * sizeof(T));
-      auto vec1 = hn::Load(d, tmp1);
       auto vec2 = hn::Load(d, tmp2);
       Store(F::template vector<T, decltype(vec1)>(d, vec1, vec2), d, tmp1);
       memcpy(out + i, tmp1, L * sizeof(T));

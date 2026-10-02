@@ -72,20 +72,20 @@ def min(*args, key=None, default=None):
         compile_error("min() 'default' argument only allowed for iterables")
     elif static.len(args) == 1:
         x = args[0].__iter__()
-        if not x.done():
-            s = x.__next__()
-            while not x.done():
-                i = x.__next__()
+        if x._advance():
+            s = x._get()
+            while x._advance():
+                i = x._get()
                 if key is None:
                     if i < s:
                         s = i
                 else:
                     if key(i) < key(s):
                         s = i
-            x.destroy()
+            x._destroy()
             return s
         else:
-            x.destroy()
+            x._destroy()
         if default is None:
             raise ValueError("min() arg is an empty sequence")
         else:
@@ -114,20 +114,20 @@ def max(*args, key=None, default=None):
         compile_error("max() 'default' argument only allowed for iterables")
     elif static.len(args) == 1:
         x = args[0].__iter__()
-        if not x.done():
-            s = x.__next__()
-            while not x.done():
-                i = x.__next__()
+        if x._advance():
+            s = x._get()
+            while x._advance():
+                i = x._get()
                 if key is None:
                     if i > s:
                         s = i
                 else:
                     if key(i) > key(s):
                         s = i
-            x.destroy()
+            x._destroy()
             return s
         else:
-            x.destroy()
+            x._destroy()
         if default is None:
             raise ValueError("max() arg is an empty sequence")
         else:
@@ -194,12 +194,12 @@ def chr(codepoint: int) -> str:
     return str(data, 1 | (kind << 56))
 
 def next(g: Generator[T], default: Optional[T] = None, T: type) -> T:
-    if g.done():
+    if not g._advance():
         if default is not None:
             return default.__val__()
         else:
             raise StopIteration()
-    return g.__next__()
+    return g._get()
 
 def any(x: Generator[T], T: type) -> bool:
     for a in x:
@@ -218,15 +218,28 @@ def zip(*args):
         yield from List[int]()
     else:
         iters = tuple(iter(i) for i in args)
-        done = False
-        while not done:
-            for i in iters:
-                if i.done():
-                    done = True
-            if not done:
-                yield tuple(i.__next__() for i in iters)
-        for i in iters:
-            i.destroy()
+
+        @pure
+        @llvm
+        def empty_result(R: type) -> R:
+            ret {=R} zeroinitializer
+
+        @pure
+        @derives
+        @llvm
+        def set_result(result: R, value: V, index: Literal[int], R: type, V: type) -> R:
+            %updated = insertvalue {=R} %result, {=V} %value, {=index}
+            ret {=R} %updated
+
+        Result = type(tuple(iterator._get() for iterator in iters))
+        while True:
+            result = empty_result(Result)
+            for index in static.range(static.len(iters)):
+                iterator = iters[index]
+                if not iterator._advance():
+                    return
+                result = set_result(result, iterator._get(), index)
+            yield result
 
 def filter(f: CallableTrait[[T], bool], x: Generator[T], T: type) -> Generator[T]:
     for a in x:
@@ -427,6 +440,13 @@ _CHAR_POS: Literal[int] = 43
 _CHAR_NEG: Literal[int] = 45
 
 def _parse_int(s: str, base: int = 10, T: type = int):
+    if s._width() == 1:
+        return _parse_int_typed(s, s._ptr, base, T)
+    if s._width() == 2:
+        return _parse_int_typed(s, Ptr[u16](s._ptr), base, T)
+    return _parse_int_typed(s, Ptr[u32](s._ptr), base, T)
+
+def _parse_int_typed(s: str, data: Ptr[Char], base: int, T: type, Char: type):
 
     def _digit_value(c: int):
         if _CHAR_0 <= c and c <= _CHAR_9:
@@ -474,15 +494,15 @@ def _parse_int(s: str, base: int = 10, T: type = int):
     end = len(s)
 
     # skip leading whitespace
-    while p < end and _isspace(s._load_codepoint(p)):
+    while p < end and _isspace(int(data[p])):
         p += 1
 
     # sign
     neg = False
     if p < end and (
-        s._load_codepoint(p) == _CHAR_POS or s._load_codepoint(p) == _CHAR_NEG
+        int(data[p]) == _CHAR_POS or int(data[p]) == _CHAR_NEG
     ):
-        neg = s._load_codepoint(p) == _CHAR_NEG
+        neg = int(data[p]) == _CHAR_NEG
         p += 1
 
     if not _signed(T):
@@ -493,42 +513,31 @@ def _parse_int(s: str, base: int = 10, T: type = int):
     base0_leading_zero = False
     if base == 0:
         base = 10
-        if (end - p) >= 2 and s._load_codepoint(p) == _CHAR_0:
-            if s._load_codepoint(p + 1) == _CHAR_x or s._load_codepoint(p + 1) == _CHAR_X:
+        if (end - p) >= 2 and int(data[p]) == _CHAR_0:
+            if int(data[p + 1]) == _CHAR_x or int(data[p + 1]) == _CHAR_X:
                 base = 16
                 p += 2
-                if p < end and s._load_codepoint(p) == _CHAR_UNDERSCORE:
+                if p < end and int(data[p]) == _CHAR_UNDERSCORE:
                     p += 1
-            elif s._load_codepoint(p + 1) == _CHAR_b or s._load_codepoint(p + 1) == _CHAR_B:
+            elif int(data[p + 1]) == _CHAR_b or int(data[p + 1]) == _CHAR_B:
                 base = 2
                 p += 2
-                if p < end and s._load_codepoint(p) == _CHAR_UNDERSCORE:
+                if p < end and int(data[p]) == _CHAR_UNDERSCORE:
                     p += 1
-            elif s._load_codepoint(p + 1) == _CHAR_o or s._load_codepoint(p + 1) == _CHAR_O:
+            elif int(data[p + 1]) == _CHAR_o or int(data[p + 1]) == _CHAR_O:
                 base = 8
                 p += 2
-                if p < end and s._load_codepoint(p) == _CHAR_UNDERSCORE:
+                if p < end and int(data[p]) == _CHAR_UNDERSCORE:
                     p += 1
             else:
                 base0_leading_zero = True
-    else:
-        if (base == 16 and (end - p) >= 2 and
-            s._load_codepoint(p) == _CHAR_0 and
-            (s._load_codepoint(p + 1) == _CHAR_x or s._load_codepoint(p + 1) == _CHAR_X)):
+    elif (end - p) >= 2 and int(data[p]) == _CHAR_0:
+        prefix = int(data[p + 1])
+        if ((base == 16 and (prefix == _CHAR_x or prefix == _CHAR_X)) or
+            (base == 8 and (prefix == _CHAR_o or prefix == _CHAR_O)) or
+            (base == 2 and (prefix == _CHAR_b or prefix == _CHAR_B))):
             p += 2
-            if p < end and s._load_codepoint(p) == _CHAR_UNDERSCORE:
-                p += 1
-        elif (base == 8 and (end - p) >= 2 and
-              s._load_codepoint(p) == _CHAR_0 and
-              (s._load_codepoint(p + 1) == _CHAR_o or s._load_codepoint(p + 1) == _CHAR_O)):
-            p += 2
-            if p < end and s._load_codepoint(p) == _CHAR_UNDERSCORE:
-                p += 1
-        elif (base == 2 and (end - p) >= 2 and
-              s._load_codepoint(p) == _CHAR_0 and
-              (s._load_codepoint(p + 1) == _CHAR_b or s._load_codepoint(p + 1) == _CHAR_B)):
-            p += 2
-            if p < end and s._load_codepoint(p) == _CHAR_UNDERSCORE:
+            if p < end and int(data[p]) == _CHAR_UNDERSCORE:
                 p += 1
 
     limit = _limit(neg, T)
@@ -552,7 +561,7 @@ def _parse_int(s: str, base: int = 10, T: type = int):
         raise ValueError(f"invalid literal for int() with base {base}: {s.__repr__()}")
 
     while p < end:
-        c = s._load_codepoint(p)
+        c = int(data[p])
 
         if c == _CHAR_UNDERSCORE:
             if (not saw_digit) or prev_underscore:
@@ -588,7 +597,7 @@ def _parse_int(s: str, base: int = 10, T: type = int):
         invalid(s, base)
 
     # skip trailing whitespace
-    while p < end and _isspace(s._load_codepoint(p)):
+    while p < end and _isspace(int(data[p])):
         p += 1
 
     if p != end:
@@ -620,6 +629,14 @@ class UInt:
         return _parse_int(s, base, UInt[N])
 
 def _parse_float_prefix(value: str, start: int):
+    if start == len(value):
+        return 0.0, 0
+    if value._is_ascii():
+        data = value._ptr + start
+        end = cobj()
+        result = _C.seq_float_from_str(str(data, len(value) - start), __ptr__(end))
+        return result, end - data
+
     length = 0
     data = Ptr[u8](len(value) - start)
 

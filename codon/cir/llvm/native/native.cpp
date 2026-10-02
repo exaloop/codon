@@ -94,7 +94,11 @@ public:
       F.addFnAttr("target-cpu", cpu);
     if (!features.empty())
       F.addFnAttr("target-features", features);
-    F.addFnAttr("frame-pointer", "none");
+    // Older Linux unwinders cannot read SVE's VG register in a scalable CFA.
+    // Keep a stable frame-pointer-based CFA in functions that can unwind a call.
+    llvm::Triple triple(F.getParent()->getTargetTriple());
+    F.addFnAttr("frame-pointer",
+                triple.isAArch64() && triple.isOSLinux() ? "non-leaf" : "none");
     return llvm::PreservedAnalyses::all();
   }
 };

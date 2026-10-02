@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.14)
 project(
   Codon
-  VERSION "0.20.2"
+  VERSION "0.20.3"
   HOMEPAGE_URL "https://github.com/exaloop/codon"
   DESCRIPTION "high-performance, extensible Python compiler")
-set(CODON_JIT_PYTHON_VERSION "0.5.2")
+set(CODON_JIT_PYTHON_VERSION "0.5.3")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.h.in"
                "${PROJECT_SOURCE_DIR}/codon/config/config.h")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.py.in"
@@ -384,6 +384,7 @@ set(CODON_HPPFILES
   codon/cir/transform/parallel/schedule.h
   codon/cir/transform/pass.h
   codon/cir/transform/pythonic/dict.h
+  codon/cir/transform/pythonic/enumerate.h
   codon/cir/transform/pythonic/format.h
   codon/cir/transform/pythonic/generator.h
   codon/cir/transform/pythonic/io.h
@@ -494,6 +495,7 @@ set(CODON_CPPFILES
   codon/cir/transform/parallel/schedule.cpp
   codon/cir/transform/pass.cpp
   codon/cir/transform/pythonic/dict.cpp
+  codon/cir/transform/pythonic/enumerate.cpp
   codon/cir/transform/pythonic/format.cpp
   codon/cir/transform/pythonic/generator.cpp
   codon/cir/transform/pythonic/io.cpp
@@ -695,14 +697,24 @@ set(CODON_TEST_CPPFILES
     test/cir/instr.cpp
     test/cir/llvm/optimize.cpp
     test/cir/module.cpp
+    test/cir/transform/enumerate.cpp
     test/cir/transform/format.cpp
     test/cir/transform/manager.cpp
     test/cir/type.cpp
     test/cir/util/matching.cpp
     test/cir/value.cpp
     test/cir/var.cpp
+    test/dsl/plugins.cpp
     test/types.cpp)
+add_library(codon_test_compiler_plugin SHARED EXCLUDE_FROM_ALL test/dsl/library.cpp)
+target_compile_definitions(codon_test_compiler_plugin PRIVATE CODON_TEST_COMPILER_PLUGIN)
+target_include_directories(codon_test_compiler_plugin PRIVATE
+                "${CMAKE_CURRENT_SOURCE_DIR}" ${LLVM_INCLUDE_DIRS}
+                "${peglib_SOURCE_DIR}")
+target_link_libraries(codon_test_compiler_plugin PRIVATE codonc fmt)
+add_library(codon_test_runtime_plugin SHARED EXCLUDE_FROM_ALL test/dsl/library.cpp)
 add_executable(codon_test ${CODON_TEST_CPPFILES})
+add_dependencies(codon_test codon codon_test_compiler_plugin codon_test_runtime_plugin)
 if(WIN32)
   # On Windows codon_test statically links the whole compiler (see below), so keep it
   # out of the default build to avoid compiling the compiler twice. Build on demand
@@ -736,7 +748,10 @@ if(ASAN)
                        "-fsanitize-recover=address")
 endif()
 target_compile_definitions(codon_test
-                           PRIVATE TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test")
+                           PRIVATE TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test"
+                           TEST_CODON="$<TARGET_FILE:codon>"
+                           TEST_PLUGIN_COMPILER="$<TARGET_FILE:codon_test_compiler_plugin>"
+                           TEST_PLUGIN_RUNTIME="$<TARGET_FILE:codon_test_runtime_plugin>")
 
 if(APPLE)
   set_target_properties(

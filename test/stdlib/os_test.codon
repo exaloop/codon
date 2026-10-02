@@ -371,7 +371,8 @@ def test_expanduser():
         os.environ["HOME"] = "/home/" + chr(0xDCFF)
         assert path.expanduser("~/child") == "/home/" + chr(0xDCFF) + "/child"
         del os.environ["HOME"]
-        assert path.expanduser("~").startswith("/")
+        home = path.expanduser("~")
+        assert home == "~" or path.isabs(home)
         unknown = "~codon-missing-user-" + str(os.getpid())
         assert path.expanduser(unknown + "/child") == unknown + "/child"
     finally:
