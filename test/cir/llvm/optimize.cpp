@@ -13,7 +13,9 @@
 
 #include <llvm/AsmParser/Parser.h>
 #include <llvm/IR/Verifier.h>
+#include <llvm/MC/TargetRegistry.h>
 #include <llvm/Support/CommandLine.h>
+#include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/FileUtilities.h>
 #include <llvm/Support/SourceMgr.h>
 
@@ -171,6 +173,11 @@ class GPUCodegenTest : public testing::Test {
 
 protected:
   void SetUp() override {
+    llvm::InitializeAllTargetInfos();
+    std::string lookupError;
+    llvm::Triple nvptxTriple(llvm::Triple::normalize("nvptx64-nvidia-cuda"));
+    if (!llvm::TargetRegistry::lookupTarget("nvptx64", nvptxTriple, lookupError))
+      GTEST_SKIP() << "LLVM was built without the NVPTX target";
     // These tests only emit PTX and need neither CUDA nor a GPU. Supply an empty
     // libdevice module rather than depending on a system CUDA installation.
     int fd;
