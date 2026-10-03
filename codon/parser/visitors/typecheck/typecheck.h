@@ -87,7 +87,6 @@ private: // Node typechecking rules
   std::pair<Expr *, bool> getClassMember(Expr *, const std::string &,
                                          types::Type * = nullptr);
   types::FuncType *getDispatch(const std::string &);
-  types::FuncType *getThunk(types::FuncType *fn);
 
   /* Collection and comprehension expressions (collections.cpp) */
   void visit(TupleExpr *) override;
@@ -272,6 +271,7 @@ public:
   std::shared_ptr<TypeContext> getCtx() const { return ctx; }
   Expr *generatePartialCall(const std::string &, types::FuncType *, Expr * = nullptr,
                             Expr * = nullptr);
+  std::string vTableSignature(types::FuncType *ft) const;
 
   friend struct Cache;
   friend struct TypeContext;
@@ -337,6 +337,7 @@ public:
   static bool isDispatch(const std::string &s);
   static bool isDispatch(const FunctionStmt *ast);
   static bool isDispatch(types::Type *f);
+  bool isPolymorphic(types::FuncType *) const;
   bool isHeterogenous(types::Type *);
   std::unordered_set<std::string> addClassGenerics(types::ClassType *typ,
                                                    bool func = false,
@@ -409,11 +410,6 @@ public:
   Expr *transformStaticIntToStr(CallExpr *);
   Expr *transformStaticPlatform(CallExpr *);
   Expr *transformStaticContains(CallExpr *);
-  SuiteStmt *generateClassPopulateVTablesAST();
-  SuiteStmt *generateBaseDerivedDistAST(types::FuncType *);
-  FunctionStmt *generateThunkAST(const types::FuncType *fp, types::ClassType *base,
-                                 const types::ClassType *derived);
-  SuiteStmt *generateGetThunkIDAST(types::FuncType *);
   SuiteStmt *generateFunctionCallInternalAST(types::FuncType *);
   SuiteStmt *generateUnionNewAST(const types::FuncType *);
   SuiteStmt *generateUnionTagAST(types::FuncType *);

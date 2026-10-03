@@ -459,24 +459,6 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
             })));
     }
 
-    if (member->baseClass != lhsClass->name && getClass(lhsClass)->hasRTTI()) {
-      TypePtr baseType = nullptr;
-      for (auto &m : getBaseClasses(lhsClass)) {
-        if (m->getClass()->name == member->baseClass) {
-          baseType = m;
-          break;
-        }
-      }
-      seqassert(baseType, "cannot find base type of {}", lhsClass->debugString(2));
-      if (!baseType->canRealize())
-        return; // delay!
-      resultStmt = transform(N<AssignMemberStmt>(
-          N<CallExpr>(N<IdExpr>(getMangledMethod("", "RTTIType", "_cast")),
-                      stmt->getLhs(), N<IdExpr>(baseType->realizedName())),
-          stmt->getMember(), stmt->getRhs(), stmt->getTypeExpr()));
-      return;
-    }
-
     if (!wrapExpr(&stmt->rhs, ftyp.get()))
       return;
     unify(stmt->getRhs()->getType(), ftyp.get());

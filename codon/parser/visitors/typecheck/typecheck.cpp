@@ -957,7 +957,8 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
               typExpr = N<InstantiateExpr>(N<IdExpr>(StdlibTypes::Optional),
                                            std::vector<Expr *>{typExpr});
             return transform(N<CallExpr>(
-                N<IdExpr>(getMangledMethod("", "RTTIType", "_cast")), expr, typExpr));
+                N<IdExpr>(getMangledFunc("std.internal.types.rtti", "force_cast")),
+                expr, typExpr));
           };
           break;
         }
@@ -1143,6 +1144,19 @@ std::string TypecheckVisitor::getRootName(const types::FuncType *t) const {
   auto i = in(ctx->cache->functions, t->getFuncName());
   seqassert(i && !i->rootName.empty(), "bad function");
   return i->rootName;
+}
+
+bool TypecheckVisitor::isPolymorphic(types::FuncType *t) const {
+  if (t->size() == 0 || !t->ast)
+    return false;
+  if (getUnmangledName(t->ast->begin()->getName()) != "self")
+    return false;
+  auto slf = extractFuncArgType(t)->getClass();
+  auto cls = getClass(slf);
+  return cls && cls->hasRTTI() &&
+         static_cast<bool>(in(cls->virtuals, getUnmangledName(t->ast->getName()))) &&
+         !isDispatch(t) && !t->ast->hasAttribute(Attr::StaticMethod) &&
+         !t->ast->hasAttribute(Attr::Property);
 }
 
 bool TypecheckVisitor::isTypeExpr(const Expr *e) {

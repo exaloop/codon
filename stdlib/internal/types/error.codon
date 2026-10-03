@@ -2,7 +2,7 @@
 
 # Warning(!): This type must be consistent with the exception
 # header type defined in runtime/exc.cpp.
-class BaseException:
+class BaseException(object):
     _pytype: ClassVar[cobj] = cobj()
     message: str
     func: str

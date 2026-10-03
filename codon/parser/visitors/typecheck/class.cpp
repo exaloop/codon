@@ -413,13 +413,13 @@ std::vector<std::shared_ptr<ClassType>> TypecheckVisitor::parseBaseClasses(
 
     // Mark parent classes as polymorphic as well.
     if (!cachedCls->hasRTTI()) {
+      seqassert(false, "all classes must inherit from object atm");
       if (ctx->cache->compiler->getOptions()->jit &&
           cachedCls->jitCell != ctx->cache->jitCell)
         E(Error::CUSTOM, cls,
           "cannot inherit from a non-RTTI class defined in previous cell '{}' "
           "in JIT mode",
           getUnmangledName(clsTyp->name));
-      cachedCls->rtti = true;
       auto object = StdlibTypes::Object;
       if (clsTyp->name != object && cachedCls->mro.size() == 1)
         cachedCls->mro.push_back(std::static_pointer_cast<ClassType>(
@@ -459,7 +459,6 @@ std::vector<std::shared_ptr<ClassType>> TypecheckVisitor::parseBaseClasses(
     mro.push_back({});
     for (auto &i : asts)
       mro.back().emplace_back(i);
-    cls->rtti = true;
   }
   cls->mro = Cache::mergeC3(mro);
   if (cls->mro.empty()) {

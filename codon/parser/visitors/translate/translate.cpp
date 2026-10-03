@@ -205,10 +205,7 @@ void TranslateVisitor::visit(IdExpr *expr) {
     // ctx->find(expr->getValue());
     seqassert(val, "cannot find '{}'", expr->getValue());
   }
-  if (expr->getValue() == getMangledVar("", "__vtable_size__")) {
-    result = make<ir::IntConst>(expr, ctx->cache->classRealizationCnt + 2,
-                                getType(expr->getType()));
-  } else if (auto *v = val->getVar()) {
+  if (auto *v = val->getVar()) {
     result = make<ir::VarValue>(expr, v);
   } else if (auto *f = val->getFunc()) {
     result = make<ir::VarValue>(expr, f);
@@ -352,7 +349,18 @@ void TranslateVisitor::visit(CallExpr *expr) {
     }
     i++;
   }
-  result = make<ir::CallInstr>(expr, callee, std::move(items));
+
+  size_t thunkId = 0;
+  if (auto ft = expr->getExpr()->getType()->getFunc(); ft) {
+    TypecheckVisitor tv(ctx->cache->typeCtx);
+    if (tv.isPolymorphic(ft)) {
+      auto sig = tv.vTableSignature(ft);
+      auto key = in(ctx->cache->thunkIds, sig);
+      seqassert(key, "not a valid thunk: {}", sig);
+      thunkId = *key;
+    }
+  }
+  result = make<ir::CallInstr>(expr, callee, std::move(items), "", thunkId);
 }
 
 void TranslateVisitor::visit(DotExpr *expr) {
@@ -371,8 +379,10 @@ void TranslateVisitor::visit(DotExpr *expr) {
                    ? ir::TypePropertyInstr::Property::IS_CONTENT_ATOMIC
                    : ir::TypePropertyInstr::Property::SIZEOF));
   } else {
-    result =
-        make<ir::ExtractInstr>(expr, transform(expr->getExpr()), expr->getMember());
+    auto name = expr->getExpr()->getClassType()->name;
+    auto cls = in(ctx->cache->classes, name);
+    result = make<ir::ExtractInstr>(expr, transform(expr->getExpr()), expr->getMember(),
+                                    "", cls && cls->hasRTTI());
   }
 }
 
@@ -555,8 +565,10 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
 }
 
 void TranslateVisitor::visit(AssignMemberStmt *stmt) {
+  auto name = stmt->getLhs()->getClassType()->name;
+  auto cls = in(ctx->cache->classes, name);
   result = make<ir::InsertInstr>(stmt, transform(stmt->getLhs()), stmt->getMember(),
-                                 transform(stmt->getRhs()));
+                                 transform(stmt->getRhs()), "", cls && cls->hasRTTI());
 }
 
 void TranslateVisitor::visit(ReturnStmt *stmt) {

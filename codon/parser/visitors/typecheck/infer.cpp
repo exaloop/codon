@@ -556,7 +556,7 @@ ir::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
     cls = ctx->cache->getClass(t);
   }
   if (auto l = cls->realizations[realizedName]->ir) {
-    if (cls->rtti)
+    if (cls->hasRTTI())
       cast<ir::RefType>(l)->setPolymorphic();
     return l;
   }
@@ -667,7 +667,7 @@ ir::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
           std::make_unique<ir::MemberAttribute>(std::move(memberInfo)));
     } else {
       handle = module->unsafeGetMemberedType(realizedName, !t->isRecord());
-      if (cls->rtti)
+      if (cls->hasRTTI())
         cast<ir::RefType>(handle)->setPolymorphic();
     }
   }

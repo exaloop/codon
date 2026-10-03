@@ -61,6 +61,7 @@ struct Attr {
     ExprTime,
     ExprDoNotRealize,
     ExprNoSpecial,
+    ExprVirtual,
     TryPyVar,
     LocalRenames,
   };

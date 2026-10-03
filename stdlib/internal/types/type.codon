@@ -55,8 +55,6 @@ class type:
         sz = sizeof(tuple(T))
         obj = alloc_atomic(sz) if T.__contents_atomic__ else alloc(sz)
         register_finalizer(type._force_cast(obj, T))
-        if static.has_rtti(T):
-            obj = RTTIType._new(obj, TypeInfo.cache(__vtables__, T).__raw__(), Ptr[byte])
         return type._force_cast(obj, T)
 
     def _construct(T: type, *args, **kwargs) -> T:
@@ -93,152 +91,12 @@ class type:
             return type._get_element_offset(TT, i)
 
     @inline
-    def _cls_ptr(obj: T, T: type):
-        if static.has_rtti(T):
-            return type._force_cast(obj, RTTIType).data - RTTIType._find_offset(obj, T)[1]
-        else:
-            return obj.__raw__()
+    def _cls_ptr(obj):
+        return obj.__raw__()
 
     @inline
     def _is(obj: T, other: U, T: type, U: type) -> bool:
         return type._cls_ptr(obj) == type._cls_ptr(other)
-
-@__internal__
-class TypeInfo:
-    id: int
-    _parent_ids: Ptr[int]
-    _n_parent_ids: int
-    raw_name: str
-    nice_name: str
-
-    _base_name: str
-    _parent_offsets: Ptr[int]
-    _params: List[int]  # generics
-    _fields: List[Tuple[str, int, int]]
-    _size: int
-    _ref: bool
-    _rtti: bool
-
-    # No __new__/__init__: not supposed to be instantiated at all except via .cache()
-
-    def __raw__(self) -> Ptr[u8]:
-        return __magic__.raw(self)
-
-    def cache(vtable, T: type) -> TypeInfo:
-        if T is TypeWrap:
-            return TypeInfo.cache(vtable, T=T.T)
-
-        if T.__id__ not in vtable:
-            ti = __magic__.new(TypeInfo)
-            ti._init(T)
-            vtable.set_type(ti)
-            ti._init_params(vtable, T)  # populate other stuff recursively
-            if isinstance(T, Optional) and isinstance(T.T, ByVal):
-                ti._init_optional(vtable, T)
-        return vtable[T.__id__].typeinfo
-
-    def cache(id: int) -> TypeInfo:
-        return __vtables__[id].typeinfo
-
-    def cache(T: type) -> TypeInfo:
-        return TypeInfo.cache(__vtables__, T)
-
-    @__generated__
-    def _init_params(self, vt, T: type):
-        # compiler-generated!
-        pass
-
-    def _init_optional(self, vt, T: type):
-        self._fields.append(("flag", TypeInfo.cache(vt, i1).id, type._get_element_offset(T, 1)))
-        self._fields.append(("data", TypeInfo.cache(vt, T.T).id, T.T.__elemsize__))
-
-    def _init(self, T: type):
-        self.id = T.__id__
-        self.raw_name = T.__name__
-        self.nice_name = T.__name__
-
-        # self.repr = Function[[Ptr[byte]], str](cobj())
-        # if hasattr(T, "__repr__") or hasattr(T, "__str__"):
-        #     fn = static.function.realized(TypeInfo.wrap(T=T, ...), Ptr[u8])
-        #     if isinstance(fn.TR, str):
-        #         self.repr = fn
-
-        mro = T.__mro__
-        num_mro: Literal[int] = static.len(mro) - 1
-        self._n_parent_ids = num_mro
-
-        if num_mro > 0:
-            self._parent_ids = Ptr[int](num_mro + 1)
-            self._parent_offsets = Ptr[int](num_mro)
-            for i in static.range(num_mro):
-                self._parent_ids[i] = mro[i + 1].T.__id__
-                self._parent_offsets[i] = RTTIType._dist(mro[i + 1].T, T)  # Assumes T's MRO as its final position!
-            self._parent_ids[num_mro] = 0
-        else:
-            self._parent_ids = Ptr[int]()
-            self._parent_offsets = Ptr[int]()
-
-        self._params = []
-        self._fields = []
-        self._size = T.__elemsize__
-        self._base_name = T.__generic_name__
-        self._ref = not isinstance(T, ByVal)
-        self._rtti = static.has_rtti(T)
-
-    @property
-    def mro(self):
-        yield self.id, 0
-        for i in range(self._n_parent_ids):
-            yield self._parent_ids[i], self._parent_offsets[i]
-
-    def __iter__(self):
-        for name, id, offset in self._fields:
-            yield name, TypeInfo.cache(id), offset
-
-    def is_parent(self, T: type) -> bool:
-        for i in range(self._n_parent_ids):
-            if self._parent_ids[i] == T.__id__:
-                return True
-        return False
-
-    def wrap(arg: Ptr[u8], T: type) -> str:
-        if isinstance(T, ByVal):
-            p = type._force_cast(arg, Ptr[T])
-            return repr(p[0])
-        else:
-            obj = type._force_cast(arg, T)
-            return repr(obj)
-
-    def _dist_to(self, B: type):
-        """Assumes B is a supertype"""
-        if self.id == B.__id__:
-            return 0
-        for i in range(0, self._n_parent_ids):
-            if self._parent_ids[i] == B.__id__:
-                return self._parent_offsets[i]
-        return 0
-
-    def __str__(self):
-        return self.nice_name
-
-    def __repr__(self):
-        return self.__str__()
-
-    def __eq__(self, other: TypeInfo):
-        return self.id == other.id
-
-    def __ne__(self, other: TypeInfo):
-        return self.id != other.id
-
-    def _isinstance(self, ti: TypeInfo):
-        return any(id == ti.id for id, _ in self.mro)
-
-    def _isinstance(self, T: type):
-        # Ugly hack for isinstance(x, list) and similar...
-        if T is unrealized_type:
-            return self._base_name == T.T.__generic_name__
-        return self._isinstance(TypeInfo.cache(__vtables__, T))
-
 
 @extend
 class TypeWrap:

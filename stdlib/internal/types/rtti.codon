@@ -3,237 +3,461 @@
 import internal.static as static
 import internal.gc as gc
 
-class VTable:
-    class Item:
-        typeinfo: TypeInfo
-        thunks: Ptr[cobj]
-        thunks_len: int
-        min_thunk: int
+@inline
+def force_cast(obj, D: type) -> D:
+    # cast obj to D. Handles optionals.
+    # Assumes type(obj) can be cast to D!
+    # Assumes type(obj) and D are RTTI
+    if isinstance(obj, Optional) and isinstance(D, Optional):
+        if obj is None: return None
+        else: return D(force_cast(unwrap(obj), D.T))
+    elif not isinstance(obj, Optional) and D is not Optional:
+        return type._force_cast(obj, D)  # basically same pointer, LLVM should elide this
+    else:
+        compile_error("bad cast!")
 
-    data: Ptr[Item]
-    data_len: int
+def __initialize_rtti__():
+    pass
+    # TODO: make TypeInfo singletons!
 
-
-    @llvm
-    def memset(dest: Ptr[u8], val: u8, len: int) -> None:
-        declare void @llvm.memset.p0i8.i64(ptr %dest, i8 %val, i64 %len, i32 %align, i1 %isvolatile)
-        call void @llvm.memset.p0i8.i64(ptr %dest, i8 %val, i64 %len, i32 0, i1 false)
-        ret {} {}
-
-    def _resize(arr: Ptr[T], old_cap, new_cap, T: type):
-        p = Ptr[T](gc.realloc(arr.as_byte(), new_cap * gc.sizeof(T), old_cap * gc.sizeof(T)))
-        VTable.memset((p + old_cap).as_byte(), byte(0), (new_cap - old_cap) * gc.sizeof(T))
-        return (p, new_cap)
-
-    def __init__(self):
-        self.data_len = 1000
-        self.data = Ptr[VTable.Item](1000)
-        VTable.memset(self.data.as_byte(), byte(0), self.data_len * gc.sizeof(VTable.Item))
-
-    def __getitem__(self, cls: int) -> VTable.Item:
-        assert cls in self
-        return self.data[cls]
-
-    def __contains__(self, cls: int) -> bool:
-        return cls < self.data_len and self.data[cls].__raw__() != cobj()
-
-    def set_type(self, ti: TypeInfo):
-        if self.data_len <= ti.id:
-            self.data, self.data_len = VTable._resize(self.data, self.data_len, ti.id + 100)
-        self.data[ti.id] = VTable.Item(ti, Ptr[cobj](1000), 1000, 0)
-
-    def get_thunk(self, cls: int, thunk: int):
-        item = self.data[cls]
-        thunk -= item.min_thunk
-        assert thunk >= 0 and thunk < item.thunks_len
-        return item.thunks[thunk]
-
-    def set_thunk(self, cls: int, thunk: int, fn: cobj):
-        item = self[cls]
-        if item.min_thunk == 0:
-            item.min_thunk = thunk
-        thunk -= item.min_thunk
-        if item.thunks_len <= thunk:
-            item.thunks, item.thunks_len = VTable._resize(item.thunks, item.thunks_len, thunk + 100)
-        item.thunks[thunk] = fn
+# TODO: for Ariya
+#
+# Each RTTI class is now a normal pointer as normall class and has its fields defined in MRO order.
+# However, the first field MUST be a TypeInfo pointer that is NOT ADDED by typechecker
+# (you need to add it internally in IR).
+#
+# The following fn should be implemented so that typechecker / Codon code can access typeinfo
+@llvm
+def get_typeinfo(obj) -> TypeInfo:
+    ...
 
 
-@extend
-class RTTIType:
-    def _new(data: Ptr[u8], typeinfo: Ptr[u8], T: type) -> T:
-        """
-        Creates a new RTTIType wrapper for data and casts it to T.
+# A pseudocode for accessing slot data of a given object.
+# ir::ExtractInstr has now "polymorphic" field that indicates use of this fn.
+#
+# def get_slot(obj, name: Literal[str]):
+#     ti = get_typeinfo(obj)
+#     for i in range(ti.n_mro):  # maybe use binary search in sorted_mro if faster, who knows
+#         # known at compile time, check if class in MRO has name
+#         if name in TypeInfo(ti.mro[i]).slots:
+#             return get(obj.__raw__() + ti.offsets[i] + <dist to name>)
 
-        Internal use only. No type checks are performed.
-        """
+# A pseudocode for accessing slot data of a given object.
+# ir::InsertInstr has now "polymorphic" field that indicates use of this fn.
+#
+# def set_slot(obj, name: Literal[str], val):
+#     ti = get_typeinfo(obj)
+#     for i in range(ti.n_mro):
+#         # known at compile time, check if class in MRO has name
+#         if name in TypeInfo(ti.mro[i]).slots:
+#             return set(obj.__raw__() + ti.offsets[i] + <dist to name>, val)
 
-        p = type._ref_new(RTTIType)
-        p.data = data
-        p.typeinfo = typeinfo
-        return type._force_cast(p, T)
+# A pseudocode for calling a method of a given object.
+# ir::CallInstr has now "thunk_id" field that indicates the proper thunk ID (zero if not polymorphic)
+#
+# def call_method(obj, thunk_id: Literal[int], *args, **kwargs):
+#     ti = get_typeinfo(obj)
+#     for i in range(ti.n_mro):
+#         # known at compile time, check if class in MRO has name
+#         if thunk_id in TypeInfo(ti.mro[i]).dispatch: # includes yourself
+#             return FT(TypeInfo(ti.mro[i]).dispatch[thunk_id])(*args, **kwargs)
+
+
+
+@__internal__
+class TypeInfo:
+    id: int
+    # version: int
+    n_mro: int
+    mro: Ptr[int]
+    offsets: Ptr[int]
+    sorted_mro: Ptr[int]
+
+    n_slots: int
+    slots: Ptr[Tuple[str, int, int]]
+    n_methods: int
+    methods: Ptr[cobj]
+
+    rtti: bool
+
+    raw_name: str
+    nice_name: str
+    base_name: str
+
+    # _parent_offsets: Ptr[int]
+    # _params: List[int]  # generics
+    # _fields: List[Tuple[str, int, int]]
+    # _size: int
+    # _ref: bool
+    # _rtti: bool
+
+    # No __new__/__init__: not supposed to be instantiated at all except via .cache()
+
+    def __raw__(self) -> Ptr[u8]:
+        return __magic__.raw(self)
+
+    def cache(vtable, T: type) -> TypeInfo:
+        if T is TypeWrap:
+            return TypeInfo.cache(vtable, T=T.T)
+
+        if T.__id__ not in vtable:
+            ti = __magic__.new(TypeInfo)
+            ti._init(T)
+            vtable.set_type(ti)
+            ti._init_params(vtable, T)  # populate other stuff recursively
+            if isinstance(T, Optional) and isinstance(T.T, ByVal):
+                ti._init_optional(vtable, T)
+        return vtable[T.__id__].typeinfo
+
+    def cache(id: int) -> TypeInfo:
+        return __vtables__[id].typeinfo
+
+    def cache(T: type) -> TypeInfo:
+        return TypeInfo.cache(__vtables__, T)
 
     @__generated__
-    @inline
-    def _dist(B: type, D: type) -> int:
-        """
-        Calculates the byte distance of base class B and derived class D in D's MRO.
-        Assumes that B is a parent class of D and that the first MRO member is D.
-        Will give wrong results if D is not the first member of the MRO.
-        Compiler generated.
-        """
-        return 0
-
-    ### vTable & thunk setup. Mostly compiler-generated.
-
-    def _init_vtables():
-        """
-        Create a global vtable.
-        """
-
-        vtable = VTable()
-        RTTIType._populate_vtables(vtable)
-        return vtable
-
-    @__generated__
-    def _populate_vtables(vtable):
-        """
-        Populate content of vtables. Compiler generated.
-        Corresponds to:
-            for each realized class C:
-                vtable.set_type(C.__id__, TypeInfo(C))
-                for each fn F in C's vtable:
-                    vtable.set_thunk(<C's realization ID>, <F's vtable ID>, Function(<instantiated F>).__raw__())
-        """
+    def _init_params(self, vt, T: type):
+        # compiler-generated!
         pass
 
-    @__generated__
-    def _get_thunk_id(F: type, T: type) -> int:
-        """Compiler-generated"""
-        return 0
+    def _init_optional(self, vt, T: type):
+        self._fields.append(("flag", TypeInfo.cache(vt, i1).id, type._get_element_offset(T, 1)))
+        self._fields.append(("data", TypeInfo.cache(vt, T.T).id, T.T.__elemsize__))
 
-    def _thunk_debug(base, func, sig, *args):
-        # print("![thunk]!", base, func, sig, args[0].__raw__())
-        pass
+    def _init(self, T: type):
+        self.id = T.__id__
+        self.raw_name = T.__name__
+        self.nice_name = T.__name__
 
-    def _find_thunk(slf, F: type) -> cobj:
-        thunk_id = RTTIType._get_thunk_id(F=F, T=type(slf))
-        cls_id = RTTIType._typeinfo(slf).id
-        return __vtables__.get_thunk(cls_id, thunk_id)
+        # self.repr = Function[[Ptr[byte]], str](cobj())
+        # if hasattr(T, "__repr__") or hasattr(T, "__str__"):
+        #     fn = static.function.realized(TypeInfo.wrap(T=T, ...), Ptr[u8])
+        #     if isinstance(fn.TR, str):
+        #         self.repr = fn
 
-    # Casting
+        mro = T.__mro__
+        num_mro: Literal[int] = static.len(mro) - 1
+        self._n_parent_ids = num_mro
 
-    def _typeinfo(obj: T, T: type) -> TypeInfo:
-        if not static.has_rtti(T):
-            compile_error("classes are not polymorphic")
-        ti = type._force_cast(obj, RTTIType).typeinfo
-        return type._force_cast(ti, TypeInfo)
-
-    @inline
-    def _find_offset(obj, B: type):
-        ti = RTTIType._typeinfo(obj)
-        if B.__id__ == ti.id:
-            return 0, 0
-        for i in range(ti._n_parent_ids):
-            if B.__id__ == ti._parent_ids[i]:
-                return i + 1, ti._parent_offsets[i]
-        return -1, 0
-
-    @inline
-    def _find_offsets(obj, B: type, D: type):
-        ti = RTTIType._typeinfo(obj)
-        bi, di = -1, -1
-        boff, doff = 0, 0
-        if B.__id__ == ti.id:
-            bi, boff = 0, 0
-        if D.__id__ == ti.id:
-            di, doff = 0, 0
-        for i in range(ti._n_parent_ids):
-            if B.__id__ == ti._parent_ids[i]:
-                bi, boff = i + 1, ti._parent_offsets[i]
-            if D.__id__ == ti._parent_ids[i]:
-                di, doff = i + 1, ti._parent_offsets[i]
-        return (bi, di), (boff, doff)
-
-    @inline
-    def _cast(obj, D: type) -> D:
-        if isinstance(obj, Optional) and isinstance(D, Optional):
-            if obj is None: return None
-            else: return D(RTTIType._cast(unwrap(obj), D.T))
+        if num_mro > 0:
+            self._parent_ids = Ptr[int](num_mro + 1)
+            self._parent_offsets = Ptr[int](num_mro)
+            for i in static.range(num_mro):
+                self._parent_ids[i] = mro[i + 1].T.__id__
+                self._parent_offsets[i] = RTTIType._dist(mro[i + 1].T, T)  # Assumes T's MRO as its final position!
+            self._parent_ids[num_mro] = 0
         else:
-            B = type(obj)
-            if not (static.has_rtti(D) and static.has_rtti(B)):
-                compile_error("classes are not polymorphic")
+            self._parent_ids = Ptr[int]()
+            self._parent_offsets = Ptr[int]()
 
-            rtti = type._force_cast(obj, RTTIType)
-            (bi, di), (boff, doff) = RTTIType._find_offsets(obj, B, D)
-            if bi == -1 or di == -1:
-                raise TypeError(f"cannot cast {type(obj)} to {D}")
-            return RTTIType._new(rtti.data - boff + doff, rtti.typeinfo, D)
+        self._params = []
+        self._fields = []
+        self._size = T.__elemsize__
+        self._base_name = T.__generic_name__
+        self._ref = not isinstance(T, ByVal)
+        self._rtti = static.has_rtti(T)
 
-    @inline
-    def _unwrap(obj, T: type):
-        if isinstance(T, TypeWrap):
-            return Optional[T.T](RTTIType._unwrap(obj, T.T))
-        else:
-            rtti = type._force_cast(obj, RTTIType)
-            obj_info = RTTIType._typeinfo(obj)
+    @property
+    def mro(self):
+        yield self.id, 0
+        for i in range(self._n_parent_ids):
+            yield self._parent_ids[i], self._parent_offsets[i]
 
-            (_, ti), (ooff, toff) = RTTIType._find_offsets(obj, type(obj), T)
-            if ti == -1:
-                return None
-            else:
-                return Optional[T](RTTIType._new(rtti.data - ooff + toff, rtti.typeinfo, T))
+    def __iter__(self):
+        for name, id, offset in self._fields:
+            yield name, TypeInfo.cache(id), offset
 
-    def _isinstance(obj, T: type) -> bool:
-        return RTTIType._unwrap(obj, T) is not None
-
-    def _getinstance(obj, T: type) -> T:
-        # DO NOT USE DIRECTLY. Assumes that isinstance is true.
-        return RTTIType._unwrap(obj, T).__val__()
-
-    def _hasattr(obj, attr: Literal[str]):
-        children = static.children(type(obj))
-        for cls in children:
-            if hasattr(cls, attr) and RTTIType._isinstance(obj, cls):
+    def is_parent(self, T: type) -> bool:
+        for i in range(self._n_parent_ids):
+            if self._parent_ids[i] == T.__id__:
                 return True
         return False
 
-    def _getattr(obj, attr: Literal[str], attr_type: type):
-        children = static.children(type(obj))
-        for cls in children:
-            if hasattr(cls, attr):
-                if (cls_obj := RTTIType._unwrap(obj, cls)):
-                    if attr_type is NoneType:
-                        return _getattr(cls_obj, attr)
-                    else:
-                        x: attr_type = _getattr(cls_obj, attr)
-                        return x
-        raise AttributeError(f"cannot find {obj}")
-        return attr_type()
+    def wrap(arg: Ptr[u8], T: type) -> str:
+        if isinstance(T, ByVal):
+            p = type._force_cast(arg, Ptr[T])
+            return repr(p[0])
+        else:
+            obj = type._force_cast(arg, T)
+            return repr(obj)
 
-    def _setattr(obj, attr: Literal[str], value):
-        children = static.children(type(obj))
-        for cls in children:
-            if hasattr(cls, attr):
-                if (cls_obj := RTTIType._unwrap(obj, cls)):
-                    setattr(cls_obj, attr, value)
-                    return
-        raise AttributeError(f"cannot find {attr} in {obj}")
+    def _dist_to(self, B: type):
+        """Assumes B is a supertype"""
+        if self.id == B.__id__:
+            return 0
+        for i in range(0, self._n_parent_ids):
+            if self._parent_ids[i] == B.__id__:
+                return self._parent_offsets[i]
+        return 0
+
+    def __str__(self):
+        return self.nice_name
+
+    def __repr__(self):
+        return self.__str__()
+
+    def __eq__(self, other: TypeInfo):
+        return self.id == other.id
+
+    def __ne__(self, other: TypeInfo):
+        return self.id != other.id
+
+    def _isinstance(self, ti: TypeInfo):
+        return any(id == ti.id for id, _ in self.mro)
+
+    def _isinstance(self, T: type):
+        # Ugly hack for isinstance(x, list) and similar...
+        if T is unrealized_type:
+            return self._base_name == T.T.__generic_name__
+        return self._isinstance(TypeInfo.cache(__vtables__, T))
+
+
+
+# class VTable:
+#     class Item:
+#         typeinfo: TypeInfo
+#         thunks: Ptr[cobj]
+#         thunks_len: int
+#         min_thunk: int
+
+#     data: Ptr[Item]
+#     data_len: int
+
+
+#     @llvm
+#     def memset(dest: Ptr[u8], val: u8, len: int) -> None:
+#         declare void @llvm.memset.p0i8.i64(ptr %dest, i8 %val, i64 %len, i32 %align, i1 %isvolatile)
+#         call void @llvm.memset.p0i8.i64(ptr %dest, i8 %val, i64 %len, i32 0, i1 false)
+#         ret {} {}
+
+#     def _resize(arr: Ptr[T], old_cap, new_cap, T: type):
+#         p = Ptr[T](gc.realloc(arr.as_byte(), new_cap * gc.sizeof(T), old_cap * gc.sizeof(T)))
+#         VTable.memset((p + old_cap).as_byte(), byte(0), (new_cap - old_cap) * gc.sizeof(T))
+#         return (p, new_cap)
+
+#     def __init__(self):
+#         self.data_len = 1000
+#         self.data = Ptr[VTable.Item](1000)
+#         VTable.memset(self.data.as_byte(), byte(0), self.data_len * gc.sizeof(VTable.Item))
+
+#     def __getitem__(self, cls: int) -> VTable.Item:
+#         assert cls in self
+#         return self.data[cls]
+
+#     def __contains__(self, cls: int) -> bool:
+#         return cls < self.data_len and self.data[cls].__raw__() != cobj()
+
+#     def set_type(self, ti: TypeInfo):
+#         if self.data_len <= ti.id:
+#             self.data, self.data_len = VTable._resize(self.data, self.data_len, ti.id + 100)
+#         self.data[ti.id] = VTable.Item(ti, Ptr[cobj](1000), 1000, 0)
+
+#     def get_thunk(self, cls: int, thunk: int):
+#         item = self.data[cls]
+#         thunk -= item.min_thunk
+#         assert thunk >= 0 and thunk < item.thunks_len
+#         return item.thunks[thunk]
+
+#     def set_thunk(self, cls: int, thunk: int, fn: cobj):
+#         item = self[cls]
+#         if item.min_thunk == 0:
+#             item.min_thunk = thunk
+#         thunk -= item.min_thunk
+#         if item.thunks_len <= thunk:
+#             item.thunks, item.thunks_len = VTable._resize(item.thunks, item.thunks_len, thunk + 100)
+#         item.thunks[thunk] = fn
+
+
+# @extend
+# class RTTIType:
+#     def _new(data: Ptr[u8], typeinfo: Ptr[u8], T: type) -> T:
+#         """
+#         Creates a new RTTIType wrapper for data and casts it to T.
+
+#         Internal use only. No type checks are performed.
+#         """
+
+#         p = type._ref_new(RTTIType)
+#         p.data = data
+#         p.typeinfo = typeinfo
+#         return type._force_cast(p, T)
+
+#     @__generated__
+#     @inline
+#     def _dist(B: type, D: type) -> int:
+#         """
+#         Calculates the byte distance of base class B and derived class D in D's MRO.
+#         Assumes that B is a parent class of D and that the first MRO member is D.
+#         Will give wrong results if D is not the first member of the MRO.
+#         Compiler generated.
+#         """
+#         return 0
+
+#     ### vTable & thunk setup. Mostly compiler-generated.
+
+#     def _init_vtables():
+#         """
+#         Create a global vtable.
+#         """
+
+#         vtable = VTable()
+#         RTTIType._populate_vtables(vtable)
+#         return vtable
+
+#     @__generated__
+#     def _populate_vtables(vtable):
+#         """
+#         Populate content of vtables. Compiler generated.
+#         Corresponds to:
+#             for each realized class C:
+#                 vtable.set_type(C.__id__, TypeInfo(C))
+#                 for each fn F in C's vtable:
+#                     vtable.set_thunk(<C's realization ID>, <F's vtable ID>, Function(<instantiated F>).__raw__())
+#         """
+#         pass
+
+#     @__generated__
+#     def _get_thunk_id(F: type, T: type) -> int:
+#         """Compiler-generated"""
+#         return 0
+
+#     def _thunk_debug(base, func, sig, *args):
+#         # print("![thunk]!", base, func, sig, args[0].__raw__())
+#         pass
+
+#     def _find_thunk(slf, F: type) -> cobj:
+#         thunk_id = RTTIType._get_thunk_id(F=F, T=type(slf))
+#         cls_id = RTTIType._typeinfo(slf).id
+#         return __vtables__.get_thunk(cls_id, thunk_id)
+
+#     # Casting
+
+#     def _typeinfo(obj: T, T: type) -> TypeInfo:
+#         if not static.has_rtti(T):
+#             compile_error("classes are not polymorphic")
+#         ti = type._force_cast(obj, RTTIType).typeinfo
+#         return type._force_cast(ti, TypeInfo)
+
+#     @inline
+#     def _find_offset(obj, B: type):
+#         ti = RTTIType._typeinfo(obj)
+#         if B.__id__ == ti.id:
+#             return 0, 0
+#         for i in range(ti._n_parent_ids):
+#             if B.__id__ == ti._parent_ids[i]:
+#                 return i + 1, ti._parent_offsets[i]
+#         return -1, 0
+
+#     @inline
+#     def _find_offsets(obj, B: type, D: type):
+#         ti = RTTIType._typeinfo(obj)
+#         bi, di = -1, -1
+#         boff, doff = 0, 0
+#         if B.__id__ == ti.id:
+#             bi, boff = 0, 0
+#         if D.__id__ == ti.id:
+#             di, doff = 0, 0
+#         for i in range(ti._n_parent_ids):
+#             if B.__id__ == ti._parent_ids[i]:
+#                 bi, boff = i + 1, ti._parent_offsets[i]
+#             if D.__id__ == ti._parent_ids[i]:
+#                 di, doff = i + 1, ti._parent_offsets[i]
+#         return (bi, di), (boff, doff)
+
+#     @inline
+#     def _force_cast(obj, D: type) -> D:
+#         # cast obj to D. Handles optionals.
+#         # Assumes type(obj) can be cast to D!
+#         # Assumes type(obj) and D are RTTI
+#         if isinstance(obj, Optional) and isinstance(D, Optional):
+#             if obj is None: return None
+#             else: return D(RTTIType._force_cast(unwrap(obj), D.T))
+#         elif not isinstance(obj, Optional) and D is not Optional:
+#             B = type(obj)
+#             return type._force_cast(obj, D)
+#         else:
+#             compile_error("bad cast!")
+
+#     # @inline
+#     # def _cast(obj, D: type) -> D:
+#     #     if isinstance(obj, Optional) and isinstance(D, Optional):
+#     #         if obj is None: return None
+#     #         else: return D(RTTIType._cast(unwrap(obj), D.T))
+#     #     else:
+#     #         B = type(obj)
+#     #         if not (static.has_rtti(D) and static.has_rtti(B)):
+#     #             compile_error("classes are not polymorphic")
+#     #         rtti = type._force_cast(obj, RTTIType)
+#     #         (bi, di), (boff, doff) = RTTIType._find_offsets(obj, B, D)
+#     #         if bi == -1 or di == -1:
+#     #             raise TypeError(f"cannot cast {type(obj)} to {D}")
+#     #         return RTTIType._new(rtti.data - boff + doff, rtti.typeinfo, D)
+
+#     @inline
+#     def _unwrap(obj, T: type):
+#         if isinstance(T, TypeWrap):
+#             return Optional[T.T](RTTIType._unwrap(obj, T.T))
+#         else:
+#             rtti = type._force_cast(obj, RTTIType)
+#             obj_info = RTTIType._typeinfo(obj)
+
+#             (_, ti), (ooff, toff) = RTTIType._find_offsets(obj, type(obj), T)
+#             if ti == -1:
+#                 return None
+#             else:
+#                 return Optional[T](RTTIType._new(rtti.data - ooff + toff, rtti.typeinfo, T))
+
+#     def _isinstance(obj, T: type) -> bool:
+#         return RTTIType._unwrap(obj, T) is not None
+
+#     def _getinstance(obj, T: type) -> T:
+#         # DO NOT USE DIRECTLY. Assumes that isinstance is true.
+#         return RTTIType._unwrap(obj, T).__val__()
+
+#     def _hasattr(obj, attr: Literal[str]):
+#         children = static.children(type(obj))
+#         for cls in children:
+#             if hasattr(cls, attr) and RTTIType._isinstance(obj, cls):
+#                 return True
+#         return False
+
+#     def _getattr(obj, attr: Literal[str], attr_type: type):
+#         children = static.children(type(obj))
+#         for cls in children:
+#             if hasattr(cls, attr):
+#                 if (cls_obj := RTTIType._unwrap(obj, cls)):
+#                     if attr_type is NoneType:
+#                         return _getattr(cls_obj, attr)
+#                     else:
+#                         x: attr_type = _getattr(cls_obj, attr)
+#                         return x
+#         raise AttributeError(f"cannot find {obj}")
+#         return attr_type()
+
+#     def _setattr(obj, attr: Literal[str], value):
+#         children = static.children(type(obj))
+#         for cls in children:
+#             if hasattr(cls, attr):
+#                 if (cls_obj := RTTIType._unwrap(obj, cls)):
+#                     setattr(cls_obj, attr, value)
+#                     return
+#         raise AttributeError(f"cannot find {attr} in {obj}")
 
 
 @extend
 class Super:
     def __new__(B: type, obj: D, D: type) -> Super[B]:
-        D = type(obj)
         if not (static.has_rtti(D) and static.has_rtti(B)):
             compile_error("classes are not polymorphic")
+        obj_B: B = force_cast(obj, B)
+        return type._force_value_cast((obj_B, 0), Super[B])
 
-        rtti = type._force_cast(obj, RTTIType)
-        (di, bi), (doff, boff) = RTTIType._find_offsets(obj, D, B)
-        if bi == -1 or di == -1:
-            raise TypeError(f"{B} has no super class")
-        new_obj = RTTIType._new(rtti.data - doff + boff, rtti.typeinfo, B)
-        return type._force_value_cast((new_obj, bi), Super[B])
+        # rtti = type._force_cast(obj, RTTIType)
+        # (di, bi), (doff, boff) = RTTIType._find_offsets(obj, D, B)
+        # if bi == -1 or di == -1:
+        #     raise TypeError(f"{B} has no super class")
+        # new_obj = RTTIType._new(rtti.data - doff + boff, rtti.typeinfo, B)
+        # return type._force_value_cast((new_obj, bi), Super[B])
 
     def __getattr__(self, attr: Literal[str]):
         return Super[T]._dispatch(self, attr=attr, ...)
@@ -241,8 +465,9 @@ class Super:
     @inline
     @__generated__
     def _dispatch(self, attr: Literal[str], *args, **kwargs):
-        ti = RTTIType._typeinfo(self._obj)
-        base = ti._parent_ids[self._idx]
+        pass
+        # ti = RTTIType._typeinfo(self._obj)
+        # base = ti._parent_ids[self._idx]
 
         # The following block is auto-generated:
         #

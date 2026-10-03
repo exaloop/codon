@@ -23,271 +23,120 @@ namespace codon::ast {
 
 using namespace types;
 
-/// Generate ASTs for all internal functions that deal with vtable generation.
-/// Intended to be called once the typechecking is done.
-/// TODO: add JIT compatibility.
+std::string TypecheckVisitor::vTableSignature(types::FuncType *ft) const {
+  seqassert(ft->canRealize(), "cannot realize {}", ft->debugString(2));
+  auto base = extractFuncArgType(ft)->getClass();
+  std::vector<std::string> gs;
+  for (const auto &a : *ft)
+    gs.emplace_back(a.getType()->realizedName());
+  auto f1 = join(gs, ",");
+  gs.clear();
+  for (auto &a : ft->funcGenerics)
+    if (!a.name.empty())
+      gs.push_back(a.type->realizedName());
+  auto f2 = join(gs, ",");
+  if (!f1.empty() && !f2.empty())
+    f1 = f1 + ";" + f2;
+  else if (f1.empty())
+    f1 = f2;
+  return fmt::format("{}.{}({})", base->name, getUnmangledName(ft->getFuncName()), f1);
+}
 
 void TypecheckVisitor::prepareVTables() {
-  // def RTTIType._get_thunk_id(F, T):
-  //   return VID
-  auto fn = getFunction(getMangledMethod("", "RTTIType", "_get_thunk_id"));
-  auto oldAst = fn->ast;
-  // Keep iterating as thunks can generate more thunks.
-  std::unordered_set<std::string> cache;
-  for (bool added = true; added;) {
-    added = false;
-    for (const auto &[rn, real] : sorted_view(fn->realizations)) {
-      if (in(cache, rn))
+  auto realize_function = [&](FuncType *method,
+                              ClassType *descType) -> std::shared_ptr<FuncType> {
+    std::vector<Expr *> callArgs;
+    for (size_t i = 0, j = 0, gi = 0; i < method->ast->size(); i++) {
+      auto [_, varName] = (*method->ast)[i].getNameWithStars();
+      auto un = getUnmangledName(varName);
+      if (startswith(un, "$"))
         continue;
-      cache.insert(rn);
-      added = true;
-      fn->ast->suite = generateGetThunkIDAST(real->getType());
-      real->type->ast = fn->ast;
-      LOG_REALIZE("[poly] {} : {}", real->type->debugString(2), fn->ast->toString(2));
-      realizeFunc(real->type.get(), true);
-      fn->ast = oldAst;
-    }
-  }
-
-  fn = getFunction(getMangledMethod("", "RTTIType", "_populate_vtables"));
-  fn->ast->suite = generateClassPopulateVTablesAST();
-  auto typ = sorted_view(fn->realizations).front().second->getType();
-  typ->ast = fn->ast;
-  LOG_REALIZE("[poly] {} : {}", typ->debugString(2), fn->ast->toString(2));
-  realizeFunc(typ, true);
-
-  // def RTTIType._dist(B, D):
-  //   return Tuple[<types before B is reached in D>].__elemsize__
-  fn = getFunction(getMangledMethod("", "RTTIType", "_dist"));
-  oldAst = fn->ast;
-  for (const auto &[_, real] : sorted_view(fn->realizations)) {
-    fn->ast->suite = generateBaseDerivedDistAST(real->getType());
-    real->type->ast = fn->ast;
-    LOG_REALIZE("[poly] {} : {}", real->type->debugString(2), fn->ast->toString(2));
-    realizeFunc(real->type.get(), true);
-  }
-  fn->ast = oldAst;
-}
-
-SuiteStmt *TypecheckVisitor::generateClassPopulateVTablesAST() {
-  auto suite = N<SuiteStmt>();
-  for (const auto &[cls_name, cls] : sorted_view(ctx->cache->classes)) {
-    for (const auto &[r, real] : sorted_view(cls.realizations)) {
-      if (real->vtable.empty())
-        continue;
-      LOG_REALIZE("[poly] {} -> {}", r, real->id);
-      suite->addStmt(N<ExprStmt>(N<CallExpr>(
-          N<IdExpr>(getMangledMethod("", "TypeInfo", "cache")), N<IdExpr>("vtable"),
-          N<IdExpr>(real->getType()->realizedName()))));
-
-      std::vector<std::pair<std::pair<std::string, std::string>, size_t>> thunks;
-      for (const auto &[key, _] : real->vtable) {
-        auto id = in(ctx->cache->thunkIds, key);
-        seqassert(id, "key {} not found in thunkIds", key);
-        thunks.emplace_back(key, *id);
-      }
-      std::sort(thunks.begin(), thunks.end(),
-                [](const auto &a, const auto &b) { return a.second < b.second; });
-      for (const auto &[key, id] : thunks) {
-        auto fn = real->vtable[key];
-        std::vector<Expr *> ids;
-        for (const auto &t : *fn)
-          ids.push_back(N<IdExpr>(t.getType()->realizedName()));
-        // p[real.ID].__setitem__(f.ID, Function[<TYPE_F>](f).__raw__())
-        LOG_REALIZE("[poly] vtable[{}!!{}][{}] = {}", real->getType()->realizedName(),
-                    real->id, id, fn->realizedName());
-        Expr *fnCall =
-            N<CallExpr>(N<InstantiateExpr>(
-                            N<IdExpr>(StdlibTypes::Function),
-                            std::vector<Expr *>{
-                                N<InstantiateExpr>(N<IdExpr>(StdlibTypes::Tuple), ids),
-                                N<IdExpr>(fn->getRetType()->realizedName())}),
-                        N<IdExpr>(fn->realizedName()));
-        suite->addStmt(N<ExprStmt>(N<CallExpr>(
-            N<DotExpr>(N<IdExpr>("vtable"), "set_thunk"), N<IntExpr>(real->id),
-            N<IntExpr>(int64_t(id)), N<CallExpr>(N<DotExpr>(fnCall, "__raw__")))));
+      if ((*method->ast)[i].isValue()) {
+        TypePtr at = extractFuncArgType(method, j++)->shared_from_this();
+        if (at->getStatic())
+          at = at->getStatic()->getNonStaticType()->shared_from_this();
+        callArgs.push_back(N<IdExpr>(getUnmangledName((*method->ast)[i].getName())));
+        callArgs.back()->setType(at);
+        callArgs.back()->setDone();
       }
     }
-  }
-  return suite;
-}
+    // Make first argument match the destType
+    callArgs[0]->setType(descType->shared_from_this());
 
-SuiteStmt *TypecheckVisitor::generateBaseDerivedDistAST(FuncType *f) {
-  // Dist from Base to Derived. Assumes Derived is indeed a derived class of base.
-  // Rules:
-  // - Base is within Derived.
-  // - Use MRO order.
-  auto baseTyp = extractFuncGeneric(f, 0)->getClass();
-  auto derivedTyp = extractFuncGeneric(f, 1)->getClass();
-
-  auto derivedBases = getBaseClasses(derivedTyp);
-  auto fields = getClassFields(derivedTyp);
-  size_t di = 0, fi = 0;
-  for (; di < derivedBases.size(); di++) {
-    if (derivedBases[di]->getClass()->realizedName() == baseTyp->realizedName())
-      break;
-    while (fi < fields.size() &&
-           fields[fi].baseClass == derivedBases[di]->getClass()->name)
-      fi++;
-  }
-  seqassert(di < derivedBases.size(), "class {} is not a base class of {}",
-            baseTyp->debugString(2), derivedTyp->debugString(2));
-
-  if (fi == 0)
-    return SuiteStmt::wrap(N<ReturnStmt>(N<IntExpr>(0)));
-  Stmt *suite = N<ReturnStmt>(
-      N<CallExpr>(N<IdExpr>(getMangledMethod("", "type", "_get_class_offset")),
-                  N<IdExpr>(derivedTyp->realizedName()), N<IntExpr>(fi)));
-  return SuiteStmt::wrap(suite);
-}
-
-FunctionStmt *TypecheckVisitor::generateThunkAST(const FuncType *fp, ClassType *base,
-                                                 const ClassType *derived) {
-  auto ct = instantiateType(extractClassType(derived->name), base->getClass());
-  std::vector<types::Type *> args;
-  for (const auto &a : *fp)
-    args.push_back(a.getType());
-  args[0] = ct.get();
-  auto m = findBestMethod(ct->getClass(), getUnmangledName(fp->getFuncName()), args);
-  if (!m) {
-    // Print a nice error message
-    std::vector<std::string> a;
-    for (auto &t : args)
-      a.emplace_back(fmt::format("{}", t->prettyString()));
-    std::string argsNice = fmt::format("({})", join(a, ", "));
-    E(Error::DOT_NO_ATTR_ARGS, getSrcInfo(), ct->prettyString(),
-      getUnmangledName(fp->getFuncName()), argsNice);
-  }
-
-  std::vector<std::string> ns;
-  for (auto &a : args)
-    ns.push_back(a->realizedName());
-  auto thunkName = fmt::format("_thunk.{}.{}.{}.{}", base->name, fp->getFuncName(),
-                               derived->realizedName(), join(ns, "."));
-  if (getFunction(getMangledFunc("", thunkName, 0, 0, /* noCore */ true)))
+    auto bestMethod =
+        findBestMethod(descType, getUnmangledName(method->getFuncName()), callArgs);
+    if (bestMethod) {
+      auto call =
+          transform(N<CallExpr>(N<IdExpr>(bestMethod->getFuncName()), callArgs));
+      auto t = realize(call->getType());
+      seqassert(t, "cannot ralize stuff");
+      if (t->unify(method->getRetType(), nullptr) < 0) {
+        E(Error::CUSTOM, method->ast, "function {}.{} returns {}, expected {}",
+          getUnmangledName(descType->name), getUnmangledName(method->getFuncName()),
+          t->prettyString(), method->getRetType()->prettyString());
+      }
+      auto rt = cast<CallExpr>(call)->getExpr()->getType();
+      seqassert(rt->getFunc() && rt->canRealize(), "bad realization");
+      return std::static_pointer_cast<FuncType>(rt->shared_from_this());
+    }
     return nullptr;
-
-  // Thunk contents:
-  // def _thunk.<BASE>.<FN>.<ARGS>(self, <ARGS...>):
-  //   return <FN>(RTTIType._cast(self, <DERIVED>), <ARGS...>)
-  std::vector<Param> fnArgs;
-  fnArgs.emplace_back("self", N<IdExpr>(base->realizedName()), nullptr);
-  for (size_t i = 1; i < args.size(); i++)
-    fnArgs.emplace_back(getUnmangledName((*fp->ast)[i].getName()),
-                        N<IdExpr>(args[i]->realizedName()), nullptr);
-  std::vector<Expr *> callArgs;
-  callArgs.emplace_back(N<CallExpr>(N<DotExpr>(N<IdExpr>("RTTIType"), "_cast"),
-                                    N<IdExpr>("self"),
-                                    N<IdExpr>(derived->realizedName())));
-  for (size_t i = 1; i < args.size(); i++)
-    callArgs.emplace_back(N<IdExpr>(getUnmangledName((*fp->ast)[i].getName())));
-
-  std::vector<Expr *> debugCallArgs{N<StringExpr>(base->name),
-                                    N<StringExpr>(fp->getFuncName()),
-                                    N<StringExpr>(join(ns, "."))};
-  debugCallArgs.insert(debugCallArgs.end(), callArgs.begin(), callArgs.end());
-  auto thunkAst = N<FunctionStmt>(
-      thunkName, nullptr, fnArgs,
-      N<SuiteStmt>(
-          // For debugging
-          N<ExprStmt>(
-              N<CallExpr>(N<IdExpr>(getMangledMethod("", "RTTIType", "_thunk_debug")),
-                          debugCallArgs)),
-          N<ReturnStmt>(N<CallExpr>(N<IdExpr>(m->ast->getName()), callArgs))));
-  thunkAst->setAttribute(Attr::Inline);
-  auto thunk = cast<FunctionStmt>(transform(thunkAst));
-  getFunction(thunk->name)->isToplevel = false;
-  return thunk;
-}
-
-/// Generate thunks in all derived classes for a given virtual function (must be fully
-/// realizable) and the corresponding base class.
-/// @return unique thunk ID.
-SuiteStmt *TypecheckVisitor::generateGetThunkIDAST(types::FuncType *f) {
-  auto fp = extractType(extractFuncGeneric(f))->getFunc();
-  auto cp = extractType(extractFuncGeneric(f, 1))->getClass();
-
-  seqassert(cp && cp->canRealize() && fp && fp->canRealize() &&
-                fp->getRetType()->canRealize(),
-            "bad {}", f->debugString(2));
-
-  // Function signature for storing thunks.
-  // Needs to append function generics to realized name.
-  // TODO: refactor / remove (why is this needed)?
-  auto sig = [&](const types::FuncType *ft) -> std::string {
-    std::vector<std::string> gs;
-    for (const auto &a : *ft)
-      gs.emplace_back(a.getType()->realizedName());
-    gs.emplace_back("|");
-    for (auto &a : ft->funcGenerics)
-      if (!a.name.empty())
-        gs.push_back(a.type->realizedName());
-    return fmt::format("{}:{}", getUnmangledName(ft->getFuncName()), join(gs, ","));
   };
-
-  // Set up the base class information
-  auto baseCls = cp->name;
-  auto fnSig = sig(fp);
-  auto key = std::make_pair(baseCls, fnSig);
-
-  // Add or extract thunk ID
-  auto baseRealization = getClassRealization(cp);
-  seqassert(!in(baseRealization->vtable, key), "thunk {}.{} already added", baseCls,
-            fnSig);
-  if (!in(ctx->cache->thunkIds, key))
-    ctx->cache->thunkIds[key] = 1 + ctx->cache->thunkIds.size();
-  auto vid = ctx->cache->thunkIds[key];
-  baseRealization->vtable[key] =
-      std::static_pointer_cast<FuncType>(fp->shared_from_this());
-
-  // Realizing a thunk can add class realizations. Keep processing sorted snapshots
-  // until all newly added realizations have been visited.
-  std::set<std::pair<std::string, std::string>> processed;
-  for (bool added = true; added;) {
-    added = false;
-    for (const auto &[clsName, cls] : sorted_view(ctx->cache->classes)) {
-      // First check if our class descends from our base class
-      // (ignore generics for now; this is just a speed-up).
-      // TODO: use hashmap
-      bool inMro = false;
-      for (auto &m : cls.mro)
-        if (m && m->is(baseCls)) {
-          inMro = true;
-          break;
-        }
-      if (!inMro || clsName == baseCls)
-        continue;
-      for (const auto &[realName, real] : sorted_view(cls.realizations)) {
-        if (!processed.emplace(clsName, realName).second)
-          continue;
-        added = true;
-
-        // Now check if generics match!
-        inMro = false;
-        for (auto &mro : real->bases) // now check realizations!
-          if (mro->realizedName() == cp->realizedName()) {
-            inMro = true;
+  auto realize_descendant_virtuals = [&](FuncType *method) -> bool {
+    auto base = extractFuncArgType(method)->getClass();
+    seqassert(base, "not a valid base");
+    bool added = false;
+    auto key = vTableSignature(method);
+    size_t id = 0;
+    if (auto k = in(ctx->cache->thunkIds, key)) {
+      id = *k;
+    } else {
+      id = ctx->cache->thunkIds[key] = 1 + ctx->cache->thunkIds.size();
+    }
+    for (auto &desc : getClass(base->name)->descendants) {
+      for (const auto &[_, dr] : sorted_view(getClass(desc)->realizations)) {
+        ClassType *descType = nullptr;
+        for (auto &db : dr->bases)
+          if (db->realizedName() == base->realizedName()) {
+            descType = dr->getType();
             break;
           }
-        if (!inMro)
+        if (!descType && dr->getType()->realizedName() == base->realizedName()) {
+          descType = dr->getType();
+        }
+        if (!descType)
+          break;
+        if (in(dr->vtable, id))
           continue;
-        if (auto thunkAst = generateThunkAST(fp, cp, real->getType())) {
-          auto thunkFn = getFunction(thunkAst->name);
-          auto ti =
-              std::static_pointer_cast<FuncType>(instantiateType(thunkFn->getType()));
-          auto tm = realizeFunc(ti.get(), true);
-          seqassert(tm, "bad thunk {}", thunkFn->type->debugString(2));
-          seqassert(!in(real->vtable, key), "thunk {}.{} already added to {}", baseCls,
-                    fnSig, real->getType()->realizedName());
-          real->vtable[key] =
-              std::static_pointer_cast<FuncType>(tm->shared_from_this());
-          LOG_REALIZE("[thunk]: {}->{}@{} == {}", baseCls,
-                      real->getType()->realizedName(), key, vid);
+        if (auto f = realize_function(method, descType)) {
+          dr->vtable[id] = f;
+          LOG("[dispatch] {} (desc={}, id={}) = {}", key, descType->debugString(2), id,
+              f->debugString(2));
+          added = true;
+        }
+      }
+    }
+    return added;
+  };
+
+  for (bool added = true; added;) {
+    added = false;
+    for (const auto &[cls_name, cls] : sorted_view(ctx->cache->classes)) {
+      // Iterate all methods
+      for (const auto &method : sorted_view(cls.virtuals)) {
+        auto method_root = in(cls.methods, method);
+        if (!method_root)
+          continue;
+        for (const auto &method_name : getOverloads(*method_root)) {
+          const auto &fn_data = getFunction(method_name);
+          for (auto &[fn_name, method_real] : sorted_view(fn_data->realizations)) {
+            if (isPolymorphic(method_real->getType())) {
+              added |= realize_descendant_virtuals(method_real->getType());
+            }
+          }
         }
       }
     }
   }
-  return N<SuiteStmt>(N<ReturnStmt>(N<IntExpr>(vid)));
 }
 
 SuiteStmt *TypecheckVisitor::generateFunctionCallInternalAST(FuncType *type) {
@@ -657,7 +506,8 @@ Expr *TypecheckVisitor::transformPtr(CallExpr *expr) {
   return nullptr;
 }
 
-/// Typecheck __array__ method. This method creates a stack-allocated array via alloca.
+/// Typecheck __array__ method. This method creates a stack-allocated array via
+/// alloca.
 Expr *TypecheckVisitor::transformArray(CallExpr *expr) {
   auto arrTyp = expr->expr->getType()->getFunc();
   unify(expr->getType(),
@@ -778,8 +628,8 @@ Expr *TypecheckVisitor::transformIsInstance(CallExpr *expr) {
   return transform(N<BoolExpr>(false));
 }
 
-/// Transform staticlen method to a static integer expression. This method supports only
-/// static strings and tuple types.
+/// Transform staticlen method to a static integer expression. This method supports
+/// only static strings and tuple types.
 Expr *TypecheckVisitor::transformStaticLen(CallExpr *expr) {
   if (auto u = expr->getType()->getUnbound())
     u->staticKind = LiteralKind::Int;
@@ -1024,7 +874,8 @@ Expr *TypecheckVisitor::transformStaticPrintFn(CallExpr *expr) const {
   return nullptr;
 }
 
-/// Transform static.has_rtti to a static boolean that indicates RTTI status of a type.
+/// Transform static.has_rtti to a static boolean that indicates RTTI status of a
+/// type.
 Expr *TypecheckVisitor::transformHasRttiFn(const CallExpr *expr) {
   if (auto u = expr->getType()->getUnbound())
     u->staticKind = LiteralKind::Bool;
@@ -1232,8 +1083,8 @@ Expr *TypecheckVisitor::transformStaticTupleType(const CallExpr *expr) {
   return transform(N<IdExpr>(rt->realizedName()));
 }
 
-/// Transform staticlen method to a static integer expression. This method supports only
-/// static strings and tuple types.
+/// Transform staticlen method to a static integer expression. This method supports
+/// only static strings and tuple types.
 Expr *TypecheckVisitor::transformStaticFormat(CallExpr *expr) {
   if (auto u = expr->getType()->getUnbound())
     u->staticKind = LiteralKind::String;
@@ -1366,9 +1217,9 @@ SuiteStmt *TypecheckVisitor::generateSuperDispatchAST(FuncType *type) {
   for (const auto &[_, tb] : sorted_view(nextMro)) {
     Stmt *ret = N<ReturnStmt>(N<CallExpr>(
         N<DotExpr>(N<IdExpr>(tb->getClass()->name), attr->value),
-        N<CallExpr>(N<IdExpr>(getMangledMethod("", "RTTIType", "_cast")),
-                    N<DotExpr>(N<IdExpr>("self"), "_obj"),
-                    N<IdExpr>(tb->realizedName())),
+        // N<CallExpr>(N<IdExpr>(getMangledMethod("", "RTTIType", "_cast")),
+        N<DotExpr>(N<IdExpr>("self"), "_obj"),
+        // N<IdExpr>(tb->realizedName())),
         N<StarExpr>(N<IdExpr>("args")), N<KeywordStarExpr>(N<IdExpr>("kwargs"))));
     suite->addStmt(
         nextMro.size() == 1
@@ -1380,8 +1231,8 @@ SuiteStmt *TypecheckVisitor::generateSuperDispatchAST(FuncType *type) {
   return suite;
 }
 
-/// Transform staticlen method to a static integer expression. This method supports only
-/// static strings and tuple types.
+/// Transform staticlen method to a static integer expression. This method supports
+/// only static strings and tuple types.
 Expr *TypecheckVisitor::transformStaticPlatform(CallExpr *expr) {
   if (auto u = expr->getType()->getUnbound())
     u->staticKind = LiteralKind::String;

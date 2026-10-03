@@ -97,7 +97,7 @@ class TimerHandle:
     def when(self):
         return self._timer.when
 
-class Future:
+class Future(object):
     _data: _FutureState
     _loop: EventLoop
     R: type

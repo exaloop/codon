@@ -44,6 +44,48 @@ extern const std::string VAR_ARGV;
 extern const std::string VAR_ARGC;
 extern const std::string FN_OPTIONAL_UNWRAP;
 
+namespace StdlibTypes {
+extern const std::string Any;
+extern const std::string Array;
+extern const std::string BaseException;
+extern const std::string Bool;
+extern const std::string Callable;
+extern const std::string Capsule;
+extern const std::string CObj;
+extern const std::string Complex;
+extern const std::string Complex64;
+extern const std::string Coroutine;
+extern const std::string Dict;
+extern const std::string Float;
+extern const std::string Float16;
+extern const std::string Function;
+extern const std::string Generator;
+extern const std::string Int;
+extern const std::string List;
+extern const std::string NamedTuple;
+extern const std::string NDArray;
+extern const std::string NoneType;
+extern const std::string Object;
+extern const std::string Optional;
+extern const std::string Ptr;
+extern const std::string PyError;
+extern const std::string Range;
+extern const std::string Set;
+extern const std::string Slice;
+extern const std::string String;
+extern const std::string ThreadLocal;
+extern const std::string Tuple;
+extern const std::string Type;
+extern const std::string TypeWrap;
+extern const std::string UInt;
+extern const std::string Union;
+extern const std::string UnrealizedType;
+extern const std::string Vec;
+
+extern const std::string CallableTrait;
+extern const std::string TypeTrait;
+}; // namespace StdlibTypes
+
 /// Forward declarations
 struct TypeContext;
 struct TranslateContext;
@@ -163,8 +205,7 @@ struct Cache {
       /// Maps {base, function signature} to {thunk realization, thunk ID}.
       /// Base can be the realization itself.
       /// Order is important so map is used instead of unordered_map.
-      std::map<std::pair<std::string, std::string>, std::shared_ptr<types::FuncType>>
-          vtable;
+      std::map<size_t, std::shared_ptr<types::FuncType>> vtable;
       /// Realization ID
       size_t id = 0;
 
@@ -185,7 +226,9 @@ struct Cache {
 
     int jitCell = 0;
 
-    bool hasRTTI() const { return rtti; }
+    bool hasRTTI() const {
+      return mro.size() > 1 || ast->getName() == StdlibTypes::Object;
+    }
   };
   /// Class lookup table that maps a canonical class identifier to the corresponding
   /// Class instance.
@@ -194,7 +237,7 @@ struct Cache {
 
   Class *getClass(const types::ClassType *);
 
-  std::map<std::pair<std::string, std::string>, size_t> thunkIds;
+  std::map<std::string, size_t> thunkIds;
 
   struct Function {
     /// Module information
@@ -365,47 +408,5 @@ public:
     return r;
   }
 };
-
-namespace StdlibTypes {
-extern const std::string Any;
-extern const std::string Array;
-extern const std::string BaseException;
-extern const std::string Bool;
-extern const std::string Callable;
-extern const std::string Capsule;
-extern const std::string CObj;
-extern const std::string Complex;
-extern const std::string Complex64;
-extern const std::string Coroutine;
-extern const std::string Dict;
-extern const std::string Float;
-extern const std::string Float16;
-extern const std::string Function;
-extern const std::string Generator;
-extern const std::string Int;
-extern const std::string List;
-extern const std::string NamedTuple;
-extern const std::string NDArray;
-extern const std::string NoneType;
-extern const std::string Object;
-extern const std::string Optional;
-extern const std::string Ptr;
-extern const std::string PyError;
-extern const std::string Range;
-extern const std::string Set;
-extern const std::string Slice;
-extern const std::string String;
-extern const std::string ThreadLocal;
-extern const std::string Tuple;
-extern const std::string Type;
-extern const std::string TypeWrap;
-extern const std::string UInt;
-extern const std::string Union;
-extern const std::string UnrealizedType;
-extern const std::string Vec;
-
-extern const std::string CallableTrait;
-extern const std::string TypeTrait;
-}; // namespace StdlibTypes
 
 } // namespace codon::ast
