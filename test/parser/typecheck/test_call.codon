@@ -27,18 +27,18 @@ def test_class():
 
     f = Foo(6)
     pf = __ptr__(f.x)
-    print pf[0]  # 6
+    print pf[0]  #: 6
     f.x = 7
-    print pf[0]  # 7
+    print pf[0]  #: 7
 
     def foo(x):
         return Foo(x)
     ff = foo(16)
     pff = __ptr__(ff.x)
-    print pff[0]  # 16
+    print pff[0]  #: 16
     ff.x = 17
-    print pff[0]  # 17
-# test_class()
+    print pff[0]  #: 17
+test_class()
 
 
 @tuple
@@ -60,13 +60,13 @@ print(x)  #: (b: (a: (n: 55)))
 
 
 #%% call_ptr_error,barebones
-__ptr__(1) #! __ptr__() only takes identifiers or tuple fields as arguments
+__ptr__(1) #! __ptr__() only takes identifiers or fields rooted in identifiers as arguments
 
 #%% call_ptr_error_3,barebones
 v = 1
 __ptr__(v, 1) #! __ptr__() takes 1 arguments (2 given)
 
-#%% call_ptr_error_4,barebones
+#%% call_ptr_reference_fields,barebones
 @tuple
 class A:
     n: int
@@ -79,7 +79,9 @@ class C:
     b: B
 
 x = C(B(A(1)))
-print(__ptr__(x.b.a.n)) #! __ptr__() only takes identifiers or tuple fields as arguments
+pointer = __ptr__(x.b.a.n)
+pointer[0] = 55
+print(x.b.a.n)  #: 55
 
 #%% call_ptr_error_5,barebones
 @tuple
@@ -94,7 +96,7 @@ class C:
     b: B
 
 x = C(B(A(1)))
-print(__ptr__(A(1).n))   #! __ptr__() only takes identifiers or tuple fields as arguments
+print(__ptr__(A(1).n))   #! __ptr__() only takes identifiers or fields rooted in identifiers as arguments
 
 
 #%% call_array,barebones

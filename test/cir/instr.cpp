@@ -121,6 +121,40 @@ TEST_F(CIRCoreTest, CallInstrCloning) {
   ASSERT_TRUE(util::match(instr, cv->clone(instr)));
 }
 
+TEST_F(CIRCoreTest, PolymorphicInstructionMetadata) {
+  auto *type = cast<RefType>(module->unsafeGetMemberedType("polymorphic", true));
+  type->realize({module->getIntType()}, {"field"});
+  type->setPolymorphic();
+  auto *receiver = module->Nr<VarValue>(module->Nr<Var>(type));
+  auto *value = module->getInt(42);
+  auto *extract = module->Nr<ExtractInstr>(receiver, "field", "extract", true);
+  auto *insert = module->Nr<InsertInstr>(receiver, "field", value, "insert", true);
+  auto *function = module->Nr<BodiedFunc>();
+  function->realize(module->unsafeGetFuncType("method", module->getIntType(), {type}),
+                    {"self"});
+  auto *callee = module->Nr<VarValue>(function);
+  auto *call = module->Nr<CallInstr>(callee, std::vector<Value *>{receiver}, "call", 7);
+
+  auto *extractClone = cast<ExtractInstr>(cv->clone(extract));
+  auto *insertClone = cast<InsertInstr>(cv->clone(insert));
+  auto *callClone = cast<CallInstr>(cv->clone(call));
+  ASSERT_TRUE(extractClone->isPolymorphic());
+  ASSERT_TRUE(insertClone->isPolymorphic());
+  ASSERT_EQ(callClone->getThunkID(), 7);
+  ASSERT_EQ(extractClone->getName(), "extract");
+  ASSERT_EQ(insertClone->getName(), "insert");
+  ASSERT_EQ(callClone->getName(), "call");
+  ASSERT_TRUE(util::match(extract, extractClone));
+  ASSERT_TRUE(util::match(insert, insertClone));
+  ASSERT_TRUE(util::match(call, callClone));
+  ASSERT_FALSE(util::match(extract, module->Nr<ExtractInstr>(receiver, "field")));
+  ASSERT_FALSE(util::match(insert, module->Nr<InsertInstr>(receiver, "field", value)));
+  ASSERT_FALSE(
+      util::match(call, module->Nr<CallInstr>(callee, std::vector<Value *>{receiver})));
+  ASSERT_FALSE(util::match(
+      call, module->Nr<CallInstr>(callee, std::vector<Value *>{receiver}, "", 8)));
+}
+
 TEST_F(CIRCoreTest, StackAllocInstrQueryAndReplace) {
   auto COUNT = 1;
 

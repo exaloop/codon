@@ -61,7 +61,7 @@ int Func::doReplaceUsedVariable(id_t id, Var *newVar) {
 std::vector<Type *> Func::doGetUsedTypes() const {
   std::vector<Type *> ret;
 
-  for (auto *t : Var::getUsedTypes())
+  for (auto *t : Var::doGetUsedTypes())
     ret.push_back(const_cast<Type *>(t));
 
   if (parentType)
@@ -71,7 +71,7 @@ std::vector<Type *> Func::doGetUsedTypes() const {
 }
 
 int Func::doReplaceUsedType(const std::string &name, Type *newType) {
-  auto count = Var::replaceUsedType(name, newType);
+  auto count = Var::doReplaceUsedType(name, newType);
   if (parentType && parentType->getName() == name) {
     parentType = newType;
     ++count;
@@ -110,7 +110,7 @@ const char LLVMFunc::NodeId = 0;
 std::vector<Type *> LLVMFunc::doGetUsedTypes() const {
   std::vector<Type *> ret;
 
-  for (auto *t : Func::getUsedTypes())
+  for (auto *t : Func::doGetUsedTypes())
     ret.push_back(const_cast<Type *>(t));
 
   for (auto &l : llvmLiterals)
@@ -121,7 +121,7 @@ std::vector<Type *> LLVMFunc::doGetUsedTypes() const {
 }
 
 int LLVMFunc::doReplaceUsedType(const std::string &name, Type *newType) {
-  auto count = Var::doReplaceUsedType(name, newType);
+  auto count = Func::doReplaceUsedType(name, newType);
   for (auto &l : llvmLiterals)
     if (l.isType() && l.getTypeValue()->getName() == name) {
       l = newType;

@@ -603,11 +603,13 @@ std::string FunctionStmt::toPythonString(bool a, int indent, int level) const {
   }
   return pyNode(
       async ? "AsyncFunctionDef" : "FunctionDef",
-      {"name=" + pyQuote(name), "args=" + pyArguments(items, a, indent, level + 2*indent),
-       "body=" + (suite ? suite->toPythonString(a, indent, level + 2*indent) : "[]"),
-       "decorator_list=" + pyList(dv, indent, level + 2*indent),
-       "returns=" + (ret ? ret->toPythonString(a, indent, level + 2*indent) : "None")},
-      this, a, indent, indent+level);
+      {"name=" + pyQuote(name),
+       "args=" + pyArguments(items, a, indent, level + 2 * indent),
+       "body=" + (suite ? suite->toPythonString(a, indent, level + 2 * indent) : "[]"),
+       "decorator_list=" + pyList(dv, indent, level + 2 * indent),
+       "returns=" +
+           (ret ? ret->toPythonString(a, indent, level + 2 * indent) : "None")},
+      this, a, indent, indent + level);
 }
 std::string FunctionStmt::getSignature() {
   if (signature.empty()) {

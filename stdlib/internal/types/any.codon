@@ -44,7 +44,7 @@ class Any:
             return
 
         T: type = type(obj)
-        self._typeinfo = TypeInfo.cache(__vtables__, T)
+        self._typeinfo = TypeInfo.cache(T)
         if isinstance(T, ByVal):
             p = Ptr[T](1)
             p[0] = obj
@@ -56,25 +56,19 @@ class Any:
         if T is Any:
             return self
         if not self._isinstance(T):
-            raise TypeError(f"Any.unwrap failed: requested {T}, but got {self._typeinfo.nice_name} instead")
+            raise TypeError(f"Any.unwrap failed: requested {TypeInfo.cache(T).nice_name}, but got {self._typeinfo.nice_name} instead")
         if isinstance(T, ByVal):
             p = type._force_cast(self._data, Ptr[T])
             return p[0]
         else:
             ti, data = self._real_contents()
-            if ti._rtti:
-                for mro, off in ti.mro:
-                    if T.__id__ == mro:
-                        return RTTIType._new(data + off, ti.__raw__(), T)
-                assert False, "cannot happen"
-            else:
-                return type._force_cast(data, T)
+            return type._force_cast(data, T)
 
     def __cast__(self, T: type):
         if T is Ptr[Any]:
             if not self._typeinfo._isinstance(unrealized_type[Ptr]):
                 raise ValueError("expected ptr")
-            ti = TypeInfo.cache(self._typeinfo._params[0])
+            ti = TypeInfo.cache(self._typeinfo.params[0])
             ptr = Ptr[Ptr[byte]](self._data)
             p = Ptr[Any](1)
             p[0] = Any(ti, ptr[0])
@@ -83,29 +77,29 @@ class Any:
             if not self._typeinfo._isinstance(unrealized_type[Optional]):
                 raise ValueError("expected optional")
 
-            ti = TypeInfo.cache(self._typeinfo._params[0])
+            ti = TypeInfo.cache(self._typeinfo.params[0])
             # jump to optional
-            if ti._ref:
+            if ti.reference:
                 data = Ptr[Ptr[byte]](self._data)[0]
                 return Optional(Any(ti, data)) if data else None
             else:
                 data = Ptr[i1](self._data)
-                return Optional(Any(ti, (data + self._typeinfo._fields[0][2]).as_byte())) if data[0] else None
+                return Optional(Any(ti, self._data + self._typeinfo.slots[0][2])) if data[0] else None
         elif T is List[Any]:
             if self._typeinfo._isinstance(unrealized_type[list]):
-                ti = TypeInfo.cache(self._typeinfo._params[0])
+                ti = TypeInfo.cache(self._typeinfo.params[0])
                 sz = Ptr[int](self._data)[0]
                 data = self._data + int.__elemsize__ * 2
                 data = Ptr[Ptr[byte]](data)[0]
                 lst = List[Any](sz)
                 for i in range(sz):
-                    ptr = data + ti._size * i
-                    if ti._ref:
+                    ptr = data + ti.size * i
+                    if ti.reference:
                         ptr = Ptr[Ptr[byte]](ptr)[0]
                     lst.append(Any(ti, ptr))
                 return lst
             elif self._typeinfo._isinstance(unrealized_type[Tuple]):
-                lst = List[Any](len(self._typeinfo._fields))
+                lst = List[Any](self._typeinfo.n_slots)
                 for _, i in self.members:
                     lst.append(i)
                 return lst
@@ -120,26 +114,22 @@ class Any:
             nbuckets = self.__getattr__("_n_buckets", int)
             flags = self.__getattr__("_flags", Ptr[u32])
 
-            ti = self._real_typeinfo()
-            data = self._data
-            if ti._rtti:
-                data = Ptr[cobj](data)[0]
+            ti, data = self._real_contents()
 
             kidx, vidx = 5, 6
-            kti, vti = TypeInfo.cache(ti._fields[kidx][1]), TypeInfo.cache(ti._fields[vidx][1])
-            kti, vti = TypeInfo.cache(kti._params[0]), TypeInfo.cache(vti._params[0])
-            kptr, vptr = data + ti._fields[kidx][2], data + ti._fields[vidx][2]
+            kti, vti = TypeInfo.cache(ti.slots[kidx][1]), TypeInfo.cache(ti.slots[vidx][1])
+            kti, vti = TypeInfo.cache(kti.params[0]), TypeInfo.cache(vti.params[0])
+            kptr, vptr = data + ti.slots[kidx][2], data + ti.slots[vidx][2]
             kptr, vptr = Ptr[Ptr[byte]](kptr)[0], Ptr[Ptr[byte]](vptr)[0]
-            print(kti._size, vti._size)
             d: Dict[Any, Any] = {}
             i = 0
             while i < nbuckets:
                 if not khash.__ac_iseither(flags, i):
-                    kp = kptr + i * kti._size
-                    if kti._ref:
+                    kp = kptr + i * kti.size
+                    if kti.reference:
                         kp = Ptr[Ptr[byte]](kp)[0]
-                    vp = vptr + i * vti._size
-                    if vti._ref:
+                    vp = vptr + i * vti.size
+                    if vti.reference:
                         vp = Ptr[Ptr[byte]](vp)[0]
                     d[Any(kti, kp)] = Any(vti, vp)
                 i += 1
@@ -148,27 +138,12 @@ class Any:
             return self.__unwrap__(T)
 
     def _real_typeinfo(self):
-        if self._typeinfo._rtti:
-            return type._force_cast(type._force_cast(self._data, RTTIType).typeinfo, TypeInfo)
+        if self._typeinfo.rtti:
+            return get_typeinfo(self._data)
         return self._typeinfo
 
     def _real_contents(self):
-        ptr = self._data
-        ti = self._typeinfo
-        if ti._rtti:
-            # Get the original!
-            rtti = type._force_cast(self._data, RTTIType)
-            current = ti.id
-            off = 0
-            ti = type._force_cast(rtti.typeinfo, TypeInfo)
-            for mro, offset in ti.mro:
-                if mro == current:
-                    off = offset
-                    break
-            else:
-                raise TypeError(f"cannot find {ti.nice_name} in {self._typeinfo.nice_name}")
-            ptr = rtti.data - off
-        return ti, ptr
+        return self._real_typeinfo(), self._data
 
     def _isinstance(self, T: type) -> bool:
         if T is Ptr[Any]:
@@ -192,11 +167,12 @@ class Any:
         raise AttributeError(f"{attr} not found")
 
     def __setattr__(self, attr: Literal[str], value: T, T: type):
-        for name, any in self.members:
+        info, data = self._real_contents()
+        for name, field_info, offset in info:
             if name == attr:
-                if any._typeinfo.id != TypeInfo.cache(T).id:
-                    raise TypeError(f"{attr} type does not match {T}")
-                ptr = Ptr[T](any._data)
+                if field_info.id != TypeInfo.cache(T).id:
+                    raise TypeError(f"{attr} type does not match {TypeInfo.cache(T).nice_name}")
+                ptr = Ptr[T](data + offset)
                 ptr[0] = value
                 return
         raise AttributeError(f"{attr} not found")
@@ -213,7 +189,7 @@ class Any:
         ti, ptr = self._real_contents()
         for name, fti, offset in ti:
             data = ptr + offset
-            if fti._ref:
+            if fti.reference:
                 data = Ptr[Ptr[byte]](data)[0]
             yield name, Any(fti, data)
 

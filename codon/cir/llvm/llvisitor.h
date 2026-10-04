@@ -144,6 +144,12 @@ private:
   std::unordered_map<id_t, llvm::Value *> vars;
   /// LLVM functions corresponding to IR functions
   std::unordered_map<id_t, llvm::Function *> funcs;
+  std::unordered_set<int64_t> emittedTypeInfo;
+  std::unordered_map<int64_t, std::map<size_t, id_t>> emittedTypeMethods;
+  std::vector<std::pair<llvm::GlobalVariable *, llvm::Constant *>> typeInfoUpdates;
+  bool emittedTypeRegistry = false;
+  size_t runtimeInitializerCount = 0;
+  std::string runtimeInitializerName;
   /// Coroutine data, if current function is a coroutine
   CoroData coro;
   /// Loop data stack, containing break/continue blocks
@@ -180,6 +186,18 @@ private:
 
   // Try-catch types and utilities
   llvm::StructType *getTypeInfoType();
+  llvm::StructType *getRuntimeTypeInfoType();
+  llvm::StructType *getOwnLayout(RefType *type);
+  llvm::StructType *getObjectLayout(RefType *type);
+  uint64_t getObjectFieldOffset(RefType *type, size_t index);
+  llvm::GlobalVariable *getRuntimeTypeInfo(Type *type);
+  llvm::GlobalVariable *getRuntimeTypeRegistry();
+  void prepareRuntimeTypeInfo(Module *module);
+  llvm::Value *loadRuntimeField(llvm::Value *info, unsigned field);
+  llvm::Value *getFieldAddress(llvm::Value *object, RefType *type,
+                               const std::string &field);
+  llvm::Value *codegenRuntimeIntrinsic(const InternalFunc *function,
+                                       const std::vector<llvm::Value *> &args);
   llvm::StructType *getPadType();
   llvm::StructType *getExceptionType();
   llvm::GlobalVariable *getTypeIdxVar(Type *catchType);
@@ -296,6 +314,9 @@ public:
   /// @return the current module/context, replaced internally
   std::pair<std::unique_ptr<llvm::Module>, std::unique_ptr<llvm::LLVMContext>>
   takeModule(Module *module, const SrcInfo *src = nullptr);
+  const std::string &getRuntimeInitializerName() const {
+    return runtimeInitializerName;
+  }
 
   /// Sets current debug info based on a given node.
   /// @param node the node whose debug info to use

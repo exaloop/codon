@@ -13,11 +13,13 @@
 
 #include "codon/cir/dsl/codegen.h"
 #include "codon/cir/llvm/optimize.h"
+#include "codon/cir/module.h"
 #include "codon/cir/util/irtools.h"
 #include "codon/compiler/debug_listener.h"
 #include "codon/compiler/memory_manager.h"
 #include "codon/parser/common.h"
 #include "codon/runtime/lib.h"
+#include "codon/runtime/rtti.h"
 #include "codon/util/common.h"
 
 namespace codon {
@@ -338,6 +340,8 @@ LLVMVisitor::takeModule(Module *module, const SrcInfo *src) {
     }
   }
 
+  if (module && options->jit)
+    prepareRuntimeTypeInfo(module);
   db.builder->finalize();
   auto currentContext = std::move(context);
   auto currentModule = std::move(M);
@@ -1741,7 +1745,11 @@ void LLVMVisitor::visit(const InternalFunc *x) {
   B->SetInsertPoint(block);
   llvm::Value *result = nullptr;
 
-  if (internalFuncMatches<GeneratorType, GeneratorType>("__promise__", x)) {
+  if (x->getIntrinsic() != InternalFunc::Intrinsic::NONE) {
+    result = codegenRuntimeIntrinsic(x, args);
+    if (B->GetInsertBlock()->getTerminator())
+      return;
+  } else if (internalFuncMatches<GeneratorType, GeneratorType>("__promise__", x)) {
     auto *generatorType = cast<GeneratorType>(parentType);
     auto *baseType = getLLVMType(generatorType->getBase());
     if (baseType->isVoidTy()) {
@@ -2068,13 +2076,13 @@ void LLVMVisitor::visit(const VarValue *x) {
     value = getFunc(f);
     seqassertn(value, "{} value not found", *x);
   } else {
-    auto *varPtr = getVar(x->getVar());
-    seqassertn(varPtr, "{} value not found", *x);
     auto *llvmType = getLLVMType(x->getType());
     if (!isStorableType(llvmType)) {
       value = getDummyValue(llvmType);
       return;
     }
+    auto *varPtr = getVar(x->getVar());
+    seqassertn(varPtr, "{} value not found", *x);
     B->SetInsertPoint(block);
     if (x->getVar()->isThreadLocal())
       varPtr = B->CreateThreadLocalAddress(varPtr);
@@ -2097,29 +2105,26 @@ void LLVMVisitor::visit(const PointerValue *x) {
   }
 
   auto *type = x->getVar()->getType();
-  std::vector<llvm::Value *> gepIndices = {B->getInt32(0)};
   for (auto &field : x->getFields()) {
     if (auto *ref = cast<RefType>(type)) {
-      auto membIndex = ref->getMemberIndex(field);
       auto membType = ref->getMemberType(field);
-      seqassertn(membIndex >= 0 && membType, "field {} not found in referecne type",
-                 field);
-      gepIndices.push_back(B->getInt32(0));
-      gepIndices.push_back(B->getInt32(membIndex));
+      seqassertn(membType, "field {} not found in reference type", field);
+      auto *object = B->CreateLoad(getLLVMType(ref), var);
+      var = getFieldAddress(object, ref, field);
       type = membType;
     } else if (auto *rec = cast<RecordType>(type)) {
       auto membIndex = rec->getMemberIndex(field);
       auto membType = rec->getMemberType(field);
       seqassertn(membIndex >= 0 && membType, "field {} not found in record type",
                  field);
-      gepIndices.push_back(B->getInt32(membIndex));
+      var = B->CreateStructGEP(getLLVMType(rec), var, membIndex);
       type = membType;
     } else {
       seqassertn(false, "type in pointer value was not a record or reference type");
     }
   }
 
-  value = B->CreateInBoundsGEP(getLLVMType(x->getVar()->getType()), var, gepIndices);
+  value = var;
 }
 
 bool LLVMVisitor::isStorableType(llvm::Type *type) {
@@ -2328,6 +2333,38 @@ llvm::DIType *LLVMVisitor::getDITypeHelper(
   }
 
   if (auto *x = cast<RefType>(t)) {
+    if (x->isPolymorphic()) {
+      auto position = cache.find(x->getName());
+      llvm::DICompositeType *object = nullptr;
+      if (position != cache.end()) {
+        object = position->second;
+      } else {
+        auto *source = getSrcInfo(x);
+        auto *file = db.getFile(source->file);
+        auto *objectLayout = layout.getStructLayout(getObjectLayout(x));
+        std::vector<llvm::Metadata *> members;
+        object = db.builder->createStructType(
+            file, x->getName(), file, source->line, objectLayout->getSizeInBits(), 0,
+            llvm::DINode::FlagZero, nullptr, db.builder->getOrCreateArray(members));
+        cache.emplace(x->getName(), object);
+        auto pointerBits = layout.getPointerSizeInBits();
+        members.push_back(db.builder->createMemberType(
+            object, "typeinfo", file, source->line, pointerBits, 0, 0,
+            llvm::DINode::FlagArtificial,
+            db.builder->createPointerType(nullptr, pointerBits)));
+        size_t index = 0;
+        for (const auto &field : *x) {
+          members.push_back(db.builder->createMemberType(
+              object, field.getName(), file, source->line,
+              layout.getTypeAllocSizeInBits(getLLVMType(field.getType())), 0,
+              getObjectFieldOffset(x, index++) * 8, llvm::DINode::FlagZero,
+              getDITypeHelper(field.getType(), cache)));
+        }
+        db.builder->replaceArrays(object, db.builder->getOrCreateArray(members));
+      }
+      return db.builder->createReferenceType(llvm::dwarf::DW_TAG_reference_type,
+                                             object);
+    }
     auto *ref = db.builder->createReferenceType(
         llvm::dwarf::DW_TAG_reference_type, getDITypeHelper(x->getContents(), cache));
     return ref;
@@ -3238,11 +3275,9 @@ void LLVMVisitor::visit(const ExtractInstr *x) {
   process(x->getVal());
   B->SetInsertPoint(block);
   if (auto *refType = cast<RefType>(memberedType)) {
-    if (refType->isPolymorphic()) {
-      // polymorphic ref type is ref to (data, rtti)
-      value = B->CreateLoad(B->getPtrTy(), value);
-    }
-    value = B->CreateLoad(getLLVMType(refType->getContents()), value);
+    auto *address = getFieldAddress(value, refType, x->getField());
+    value = B->CreateLoad(getLLVMType(x->getType()), address);
+    return;
   }
   value = B->CreateExtractValue(value, index);
 }
@@ -3259,13 +3294,9 @@ void LLVMVisitor::visit(const InsertInstr *x) {
   auto *rhs = value;
 
   B->SetInsertPoint(block);
-  if (refType->isPolymorphic()) {
-    // polymorphic ref type is ref to (data, rtti)
-    lhs = B->CreateLoad(B->getPtrTy(), lhs);
-  }
-  llvm::Value *load = B->CreateLoad(getLLVMType(refType->getContents()), lhs);
-  load = B->CreateInsertValue(load, rhs, index);
-  B->CreateStore(load, lhs);
+  auto *address = getFieldAddress(lhs, refType, x->getField());
+  B->CreateStore(rhs, address);
+  value = lhs;
 }
 
 void LLVMVisitor::visit(const CallInstr *x) {
@@ -3511,6 +3542,363 @@ void LLVMVisitor::visit(const FlowInstr *x) {
 void LLVMVisitor::visit(const dsl::CustomInstr *x) {
   B->SetInsertPoint(block);
   value = x->getBuilder()->buildValue(this);
+}
+
+llvm::StructType *LLVMVisitor::getRuntimeTypeInfoType() {
+  auto *integer = B->getInt64Ty();
+  auto *pointer = B->getPtrTy();
+  auto *string = llvm::StructType::get(*context, {pointer, integer});
+  return llvm::StructType::get(
+      *context, {integer, integer, pointer, pointer, pointer, integer, pointer, integer,
+                 pointer, B->getInt8Ty(), string, string, string, integer, pointer,
+                 integer, B->getInt8Ty(), integer, integer});
+}
+
+llvm::StructType *LLVMVisitor::getOwnLayout(RefType *type) {
+  auto *info = type->getRuntimeInfo();
+  seqassertn(info, "missing runtime metadata for {}", type->getName());
+  std::vector<llvm::Type *> fields;
+  size_t index = 0;
+  for (const auto &field : *type) {
+    if (info->fieldOwners.at(index++) == type)
+      fields.push_back(getLLVMType(field.getType()));
+  }
+  return llvm::StructType::get(*context, fields);
+}
+
+llvm::StructType *LLVMVisitor::getObjectLayout(RefType *type) {
+  if (!type->isPolymorphic())
+    return llvm::cast<llvm::StructType>(getLLVMType(type->getContents()));
+  auto *info = type->getRuntimeInfo();
+  seqassertn(info, "missing runtime metadata for {}", type->getName());
+  std::vector<llvm::Type *> fields{B->getPtrTy()};
+  for (auto *base : info->mro)
+    fields.push_back(getOwnLayout(cast<RefType>(base)));
+  return llvm::StructType::get(*context, fields);
+}
+
+uint64_t LLVMVisitor::getObjectFieldOffset(RefType *type, size_t index) {
+  const auto &layout = M->getDataLayout();
+  if (!type->isPolymorphic())
+    return layout.getStructLayout(getObjectLayout(type))->getElementOffset(index);
+  auto *info = type->getRuntimeInfo();
+  auto *owner = cast<RefType>(info->fieldOwners.at(index));
+  size_t localIndex = 0;
+  for (size_t previous = 0; previous < index; ++previous)
+    localIndex += info->fieldOwners[previous] == owner;
+  auto position = std::find(info->mro.begin(), info->mro.end(), owner);
+  seqassertn(position != info->mro.end(), "field owner missing from MRO");
+  return layout.getStructLayout(getObjectLayout(type))
+             ->getElementOffset(1 + std::distance(info->mro.begin(), position)) +
+         layout.getStructLayout(getOwnLayout(owner))->getElementOffset(localIndex);
+}
+
+llvm::GlobalVariable *LLVMVisitor::getRuntimeTypeInfo(Type *type) {
+  auto *info = type->getRuntimeInfo();
+  seqassertn(info, "missing runtime metadata for {}", type->getName());
+  auto name = fmt::format(".codon.typeinfo.{}", info->id);
+  if (auto *existing = M->getNamedGlobal(name))
+    return existing;
+  auto *result =
+      new llvm::GlobalVariable(*M, getRuntimeTypeInfoType(), !options->jit,
+                               options->jit ? llvm::GlobalValue::ExternalLinkage
+                                            : llvm::GlobalValue::PrivateLinkage,
+                               nullptr, name);
+  bool previouslyEmitted = emittedTypeInfo.count(info->id);
+  std::map<size_t, id_t> methodIds;
+  for (const auto &[id, target] : info->methods)
+    methodIds[id] = target->getId();
+  if (options->jit && previouslyEmitted && emittedTypeMethods[info->id] == methodIds)
+    return result;
+
+  auto array = [&](llvm::Type *element, const std::vector<llvm::Constant *> &values,
+                   const std::string &suffix) -> llvm::Constant * {
+    if (values.empty())
+      return llvm::ConstantPointerNull::get(B->getPtrTy());
+    auto *arrayType = llvm::ArrayType::get(element, values.size());
+    return new llvm::GlobalVariable(
+        *M, arrayType, true, llvm::GlobalValue::PrivateLinkage,
+        llvm::ConstantArray::get(arrayType, values), name + suffix);
+  };
+  auto string = [&](const std::string &text) {
+    visit(cast<StringConst>(type->getModule()->getString(text)));
+    return llvm::cast<llvm::Constant>(value);
+  };
+  auto *reference = cast<RefType>(type);
+  auto *members = cast<MemberedType>(type);
+  auto polymorphic = reference && reference->isPolymorphic();
+  int64_t exceptionOffset = -1, systemExitOffset = -1;
+  std::vector<llvm::Constant *> mro, offsets, sortedMro, slots, parameters;
+  for (size_t index = 0; index < info->mro.size(); ++index) {
+    mro.push_back(B->getInt64(info->mro[index]->getRuntimeInfo()->id));
+    auto offset = polymorphic ? M->getDataLayout()
+                                    .getStructLayout(getObjectLayout(reference))
+                                    ->getElementOffset(index + 1)
+                              : 0;
+    offsets.push_back(B->getInt64(offset));
+    if (info->mro[index] == info->exceptionBase)
+      exceptionOffset = offset;
+    if (info->mro[index] == info->systemExitBase)
+      systemExitOffset = offset;
+  }
+  sortedMro = mro;
+  std::sort(sortedMro.begin(), sortedMro.end(), [](auto *first, auto *second) {
+    return llvm::cast<llvm::ConstantInt>(first)->getZExtValue() <
+           llvm::cast<llvm::ConstantInt>(second)->getZExtValue();
+  });
+  auto *stringType = llvm::StructType::get(*context, {B->getPtrTy(), B->getInt64Ty()});
+  auto *slotType =
+      llvm::StructType::get(*context, {stringType, B->getInt64Ty(), B->getInt64Ty()});
+  if (members) {
+    size_t index = 0;
+    for (const auto &field : *members) {
+      auto *fieldInfo = field.getType()->getRuntimeInfo();
+      seqassertn(fieldInfo, "missing field metadata for {}",
+                 field.getType()->getName());
+      auto offset =
+          reference
+              ? getObjectFieldOffset(reference, index)
+              : M->getDataLayout()
+                    .getStructLayout(llvm::cast<llvm::StructType>(getLLVMType(type)))
+                    ->getElementOffset(index);
+      slots.push_back(llvm::ConstantStruct::get(slotType, string(field.getName()),
+                                                B->getInt64(fieldInfo->id),
+                                                B->getInt64(offset)));
+      ++index;
+    }
+  }
+  if (auto *optional = cast<OptionalType>(type)) {
+    auto *base = optional->getBase();
+    auto *baseInfo = base->getRuntimeInfo();
+    seqassertn(baseInfo, "missing optional element metadata");
+    auto *representation = getLLVMType(type);
+    auto offset =
+        llvm::isa<llvm::StructType>(representation)
+            ? M->getDataLayout()
+                  .getStructLayout(llvm::cast<llvm::StructType>(representation))
+                  ->getElementOffset(1)
+            : 0;
+    slots.push_back(llvm::ConstantStruct::get(
+        slotType, string("value"), B->getInt64(baseInfo->id), B->getInt64(offset)));
+  }
+  for (auto *parameter : info->parameters) {
+    auto *parameterInfo = parameter->getRuntimeInfo();
+    seqassertn(parameterInfo, "missing generic metadata for {}", parameter->getName());
+    parameters.push_back(B->getInt64(parameterInfo->id));
+  }
+  size_t methodCount = info->methods.empty() ? 0 : info->methods.rbegin()->first + 1;
+  std::vector<llvm::Constant *> methods(methodCount,
+                                        llvm::ConstantPointerNull::get(B->getPtrTy()));
+  for (const auto &[id, target] : info->methods) {
+    auto *function = getFunc(target);
+    seqassertn(function, "missing dispatch target {}", target->getName());
+    methods[id] = function;
+  }
+  auto *initializer = llvm::ConstantStruct::get(
+      getRuntimeTypeInfoType(),
+      {B->getInt64(info->id), B->getInt64(mro.size()),
+       array(B->getInt64Ty(), mro, ".mro"), array(B->getInt64Ty(), offsets, ".offsets"),
+       array(B->getInt64Ty(), sortedMro, ".sorted"), B->getInt64(slots.size()),
+       array(slotType, slots, ".slots"), B->getInt64(methodCount),
+       array(B->getPtrTy(), methods, ".methods"), B->getInt8(polymorphic),
+       string(info->rawName), string(info->niceName), string(info->baseName),
+       B->getInt64(parameters.size()), array(B->getInt64Ty(), parameters, ".params"),
+       B->getInt64(M->getDataLayout().getTypeAllocSize(getLLVMType(type))),
+       B->getInt8(reference != nullptr), B->getInt64(exceptionOffset),
+       B->getInt64(systemExitOffset)});
+  if (options->jit && previouslyEmitted)
+    typeInfoUpdates.emplace_back(result, initializer);
+  else
+    result->setInitializer(initializer);
+  emittedTypeInfo.insert(info->id);
+  emittedTypeMethods[info->id] = std::move(methodIds);
+  return result;
+}
+
+llvm::GlobalVariable *LLVMVisitor::getRuntimeTypeRegistry() {
+  const std::string name = ".codon.typeinfo.registry";
+  if (auto *existing = M->getNamedGlobal(name))
+    return existing;
+  auto *type = llvm::StructType::get(*context, {B->getInt64Ty(), B->getPtrTy()});
+  auto *result = new llvm::GlobalVariable(
+      *M, type, false, llvm::GlobalValue::ExternalLinkage,
+      emittedTypeRegistry ? nullptr : llvm::Constant::getNullValue(type), name);
+  emittedTypeRegistry = true;
+  return result;
+}
+
+void LLVMVisitor::prepareRuntimeTypeInfo(Module *module) {
+  std::vector<llvm::Constant *> entries;
+  for (auto iterator = module->types_begin(); iterator != module->types_end();
+       ++iterator) {
+    auto *type = *iterator;
+    auto *info = type->getRuntimeInfo();
+    if (!info)
+      continue;
+    if (entries.size() <= info->id)
+      entries.resize(info->id + 1, llvm::ConstantPointerNull::get(B->getPtrTy()));
+    entries[info->id] = getRuntimeTypeInfo(type);
+  }
+  auto *arrayType = llvm::ArrayType::get(B->getPtrTy(), entries.size());
+  auto *table = new llvm::GlobalVariable(
+      *M, arrayType, true, llvm::GlobalValue::PrivateLinkage,
+      llvm::ConstantArray::get(arrayType, entries), ".codon.typeinfo.table");
+  auto *registry = getRuntimeTypeRegistry();
+  runtimeInitializerName =
+      fmt::format(".codon.typeinfo.initialize.{}", runtimeInitializerCount++);
+  auto *initializer = llvm::Function::Create(
+      llvm::FunctionType::get(B->getVoidTy(), false),
+      llvm::GlobalValue::ExternalLinkage, runtimeInitializerName, M.get());
+  llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", initializer));
+  for (const auto &[destination, contents] : typeInfoUpdates)
+    builder.CreateStore(contents, destination);
+  builder.CreateStore(
+      llvm::ConstantStruct::get(llvm::cast<llvm::StructType>(registry->getValueType()),
+                                B->getInt64(entries.size()), table),
+      registry);
+  builder.CreateRetVoid();
+  typeInfoUpdates.clear();
+}
+
+llvm::Value *LLVMVisitor::loadRuntimeField(llvm::Value *info, unsigned field) {
+  auto *type = getRuntimeTypeInfoType();
+  return B->CreateLoad(type->getElementType(field),
+                       B->CreateStructGEP(type, info, field));
+}
+
+llvm::Value *LLVMVisitor::getFieldAddress(llvm::Value *object, RefType *type,
+                                          const std::string &field) {
+  auto index = type->getMemberIndex(field);
+  seqassertn(index >= 0, "unknown field {} of {}", field, type->getName());
+  if (!type->isPolymorphic())
+    return B->CreateStructGEP(getObjectLayout(type), object, index);
+  auto *metadata = type->getRuntimeInfo();
+  auto *owner = cast<RefType>(metadata->fieldOwners.at(index));
+  size_t localIndex = 0;
+  for (int previous = 0; previous < index; ++previous)
+    localIndex += metadata->fieldOwners[previous] == owner;
+  auto localOffset = M->getDataLayout()
+                         .getStructLayout(getOwnLayout(owner))
+                         ->getElementOffset(localIndex);
+  auto *info = B->CreateLoad(B->getPtrTy(), object);
+  auto *count = loadRuntimeField(info, runtime::MRO_COUNT);
+  auto *ids = loadRuntimeField(info, runtime::MRO_IDS);
+  auto *offsets = loadRuntimeField(info, runtime::MRO_OFFSETS);
+  auto *entry = block;
+  auto *loop = llvm::BasicBlock::Create(*context, "field.mro", func);
+  auto *check = llvm::BasicBlock::Create(*context, "field.check", func);
+  auto *next = llvm::BasicBlock::Create(*context, "field.next", func);
+  auto *found = llvm::BasicBlock::Create(*context, "field.found", func);
+  auto *missing = llvm::BasicBlock::Create(*context, "field.missing", func);
+  B->CreateBr(loop);
+  B->SetInsertPoint(loop);
+  auto *position = B->CreatePHI(B->getInt64Ty(), 2);
+  position->addIncoming(B->getInt64(0), entry);
+  B->CreateCondBr(B->CreateICmpULT(position, count), check, missing);
+  B->SetInsertPoint(check);
+  auto *id =
+      B->CreateLoad(B->getInt64Ty(), B->CreateGEP(B->getInt64Ty(), ids, position));
+  B->CreateCondBr(B->CreateICmpEQ(id, B->getInt64(owner->getRuntimeInfo()->id)), found,
+                  next);
+  B->SetInsertPoint(next);
+  position->addIncoming(B->CreateAdd(position, B->getInt64(1)), next);
+  B->CreateBr(loop);
+  B->SetInsertPoint(missing);
+  B->CreateCall(llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::trap));
+  B->CreateUnreachable();
+  B->SetInsertPoint(found);
+  block = found;
+  auto *offset =
+      B->CreateLoad(B->getInt64Ty(), B->CreateGEP(B->getInt64Ty(), offsets, position));
+  return B->CreateGEP(B->getInt8Ty(), object,
+                      B->CreateAdd(offset, B->getInt64(localOffset)));
+}
+
+llvm::Value *
+LLVMVisitor::codegenRuntimeIntrinsic(const InternalFunc *function,
+                                     const std::vector<llvm::Value *> &args) {
+  using Intrinsic = InternalFunc::Intrinsic;
+  switch (function->getIntrinsic()) {
+  case Intrinsic::ALLOCATION_SIZE: {
+    auto *type = cast<RefType>(function->getIntrinsicType());
+    seqassertn(type, "allocation size requires a reference type");
+    return B->getInt64(M->getDataLayout().getTypeAllocSize(getObjectLayout(type)));
+  }
+  case Intrinsic::ALLOCATE: {
+    auto *type = cast<RefType>(function->getIntrinsicType());
+    seqassertn(type, "reference allocation requires a reference type");
+    auto size = M->getDataLayout().getTypeAllocSize(getObjectLayout(type));
+    auto *object = B->CreateCall(makeAllocFunc(type->isContentAtomic()),
+                                 B->getInt64(std::max<uint64_t>(1, size)));
+    if (type->isPolymorphic())
+      B->CreateStore(getRuntimeTypeInfo(type), object);
+    return object;
+  }
+  case Intrinsic::TYPEINFO:
+    return getRuntimeTypeInfo(function->getIntrinsicType());
+  case Intrinsic::TYPEINFO_LOOKUP: {
+    if (options->jit) {
+      auto *registry = getRuntimeTypeRegistry();
+      auto *type = llvm::cast<llvm::StructType>(registry->getValueType());
+      auto *count =
+          B->CreateLoad(B->getInt64Ty(), B->CreateStructGEP(type, registry, 0));
+      auto *valid = llvm::BasicBlock::Create(*context, "typeinfo.valid", func);
+      auto *found = llvm::BasicBlock::Create(*context, "typeinfo.found", func);
+      auto *missing = llvm::BasicBlock::Create(*context, "typeinfo.missing", func);
+      B->CreateCondBr(B->CreateICmpULT(args.at(0), count), valid, missing);
+      B->SetInsertPoint(valid);
+      auto *table = B->CreateLoad(B->getPtrTy(), B->CreateStructGEP(type, registry, 1));
+      auto *info =
+          B->CreateLoad(B->getPtrTy(), B->CreateGEP(B->getPtrTy(), table, args.at(0)));
+      B->CreateCondBr(B->CreateIsNotNull(info), found, missing);
+      B->SetInsertPoint(missing);
+      B->CreateCall(llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::trap));
+      B->CreateUnreachable();
+      B->SetInsertPoint(found);
+      block = found;
+      return info;
+    }
+    auto *missing = llvm::BasicBlock::Create(*context, "typeinfo.missing", func);
+    auto *selection = B->CreateSwitch(args.at(0), missing);
+    for (auto iterator = function->getModule()->types_begin();
+         iterator != function->getModule()->types_end(); ++iterator) {
+      auto *type = *iterator;
+      if (!type->getRuntimeInfo())
+        continue;
+      auto *found = llvm::BasicBlock::Create(*context, "typeinfo.found", func);
+      selection->addCase(B->getInt64(type->getRuntimeInfo()->id), found);
+      B->SetInsertPoint(found);
+      block = found;
+      B->CreateRet(getRuntimeTypeInfo(type));
+    }
+    B->SetInsertPoint(missing);
+    block = missing;
+    B->CreateCall(llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::trap));
+    B->CreateUnreachable();
+    return nullptr;
+  }
+  case Intrinsic::VIRTUAL_LOOKUP: {
+    auto *info = B->CreateLoad(B->getPtrTy(), args.at(0));
+    auto *count = loadRuntimeField(info, runtime::METHOD_COUNT);
+    auto *valid = llvm::BasicBlock::Create(*context, "method.valid", func);
+    auto *missing = llvm::BasicBlock::Create(*context, "method.missing", func);
+    auto *found = llvm::BasicBlock::Create(*context, "method.found", func);
+    B->CreateCondBr(B->CreateICmpULT(args.at(1), count), valid, missing);
+    B->SetInsertPoint(valid);
+    auto *methods = loadRuntimeField(info, runtime::METHODS);
+    auto *target =
+        B->CreateLoad(B->getPtrTy(), B->CreateGEP(B->getPtrTy(), methods, args.at(1)));
+    B->CreateCondBr(B->CreateIsNotNull(target), found, missing);
+    B->SetInsertPoint(missing);
+    B->CreateCall(llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::trap));
+    B->CreateUnreachable();
+    B->SetInsertPoint(found);
+    block = found;
+    return target;
+  }
+  default:
+    return nullptr;
+  }
 }
 
 } // namespace ir

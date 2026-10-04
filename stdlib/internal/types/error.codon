@@ -29,8 +29,7 @@ class BaseException(object):
 
     @property
     def typename(self):
-        p = Ptr[Tuple[cobj, TypeInfo]](self.__raw__())
-        return p[0][1].nice_name
+        return get_typeinfo(self).nice_name
 
     @property
     def __cause__(self):

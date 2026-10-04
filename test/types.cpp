@@ -102,6 +102,68 @@ TEST(JITOptionsTest, ReportsPluginInitializationErrors) {
   free(result.error);
 }
 
+TEST(JITRTTITest, RefreshesDescriptorsAndLookupAcrossCells) {
+  for (bool debug : {false, true}) {
+    auto options = codon::Options::getDefault("build/codon_test");
+    options->jit = true;
+    options->debug = debug;
+    options->capture = true;
+    codon::jit::JIT instance(*options);
+    auto error = instance.init();
+    ASSERT_FALSE(bool(error)) << llvm::toString(std::move(error));
+    auto first =
+        instance.execute("class CellPlain:\n"
+                         "    value: int\n"
+                         "plain = CellPlain(41)\n"
+                         "assert not TypeInfo.cache(CellPlain).rtti\n"
+                         "assert type._ref_size(CellPlain) == int.__elemsize__\n"
+                         "def increment_plain(value: CellPlain):\n"
+                         "    value.value += 1\n"
+                         "    return value.value\n"
+                         "assert increment_plain(plain) == 42\n"
+                         R"(
+class CellBase:
+    def method(self): return 1
+class CellChild(CellBase):
+    def method(self): return 42
+old_object = CellChild()
+base: CellBase = old_object
+old_info = TypeInfo.cache(CellChild)
+def lookup_id(type_id: int):
+    return TypeInfo.cache(type_id).id
+assert lookup_id(CellChild.__id__) == CellChild.__id__
+print("first")
+)");
+    ASSERT_TRUE(bool(first)) << llvm::toString(first.takeError());
+    EXPECT_EQ(*first, "first\n");
+    auto second =
+        instance.execute("assert not TypeInfo.cache(CellPlain).rtti\n"
+                         "assert type._ref_size(CellPlain) == int.__elemsize__\n"
+                         "assert __ptr__(plain.value) == "
+                         "type._force_cast(__magic__.raw(plain), Ptr[int])\n"
+                         "assert increment_plain(plain) == 43\n"
+                         R"(
+assert TypeInfo.cache(CellChild).__raw__() == old_info.__raw__()
+assert get_typeinfo(base).__raw__() == old_info.__raw__()
+assert base.method() == 42
+class CellLater(CellBase):
+    def method(self): return 43
+later: CellBase = CellLater()
+assert later.method() == 43
+assert lookup_id(CellLater.__id__) == CellLater.__id__
+assert base.method() == 42
+print("second")
+)");
+    ASSERT_TRUE(bool(second)) << llvm::toString(second.takeError());
+    EXPECT_EQ(*second, "second\n");
+    auto rejected = instance.execute("class CellBadChild(CellPlain):\n    pass\n");
+    ASSERT_FALSE(bool(rejected));
+    EXPECT_NE(llvm::toString(rejected.takeError())
+                  .find("cannot inherit from a non-RTTI class"),
+              std::string::npos);
+  }
+}
+
 TEST(JITOptionsTest, CollectsAfterJITTeardown) {
   ASSERT_EXIT(
       {

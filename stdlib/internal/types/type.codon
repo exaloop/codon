@@ -45,17 +45,24 @@ class type:
 
         ret ptr %obj
 
+    @__internal__
+    def _ref_alloc(T: type) -> T:
+        pass
+
+    @__internal__
+    def _ref_size(T: type) -> int:
+        pass
+
     def _ref_new(T: type) -> T:
         """
         Allocates a new reference (class) object.
         """
 
-        from internal.gc import alloc, alloc_atomic, sizeof, register_finalizer
+        from internal.gc import register_finalizer
 
-        sz = sizeof(tuple(T))
-        obj = alloc_atomic(sz) if T.__contents_atomic__ else alloc(sz)
-        register_finalizer(type._force_cast(obj, T))
-        return type._force_cast(obj, T)
+        obj = type._ref_alloc(T)
+        register_finalizer(obj)
+        return obj
 
     def _construct(T: type, *args, **kwargs) -> T:
         """
@@ -84,11 +91,17 @@ class type:
         Gets offset of i-th element in a class. Respects aliasing rules.
         Returns the size of class if i is >= the number of fields.
         """
-        TT: type = tuple(T)
-        if i >= static.len(TT):
-            return TT.__elemsize__
+        if isinstance(T, ByVal):
+            TT: type = tuple(T)
+            if i >= static.len(TT):
+                return TT.__elemsize__
+            else:
+                return type._get_element_offset(TT, i)
         else:
-            return type._get_element_offset(TT, i)
+            info = TypeInfo.cache(T)
+            if i >= info.n_slots:
+                return type._ref_size(T)
+            return info.slots[i][2]
 
     @inline
     def _cls_ptr(obj):

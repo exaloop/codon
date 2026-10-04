@@ -238,6 +238,8 @@ struct Cache {
   Class *getClass(const types::ClassType *);
 
   std::map<std::string, size_t> thunkIds;
+  std::map<size_t, std::shared_ptr<types::FuncType>> superCalls;
+  std::map<size_t, std::shared_ptr<types::FuncType>> superCallSignatures;
 
   struct Function {
     /// Module information

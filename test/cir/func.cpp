@@ -92,6 +92,37 @@ TEST_F(CIRCoreTest, InternalFuncParentTypeUnmangledNameAndCloning) {
   ASSERT_EQ("fn", fn->getUnmangledName());
   ASSERT_EQ(fn->getParentType(), module->getIntType());
   ASSERT_TRUE(util::match(fn, cv->clone(fn)));
+  fn->setIntrinsic(InternalFunc::Intrinsic::TYPEINFO, module->getBoolType());
+  auto *cloned = cast<InternalFunc>(cv->forceClone(fn));
+  ASSERT_NE(cloned, fn);
+  ASSERT_EQ(cloned->getIntrinsic(), InternalFunc::Intrinsic::TYPEINFO);
+  ASSERT_EQ(cloned->getIntrinsicType(), module->getBoolType());
+  ASSERT_TRUE(util::match(fn, cloned));
+  cloned->setIntrinsic(InternalFunc::Intrinsic::ALLOCATE, module->getBoolType());
+  ASSERT_FALSE(util::match(fn, cloned));
+  cloned->setIntrinsic(InternalFunc::Intrinsic::TYPEINFO, module->getIntType());
+  ASSERT_FALSE(util::match(fn, cloned));
+  ASSERT_EQ(fn->replaceUsedType(module->getBoolType(), module->getIntType()), 1);
+  ASSERT_EQ(fn->getIntrinsicType(), module->getIntType());
+}
+
+TEST_F(CIRCoreTest, RuntimeMetadataDependencies) {
+  auto *type = module->unsafeGetMemberedType("runtime.dependencies", true);
+  auto *method = module->Nr<BodiedFunc>("runtime.method");
+  auto *replacement = module->Nr<BodiedFunc>("runtime.replacement");
+  Type::RuntimeInfo info;
+  info.mro = {type, module->getIntType()};
+  info.parameters = {module->getBoolType()};
+  info.methods[1] = method;
+  type->setRuntimeInfo(std::move(info));
+  auto types = type->getUsedTypes();
+  ASSERT_NE(std::find(types.begin(), types.end(), module->getIntType()), types.end());
+  ASSERT_NE(std::find(types.begin(), types.end(), module->getBoolType()), types.end());
+  ASSERT_EQ(type->getUsedVariables(), std::vector<Var *>{method});
+  ASSERT_EQ(type->replaceUsedVariable(method, replacement), 1);
+  ASSERT_EQ(type->getRuntimeInfo()->methods.at(1), replacement);
+  ASSERT_EQ(type->replaceUsedVariable(replacement, nullptr), 1);
+  ASSERT_TRUE(type->getUsedVariables().empty());
 }
 
 TEST_F(CIRCoreTest, LLVMFuncUnmangledNameQueryAndReplace) {
@@ -101,6 +132,7 @@ TEST_F(CIRCoreTest, LLVMFuncUnmangledNameQueryAndReplace) {
 
   fn->setLLVMBody("body");
   fn->setLLVMDeclarations("decl");
+  fn->setParentType(module->getIntType());
 
   std::vector<Generic> literals = {Generic(1), Generic(module->getIntType())};
   fn->setLLVMLiterals(literals);
@@ -108,6 +140,31 @@ TEST_F(CIRCoreTest, LLVMFuncUnmangledNameQueryAndReplace) {
   ASSERT_EQ("body", fn->getLLVMBody());
   ASSERT_EQ("decl", fn->getLLVMDeclarations());
 
-  ASSERT_EQ(1, fn->replaceUsedType(module->getIntType(), module->getFloatType()));
+  std::vector<Type *> expectedTypes = {fn->getType(), module->getIntType(),
+                                       module->getIntType()};
+  ASSERT_EQ(expectedTypes, fn->getUsedTypes());
+  ASSERT_EQ(2, fn->replaceUsedType(module->getIntType(), module->getFloatType()));
+  ASSERT_EQ(module->getFloatType(), fn->getParentType());
   ASSERT_EQ(module->getFloatType(), fn->literal_back().getTypeValue());
+  expectedTypes[1] = expectedTypes[2] = module->getFloatType();
+  ASSERT_EQ(expectedTypes, fn->getUsedTypes());
+
+  auto *alias = module->Nr<Var>(module->getBoolType());
+  auto *forwarder = module->Nr<Var>(module->getIntType());
+  alias->replaceAll(forwarder);
+  forwarder->replaceAll(fn);
+  const Node *replacedNode = alias;
+  ASSERT_EQ(expectedTypes, replacedNode->getUsedTypes());
+  ASSERT_EQ(2, alias->replaceUsedType(module->getFloatType(), module->getBoolType()));
+  ASSERT_EQ(module->getBoolType(), fn->getParentType());
+  ASSERT_EQ(module->getBoolType(), fn->literal_back().getTypeValue());
+  expectedTypes[1] = expectedTypes[2] = module->getBoolType();
+  ASSERT_EQ(expectedTypes, replacedNode->getUsedTypes());
+
+  auto *replacementType =
+      module->unsafeGetFuncType("<replacement_func_type>", module->getBoolType(), {});
+  ASSERT_EQ(1, alias->replaceUsedType(fn->getType(), replacementType));
+  ASSERT_EQ(replacementType, fn->getType());
+  expectedTypes[0] = replacementType;
+  ASSERT_EQ(expectedTypes, replacedNode->getUsedTypes());
 }

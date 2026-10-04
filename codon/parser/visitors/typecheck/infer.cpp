@@ -323,6 +323,43 @@ types::Type *TypecheckVisitor::realizeType(types::ClassType *type) {
     }
   }
 
+  ir::Type::RuntimeInfo runtimeInfo;
+  runtimeInfo.id = realization->id;
+  runtimeInfo.rawName = rt->realizedName();
+  runtimeInfo.niceName = rt->prettyString();
+  runtimeInfo.baseName = rt->name;
+  runtimeInfo.mro.push_back(lt);
+  for (const auto &base : realization->bases) {
+    auto baseType = realize(base.get())->getClass();
+    runtimeInfo.mro.push_back(makeIRType(baseType));
+  }
+  for (auto *base : runtimeInfo.mro) {
+    auto baseName = base->getAstType()->getClass()->name;
+    if (baseName == StdlibTypes::BaseException)
+      runtimeInfo.exceptionBase = base;
+    if (baseName == getMangledClass("std.internal.types.error", "SystemExit"))
+      runtimeInfo.systemExitBase = base;
+  }
+  for (const auto &field : fields) {
+    auto *owner = lt;
+    for (auto *base : runtimeInfo.mro) {
+      if (base->getAstType()->getClass()->name == field.baseClass) {
+        owner = base;
+        break;
+      }
+    }
+    runtimeInfo.fieldOwners.push_back(owner);
+  }
+  if (!type->is(StdlibTypes::UnrealizedType)) {
+    for (const auto &generic : rt->generics) {
+      auto *parameter = generic.getType();
+      if (auto *literal = parameter->getStatic())
+        parameter = literal->getNonStaticType();
+      runtimeInfo.parameters.push_back(makeIRType(parameter->getClass()));
+    }
+  }
+  lt->setRuntimeInfo(std::move(runtimeInfo));
+
   return rt.get();
 }
 
@@ -605,7 +642,8 @@ ir::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
   } else if (t->name == "bytes") {
     handle = module->getBytesType();
   } else if (t->name == StdlibTypes::Int || t->name == StdlibTypes::UInt) {
-    handle = module->unsafeGetIntType(getIntLiteral(statics[0]), t->name == StdlibTypes::Int);
+    handle = module->unsafeGetIntType(getIntLiteral(statics[0]),
+                                      t->name == StdlibTypes::Int);
   } else if (t->name == StdlibTypes::Ptr) {
     seqassert(types.size() == 1, "bad generics/statics");
     handle = module->unsafeGetPointerType(types[0]);
@@ -747,6 +785,20 @@ ir::Func *TypecheckVisitor::makeIRFunction(
                                        types, r->ast->hasAttribute(Attr::CVarArg));
   irType->setAstType(r->type->shared_from_this());
   fn->realize(irType, names);
+  if (auto *internal = ir::cast<ir::InternalFunc>(fn)) {
+    if (r->type->getFuncName() == getMangledMethod("", "type", "_ref_alloc")) {
+      internal->setIntrinsic(ir::InternalFunc::Intrinsic::ALLOCATE,
+                             ir::cast<ir::FuncType>(irType)->getReturnType());
+    } else if (r->type->getFuncName() == getMangledMethod("", "type", "_ref_size")) {
+      internal->setIntrinsic(ir::InternalFunc::Intrinsic::ALLOCATION_SIZE,
+                             makeIRType(extractFuncGeneric(r->getType())->getClass()));
+    } else if (r->type->getFuncName() == getMangledMethod("", "TypeInfo", "_get")) {
+      internal->setIntrinsic(ir::InternalFunc::Intrinsic::TYPEINFO,
+                             makeIRType(extractFuncGeneric(r->getType())->getClass()));
+    } else if (r->type->getFuncName() == getMangledMethod("", "TypeInfo", "_lookup")) {
+      internal->setIntrinsic(ir::InternalFunc::Intrinsic::TYPEINFO_LOOKUP);
+    }
+  }
   return fn;
 }
 

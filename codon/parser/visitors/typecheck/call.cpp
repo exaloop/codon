@@ -211,7 +211,8 @@ void TypecheckVisitor::visit(CallExpr *expr) {
         newArgs.back()->setAttribute(Attr::ExprSequenceItem);
       }
     newArgs.push_back(part.args);
-    auto partialCall = generatePartialCall(part.known, calleeFn->getFunc(),
+    auto mask = expr->hasAttribute(Attr::ExprVirtual) ? "v" + part.known : part.known;
+    auto partialCall = generatePartialCall(mask, calleeFn->getFunc(),
                                            N<TupleExpr>(newArgs), part.kwArgs);
     std::string var = getTemporaryVar("part");
     Expr *call = nullptr;
@@ -229,8 +230,11 @@ void TypecheckVisitor::visit(CallExpr *expr) {
   } else {
     // Case: normal function call
     unify(expr->getType(), calleeFn->getRetType());
-    if (done)
+    if (done) {
+      if (auto *thunk = expr->getAttribute<ir::IntValueAttribute>(Attr::ExprThunkId))
+        ctx->cache->superCallSignatures[thunk->value] = calleeFn;
       expr->setDone();
+    }
   }
 }
 
@@ -401,6 +405,8 @@ TypecheckVisitor::getCalleeFn(CallExpr *expr, PartialCallData &part) {
 
   if (auto partType = callee->getPartial()) {
     auto mask = partType->getPartialMask();
+    if (partType->isPartialVirtual())
+      expr->setAttribute(Attr::ExprVirtual);
     auto genFn = partType->getPartialFunc()->generalize(0);
     auto calleeFn =
         std::static_pointer_cast<types::FuncType>(instantiateType(genFn.get()));

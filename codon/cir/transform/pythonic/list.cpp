@@ -18,7 +18,8 @@ bool isList(Value *v) {
   return v->getType()->getName().rfind(ast::StdlibTypes::List + "[", 0) == 0;
 }
 bool isSlice(Value *v) {
-  return v->getType()->getName() == ast::StdlibTypes::Slice + "[Int[64],Int[64],Int[64]]";
+  return v->getType()->getName() ==
+         ast::StdlibTypes::Slice + "[Int[64],Int[64],Int[64]]";
 }
 
 // The following "handlers" account for the possible sub-expressions we might

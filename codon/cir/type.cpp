@@ -28,6 +28,61 @@ extractTypes(const std::vector<codon::ast::types::ClassType::Generic> &gens) {
 
 const char Type::NodeId = 0;
 
+std::vector<Type *> Type::getUsedTypes() const {
+  auto result = getActual()->doGetUsedTypes();
+  if (auto *info = getRuntimeInfo()) {
+    auto append = [&](Type *type) {
+      if (type && type != getActual() &&
+          std::find(result.begin(), result.end(), type) == result.end())
+        result.push_back(type);
+    };
+    for (auto *type : info->mro)
+      append(type);
+    for (auto *type : info->fieldOwners)
+      append(type);
+    for (auto *type : info->parameters)
+      append(type);
+    append(info->exceptionBase);
+    append(info->systemExitBase);
+  }
+  return result;
+}
+
+std::vector<Var *> Type::getUsedVariables() {
+  std::vector<Var *> result;
+  if (auto *info = getRuntimeInfo())
+    for (const auto &[id, function] : info->methods)
+      result.push_back(function);
+  return result;
+}
+
+std::vector<const Var *> Type::getUsedVariables() const {
+  auto variables = const_cast<Type *>(this)->getUsedVariables();
+  return {variables.begin(), variables.end()};
+}
+
+int Type::replaceUsedVariable(id_t id, Var *newVar) {
+  auto *replacement = cast<Func>(newVar);
+  seqassertn(!newVar || replacement, "runtime method target must be a function");
+  int count = 0;
+  if (auto *info = getRuntimeInfo()) {
+    for (auto iterator = info->methods.begin(); iterator != info->methods.end();) {
+      if (iterator->second->getId() != id) {
+        ++iterator;
+        continue;
+      }
+      ++count;
+      if (replacement) {
+        iterator->second = replacement;
+        ++iterator;
+      } else {
+        iterator = info->methods.erase(iterator);
+      }
+    }
+  }
+  return count;
+}
+
 std::vector<Generic> Type::doGetGenerics() const {
   if (!astType)
     return {};

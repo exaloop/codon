@@ -367,7 +367,15 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           std::make_shared<Cache::Class::ClassRealization>();
       realization->type = rt;
       realization->id = ++ctx->cache->classRealizationCnt;
-      makeIRType(rt.get());
+      auto *integer = makeIRType(rt.get());
+      ir::Type::RuntimeInfo runtimeInfo;
+      runtimeInfo.id = realization->id;
+      runtimeInfo.rawName = rt->realizedName();
+      runtimeInfo.niceName = rt->prettyString();
+      runtimeInfo.baseName = canonicalName;
+      runtimeInfo.mro = {integer};
+      runtimeInfo.parameters = {integer};
+      integer->setRuntimeInfo(std::move(runtimeInfo));
     }
   }
 
@@ -413,7 +421,6 @@ std::vector<std::shared_ptr<ClassType>> TypecheckVisitor::parseBaseClasses(
 
     // Mark parent classes as polymorphic as well.
     if (!cachedCls->hasRTTI()) {
-      seqassert(false, "all classes must inherit from object atm");
       if (ctx->cache->compiler->getOptions()->jit &&
           cachedCls->jitCell != ctx->cache->jitCell)
         E(Error::CUSTOM, cls,
@@ -421,9 +428,22 @@ std::vector<std::shared_ptr<ClassType>> TypecheckVisitor::parseBaseClasses(
           "in JIT mode",
           getUnmangledName(clsTyp->name));
       auto object = StdlibTypes::Object;
-      if (clsTyp->name != object && cachedCls->mro.size() == 1)
-        cachedCls->mro.push_back(std::static_pointer_cast<ClassType>(
-            getStdLibType(object)->shared_from_this()));
+      if (clsTyp->name != object && cachedCls->mro.size() == 1) {
+        auto objectType = std::static_pointer_cast<ClassType>(
+            getStdLibType(object)->shared_from_this());
+        cachedCls->mro.push_back(objectType);
+        getClass(objectType.get())->descendants.insert(clsTyp->name);
+        realize(objectType.get());
+        auto *objectIR = makeIRType(objectType.get());
+        for (const auto &[name, realization] : cachedCls->realizations) {
+          realization->bases.push_back(objectType);
+          if (auto *reference = cast<ir::RefType>(realization->ir)) {
+            reference->setPolymorphic();
+            if (auto *info = reference->getRuntimeInfo())
+              info->mro.push_back(objectIR);
+          }
+        }
+      }
     }
 
     std::vector<TypePtr> rootMro;

@@ -81,6 +81,7 @@ public:
 
   FuncType *getPartialFunc() const;
   std::string getPartialMask() const;
+  bool isPartialVirtual() const;
   bool isPartialEmpty() const;
 };
 

@@ -16,6 +16,7 @@
 #include "codon/cir/transform/lowering/await.h"
 #include "codon/cir/transform/lowering/imperative.h"
 #include "codon/cir/transform/lowering/pipeline.h"
+#include "codon/cir/transform/lowering/rtti.h"
 #include "codon/cir/transform/manager.h"
 #include "codon/cir/transform/numpy/indexing.h"
 #include "codon/cir/transform/numpy/numpy.h"
@@ -154,6 +155,7 @@ void PassManager::invalidate(const std::string &key) {
 }
 
 void PassManager::registerStandardPasses() {
+  registerPass(std::make_unique<lowering::RTTILowering>());
   if (options->pmempty) {
     /* do nothing */
   } else if (options->debug && !options->test) {

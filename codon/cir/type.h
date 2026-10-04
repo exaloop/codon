@@ -3,6 +3,7 @@
 #pragma once
 
 #include <algorithm>
+#include <map>
 #include <memory>
 #include <string>
 #include <utility>
@@ -20,6 +21,7 @@ namespace ir {
 
 class Value;
 class Type;
+class Func;
 
 class Generic {
 private:
@@ -63,8 +65,23 @@ public:
 
 /// Type from which other CIR types derive. Generally types are immutable.
 class Type : public ReplaceableNodeBase<Type> {
+public:
+  struct RuntimeInfo {
+    int64_t id = 0;
+    std::string rawName;
+    std::string niceName;
+    std::string baseName;
+    std::vector<Type *> mro;
+    std::vector<Type *> fieldOwners;
+    std::vector<Type *> parameters;
+    std::map<size_t, Func *> methods;
+    Type *exceptionBase = nullptr;
+    Type *systemExitBase = nullptr;
+  };
+
 private:
   ast::types::TypePtr astType;
+  std::unique_ptr<RuntimeInfo> runtimeInfo;
 
 public:
   static const char NodeId;
@@ -73,9 +90,11 @@ public:
 
   virtual ~Type() noexcept = default;
 
-  std::vector<Type *> getUsedTypes() const final {
-    return getActual()->doGetUsedTypes();
-  }
+  std::vector<Type *> getUsedTypes() const final;
+  std::vector<Var *> getUsedVariables() final;
+  std::vector<const Var *> getUsedVariables() const final;
+  int replaceUsedVariable(id_t id, Var *newVar) final;
+  using Node::replaceUsedVariable;
   int replaceUsedType(const std::string &name, Type *newType) final {
     seqassertn(false, "types not replaceable");
     return -1;
@@ -102,6 +121,12 @@ public:
   /// Sets the ast type. Should not generally be used.
   /// @param t the new type
   void setAstType(ast::types::TypePtr t) { getActual()->astType = std::move(t); }
+
+  RuntimeInfo *getRuntimeInfo() { return getActual()->runtimeInfo.get(); }
+  const RuntimeInfo *getRuntimeInfo() const { return getActual()->runtimeInfo.get(); }
+  void setRuntimeInfo(RuntimeInfo info) {
+    getActual()->runtimeInfo = std::make_unique<RuntimeInfo>(std::move(info));
+  }
 
   /// @return the generics used in the type
   std::vector<Generic> getGenerics() const { return getActual()->doGetGenerics(); }

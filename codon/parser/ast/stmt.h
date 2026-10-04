@@ -20,7 +20,8 @@ namespace codon::ast {
   using AcceptorExtend::accept;                                                        \
   ASTNode *clone(bool c) const override;                                               \
   void accept(VISITOR &visitor) override;                                              \
-  std::string toPythonString(bool attributes = false, int indent = -1, int level = 0) const override;\
+  std::string toPythonString(bool attributes = false, int indent = -1, int level = 0)  \
+      const override;                                                                  \
   detail::CodonString formatCodonString(bool attributes, int indent, int level)        \
       const override;                                                                  \
   std::string toString(int) const override;                                            \
@@ -52,7 +53,8 @@ struct Stmt : public AcceptorExtend<Stmt, ASTNode> {
   virtual Stmt *firstInBlock() { return this; }
 
   static const char NodeId;
-  virtual std::string toPythonString(bool attributes = false, int indent = -1, int level = 0) const = 0;
+  virtual std::string toPythonString(bool attributes = false, int indent = -1,
+                                     int level = 0) const = 0;
   SERIALIZE(Stmt, BASE(ASTNode), done);
 
   virtual std::string wrapStmt(const std::string &) const;

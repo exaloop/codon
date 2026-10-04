@@ -43,6 +43,59 @@ std::string TypecheckVisitor::vTableSignature(types::FuncType *ft) const {
 }
 
 void TypecheckVisitor::prepareVTables() {
+  auto adapt_target = [&](FuncType *signature, ClassType *receiver,
+                          FuncType *target) -> std::shared_ptr<FuncType> {
+    bool compatible = signature->size() == target->size();
+    for (size_t index = 1; compatible && index < signature->size(); ++index)
+      compatible = extractFuncArgType(signature, index)->realizedName() ==
+                   extractFuncArgType(target, index)->realizedName();
+    if (compatible)
+      return std::static_pointer_cast<FuncType>(target->shared_from_this());
+
+    std::vector<Param> parameters;
+    std::vector<CallArg> arguments;
+    std::vector<Expr *> placeholders;
+    std::vector<int> argumentStars;
+    for (const auto &parameter : *signature->ast) {
+      auto [stars, name] = parameter.getNameWithStars();
+      if (parameter.isValue() && !startswith(getUnmangledName(name), "$"))
+        argumentStars.push_back(stars);
+    }
+    seqassertn(argumentStars.size() == signature->size(),
+               "dispatch signature argument count mismatch");
+    for (size_t index = 0; index < signature->size(); ++index) {
+      auto *argumentType = extractFuncArgType(signature, index);
+      if (auto *literal = argumentType->getStatic())
+        argumentType = literal->getNonStaticType();
+      auto name = fmt::format("argument{}", index);
+      parameters.emplace_back(name, N<IdExpr>(argumentType->realizedName()));
+      Expr *argument = N<IdExpr>(name);
+      if (!index)
+        argument = N<CallExpr>(N<IdExpr>(getMangledMethod("", "type", "_force_cast")),
+                               argument, N<IdExpr>(receiver->realizedName()));
+      else if (argumentStars[index] == 1)
+        argument = N<StarExpr>(argument);
+      else if (argumentStars[index] == 2)
+        argument = N<KeywordStarExpr>(argument);
+      arguments.emplace_back("", argument);
+      auto *placeholder = N<NoneExpr>();
+      placeholder->setType(argumentType->shared_from_this());
+      placeholder->setDone();
+      placeholders.push_back(placeholder);
+    }
+    auto name = getTemporaryVar("dispatch.adapter");
+    Stmt *adapter = N<FunctionStmt>(
+        name, N<IdExpr>(signature->getRetType()->realizedName()), parameters,
+        N<SuiteStmt>(
+            N<ReturnStmt>(N<CallExpr>(N<IdExpr>(target->getFuncName()), arguments))));
+    if (auto error = ScopingVisitor::apply(ctx->cache, N<SuiteStmt>(adapter)))
+      throw exc::ParserException(std::move(error));
+    adapter->setAttribute(Attr::ExprTime, getTime());
+    transform(adapter);
+    auto *call = cast<CallExpr>(transform(N<CallExpr>(N<IdExpr>(name), placeholders)));
+    return std::static_pointer_cast<FuncType>(
+        call->getExpr()->getType()->shared_from_this());
+  };
   auto realize_function = [&](FuncType *method,
                               ClassType *descType) -> std::shared_ptr<FuncType> {
     std::vector<Expr *> callArgs;
@@ -77,7 +130,7 @@ void TypecheckVisitor::prepareVTables() {
       }
       auto rt = cast<CallExpr>(call)->getExpr()->getType();
       seqassert(rt->getFunc() && rt->canRealize(), "bad realization");
-      return std::static_pointer_cast<FuncType>(rt->shared_from_this());
+      return adapt_target(method, descType, rt->getFunc());
     }
     return nullptr;
   };
@@ -104,13 +157,15 @@ void TypecheckVisitor::prepareVTables() {
           descType = dr->getType();
         }
         if (!descType)
-          break;
+          continue;
         if (in(dr->vtable, id))
           continue;
         if (auto f = realize_function(method, descType)) {
           dr->vtable[id] = f;
-          LOG("[dispatch] {} (desc={}, id={}) = {}", key, descType->debugString(2), id,
-              f->debugString(2));
+          dr->ir->getRuntimeInfo()->methods[id] =
+              getFunction(f.get())->realizations.at(f->realizedName())->ir;
+          LOG_REALIZE("[dispatch] {} (desc={}, id={}) = {}", key,
+                      descType->debugString(2), id, f->debugString(2));
           added = true;
         }
       }
@@ -132,6 +187,72 @@ void TypecheckVisitor::prepareVTables() {
             if (isPolymorphic(method_real->getType())) {
               added |= realize_descendant_virtuals(method_real->getType());
             }
+          }
+        }
+      }
+    }
+    auto superCalls = ctx->cache->superCalls;
+    for (const auto &[id, signature] : superCalls) {
+      auto *lexical =
+          extractClassGeneric(extractFuncArgType(signature.get()))->getClass();
+      auto member = getStrLiteral(extractFuncGeneric(signature.get()));
+      for (const auto &descendant : sorted_view(getClass(lexical)->descendants)) {
+        for (const auto &[_, realization] :
+             sorted_view(getClass(descendant)->realizations)) {
+          if (in(realization->vtable, id))
+            continue;
+          auto mro = getMRO(realization->getType());
+          auto anchor = std::find_if(mro.begin(), mro.end(), [&](const auto &base) {
+            return base->realizedName() == lexical->realizedName();
+          });
+          if (anchor == mro.end())
+            continue;
+          for (auto candidate = std::next(anchor); candidate != mro.end();
+               ++candidate) {
+            std::vector<CallArg> arguments;
+            auto argument = [&](const std::string &name, TypePtr argumentType) {
+              auto *value = N<NoneExpr>();
+              value->setType(argumentType);
+              value->setDone();
+              arguments.emplace_back(name, value);
+            };
+            argument("", *candidate);
+            for (const auto &generic :
+                 extractFuncArgType(signature.get(), 1)->getClass()->generics)
+              argument("", generic.type);
+            auto keywordType = extractFuncArgType(signature.get(), 2);
+            auto keywordId = getIntLiteral(keywordType);
+            auto &keywordNames = ctx->cache->generatedTupleNames[keywordId];
+            auto keywordValues = extractClassGeneric(keywordType, 1)->getClass();
+            for (size_t index = 0; index < keywordNames.size(); ++index)
+              argument(keywordNames[index], keywordValues->generics[index].type);
+            auto methods = findMatchingMethods(
+                candidate->get()->getClass(),
+                findMethod(candidate->get()->getClass(), member, false), arguments);
+            FuncType *target = nullptr;
+            for (auto *method : methods) {
+              auto *owner = method->ast->getAttribute<ir::StringValueAttribute>(
+                  Attr::ParentClass);
+              if (owner && owner->value == candidate->get()->getClass()->name) {
+                target = method;
+                break;
+              }
+            }
+            if (!target)
+              continue;
+            auto *call = cast<CallExpr>(
+                transform(N<CallExpr>(N<IdExpr>(target->getFuncName()), arguments)));
+            auto *resolved = call->getExpr()->getType()->getFunc();
+            unify(resolved->getRetType(), signature->getRetType());
+            auto adapted = adapt_target(ctx->cache->superCallSignatures.at(id).get(),
+                                        candidate->get()->getClass(), resolved);
+            realization->vtable[id] = adapted;
+            realization->ir->getRuntimeInfo()->methods[id] =
+                getFunction(adapted.get())
+                    ->realizations.at(adapted->realizedName())
+                    ->ir;
+            added = true;
+            break;
           }
         }
       }
@@ -478,13 +599,10 @@ Expr *TypecheckVisitor::transformPtr(CallExpr *expr) {
   expr->begin()->value = transform(expr->begin()->getExpr());
 
   auto head = getHeadExpr(expr->begin()->getExpr());
-  std::vector<std::string> members;
-  for (bool last = true;; last = false) {
+  for (;;) {
     auto t = extractClassType(head);
     if (!t)
       return nullptr;
-    if (!last && !t->isRecord())
-      E(Error::CALL_PTR_VAR, expr->begin()->getExpr());
 
     if (auto id = cast<IdExpr>(head)) {
       auto val = id ? ctx->find(id->getValue(), getTime()) : nullptr;
@@ -1184,51 +1302,34 @@ SuiteStmt *TypecheckVisitor::generateSuperDispatchAST(FuncType *type) {
     callArgs.back().getExpr()->setType(kwt->generics[gi].getType()->shared_from_this());
   }
 
-  std::unordered_map<std::string, TypePtr> nextMro;
-  for (const auto &n : sorted_view(getClass(typ)->descendants)) {
-    auto nc = getClass(n);
-    size_t i = 0;
-    for (; i < nc->mro.size() - 1; i++) {
-      if (nc->mro[i]->name == typ->name) {
-        break;
-      }
-    }
-    i++;
-    if (i < nc->mro.size()) {
-      auto tb = instantiateType(nc->mro[i].get(), typ);
-      if (!tb->canRealize()) {
-        W(Error::CUSTOM, getSrcInfo(),
-          "cannot realize superclass {} of {}; ignoring its super",
-          nc->mro[i]->prettyString(), typ->prettyString());
-        continue;
-      }
-      realize(tb);
-      auto methods = findMethod(tb->getClass(), attr->value, false);
-      callArgs[0].getExpr()->setType(tb);
-      for (auto &bm : findMatchingMethods(tb->getClass(), methods, callArgs)) {
-        auto a = bm->ast->getAttribute<ir::StringValueAttribute>(Attr::ParentClass);
-        if (a && a->value == tb->getClass()->name) {
-          nextMro[nc->mro[i]->getClass()->name] = tb;
-          break;
-        }
-      }
-    }
+  auto key = fmt::format("super.{}.{}({},{})", typ->realizedName(), attr->value,
+                         extractFuncArgType(type, 1)->realizedName(),
+                         extractFuncArgType(type, 2)->realizedName());
+  auto [entry, inserted] =
+      ctx->cache->thunkIds.emplace(key, ctx->cache->thunkIds.size() + 1);
+  auto thunkId = entry->second;
+  ctx->cache->superCalls[thunkId] =
+      std::static_pointer_cast<FuncType>(type->shared_from_this());
+  auto mro = getMRO(typ);
+  for (auto base = std::next(mro.begin()); base != mro.end(); ++base) {
+    realize(base->get());
+    callArgs[0].getExpr()->setType(*base);
+    auto methods = findMatchingMethods(
+        base->get()->getClass(),
+        findMethod(base->get()->getClass(), attr->value, false), callArgs);
+    if (methods.empty())
+      continue;
+    auto *call = N<CallExpr>(
+        N<DotExpr>(N<IdExpr>((*base)->realizedName()), attr->value),
+        N<CallExpr>(N<IdExpr>(getMangledMethod("", "type", "_force_cast")),
+                    N<DotExpr>(N<IdExpr>("self"), "_obj"),
+                    N<IdExpr>((*base)->realizedName())),
+        N<StarExpr>(N<IdExpr>("args")), N<KeywordStarExpr>(N<IdExpr>("kwargs")));
+    call->setAttribute(Attr::ExprThunkId, static_cast<int64_t>(thunkId));
+    return N<SuiteStmt>(N<ReturnStmt>(call));
   }
-  for (const auto &[_, tb] : sorted_view(nextMro)) {
-    Stmt *ret = N<ReturnStmt>(N<CallExpr>(
-        N<DotExpr>(N<IdExpr>(tb->getClass()->name), attr->value),
-        // N<CallExpr>(N<IdExpr>(getMangledMethod("", "RTTIType", "_cast")),
-        N<DotExpr>(N<IdExpr>("self"), "_obj"),
-        // N<IdExpr>(tb->realizedName())),
-        N<StarExpr>(N<IdExpr>("args")), N<KeywordStarExpr>(N<IdExpr>("kwargs"))));
-    suite->addStmt(
-        nextMro.size() == 1
-            ? ret
-            : N<IfStmt>(N<BinaryExpr>(N<IdExpr>("base"), "==",
-                                      N<IntExpr>(getClassRealization(tb.get())->id)),
-                        ret));
-  }
-  return suite;
+  E(Error::CUSTOM, getSrcInfo(), "super has no matching method '{}'", attr->value);
+  return nullptr;
 }
 
 /// Transform staticlen method to a static integer expression. This method supports

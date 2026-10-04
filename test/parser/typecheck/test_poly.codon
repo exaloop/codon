@@ -1,3 +1,232 @@
+#%% test_nonpolymorphic_layout
+class PlainObject:
+    count: int
+    value: float
+
+@noinline
+def update_plain(value: PlainObject):
+    value.count += 1
+    value.value += 0.5
+    return value.count + int(value.value)
+
+plain = PlainObject(41, 2.5)
+assert update_plain(plain) == 45
+info = TypeInfo.cache(PlainObject)
+assert not info.rtti
+assert type._ref_size(PlainObject) == int.__elemsize__ + float.__elemsize__
+assert info.slots[0][2] == 0
+assert info.slots[1][2] == int.__elemsize__
+pointer = __ptr__(plain.count)
+assert pointer == type._force_cast(__magic__.raw(plain), Ptr[int])
+pointer[0] = 43
+assert plain.count == 43
+assert plain.value == 3.0
+print("nonpolymorphic layout ok")  # EXPECT: nonpolymorphic layout ok
+
+#%% test_late_polymorphic_layout
+class LateBase[T]:
+    value: T
+
+    def result(self):
+        return self.value
+
+early_int = LateBase(41)
+early_float = LateBase(2.5)
+early_info = TypeInfo.cache(LateBase[int])
+
+@noinline
+def late_result(value: LateBase[int]):
+    return value.result()
+
+assert late_result(early_int) == 41
+
+class LateChild(LateBase[int]):
+    extra: int
+
+    def result(self):
+        return self.value + self.extra
+
+assert early_info.rtti
+assert early_info.n_mro == 2
+assert early_info.mro[1] == object.__id__
+assert TypeInfo.cache(LateBase[float]).rtti
+assert TypeInfo.cache(LateBase[float]).n_mro == 2
+assert get_typeinfo(early_int).__raw__() == early_info.__raw__()
+assert get_typeinfo(early_float).id == LateBase[float].__id__
+assert early_int.value == 41
+assert early_float.value == 2.5
+__ptr__(early_int.value)[0] = 42
+assert early_int.result() == 42
+child = __magic__.new(LateChild)
+child.value = 10
+child.extra = 20
+base: LateBase[int] = child
+assert base.result() == 30
+assert late_result(base) == 30
+assert base.value == 10
+print("late polymorphic layout ok")  # EXPECT: late polymorphic layout ok
+
+#%% test_rtti_layout
+class LayoutRoot:
+    marker: u8
+    number: int
+
+class LayoutSide:
+    weight: float
+
+class LayoutLeaf(LayoutRoot, LayoutSide):
+    flag: bool
+
+value = __magic__.new(LayoutLeaf)
+value.flag = True
+value.marker = u8(3)
+value.number = 41
+value.weight = 2.5
+root: LayoutRoot = value
+side: LayoutSide = value
+assert root is value
+assert side is value
+assert root.marker == u8(3)
+assert root.number == 41
+assert side.weight == 2.5
+root.number = 42
+side.weight = 3.5
+assert value.number == 42
+assert value.weight == 3.5
+assert value.flag
+__ptr__(root.number)[0] = 43
+__ptr__(side.weight)[0] = 4.5
+assert value.number == 43
+assert value.weight == 4.5
+info = get_typeinfo(root)
+assert info.id == LayoutLeaf.__id__
+assert info.__raw__() == TypeInfo.cache(LayoutLeaf).__raw__()
+assert info.n_mro == 4
+assert info.mro[0] == LayoutLeaf.__id__
+assert info.mro[1] == LayoutRoot.__id__
+assert info.mro[2] == LayoutSide.__id__
+assert info.offsets[0] > 0
+assert info.offsets[1] > info.offsets[0]
+assert info.offsets[2] > info.offsets[1]
+assert type._get_class_offset(LayoutLeaf, 0) == info.slots[0][2]
+assert type._get_class_offset(LayoutLeaf, 4) == type._ref_size(LayoutLeaf)
+assert type._ref_size(LayoutLeaf) > info.offsets[2]
+print("rtti layout ok")  # EXPECT: rtti layout ok
+
+#%% test_rtti_exception
+class SegmentError(Exception):
+    number: int
+    text: str
+
+    def __init__(self, number: int):
+        self.number = number
+        self.text = "payload"
+        super().__init__("segment error")
+
+@noinline
+def raise_segment_error():
+    raise SegmentError(42)
+
+caught = False
+try:
+    raise_segment_error()
+except Exception as error:
+    assert isinstance(error, SegmentError)
+    assert error.message == "segment error"
+    assert error.typename == "SegmentError"
+    if isinstance(error, SegmentError):
+        assert error.number == 42
+        assert error.text == "payload"
+    caught = True
+assert caught
+print("rtti exception ok")  # EXPECT: rtti exception ok
+
+#%% test_rtti_call_order
+class DispatchBase:
+    def method(self, value: int):
+        return value
+
+class DispatchChild(DispatchBase):
+    def method(self, value: int):
+        return value + 100
+
+@noinline
+def check_dispatch(value: DispatchBase):
+    bound = value.method
+    assert value.method(5) == 105
+    assert bound(6) == 106
+    assert DispatchBase.method(value, 7) == 7
+
+def receiver(events: list[int], value: DispatchBase) -> DispatchBase:
+    events.append(1)
+    return value
+
+def argument(events: list[int]):
+    events.append(2)
+    return 9
+
+value = DispatchChild()
+check_dispatch(value)
+events = []
+assert receiver(events, value).method(argument(events)) == 109
+assert events == [1, 2]
+print("rtti calls ok")  # EXPECT: rtti calls ok
+
+#%% test_rtti_any
+class BoxBase:
+    number: int
+
+class BoxChild(BoxBase):
+    payload: list[int]
+
+child = __magic__.new(BoxChild)
+child.number = 41
+child.payload = [1, 2]
+base: BoxBase = child
+boxed = Any(base)
+assert isinstance(boxed, BoxChild)
+assert boxed.__unwrap__(BoxChild) is child
+assert boxed.__unwrap__(BoxBase) is child
+assert boxed.__getattr__("number", int) == 41
+boxed.__setattr__("number", 42)
+assert child.number == 42
+replacement = [3, 4]
+boxed.__setattr__("payload", replacement)
+assert child.payload is replacement
+assert boxed.__getattr__("payload", list[int]) is replacement
+assert Any(17).__unwrap__(int) == 17
+assert Any("text").__unwrap__(str) == "text"
+optional = Any(Optional[int](19)).__cast__(Optional[Any])
+assert optional is not None
+assert unwrap(optional).__unwrap__(int) == 19
+assert Any(Optional[int]()).__cast__(Optional[Any]) is None
+print("rtti any ok")  # EXPECT: rtti any ok
+
+#%% test_rtti_override_signature
+class SignatureBase:
+    def method(self, value: int):
+        return value
+
+class SignatureChild(SignatureBase):
+    def method(self, value: int, extra: int = 100):
+        return value + extra
+
+@noinline
+def check_signature(value: SignatureBase):
+    return value.method(5)
+
+assert check_signature(SignatureChild()) == 105
+
+class SignatureLeft(SignatureBase):
+    def method(self, value: int):
+        return super().method(value) + 1
+
+class SignatureDiamond(SignatureLeft, SignatureChild):
+    pass
+
+assert check_signature(SignatureDiamond()) == 106
+print("rtti signature ok")  # EXPECT: rtti signature ok
+
 #%% test_poly
 class Animal:
     name: str

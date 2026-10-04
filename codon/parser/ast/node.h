@@ -48,7 +48,7 @@ struct ASTNode : public ir::Node {
   std::string toCodonString(bool attributes = false, int indent = -1,
                             int level = 0) const;
   virtual detail::CodonString formatCodonString(bool attributes, int indent,
-                                                 int level) const = 0;
+                                                int level) const = 0;
 
   /// Deep copy a node.
   virtual ASTNode *clone(bool clean) const = 0;

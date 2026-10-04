@@ -89,7 +89,7 @@ Stmt *TypecheckVisitor::apply(
   suite->items.push_back(preamble);
   suite->items.push_back(n);
 
-  if (cast<SuiteStmt>(n) && !cache->compiler->getOptions()->pyext)
+  if (!cache->compiler->getOptions()->pyext)
     tv.prepareVTables();
 
   if (!ctx->cache->errors.empty())
@@ -1751,14 +1751,13 @@ ir::PyType TypecheckVisitor::cythonizeClass(const std::string &name) {
       for (auto it = oldIR->arg_begin(); it != oldIR->arg_end(); ++it) {
         args.push_back(ctx->cache->module->Nr<ir::VarValue>(*it));
       }
-      cast<ir::BodiedFunc>(oldIR)->setBody(
-          ir::util::series(
-              ir::util::call(sorted_view(fn->realizations).front().second->ir, args)));
+      cast<ir::BodiedFunc>(oldIR)->setBody(ir::util::series(
+          ir::util::call(sorted_view(fn->realizations).front().second->ir, args)));
     }
   }
-  for (const auto &[_, r] : sorted_view(
-           getFunction(getMangledMethod(CYTHON_MODULE, CYTHON_WRAP, "py_type"))
-               ->realizations)) {
+  for (const auto &[_, r] :
+       sorted_view(getFunction(getMangledMethod(CYTHON_MODULE, CYTHON_WRAP, "py_type"))
+                       ->realizations)) {
     if (r->type->funcGenerics[0].type->unify(tc, nullptr) >= 0) {
       py.typePtrHook = r->ir;
       break;
@@ -1952,9 +1951,9 @@ ir::PyType TypecheckVisitor::cythonizeIterator(const std::string &name) {
   ir::PyType py{name, ""};
   auto cr = ctx->cache->classes[CYTHON_ITER].realizations[name];
   auto tc = cr->getType();
-  for (const auto &[_, r] : sorted_view(
-           getFunction(getMangledMethod(CYTHON_MODULE, CYTHON_WRAP, "py_type"))
-               ->realizations)) {
+  for (const auto &[_, r] :
+       sorted_view(getFunction(getMangledMethod(CYTHON_MODULE, CYTHON_WRAP, "py_type"))
+                       ->realizations)) {
     if (extractFuncGeneric(r->getType())->unify(tc, nullptr) >= 0) {
       py.typePtrHook = r->ir;
       break;

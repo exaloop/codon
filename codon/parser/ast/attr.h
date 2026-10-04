@@ -62,6 +62,7 @@ struct Attr {
     ExprDoNotRealize,
     ExprNoSpecial,
     ExprVirtual,
+    ExprThunkId,
     TryPyVar,
     LocalRenames,
   };

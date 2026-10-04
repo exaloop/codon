@@ -236,16 +236,20 @@ public:
                makeFormatter(v->getRhs()));
   }
   void visit(const ExtractInstr *v) override {
-    fmt::print(os, FMT_STRING("(extract {} \"{}\")"), makeFormatter(v->getVal()),
+    fmt::print(os, FMT_STRING("(extract{} {} \"{}\")"),
+               v->isPolymorphic() ? "_poly" : "", makeFormatter(v->getVal()),
                v->getField());
   }
   void visit(const InsertInstr *v) override {
-    fmt::print(os, FMT_STRING("(insert {} \"{}\" {})"), makeFormatter(v->getLhs()),
+    fmt::print(os, FMT_STRING("(insert{} {} \"{}\" {})"),
+               v->isPolymorphic() ? "_poly" : "", makeFormatter(v->getLhs()),
                v->getField(), makeFormatter(v->getRhs()));
   }
   void visit(const CallInstr *v) override {
     auto args = makeFormatters(v->begin(), v->end());
-    fmt::print(os, FMT_STRING("(call {}\n{}\n)"), makeFormatter(v->getCallee()),
+    fmt::print(os, FMT_STRING("(call{} {}\n{}\n)"),
+               v->getThunkID() ? fmt::format("_virtual {}", v->getThunkID()) : "",
+               makeFormatter(v->getCallee()),
                fmt::join(args.begin(), args.end(), "\n"));
   }
   void visit(const StackAllocInstr *v) override {

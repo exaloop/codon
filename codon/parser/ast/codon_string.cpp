@@ -125,8 +125,8 @@ Formatted formatValue(double value, bool, int, int) {
     if (exponentError == std::errc() && exponentEnd == result.data() + result.size() &&
         exponent >= -4 && exponent < 16) {
       const bool negative = result.front() == '-';
-      std::string digits = result.substr(negative ? 1 : 0,
-                                         exponentPos - (negative ? 1 : 0));
+      std::string digits =
+          result.substr(negative ? 1 : 0, exponentPos - (negative ? 1 : 0));
       digits.erase(std::remove(digits.begin(), digits.end(), '.'), digits.end());
 
       const auto decimalPos = exponent + 1;
@@ -434,8 +434,8 @@ Formatted formatExprNode(const std::string &name, const Expr *node,
             formatValue(node->getExpectedType(), attributes, indent, child))};
   all.insert(all.end(), std::make_move_iterator(fields.begin()),
              std::make_move_iterator(fields.end()));
-  auto result = formatNode(name, node, node->isDone(), std::move(all), attributes, indent,
-                           level);
+  auto result =
+      formatNode(name, node, node->isDone(), std::move(all), attributes, indent, level);
   active.erase(node);
   return result;
 }

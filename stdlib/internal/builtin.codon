@@ -5,7 +5,7 @@ from internal.unicode.generated.properties import unicode_is_space
 
 def getattr(obj, attr: Literal[str], default, typ: type=NoneType):
     try:
-        return _getattr(obj, attr, type(default) if typ is None else typ)
+        return _getattr(obj, attr, type(default) if typ is NoneType else typ)
     except AttributeError:
         if default is None:
             return None

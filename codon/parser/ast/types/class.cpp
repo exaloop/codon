@@ -343,7 +343,12 @@ FuncType *ClassType::getPartialFunc() const {
 std::string ClassType::getPartialMask() const {
   seqassert(name == "Partial", "not a partial");
   auto n = generics[0].type->getStrStatic()->value;
-  return n;
+  return isPartialVirtual() ? n.substr(1) : n;
+}
+
+bool ClassType::isPartialVirtual() const {
+  seqassert(name == "Partial", "not a partial");
+  return generics[0].type->getStrStatic()->value.starts_with("v");
 }
 
 bool ClassType::isPartialEmpty() const {

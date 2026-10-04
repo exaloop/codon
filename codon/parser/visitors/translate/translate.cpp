@@ -351,7 +351,10 @@ void TranslateVisitor::visit(CallExpr *expr) {
   }
 
   size_t thunkId = 0;
-  if (auto ft = expr->getExpr()->getType()->getFunc(); ft) {
+  if (auto *id = expr->getAttribute<ir::IntValueAttribute>(Attr::ExprThunkId)) {
+    thunkId = id->value;
+  } else if (auto ft = expr->getExpr()->getType()->getFunc();
+             ft && expr->hasAttribute(Attr::ExprVirtual)) {
     TypecheckVisitor tv(ctx->cache->typeCtx);
     if (tv.isPolymorphic(ft)) {
       auto sig = tv.vTableSignature(ft);

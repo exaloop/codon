@@ -267,7 +267,11 @@ std::pair<Expr *, bool> TypecheckVisitor::getAttr(Expr *expr, const std::string 
     // If a method is marked with @property, just call it directly
     if (!bestMethod->ast->hasAttribute(Attr::Property))
       methodArgs.emplace_back(N<EllipsisExpr>(EllipsisExpr::PARTIAL));
-    return {transform(N<CallExpr>(e, methodArgs)), true};
+    auto *call = N<CallExpr>(e, methodArgs);
+    if (!bestMethod->ast->hasAttribute(Attr::StaticMethod) &&
+        !bestMethod->ast->hasAttribute(Attr::Property))
+      call->setAttribute(Attr::ExprVirtual);
+    return {transform(call), true};
   }
 }
 

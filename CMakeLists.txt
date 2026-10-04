@@ -65,10 +65,14 @@ set(CODON_JUPYTER_FILES codon/util/jupyter.h codon/util/jupyter.cpp)
 add_library(codon_jupyter SHARED ${CODON_JUPYTER_FILES})
 
 # Codon runtime library
-set(CODONRT_FILES codon/runtime/lib.h codon/runtime/lib.cpp
-                  codon/runtime/re.cpp codon/runtime/exc.cpp
+set(CODONRT_FILES codon/runtime/lib.h
+                  codon/runtime/lib.cpp
+                  codon/runtime/rtti.h
+                  codon/runtime/re.cpp
+                  codon/runtime/exc.cpp
                   codon/runtime/numpy/sort.cpp
-                  codon/runtime/numpy/loops.cpp codon/runtime/numpy/zmath.cpp)
+                  codon/runtime/numpy/loops.cpp
+                  codon/runtime/numpy/zmath.cpp)
 add_library(codonrt SHARED ${CODONRT_FILES})
 add_dependencies(codonrt zlibstatic gc backtrace bz2 liblzma
                          re2 hwy hwy_contrib fast_float)
@@ -271,6 +275,7 @@ set(CODON_HPPFILES
   codon/cir/transform/lowering/await.h
   codon/cir/transform/lowering/imperative.h
   codon/cir/transform/lowering/pipeline.h
+  codon/cir/transform/lowering/rtti.h
   codon/cir/transform/manager.h
   codon/cir/transform/parallel/openmp.h
   codon/cir/transform/parallel/schedule.h
@@ -384,6 +389,7 @@ set(CODON_CPPFILES
   codon/cir/transform/lowering/await.cpp
   codon/cir/transform/lowering/imperative.cpp
   codon/cir/transform/lowering/pipeline.cpp
+  codon/cir/transform/lowering/rtti.cpp
   codon/cir/transform/manager.cpp
   codon/cir/transform/parallel/openmp.cpp
   codon/cir/transform/parallel/schedule.cpp
