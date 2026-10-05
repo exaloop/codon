@@ -29,7 +29,10 @@ def dlext() -> Literal[str]:
     if __apple__:
         return "dylib"
     else:
-        return "so"
+        if __windows__:
+            return "dll"
+        else:
+            return "so"
 
 @pure
 def dlerror() -> str:

@@ -421,7 +421,7 @@ struct CaptureTracker : public util::Operator {
   }
 
   CaptureTracker(CaptureContext &cc, const BodiedFunc *func, const Value *value)
-      : CaptureTracker(cc, func, /*isArg=*/false) {
+      : CaptureTracker(cc, (const Func *)func, /*isArg=*/false) {
     dsets.push_back(DerivedSet(func, value, cc));
   }
 
