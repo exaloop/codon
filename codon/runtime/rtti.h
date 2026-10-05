@@ -35,6 +35,20 @@ struct TypeSlot {
   seq_int_t offset;
 };
 
+constexpr uint64_t METHOD_HASH_MULTIPLIER = 0x9e3779b97f4a7c15ULL;
+constexpr unsigned METHOD_HASH_SHIFT = 32;
+constexpr seq_int_t MAX_LINEAR_MRO = 8;
+
+constexpr uint64_t methodHash(uint64_t id) {
+  auto mixed = id * METHOD_HASH_MULTIPLIER;
+  return mixed ^ (mixed >> METHOD_HASH_SHIFT);
+}
+
+struct MethodSlot {
+  seq_int_t id;
+  void *target;
+};
+
 struct TypeInfo {
   seq_int_t id;
   seq_int_t n_mro;
@@ -44,7 +58,7 @@ struct TypeInfo {
   seq_int_t n_slots;
   const TypeSlot *slots;
   seq_int_t n_methods;
-  void *const *methods;
+  const MethodSlot *methods;
   bool rtti;
   seq_str_t raw_name;
   seq_str_t nice_name;

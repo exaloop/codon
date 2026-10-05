@@ -3,6 +3,7 @@
 #include "codon/runtime/lib.h"
 #include "codon/runtime/rtti.h"
 #include "llvm/BinaryFormat/Dwarf.h"
+#include <algorithm>
 #include <backtrace.h>
 #include <cassert>
 #include <cstdint>
@@ -449,6 +450,8 @@ static uintptr_t readEncodedPointer(const uint8_t **data, uint8_t encoding) {
 
 static bool isinstance(void *obj, seq_int_t type) {
   auto *info = *static_cast<codon::runtime::TypeInfo **>(obj);
+  if (info->n_mro > codon::runtime::MAX_LINEAR_MRO)
+    return std::binary_search(info->sorted_mro, info->sorted_mro + info->n_mro, type);
   for (seq_int_t index = 0; index < info->n_mro; ++index)
     if (info->mro[index] == type)
       return true;

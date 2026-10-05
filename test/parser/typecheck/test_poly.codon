@@ -111,7 +111,77 @@ assert info.offsets[2] > info.offsets[1]
 assert type._get_class_offset(LayoutLeaf, 0) == info.slots[0][2]
 assert type._get_class_offset(LayoutLeaf, 4) == type._ref_size(LayoutLeaf)
 assert type._ref_size(LayoutLeaf) > info.offsets[2]
+
+@noinline
+def update_root(value: LayoutRoot):
+    value.number += 1
+    value.number += 2
+    return value.number
+
+plain_root = LayoutRoot(u8(7), 10)
+assert update_root(plain_root) == 13
+assert update_root(root) == 46
+assert plain_root.marker == u8(7)
+assert value.flag
+assert value.weight == 4.5
 print("rtti layout ok")  # EXPECT: rtti layout ok
+
+#%% test_rtti_deep_membership
+class MembershipRoot:
+    pass
+class MembershipOne(MembershipRoot):
+    pass
+class MembershipTwo(MembershipOne):
+    pass
+class MembershipThree(MembershipTwo):
+    pass
+class MembershipFour(MembershipThree):
+    pass
+class MembershipFive(MembershipFour):
+    pass
+class MembershipSix(MembershipFive):
+    pass
+class MembershipSeven(MembershipSix):
+    pass
+class MembershipEight(MembershipSeven):
+    pass
+class MembershipOther(MembershipRoot):
+    pass
+
+@noinline
+def check_membership(value: MembershipRoot):
+    return isinstance(value, MembershipOne), isinstance(value, MembershipEight), isinstance(value, MembershipOther)
+
+assert check_membership(MembershipEight()) == (True, True, False)
+assert check_membership(MembershipOther()) == (False, False, True)
+assert check_membership(MembershipRoot()) == (False, False, False)
+assert TypeInfo.cache(MembershipEight).n_mro > 8
+
+class DeepErrorOne(Exception):
+    pass
+class DeepErrorTwo(DeepErrorOne):
+    pass
+class DeepErrorThree(DeepErrorTwo):
+    pass
+class DeepErrorFour(DeepErrorThree):
+    pass
+class DeepErrorFive(DeepErrorFour):
+    pass
+class DeepErrorSix(DeepErrorFive):
+    pass
+class DeepErrorSeven(DeepErrorSix):
+    pass
+class DeepErrorEight(DeepErrorSeven):
+    pass
+
+try:
+    raise DeepErrorEight("deep")
+except ValueError:
+    assert False
+except DeepErrorOne as error:
+    assert error.message == "deep"
+    assert isinstance(error, DeepErrorEight)
+print("deep membership ok")  # EXPECT: deep membership ok
 
 #%% test_rtti_exception
 class SegmentError(Exception):
@@ -150,6 +220,12 @@ class DispatchChild(DispatchBase):
     def method(self, value: int):
         return value + 100
 
+class DispatchThrow(DispatchBase):
+    def method(self, value: int):
+        if value == 9:
+            raise ValueError("dispatch failure")
+        return value - 1
+
 @noinline
 def check_dispatch(value: DispatchBase):
     bound = value.method
@@ -170,6 +246,21 @@ check_dispatch(value)
 events = []
 assert receiver(events, value).method(argument(events)) == 109
 assert events == [1, 2]
+
+@noinline
+def checked_dispatch(value: DispatchBase, events: list[int]):
+    try:
+        return value.method(argument(events))
+    except ValueError:
+        events.append(3)
+        return -1
+
+events = []
+assert checked_dispatch(DispatchThrow(), events) == -1
+assert events == [2, 3]
+events = []
+assert checked_dispatch(DispatchChild(), events) == 109
+assert events == [2]
 print("rtti calls ok")  # EXPECT: rtti calls ok
 
 #%% test_rtti_any

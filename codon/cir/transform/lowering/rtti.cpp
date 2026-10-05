@@ -22,7 +22,7 @@ void RTTILowering::handle(CallInstr *call) {
       module->Nr<Var>(receiver->getType(), false, false, false, "rtti.self");
   parent->push_back(temporary);
   auto *lookup = module->Nr<InternalFunc>("rtti.lookup");
-  lookup->setIntrinsic(InternalFunc::Intrinsic::VIRTUAL_LOOKUP);
+  lookup->setIntrinsic(InternalFunc::Intrinsic::VIRTUAL_LOOKUP, receiver->getType());
   lookup->setGlobal();
   lookup->realize(
       cast<FuncType>(module->unsafeGetFuncType(

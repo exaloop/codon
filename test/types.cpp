@@ -126,8 +126,13 @@ class CellBase:
     def method(self): return 1
 class CellChild(CellBase):
     def method(self): return 42
+)"
+                         "def dispatch_old(value: CellBase):\n"
+                         "    return value.method()\n"
+                         R"(
 old_object = CellChild()
 base: CellBase = old_object
+assert dispatch_old(base) == 42
 old_info = TypeInfo.cache(CellChild)
 def lookup_id(type_id: int):
     return TypeInfo.cache(type_id).id
@@ -150,6 +155,8 @@ class CellLater(CellBase):
     def method(self): return 43
 later: CellBase = CellLater()
 assert later.method() == 43
+assert dispatch_old(later) == 43
+assert dispatch_old(base) == 42
 assert lookup_id(CellLater.__id__) == CellLater.__id__
 assert base.method() == 42
 print("second")

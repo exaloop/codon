@@ -2,6 +2,8 @@
 
 import internal.static as static
 
+_MAX_LINEAR_MRO: Literal[int] = 8
+
 @inline
 def force_cast(obj, D: type):
     # cast obj to D. Handles optionals.
@@ -20,6 +22,11 @@ def force_cast(obj, D: type):
 def __initialize_rtti__():
     pass
 
+@tuple
+class _MethodSlot:
+    id: int
+    target: cobj
+
 @__internal__
 class TypeInfo:
     id: int
@@ -30,7 +37,7 @@ class TypeInfo:
     n_slots: int
     slots: Ptr[Tuple[str, int, int]]
     n_methods: int
-    methods: Ptr[cobj]
+    methods: Ptr[_MethodSlot]
     rtti: bool
     raw_name: str
     nice_name: str
@@ -100,9 +107,22 @@ class TypeInfo:
         return self.id != other.id
 
     def _isinstance(self, ti: TypeInfo):
-        for index in range(self.n_mro):
-            if self.mro[index] == ti.id:
+        if self.n_mro <= _MAX_LINEAR_MRO:
+            for index in range(self.n_mro):
+                if self.mro[index] == ti.id:
+                    return True
+            return False
+        lower = 0
+        upper = self.n_mro
+        while lower < upper:
+            middle = lower + ((upper - lower) >> 1)
+            candidate = self.sorted_mro[middle]
+            if candidate == ti.id:
                 return True
+            if candidate < ti.id:
+                lower = middle + 1
+            else:
+                upper = middle
         return False
 
     def _isinstance(self, T: type):

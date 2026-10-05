@@ -131,7 +131,12 @@ void LLVMVisitor::registerGlobal(const Var *var) {
     return;
 
   if (auto *f = cast<Func>(var)) {
-    insertFunc(f, makeLLVMFunction(f));
+    auto *function = makeLLVMFunction(f);
+    insertFunc(f, function);
+    if (auto *internal = cast<InternalFunc>(f)) {
+      if (internal->getIntrinsic() == InternalFunc::Intrinsic::VIRTUAL_LOOKUP)
+        virtualLookupTypes[function] = cast<RefType>(internal->getIntrinsicType());
+    }
   } else {
     auto *llvmType = getLLVMType(var->getType());
     if (!isStorableType(llvmType)) {
@@ -282,6 +287,9 @@ void LLVMVisitor::clearLLVMData() {
   func = nullptr;
   block = nullptr;
   value = nullptr;
+  fieldOffsetResolvers.clear();
+  virtualLookupTypes.clear();
+  virtualTargets.clear();
 
   for (auto it = funcs.begin(); it != funcs.end();) {
     if (it->second && it->second->hasPrivateLinkage()) {
@@ -3303,6 +3311,84 @@ void LLVMVisitor::visit(const CallInstr *x) {
   B->SetInsertPoint(block);
   process(x->getCallee());
   auto *f = value;
+  auto *funcType = getLLVMFuncType(x->getCallee()->getType());
+  std::vector<std::pair<int64_t, llvm::Function *>> targets;
+  llvm::Value *dynamicId = nullptr;
+  // RTTILowering represents obj.method(args) as lookup(obj, thunk)(args). The
+  // helper's recorded receiver type distinguishes this from an arbitrary indirect
+  // call. Specialize only in AOT: later JIT cells can add types or refresh targets.
+  if (!options->jit) {
+    if (auto *lookup = llvm::dyn_cast<llvm::CallInst>(f)) {
+      auto receiver = virtualLookupTypes.find(lookup->getCalledFunction());
+      auto *thunk = lookup->arg_size() == 2
+                        ? llvm::dyn_cast<llvm::ConstantInt>(lookup->getArgOperand(1))
+                        : nullptr;
+      if (receiver != virtualLookupTypes.end() && receiver->second && thunk &&
+          lookup->use_empty()) {
+        auto *type = receiver->second;
+        auto key = std::make_pair(type->getRuntimeInfo()->id, thunk->getSExtValue());
+        auto cached = virtualTargets.find(key);
+        if (cached == virtualTargets.end()) {
+          // Cover every compatible subtype, not just observed allocations. An
+          // incomplete target set or ABI mismatch must retain the original lookup.
+          // The budget bounds concrete receiver types, not distinct method bodies.
+          constexpr size_t MAX_SPECIALIZED_TYPES = 4;
+          std::vector<std::pair<int64_t, llvm::Function *>> candidates;
+          for (auto iterator = type->getModule()->types_begin();
+               iterator != type->getModule()->types_end(); ++iterator) {
+            auto *info = (*iterator)->getRuntimeInfo();
+            if (!info ||
+                std::find(info->mro.begin(), info->mro.end(), type) == info->mro.end())
+              continue;
+            auto target = info->methods.find(key.second);
+            if (target == info->methods.end()) {
+              candidates.clear();
+              break;
+            }
+            auto *function = getFunc(target->second);
+            if (!function || function->getFunctionType() != funcType ||
+                candidates.size() == MAX_SPECIALIZED_TYPES) {
+              candidates.clear();
+              break;
+            }
+            candidates.emplace_back(info->id, function);
+          }
+          cached = virtualTargets.emplace(key, std::move(candidates)).first;
+        }
+        targets = cached->second;
+        if (!targets.empty()) {
+          bool singleton =
+              std::all_of(targets.begin(), targets.end(), [&](const auto &target) {
+                return target.second == targets.front().second;
+              });
+          if (singleton) {
+            // Different concrete classes can share one implementation.
+            f = targets.front().second;
+            targets.clear();
+          } else {
+            // For make_obj().method(side_effect()), the callee flow has already
+            // evaluated make_obj(). Keep receiver validation before side_effect();
+            // the second switch below selects the call after evaluating args once.
+            auto *header = B->CreateLoad(B->getPtrTy(), lookup->getArgOperand(0));
+            dynamicId = loadRuntimeField(header, runtime::TYPE_ID);
+            auto *valid = llvm::BasicBlock::Create(*context, "dispatch.valid", func);
+            auto *missing =
+                llvm::BasicBlock::Create(*context, "dispatch.missing", func);
+            auto *selection = B->CreateSwitch(dynamicId, missing);
+            for (auto [id, target] : targets)
+              selection->addCase(B->getInt64(id), valid);
+            B->SetInsertPoint(missing);
+            B->CreateCall(
+                llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::trap));
+            B->CreateUnreachable();
+            B->SetInsertPoint(valid);
+            block = valid;
+          }
+          lookup->eraseFromParent();
+        }
+      }
+    }
+  }
 
   std::vector<llvm::Value *> args;
   for (auto *arg : *x) {
@@ -3311,7 +3397,37 @@ void LLVMVisitor::visit(const CallInstr *x) {
     args.push_back(value);
   }
 
-  auto *funcType = getLLVMFuncType(x->getCallee()->getType());
+  if (!targets.empty()) {
+    auto *resultType = getLLVMType(x->getType());
+    auto *done = llvm::BasicBlock::Create(*context, "dispatch.done", func);
+    auto *missing = llvm::BasicBlock::Create(*context, "dispatch.unreachable", func);
+    auto *selection = B->CreateSwitch(dynamicId, missing);
+    std::vector<std::pair<llvm::Value *, llvm::BasicBlock *>> results;
+    for (auto [id, target] : targets) {
+      auto *destination = llvm::BasicBlock::Create(*context, "dispatch.call", func);
+      selection->addCase(B->getInt64(id), destination);
+      B->SetInsertPoint(destination);
+      block = destination;
+      auto *result = call({funcType, target}, args);
+      // call() can emit an invoke and move block to its normal continuation. That
+      // continuation, rather than destination, is the result's PHI predecessor.
+      results.emplace_back(result, block);
+      B->CreateBr(done);
+    }
+    B->SetInsertPoint(missing);
+    B->CreateUnreachable();
+    B->SetInsertPoint(done);
+    block = done;
+    if (isStorableType(resultType)) {
+      auto *result = B->CreatePHI(resultType, results.size());
+      for (auto [incoming, predecessor] : results)
+        result->addIncoming(incoming, predecessor);
+      value = result;
+    } else {
+      value = getDummyValue(resultType);
+    }
+    return;
+  }
   auto *callResult = call({funcType, f}, args);
 
   auto *resultType = getLLVMType(x->getType());
@@ -3571,6 +3687,10 @@ llvm::StructType *LLVMVisitor::getObjectLayout(RefType *type) {
     return llvm::cast<llvm::StructType>(getLLVMType(type->getContents()));
   auto *info = type->getRuntimeInfo();
   seqassertn(info, "missing runtime metadata for {}", type->getName());
+  // For MRO [Leaf, Left, Right, Root, object], the allocation is
+  // {TypeInfo*, Leaf-own, Left-own, Right-own, Root-own, object-own}.
+  // LLVM supplies padding between/within segments. Leaf-own excludes inherited
+  // fields, and upcasts keep pointing at the header, not at a base segment.
   std::vector<llvm::Type *> fields{B->getPtrTy()};
   for (auto *base : info->mro)
     fields.push_back(getOwnLayout(cast<RefType>(base)));
@@ -3583,6 +3703,8 @@ uint64_t LLVMVisitor::getObjectFieldOffset(RefType *type, size_t index) {
     return layout.getStructLayout(getObjectLayout(type))->getElementOffset(index);
   auto *info = type->getRuntimeInfo();
   auto *owner = cast<RefType>(info->fieldOwners.at(index));
+  // index is source-visible, including inherited fields. Convert it to an index
+  // within the owner's own-field struct, then add that segment's allocation offset.
   size_t localIndex = 0;
   for (size_t previous = 0; previous < index; ++previous)
     localIndex += info->fieldOwners[previous] == owner;
@@ -3599,6 +3721,9 @@ llvm::GlobalVariable *LLVMVisitor::getRuntimeTypeInfo(Type *type) {
   auto name = fmt::format(".codon.typeinfo.{}", info->id);
   if (auto *existing = M->getNamedGlobal(name))
     return existing;
+  // AOT descriptors are constants. A JIT descriptor keeps its symbol/address
+  // across cells, while its fields can be refreshed to reference new constant
+  // backing arrays. Existing objects must not keep a stale descriptor address.
   auto *result =
       new llvm::GlobalVariable(*M, getRuntimeTypeInfoType(), !options->jit,
                                options->jit ? llvm::GlobalValue::ExternalLinkage
@@ -3608,6 +3733,8 @@ llvm::GlobalVariable *LLVMVisitor::getRuntimeTypeInfo(Type *type) {
   std::map<size_t, id_t> methodIds;
   for (const auto &[id, target] : info->methods)
     methodIds[id] = target->getId();
+  // An unchanged old JIT descriptor needs only an external declaration here.
+  // Compare CIR identities because LLVM function objects are recreated per module.
   if (options->jit && previouslyEmitted && emittedTypeMethods[info->id] == methodIds)
     return result;
 
@@ -3641,6 +3768,8 @@ llvm::GlobalVariable *LLVMVisitor::getRuntimeTypeInfo(Type *type) {
     if (info->mro[index] == info->systemExitBase)
       systemExitOffset = offset;
   }
+  // Offsets are indexed in MRO order; ancestry membership uses a separate sorted
+  // copy so binary search does not disturb field layout or super() ordering.
   sortedMro = mro;
   std::sort(sortedMro.begin(), sortedMro.end(), [](auto *first, auto *second) {
     return llvm::cast<llvm::ConstantInt>(first)->getZExtValue() <
@@ -3686,13 +3815,28 @@ llvm::GlobalVariable *LLVMVisitor::getRuntimeTypeInfo(Type *type) {
     seqassertn(parameterInfo, "missing generic metadata for {}", parameter->getName());
     parameters.push_back(B->getInt64(parameterInfo->id));
   }
-  size_t methodCount = info->methods.empty() ? 0 : info->methods.rbegin()->first + 1;
+  // Thunk IDs identify methods, not physical slots. IDs {17, 4096}, for example,
+  // need four keyed slots instead of 4097 pointers. Power-of-two capacity and a
+  // load factor <= 1/2 leave empty sentinels for the matching lookup below.
+  // METHOD_COUNT is this capacity, not the number of live methods.
+  size_t methodCount = info->methods.empty() ? 0 : 1;
+  while (methodCount < 2 * info->methods.size())
+    methodCount *= 2;
+  auto *methodSlotType =
+      llvm::StructType::get(*context, {B->getInt64Ty(), B->getPtrTy()});
   std::vector<llvm::Constant *> methods(methodCount,
-                                        llvm::ConstantPointerNull::get(B->getPtrTy()));
+                                        llvm::Constant::getNullValue(methodSlotType));
+  std::vector<bool> occupied(methodCount);
   for (const auto &[id, target] : info->methods) {
     auto *function = getFunc(target);
     seqassertn(function, "missing dispatch target {}", target->getName());
-    methods[id] = function;
+    seqassertn(id, "zero is reserved for empty method slots");
+    auto position = runtime::methodHash(id) & (methodCount - 1);
+    while (occupied[position])
+      position = (position + 1) & (methodCount - 1);
+    occupied[position] = true;
+    methods[position] =
+        llvm::ConstantStruct::get(methodSlotType, B->getInt64(id), function);
   }
   auto *initializer = llvm::ConstantStruct::get(
       getRuntimeTypeInfoType(),
@@ -3700,12 +3844,14 @@ llvm::GlobalVariable *LLVMVisitor::getRuntimeTypeInfo(Type *type) {
        array(B->getInt64Ty(), mro, ".mro"), array(B->getInt64Ty(), offsets, ".offsets"),
        array(B->getInt64Ty(), sortedMro, ".sorted"), B->getInt64(slots.size()),
        array(slotType, slots, ".slots"), B->getInt64(methodCount),
-       array(B->getPtrTy(), methods, ".methods"), B->getInt8(polymorphic),
+       array(methodSlotType, methods, ".methods"), B->getInt8(polymorphic),
        string(info->rawName), string(info->niceName), string(info->baseName),
        B->getInt64(parameters.size()), array(B->getInt64Ty(), parameters, ".params"),
        B->getInt64(M->getDataLayout().getTypeAllocSize(getLLVMType(type))),
        B->getInt8(reference != nullptr), B->getInt64(exceptionOffset),
        B->getInt64(systemExitOffset)});
+  // Refresh an old descriptor in place when the cell initializes; do not define
+  // a second global and strand existing objects on the old method table.
   if (options->jit && previouslyEmitted)
     typeInfoUpdates.emplace_back(result, initializer);
   else
@@ -3728,6 +3874,8 @@ llvm::GlobalVariable *LLVMVisitor::getRuntimeTypeRegistry() {
 }
 
 void LLVMVisitor::prepareRuntimeTypeInfo(Module *module) {
+  // Each cell can replace the backing table. Previously compiled type-ID lookups
+  // load the shared {count, table} registry rather than capturing one cell's array.
   std::vector<llvm::Constant *> entries;
   for (auto iterator = module->types_begin(); iterator != module->types_end();
        ++iterator) {
@@ -3750,6 +3898,8 @@ void LLVMVisitor::prepareRuntimeTypeInfo(Module *module) {
       llvm::FunctionType::get(B->getVoidTy(), false),
       llvm::GlobalValue::ExternalLinkage, runtimeInitializerName, M.get());
   llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", initializer));
+  // Refresh descriptors before publishing the registry. JIT cell initialization
+  // is serial; these stores are not a concurrent-reader publication protocol.
   for (const auto &[destination, contents] : typeInfoUpdates)
     builder.CreateStore(contents, destination);
   builder.CreateStore(
@@ -3780,6 +3930,93 @@ llvm::Value *LLVMVisitor::getFieldAddress(llvm::Value *object, RefType *type,
   auto localOffset = M->getDataLayout()
                          .getStructLayout(getOwnLayout(owner))
                          ->getElementOffset(localIndex);
+  // Address = canonical object + owner's segment offset + field's local offset.
+  // Static type Base alone does not fix the segment offset: Derived's own fields
+  // precede Base's segment. AOT can prove agreement across all known subtypes;
+  // JIT cannot make that closed-world assumption about future cells.
+  if (!options->jit) {
+    auto key = std::make_pair(metadata->id, owner->getRuntimeInfo()->id);
+    auto cached = fieldOffsetResolvers.find(key);
+    if (cached == fieldOffsetResolvers.end()) {
+      std::vector<std::pair<int64_t, uint64_t>> offsets;
+      for (auto iterator = type->getModule()->types_begin();
+           iterator != type->getModule()->types_end(); ++iterator) {
+        auto *candidate = cast<RefType>(*iterator);
+        auto *info = candidate ? candidate->getRuntimeInfo() : nullptr;
+        if (!info || !candidate->isPolymorphic() ||
+            std::find(info->mro.begin(), info->mro.end(), type) == info->mro.end())
+          continue;
+        auto position = std::find(info->mro.begin(), info->mro.end(), owner);
+        seqassertn(position != info->mro.end(), "field owner missing from subtype");
+        auto offset =
+            M->getDataLayout()
+                .getStructLayout(getObjectLayout(candidate))
+                ->getElementOffset(1 + std::distance(info->mro.begin(), position));
+        offsets.emplace_back(info->id, offset);
+      }
+      FieldOffsetResolver resolver{false, 0, nullptr};
+      if (!offsets.empty()) {
+        resolver.offset = offsets.front().second;
+        resolver.constant =
+            std::all_of(offsets.begin(), offsets.end(), [&](const auto &entry) {
+              return entry.second == resolver.offset;
+            });
+        if (!resolver.constant) {
+          // E.g. BaseID -> 8, DerivedID -> 24. One pure resolver serves every field
+          // of this owner, allowing LLVM to common/hoist the offset computation
+          // instead of expanding an MRO search for each individual load and store.
+          resolver.function = llvm::Function::Create(
+              llvm::FunctionType::get(B->getInt64Ty(), {B->getInt64Ty()}, false),
+              llvm::GlobalValue::PrivateLinkage,
+              fmt::format(".codon.field.offset.{}.{}", key.first, key.second), M.get());
+          resolver.function->setMemoryEffects(llvm::MemoryEffects::none());
+          resolver.function->addFnAttr(llvm::Attribute::NoUnwind);
+          llvm::IRBuilder<> builder(
+              llvm::BasicBlock::Create(*context, "entry", resolver.function));
+          auto *missing =
+              llvm::BasicBlock::Create(*context, "missing", resolver.function);
+          auto *selection = builder.CreateSwitch(resolver.function->getArg(0), missing);
+          std::map<uint64_t, llvm::BasicBlock *> destinations;
+          for (auto [id, offset] : offsets) {
+            auto &destination = destinations[offset];
+            if (!destination) {
+              destination =
+                  llvm::BasicBlock::Create(*context, "found", resolver.function);
+              builder.SetInsertPoint(destination);
+              builder.CreateRet(builder.getInt64(offset));
+            }
+            selection->addCase(builder.getInt64(id), destination);
+          }
+          builder.SetInsertPoint(missing);
+          builder.CreateCall(
+              llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::trap));
+          builder.CreateUnreachable();
+        }
+      }
+      cached = fieldOffsetResolvers.emplace(key, resolver).first;
+    }
+    const auto &resolver = cached->second;
+    if (resolver.constant)
+      return B->CreateGEP(B->getInt8Ty(), object,
+                          B->getInt64(resolver.offset + localOffset));
+    if (resolver.function) {
+      // Payload stores cannot change the initialized header or the AOT type ID.
+      // Mark only these loads invariant, not payload loads or JIT method-table
+      // fields, which may be republished by later cells.
+      auto *header = B->CreateLoad(B->getPtrTy(), object);
+      header->setMetadata(llvm::LLVMContext::MD_invariant_load,
+                          llvm::MDNode::get(*context, {}));
+      auto *id = llvm::cast<llvm::LoadInst>(loadRuntimeField(header, runtime::TYPE_ID));
+      id->setMetadata(llvm::LLVMContext::MD_invariant_load,
+                      llvm::MDNode::get(*context, {}));
+      auto *offset = B->CreateCall(resolver.function, {id});
+      return B->CreateGEP(B->getInt8Ty(), object,
+                          B->CreateAdd(offset, B->getInt64(localOffset)));
+    }
+  }
+  // General/JIT fallback: an old Base-typed helper may receive a new subclass
+  // whose extra fields move Base's segment. Resolve the owner in the actual MRO
+  // and trap if it is absent rather than treating an unrelated segment as the field.
   auto *info = B->CreateLoad(B->getPtrTy(), object);
   auto *count = loadRuntimeField(info, runtime::MRO_COUNT);
   auto *ids = loadRuntimeField(info, runtime::MRO_IDS);
@@ -3838,6 +4075,8 @@ LLVMVisitor::codegenRuntimeIntrinsic(const InternalFunc *function,
     return getRuntimeTypeInfo(function->getIntrinsicType());
   case Intrinsic::TYPEINFO_LOOKUP: {
     if (options->jit) {
+      // Reload the registry so code from an earlier cell can resolve newly added
+      // IDs. A captured pointer to that cell's original table would miss them.
       auto *registry = getRuntimeTypeRegistry();
       auto *type = llvm::cast<llvm::StructType>(registry->getValueType());
       auto *count =
@@ -3858,6 +4097,8 @@ LLVMVisitor::codegenRuntimeIntrinsic(const InternalFunc *function,
       block = found;
       return info;
     }
+    // AOT knows the full ID set. LLVM can fold constant queries or select an
+    // appropriate switch/table representation for dynamic queries.
     auto *missing = llvm::BasicBlock::Create(*context, "typeinfo.missing", func);
     auto *selection = B->CreateSwitch(args.at(0), missing);
     for (auto iterator = function->getModule()->types_begin();
@@ -3878,22 +4119,49 @@ LLVMVisitor::codegenRuntimeIntrinsic(const InternalFunc *function,
     return nullptr;
   }
   case Intrinsic::VIRTUAL_LOOKUP: {
+    // Probe the keyed table emitted by getRuntimeTypeInfo(), using the same hash
+    // and wraparound rule. Semantic thunk IDs stay stable even when a JIT update
+    // changes capacity and moves entries to different physical slots.
     auto *info = B->CreateLoad(B->getPtrTy(), args.at(0));
     auto *count = loadRuntimeField(info, runtime::METHOD_COUNT);
     auto *valid = llvm::BasicBlock::Create(*context, "method.valid", func);
+    auto *probe = llvm::BasicBlock::Create(*context, "method.probe", func);
+    auto *next = llvm::BasicBlock::Create(*context, "method.next", func);
     auto *missing = llvm::BasicBlock::Create(*context, "method.missing", func);
     auto *found = llvm::BasicBlock::Create(*context, "method.found", func);
-    B->CreateCondBr(B->CreateICmpULT(args.at(1), count), valid, missing);
+    auto *done = llvm::BasicBlock::Create(*context, "method.done", func);
+    B->CreateCondBr(B->CreateICmpNE(count, B->getInt64(0)), valid, missing);
     B->SetInsertPoint(valid);
     auto *methods = loadRuntimeField(info, runtime::METHODS);
-    auto *target =
-        B->CreateLoad(B->getPtrTy(), B->CreateGEP(B->getPtrTy(), methods, args.at(1)));
-    B->CreateCondBr(B->CreateIsNotNull(target), found, missing);
+    auto *mask = B->CreateSub(count, B->getInt64(1));
+    auto *mixed =
+        B->CreateMul(args.at(1), B->getInt64(runtime::METHOD_HASH_MULTIPLIER));
+    auto *hash = B->CreateXor(mixed, B->CreateLShr(mixed, runtime::METHOD_HASH_SHIFT));
+    auto *start = B->CreateAnd(hash, mask);
+    auto *slotType = llvm::StructType::get(*context, {B->getInt64Ty(), B->getPtrTy()});
+    B->CreateBr(probe);
+    B->SetInsertPoint(probe);
+    auto *position = B->CreatePHI(B->getInt64Ty(), 2);
+    position->addIncoming(start, valid);
+    auto *slot = B->CreateGEP(slotType, methods, position);
+    auto *id = B->CreateLoad(B->getInt64Ty(), B->CreateStructGEP(slotType, slot, 0));
+    B->CreateCondBr(B->CreateICmpEQ(id, args.at(1)), found, next);
+    B->SetInsertPoint(next);
+    auto *following = B->CreateAnd(B->CreateAdd(position, B->getInt64(1)), mask);
+    position->addIncoming(following, next);
+    // ID zero ends an unsuccessful search. The full-cycle check additionally
+    // bounds probing if no empty slot is encountered; a null matched target traps.
+    B->CreateCondBr(B->CreateAnd(B->CreateICmpNE(id, B->getInt64(0)),
+                                 B->CreateICmpNE(following, start)),
+                    probe, missing);
+    B->SetInsertPoint(found);
+    auto *target = B->CreateLoad(B->getPtrTy(), B->CreateStructGEP(slotType, slot, 1));
+    B->CreateCondBr(B->CreateIsNotNull(target), done, missing);
     B->SetInsertPoint(missing);
     B->CreateCall(llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::trap));
     B->CreateUnreachable();
-    B->SetInsertPoint(found);
-    block = found;
+    B->SetInsertPoint(done);
+    block = done;
     return target;
   }
   default:
