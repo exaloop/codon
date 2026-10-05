@@ -222,6 +222,36 @@ extern "C" int dladdr(void *address, seq_dl_info *info) {
 extern "C" float seq_win_hypotf(float x, float y) {
   return static_cast<float>(hypot(static_cast<double>(x), static_cast<double>(y)));
 }
+
+/// Map a Win32 error code to errno (and _doserrno) like the static CRT's _dosmaperr.
+extern "C" void seq_win_dosmaperr(unsigned long code) {
+  static const struct {
+    unsigned long win;
+    int err;
+  } table[] = {
+      {1, EINVAL},   {2, ENOENT},     {3, ENOENT},  {4, EMFILE},    {5, EACCES},
+      {6, EBADF},    {7, ENOMEM},     {8, ENOMEM},  {9, ENOMEM},    {10, E2BIG},
+      {11, ENOEXEC}, {12, EINVAL},    {13, EINVAL}, {15, ENOENT},   {16, EACCES},
+      {17, EXDEV},   {18, ENOENT},    {33, EACCES}, {53, ENOENT},   {65, EACCES},
+      {67, ENOENT},  {80, EEXIST},    {82, EACCES}, {83, EACCES},   {87, EINVAL},
+      {89, EAGAIN},  {108, EACCES},   {109, EPIPE}, {112, ENOSPC},  {114, EBADF},
+      {128, ECHILD}, {129, ECHILD},   {130, EBADF}, {131, EINVAL},  {132, EACCES},
+      {145, ENOTEMPTY}, {158, EACCES}, {161, ENOENT}, {164, EAGAIN}, {167, EACCES},
+      {183, EEXIST}, {206, ENOENT},   {215, EAGAIN}, {1816, ENOMEM}};
+  _doserrno = code;
+  for (const auto &entry : table) {
+    if (entry.win == code) {
+      errno = entry.err;
+      return;
+    }
+  }
+  if (code >= 19 && code <= 36)
+    errno = EACCES;
+  else if (code >= 188 && code <= 202)
+    errno = ENOEXEC;
+  else
+    errno = EINVAL;
+}
 #endif
 
 /*

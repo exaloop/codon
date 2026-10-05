@@ -51,6 +51,11 @@ Engine::Engine(Options *options) : jit(), debug(nullptr), options(options) {
   jit = llvm::cantFail(builder.create());
 #ifdef _WIN32
   defineImageBase();
+  // The process-wide search can bind CRT calls to the legacy msvcrt.dll (its own errno,
+  // FILE pool, no fopen "x" mode); codonrt and libpython use the UCRT, so try it first.
+  jit->getMainJITDylib().addGenerator(
+      llvm::cantFail(llvm::orc::DynamicLibrarySearchGenerator::Load(
+          "ucrtbase.dll", layout.getGlobalPrefix())));
 #endif
 
   jit->getMainJITDylib().addGenerator(

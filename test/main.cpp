@@ -12,7 +12,9 @@
 #include <vector>
 
 #ifdef _WIN32
+#include <atomic>
 #include <io.h>
+#include <thread>
 // No fork()/wait() on Windows. runInChildProcess() re-execs the test binary once
 // per case, so the child's exit code maps directly onto these wait-status macros.
 // (<windows.h> itself is included below, after the LLVM/Codon headers, so its
@@ -387,6 +389,17 @@ public:
     CloseHandle(wr);
     assert(ok);
 
+    // A hung child would otherwise block the pipe read below forever and stall the
+    // whole suite; kill it after a generous per-case limit so only this case fails.
+    constexpr DWORD caseTimeoutMs = 20 * 60 * 1000;
+    std::atomic<bool> timedOut{false};
+    std::thread watchdog([&]() {
+      if (WaitForSingleObject(pi.hProcess, caseTimeoutMs) == WAIT_TIMEOUT) {
+        timedOut = true;
+        TerminateProcess(pi.hProcess, 124);
+      }
+    });
+
     string out;
     char rbuf[4096];
     DWORD n = 0;
@@ -395,6 +408,10 @@ public:
     CloseHandle(rd);
 
     WaitForSingleObject(pi.hProcess, INFINITE);
+    watchdog.join();
+    if (timedOut)
+      fprintf(stderr, "codon_test: case timed out after %lu ms and was killed\n",
+              static_cast<unsigned long>(caseTimeoutMs));
     DWORD ec = 0;
     GetExitCodeProcess(pi.hProcess, &ec);
     CloseHandle(pi.hProcess);

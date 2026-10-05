@@ -258,16 +258,23 @@ elseif(WIN32)
             -Wl,/INCLUDE:BZ2_bzopen
             -Wl,/EXPORT:BZ2_bzopen -Wl,/EXPORT:BZ2_bzclose -Wl,/EXPORT:BZ2_bzread
             -Wl,/EXPORT:BZ2_bzwrite -Wl,/EXPORT:BZ2_bzflush -Wl,/EXPORT:BZ2_bzerror
+            -Wl,/EXPORT:BZ2_bzCompressInit -Wl,/EXPORT:BZ2_bzCompress
+            -Wl,/EXPORT:BZ2_bzCompressEnd -Wl,/EXPORT:BZ2_bzDecompressInit
+            -Wl,/EXPORT:BZ2_bzDecompress -Wl,/EXPORT:BZ2_bzDecompressEnd
             # hypotf exists only as an inline wrapper in MSVC's <math.h>, so there is
             # no symbol the JIT can resolve for complex64 math
             # (test/stdlib/cmath_test.codon). Export codonrt's own implementation
             # under the plain name.
             -Wl,/EXPORT:hypotf=seq_win_hypotf
+            # stdlib/os/_win32.codon calls _dosmaperr, which only the static CRT
+            # provides (ucrtbase.dll does not export it).
+            -Wl,/EXPORT:_dosmaperr=seq_win_dosmaperr
             # test/types.cpp and test/stdlib/json_test.codon call GC_gcollect
             # directly. It comes from the static gc archive, which
             # WINDOWS_EXPORT_ALL_SYMBOLS does not re-export, so expose it here and
             # keep everything on codonrt's single GC instance.
-            -Wl,/INCLUDE:GC_gcollect -Wl,/EXPORT:GC_gcollect)
+            -Wl,/INCLUDE:GC_gcollect -Wl,/EXPORT:GC_gcollect
+            -Wl,/EXPORT:GC_get_total_bytes)
 else()
   add_dependencies(codonrt openblas_64)
 

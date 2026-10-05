@@ -1307,6 +1307,13 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
   builder.setJITTargetMachineBuilder(std::move(jtmb));
 
   auto jit = llvm::cantFail(builder.create());
+#ifdef _WIN32
+  // Same as engine.cpp: resolve CRT symbols against the UCRT before the process-wide
+  // search, which can otherwise pick the legacy msvcrt.dll.
+  jit->getMainJITDylib().addGenerator(
+      llvm::cantFail(llvm::orc::DynamicLibrarySearchGenerator::Load(
+          "ucrtbase.dll", jit->getDataLayout().getGlobalPrefix())));
+#endif
   jit->getMainJITDylib().addGenerator(
       llvm::cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
           jit->getDataLayout().getGlobalPrefix())));
