@@ -1,6 +1,5 @@
 // Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
-#include <atomic>
 #include <cassert>
 #include <cerrno>
 #include <chrono>
@@ -59,14 +58,14 @@ int seq_flags;
 
 #if !USE_STANDARD_MALLOC
 static void run_finalizers() {
-  static std::atomic_flag dispatching = ATOMIC_FLAG_INIT;
-  if (!GC_should_invoke_finalizers() ||
-      dispatching.test_and_set(std::memory_order_acquire))
+  static thread_local bool dispatching = false;
+  if (dispatching || !GC_should_invoke_finalizers())
     return;
+  dispatching = true;
   // Allocating callbacks may notify recursively; only the outer invocation drains.
   struct ResetDispatch {
-    std::atomic_flag &flag;
-    ~ResetDispatch() { flag.clear(std::memory_order_release); }
+    bool &flag;
+    ~ResetDispatch() { flag = false; }
   } reset{dispatching};
   GC_invoke_finalizers();
 }
