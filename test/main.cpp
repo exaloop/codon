@@ -451,6 +451,7 @@ INSTANTIATE_TEST_SUITE_P(
         "core/parser.codon",
         "core/generics.codon",
         "core/generators.codon",
+        "core/gc.codon",
         "core/exceptions.codon",
         "core/containers.codon",
         "core/trees.codon",

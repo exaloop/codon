@@ -1,5 +1,6 @@
 // Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
+#include <atomic>
 #include <cassert>
 #include <cerrno>
 #include <chrono>
@@ -56,12 +57,33 @@ void seq_exc_init(int flags);
 
 int seq_flags;
 
+#if !USE_STANDARD_MALLOC
+static void run_finalizers() {
+  static std::atomic_flag dispatching = ATOMIC_FLAG_INIT;
+  if (!GC_should_invoke_finalizers() ||
+      dispatching.test_and_set(std::memory_order_acquire))
+    return;
+  // Allocating callbacks may notify recursively; only the outer invocation drains.
+  struct ResetDispatch {
+    std::atomic_flag &flag;
+    ~ResetDispatch() { flag.clear(std::memory_order_release); }
+  } reset{dispatching};
+  GC_invoke_finalizers();
+}
+#endif
+
 SEQ_FUNC void seq_init(int flags) {
 #if !USE_STANDARD_MALLOC
-  GC_INIT();
-  GC_set_warn_proc(GC_ignore_warn_proc);
-  __kmpc_set_gc_callbacks(GC_get_stack_base, (gc_setup_callback)GC_register_my_thread,
-                          GC_add_roots, GC_remove_roots);
+  static std::once_flag initializeGC;
+  std::call_once(initializeGC, [] {
+    // Boehm owns the pending queue; nested notifications leave it for the outer drain.
+    GC_set_finalize_on_demand(1);
+    GC_INIT();
+    GC_set_warn_proc(GC_ignore_warn_proc);
+    GC_set_finalizer_notifier(run_finalizers);
+    __kmpc_set_gc_callbacks(GC_get_stack_base, (gc_setup_callback)GC_register_my_thread,
+                            GC_add_roots, GC_remove_roots);
+  });
 #endif
 
   seq_exc_init(flags);
