@@ -56,10 +56,27 @@ void seq_exc_init(int flags);
 
 int seq_flags;
 
+#if !USE_STANDARD_MALLOC
+static void run_finalizers() {
+  static thread_local bool dispatching = false;
+  if (dispatching || !GC_should_invoke_finalizers())
+    return;
+  dispatching = true;
+  // Allocating callbacks may notify recursively; only the outer invocation drains.
+  struct ResetDispatch {
+    bool &flag;
+    ~ResetDispatch() { flag = false; }
+  } reset{dispatching};
+  GC_invoke_finalizers();
+}
+#endif
+
 SEQ_FUNC void seq_init(int flags) {
 #if !USE_STANDARD_MALLOC
+  GC_set_finalize_on_demand(1);
   GC_INIT();
   GC_set_warn_proc(GC_ignore_warn_proc);
+  GC_set_finalizer_notifier(run_finalizers);
   __kmpc_set_gc_callbacks(GC_get_stack_base, (gc_setup_callback)GC_register_my_thread,
                           GC_add_roots, GC_remove_roots);
 #endif
