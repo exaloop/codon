@@ -73,16 +73,12 @@ static void run_finalizers() {
 
 SEQ_FUNC void seq_init(int flags) {
 #if !USE_STANDARD_MALLOC
-  static std::once_flag initializeGC;
-  std::call_once(initializeGC, [] {
-    // Boehm owns the pending queue; nested notifications leave it for the outer drain.
-    GC_set_finalize_on_demand(1);
-    GC_INIT();
-    GC_set_warn_proc(GC_ignore_warn_proc);
-    GC_set_finalizer_notifier(run_finalizers);
-    __kmpc_set_gc_callbacks(GC_get_stack_base, (gc_setup_callback)GC_register_my_thread,
-                            GC_add_roots, GC_remove_roots);
-  });
+  GC_set_finalize_on_demand(1);
+  GC_INIT();
+  GC_set_warn_proc(GC_ignore_warn_proc);
+  GC_set_finalizer_notifier(run_finalizers);
+  __kmpc_set_gc_callbacks(GC_get_stack_base, (gc_setup_callback)GC_register_my_thread,
+                          GC_add_roots, GC_remove_roots);
 #endif
 
   seq_exc_init(flags);
