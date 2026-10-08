@@ -904,6 +904,9 @@ def broadcast(*args):
     shape = broadcast_shapes(*tuple(a.shape for a in arrays))
     return _broadcast(arrays, shape)
 
+def _copy_element(dst: Ptr[D], src: Ptr[S], D: type, S: type):
+    dst[0] = util.cast(src[0], D)
+
 def full(shape, fill_value, dtype: type = NoneType, order: str = 'C'):
     if isinstance(shape, int):
         sh = (shape,)
@@ -920,8 +923,7 @@ def full(shape, fill_value, dtype: type = NoneType, order: str = 'C'):
             e = fv.item()
             result.map(lambda x: e, inplace=True)
         else:
-            for idx in util.multirange(shape):
-                result._ptr(idx)[0] = fv._ptr(idx, broadcast=True)[0]
+            ndarray._loop((result, fv), _copy_element, broadcast='first')
         return result
     else:
         result = empty(shape, dtype, order)
@@ -929,8 +931,7 @@ def full(shape, fill_value, dtype: type = NoneType, order: str = 'C'):
             e = fv.item()
             result.map(lambda x: util.cast(e, result.dtype), inplace=True)
         else:
-            for idx in util.multirange(shape):
-                result._ptr(idx)[0] = util.cast(fv._ptr(idx, broadcast=True)[0], result.dtype)
+            ndarray._loop((result, fv), _copy_element, broadcast='first')
         return result
 
 def full_like(prototype, fill_value, dtype: type = NoneType, order: str = 'K'):
@@ -947,8 +948,7 @@ def full_like(prototype, fill_value, dtype: type = NoneType, order: str = 'K'):
             e = fv.item()
             result.map(lambda x: e, inplace=True)
         else:
-            for idx in util.multirange(shape):
-                result._ptr(idx)[0] = fv._ptr(idx, broadcast=True)[0]
+            ndarray._loop((result, fv), _copy_element, broadcast='first')
         return result
     else:
         result = empty_like(prototype, dtype, order)
@@ -956,8 +956,7 @@ def full_like(prototype, fill_value, dtype: type = NoneType, order: str = 'K'):
             e = fv.item()
             result.map(lambda x: util.cast(e, result.dtype), inplace=True)
         else:
-            for idx in util.multirange(shape):
-                result._ptr(idx)[0] = util.cast(fv._ptr(idx, broadcast=True)[0], result.dtype)
+            ndarray._loop((result, fv), _copy_element, broadcast='first')
         return result
 
 ################
@@ -1171,6 +1170,39 @@ def _copy_data_f(dst: cobj, src: cobj, shape: Ptr[int],
             _copy_data_f(dst + j * dst_stride, src + j * src_stride,
                          shape, strides, dst_strides,
                          ndim - 1, element_size, block, block_dim)
+
+def _copy_region(dst: cobj, src: cobj, shape, strides, dst_strides,
+                 dtype: type, fortran: bool = False):
+    ndim: Literal[int] = static.len(shape)
+    element_size = util.sizeof(dtype)
+    if ndim == 0:
+        str.memcpy(dst, src, element_size)
+        return
+    if util.count(shape) == 0:
+        return
+    block = element_size
+    block_dim = 0
+    for offset in range(ndim):
+        dimension = offset if fortran else ndim - 1 - offset
+        if shape[dimension] == 1 or (strides[dimension] == block and dst_strides[dimension] == block):
+            block *= shape[dimension]
+            block_dim += 1
+        else:
+            break
+    if block == element_size:
+        destination = ndarray(shape, dst_strides, Ptr[dtype](dst))
+        source = ndarray(shape, strides, Ptr[dtype](src))
+        ndarray._loop((destination, source), _copy_element, broadcast='none')
+        return
+    pshape = Ptr[int](__ptr__(shape).as_byte())
+    pstrides = Ptr[int](__ptr__(strides).as_byte())
+    pdst_strides = Ptr[int](__ptr__(dst_strides).as_byte())
+    if fortran:
+        _copy_data_f(dst, src, pshape, pstrides, pdst_strides,
+                     ndim, element_size, block, block_dim)
+    else:
+        _copy_data_c(dst, src, pshape, pstrides, pdst_strides,
+                     ndim, element_size, block, block_dim)
 
 def concatenate(arrays, axis = 0, out = None, dtype: type = NoneType):
     def check_array_dims_static(arrays, ndim: Literal[int]):
@@ -2168,6 +2200,17 @@ def resize(a, new_shape):
         return zeros(new_shape, dtype=a.dtype)
 
     new = empty(new_shape, dtype=a.dtype)
+    if a._contig[0]:
+        copied = min(a.size, new_size)
+        element_size = a.itemsize
+        destination = new.data.as_byte()
+        str.memcpy(destination, a.data.as_byte(), copied * element_size)
+        while copied < new_size:
+            count = min(copied, new_size - copied)
+            str.memcpy(destination + copied * element_size, destination, count * element_size)
+            copied += count
+        return new
+
     off = 0
     go = True
 
@@ -2202,12 +2245,25 @@ def tile(A, reps):
 
     out_shape = util.tuple_apply(int.__mul__, A.shape, reps)
     new = empty(out_shape, dtype=dtype)
+    if new.size == 0:
+        return new
 
-    for idx1 in util.multirange(out_shape):
-        idx2 = util.tuple_apply(int.__mod__, idx1, A.shape)
-        q = new._ptr(idx1)
-        p = A._ptr(idx2)
-        q[0] = p[0]
+    dimensions: Literal[int] = 2 * ndim
+    shape = (0,) * dimensions
+    strides = (0,) * dimensions
+    dst_strides = (0,) * dimensions
+    pshape = Ptr[int](__ptr__(shape).as_byte())
+    pstrides = Ptr[int](__ptr__(strides).as_byte())
+    pdst_strides = Ptr[int](__ptr__(dst_strides).as_byte())
+    for dimension in static.range(ndim):
+        pshape[2 * dimension] = reps[dimension]
+        pshape[2 * dimension + 1] = A.shape[dimension]
+        pstrides[2 * dimension + 1] = A.strides[dimension]
+        pdst_strides[2 * dimension] = A.shape[dimension] * new.strides[dimension]
+        pdst_strides[2 * dimension + 1] = new.strides[dimension]
+
+    _copy_region(new.data.as_byte(), A.data.as_byte(), shape, strides,
+                 dst_strides, A.dtype)
 
     return new
 
@@ -2251,26 +2307,44 @@ def roll(a, shift, axis = None):
         pshifts[axis[i]] += shift[i]
 
     new = empty_like(a)
+    if a.size == 0:
+        return new
 
-    @pure
-    @llvm
-    def cdiv(a: int, b: int) -> int:
-        %0 = sdiv i64 %a, %b
-        ret i64 %0
+    shifted_axis = -1
+    shifted_axes = 0
+    for dimension in static.range(ndim):
+        pshifts[dimension] %= a.shape[dimension]
+        if shifts[dimension] != 0:
+            shifted_axis = dimension
+            shifted_axes += 1
 
-    def pymod(a: int, b: int):
-        d = cdiv(a, b)
-        m = a - d * b
-        if m and ((b ^ m) < 0):
-            m += b
-        return m
+    if a._contig_match(new):
+        if shifted_axes == 0:
+            str.memcpy(new.data.as_byte(), a.data.as_byte(), a.nbytes)
+            return new
+        if shifted_axes == 1:
+            stride = a.strides[shifted_axis]
+            block = a.shape[shifted_axis] * stride
+            tail = shifts[shifted_axis] * stride
+            head = block - tail
+            src = a.data.as_byte()
+            dst = new.data.as_byte()
+            for offset in range(0, a.nbytes, block):
+                str.memcpy(dst + offset, src + offset + head, tail)
+                str.memcpy(dst + offset + tail, src + offset, head)
+            return new
 
-    for idx1 in util.multirange(a.shape):
-        idx2 = util.tuple_apply(int.__add__, idx1, shifts)
-        idx2 = util.tuple_apply(pymod, idx2, a.shape)
-        p = a._ptr(idx1)
-        q = new._ptr(idx2)
-        q[0] = p[0]
+    regions = tuple(2 if shifts[dimension] else 1 for dimension in static.range(ndim))
+    for region in util.multirange(regions):
+        source = tuple(a.shape[dimension] - shifts[dimension] if region[dimension] else 0
+                       for dimension in static.range(ndim))
+        destination = tuple(0 if region[dimension] else shifts[dimension]
+                            for dimension in static.range(ndim))
+        shape = tuple(shifts[dimension] if region[dimension] else a.shape[dimension] - shifts[dimension]
+                      for dimension in static.range(ndim))
+        _copy_region(new._ptr(destination).as_byte(), a._ptr(source).as_byte(),
+                     shape, a.strides, new.strides, a.dtype,
+                     fortran=new._contig[1])
 
     return new
 
@@ -2506,11 +2580,12 @@ def isclose(a, b, rtol: float = 1e-05, atol: float = 1e-08, equal_nan: bool = Fa
     ans_shape = broadcast_shapes(a.shape, b.shape)
     ans = empty(ans_shape, bool)
 
-    for idx in util.multirange(ans_shape):
-        xa = a._ptr(idx, broadcast=True)[0]
-        xb = b._ptr(idx, broadcast=True)[0]
-        xans = _close(xa, xb, rtol=rtol, atol=atol, equal_nan=equal_nan)
-        ans._ptr(idx)[0] = xans
+    def close_element(dst, left, right, tolerances):
+        relative, absolute, nan_equal = tolerances
+        dst[0] = _close(left[0], right[0], rtol=relative, atol=absolute, equal_nan=nan_equal)
+
+    ndarray._loop((ans, a, b), close_element, broadcast='first',
+                  extra=(rtol, atol, equal_nan))
 
     return ans
 
@@ -3027,11 +3102,9 @@ def pad(array, pad_width, mode = 'constant', **kwargs):
         ans = zeros(new_shape, dtype)
 
     # copy in original array
-    for idx in util.multirange(s):
-        idx1 = tuple(idx[i] + pw[i][0] for i in static.range(ndim))
-        p = a._ptr(idx)
-        q = ans._ptr(idx1)
-        q[0] = p[0]
+    start = tuple(pw[dimension][0] for dimension in static.range(ndim))
+    _copy_region(ans._ptr(start).as_byte(), a.data.as_byte(),
+                 s, a.strides, ans.strides, a.dtype)
 
     if isinstance(mode, str):
         if mode == 'empty':

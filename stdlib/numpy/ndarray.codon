@@ -974,6 +974,7 @@ class ndarray[dtype, ndim: Literal[int]]:
             return tuple(ndarray(shape0, tup[1], tup[0]) for tup in allocated)
 
     def _contiguous(self, copy: Literal[bool] = False):
+        from .routines import _copy_region
         ccontig, _ = self._contig
         if ccontig:
             if copy:
@@ -986,14 +987,12 @@ class ndarray[dtype, ndim: Literal[int]]:
         else:
             n = self.size
             p = Ptr[dtype](n)
-            i = 0
-            for idx in util.multirange(self.shape):
-                q = self._ptr(idx)
-                p[i] = q[0]
-                i += 1
+            _copy_region(p.as_byte(), self._data.as_byte(), self.shape,
+                         self.strides, util.strides(self.shape, False, dtype), dtype)
             return p
 
     def _fcontiguous(self, copy: Literal[bool] = False):
+        from .routines import _copy_region
         _, fcontig = self._contig
         if fcontig:
             if copy:
@@ -1006,14 +1005,13 @@ class ndarray[dtype, ndim: Literal[int]]:
         else:
             n = self.size
             p = Ptr[dtype](n)
-            i = 0
-            for idx in util.fmultirange(self.shape):
-                q = self._ptr(idx)
-                p[i] = q[0]
-                i += 1
+            _copy_region(p.as_byte(), self._data.as_byte(), self.shape,
+                         self.strides, util.strides(self.shape, True, dtype),
+                         dtype, fortran=True)
             return p
 
     def tobytes(self, order: str = 'C'):
+        from .routines import _copy_region
         ndarray._check_order(order)
         ccontig, fcontig = self._contig
 
@@ -1025,16 +1023,11 @@ class ndarray[dtype, ndim: Literal[int]]:
 
         if (order == 'C' and ccontig) or (order == 'F' and fcontig):
             str.memcpy(p.as_byte(), self._data.as_byte(), n * self.itemsize)
-        elif order == 'F':
-            i = 0
-            for idx in util.fmultirange(self.shape):
-                p[i] = self._ptr(idx)[0]
-                i += 1
         else:
-            i = 0
-            for idx in util.multirange(self.shape):
-                p[i] = self._ptr(idx)[0]
-                i += 1
+            fortran = order == 'F'
+            _copy_region(p.as_byte(), self._data.as_byte(), self.shape,
+                         self.strides, util.strides(self.shape, fortran, dtype),
+                         dtype, fortran=fortran)
 
         return str(p.as_byte(), n * self.itemsize)
 
@@ -1137,6 +1130,7 @@ class ndarray[dtype, ndim: Literal[int]]:
             raise ValueError(f"order must be one of 'C', 'F', 'A', or 'K' (got '{order}')")
 
     def astype(self, dtype: type, order: str = 'K', copy: bool = True):
+        from .routines import _copy_element, _copy_region
         ndarray._check_order(order)
         cc, fc = self._contig
 
@@ -1159,10 +1153,8 @@ class ndarray[dtype, ndim: Literal[int]]:
                         f = fc
 
                     x = ndarray(self.shape, b, fcontig=f)
-                    for idx in util.multirange(self.shape):
-                        p = self._ptr(idx)
-                        q = x._ptr(idx)
-                        q[0] = p[0]
+                    _copy_region(b.as_byte(), a.as_byte(), self.shape,
+                                 self.strides, x.strides, dtype, fortran=f)
             return x
 
         a = self._data
@@ -1176,10 +1168,7 @@ class ndarray[dtype, ndim: Literal[int]]:
             f = fc
 
         other = ndarray(self.shape, b, fcontig=f)
-        for idx in util.multirange(self.shape):
-            p = self._ptr(idx)
-            q = other._ptr(idx)
-            q[0] = util.cast(p[0], dtype)
+        ndarray._loop((other, self), _copy_element, broadcast='none')
         return other
 
     def copy(self, order: str = 'C'):
