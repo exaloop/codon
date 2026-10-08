@@ -249,6 +249,208 @@ def test_filled_producers():
     assert np.sum(np.ones_like(array[:0]) + 2) == 0.
     assert np.array_equal(np.ones_like(array) + np.arange(5), [1., 2., 3., 4., 5.])
 
+@noinline
+def roll_stencil(array, bias, shift: int, axis: Literal[int]):
+    return np.roll(array, shift, axis) + 2 * np.roll(array, -shift, axis) + bias
+
+def check_roll_stencil(array, bias, axis: Literal[int]):
+    for shift in (-99, -1, 0, 1, 99, -9_223_372_036_854_775_808):
+        opposite = -shift if shift != -9_223_372_036_854_775_808 else shift
+        got = roll_stencil(array, bias, shift, axis)
+        expected = (materialize(np.roll(array, shift, axis)) +
+                    2 * materialize(np.roll(array, opposite, axis)) + bias)
+        assert got.dtype is expected.dtype
+        assert got.shape == expected.shape
+        assert got.strides == expected.strides, (got.strides, expected.strides)
+        assert np.array_equal(got, expected)
+        if array.size:
+            original = array.data[0]
+            got.data[0] = array.dtype(42)
+            assert array.data[0] == original
+
+@test
+def test_roll_producers():
+    matrix = np.arange(24.).reshape(4, 6)
+    for array in (matrix, np.asfortranarray(matrix), matrix.T,
+                  matrix[::-1, ::-1], matrix[::2, ::2], matrix[:0], matrix[:, :0]):
+        bias = np.ones((1, array.shape[1]))
+        check_roll_stencil(array, bias, 0)
+        check_roll_stencil(array, bias, 1)
+        check_roll_stencil(array, bias, -1)
+    check_roll_stencil(matrix[:1], np.ones((4, 6)), 0)
+    check_roll_stencil(np.arange(6.), np.ones((4, 6)), 0)
+    check_roll_stencil(np.array(3.) + matrix, np.array(2.), 1)
+    check_roll_stencil(np.broadcast_to(matrix[:1], matrix.shape), matrix, 0)
+    check_roll_stencil(np.arange(6, dtype=np.float32), np.ones(6, dtype=np.float32), 0)
+    check_roll_stencil(np.array([0, 1, 127, -128], dtype=np.int8),
+                       np.ones(4, dtype=np.int8), 0)
+    check_roll_stencil(np.array([1j, 2j, 3j]), np.ones(3, dtype=complex), 0)
+
+@noinline
+def roll_laplacian(array):
+    return (np.roll(array, 1, 0) + np.roll(array, -1, 0) +
+            np.roll(array, 1, 1) + np.roll(array, -1, 1) +
+            np.roll(array, 1, 2) + np.roll(array, -1, 2) - 6.0 * array)
+
+@noinline
+def roll_energy(left, right):
+    left_gradient = ((np.roll(left, -1, 0) - left) ** 2 +
+                     (np.roll(left, -1, 1) - left) ** 2 +
+                     (np.roll(left, -1, 2) - left) ** 2)
+    right_gradient = ((np.roll(right, -1, 0) - right) ** 2 +
+                      (np.roll(right, -1, 1) - right) ** 2 +
+                      (np.roll(right, -1, 2) - right) ** 2)
+    return np.mean(left_gradient + right_gradient)
+
+@noinline
+def mixed_axis_roll(array, other, shift: int):
+    return np.roll(array, shift, 0) + 2 * np.roll(other, shift, -1) + array
+
+@noinline
+def roll_axis_sum(array, shift: int):
+    return np.sum(np.roll(array, shift, 0) + np.roll(array, shift, -1),
+                  axis=1, dtype=float, keepdims=True, initial=3.)
+
+@noinline
+def roll_scalar_sum(array):
+    return np.sum(np.roll(array, 1, 0) + np.roll(array, -1, 2))
+
+def check_multiaxis_roll(array):
+    expected = (materialize(np.roll(array, 1, 0)) + materialize(np.roll(array, -1, 0)) +
+                materialize(np.roll(array, 1, 1)) + materialize(np.roll(array, -1, 1)) +
+                materialize(np.roll(array, 1, 2)) + materialize(np.roll(array, -1, 2)) -
+                6.0 * array)
+    got = roll_laplacian(array)
+    assert got.shape == expected.shape
+    assert got.strides == expected.strides
+    assert np.array_equal(got, expected)
+    assert got.data != array.data
+    other = array * 0.25
+    left_gradient = ((materialize(np.roll(array, -1, 0)) - array) ** 2 +
+                     (materialize(np.roll(array, -1, 1)) - array) ** 2 +
+                     (materialize(np.roll(array, -1, 2)) - array) ** 2)
+    right_gradient = ((materialize(np.roll(other, -1, 0)) - other) ** 2 +
+                      (materialize(np.roll(other, -1, 1)) - other) ** 2 +
+                      (materialize(np.roll(other, -1, 2)) - other) ** 2)
+    expected_energy = np.mean(materialize(left_gradient + right_gradient))
+    got_energy = roll_energy(array, other)
+    if array.size:
+        assert got_energy == expected_energy, (got_energy, expected_energy)
+    else:
+        assert np.isnan(got_energy) and np.isnan(expected_energy)
+    expected_sum = np.sum(materialize(
+        materialize(np.roll(array, 1, 0)) + materialize(np.roll(array, -1, 2))))
+    assert roll_scalar_sum(array) == expected_sum
+    for shift in (-99, -1, 0, 1, 99, -9_223_372_036_854_775_808):
+        for other in (array, np.ones((array.shape[-1],), dtype=array.dtype)):
+            got = mixed_axis_roll(array, other, shift)
+            expected = (materialize(np.roll(array, shift, 0)) +
+                        2 * materialize(np.roll(other, shift, -1)) + array)
+            assert got.dtype is expected.dtype
+            assert got.shape == expected.shape
+            assert got.strides == expected.strides
+            assert np.array_equal(got, expected)
+        expected = np.sum(materialize(
+            materialize(np.roll(array, shift, 0)) +
+            materialize(np.roll(array, shift, -1))),
+            axis=1, dtype=float, keepdims=True, initial=3.)
+        got = roll_axis_sum(array, shift)
+        assert got.shape == expected.shape
+        assert np.array_equal(got, expected)
+
+@test
+def test_multiaxis_roll_producers():
+    values = np.arange(120.).reshape(4, 5, 6) * 0.125
+    for array in (values, values.copy(order='F'), values.transpose((2, 0, 1)),
+                  values[::-1, ::-1, ::-1], values[:, ::2, ::2], values[:0],
+                  values[:, :0], values[:, :, :0], values[:1],
+                  np.broadcast_to(values[:1], values.shape)):
+        check_multiaxis_roll(array)
+    check_multiaxis_roll(values.astype(np.float32))
+    cancellation = np.array([1e16, 1., -1e16, -1.] * 258).reshape(2, 3, 172)
+    for array in (cancellation, cancellation.copy(order='F'),
+                  cancellation.transpose((1, 2, 0)), cancellation[:, ::-1, ::2]):
+        expected = np.sum(materialize(
+            materialize(np.roll(array, 1, 0)) + materialize(np.roll(array, -1, 2))))
+        assert roll_scalar_sum(array) == expected
+    original = values.copy()
+    expected = mixed_axis_roll(original, original, 1)
+    values[:] = np.roll(values, 1, 0) + 2 * np.roll(values, 1, -1) + values
+    assert np.array_equal(values, expected)
+    np.add(np.roll(values, 1, 0), np.roll(values, 1, -1), out=values)
+    assert np.array_equal(values, materialize(np.roll(expected, 1, 0)) +
+                          materialize(np.roll(expected, 1, -1)))
+
+@noinline
+def dynamic_axis_roll(array, shift: int, axis: int):
+    return np.roll(array, shift, axis) + 1
+
+@noinline
+def forwarded_roll(array, shift: int):
+    rolled = np.roll(array, shift, 0)
+    shift += 1
+    return rolled + array + shift
+
+@test
+def test_roll_fallbacks():
+    array = np.arange(12.).reshape(3, 4)
+    for axis in (0, 1, -1):
+        assert np.array_equal(dynamic_axis_roll(array, 1, axis),
+                              materialize(np.roll(array, 1, axis)) + 1)
+    assert np.array_equal(np.roll(array, 1) + 1, materialize(np.roll(array, 1)) + 1)
+    assert np.array_equal(np.roll(array, (1, 2), (0, 1)) + 1,
+                          materialize(np.roll(array, (1, 2), (0, 1))) + 1)
+    assert np.array_equal(np.roll(array, 1, 0) + np.roll(array, 1, 1),
+                          materialize(np.roll(array, 1, 0)) + materialize(np.roll(array, 1, 1)))
+    assert np.array_equal(np.roll(array + 1, 1, 0) + 2,
+                          materialize(np.roll(materialize(array + 1), 1, 0)) + 2)
+    assert np.array_equal(np.roll(np.roll(array, 1, 0), 1, 0) + 1,
+                          materialize(np.roll(materialize(np.roll(array, 1, 0)), 1, 0)) + 1)
+    assert (np.roll(array, 1, 0) + array).sum() == (
+        materialize(np.roll(array, 1, 0)) + array).sum()
+    assert np.array_equal(np.arctan2(np.arctan2(np.roll(array, 1, 0), array + 1), array + 2),
+                          np.arctan2(np.arctan2(materialize(np.roll(array, 1, 0)), array + 1), array + 2))
+    copy = np.roll(array, 0, 0)
+    copy[0, 0] = -1
+    assert array[0, 0] == 0
+    original = array.copy()
+    array[:] = np.roll(array, 1, 0) + 1
+    assert np.array_equal(array, materialize(np.roll(original, 1, 0)) + 1)
+    output = np.empty_like(array)
+    np.add(np.roll(array, 1, 0), 1, out=output)
+    assert np.array_equal(output, materialize(np.roll(array, 1, 0)) + 1)
+
+@test
+def test_roll_effects_and_errors():
+    array = np.array([1., 2., 3.])
+    assert np.array_equal(forwarded_roll(array, 1), [6., 5., 7.])
+    indices = np.array([2, 0, 1])
+    assert np.array_equal(np.roll(array[indices], 1, 0) + 1, [3., 4., 2.])
+    assert np.array_equal(np.roll(array, 1, 0) + mutate_array(array), [103., 3., 5.])
+    array = np.array([1., 2., 3.])
+    rolled = np.roll(array, 1, 0)
+    array[0] = 100.
+    assert np.array_equal(rolled + array, [103., 3., 5.])
+    events.clear()
+    assert np.array_equal(np.roll(array, record(1, 5), 0) + 1, [4., 101., 3.])
+    assert events == [5]
+    events.clear()
+    try:
+        np.roll(array, 1, 2) + record(1., 9)
+        assert False
+    except np.AxisError:
+        pass
+    assert events == []
+    try:
+        np.roll(array, 1, 0) + np.ones(4)
+        assert False
+    except ValueError:
+        pass
+
+test_roll_producers()
+test_multiaxis_roll_producers()
+test_roll_fallbacks()
+test_roll_effects_and_errors()
 test_array_copies_and_casts()
 test_higher_rank_producers()
 test_filled_producers()

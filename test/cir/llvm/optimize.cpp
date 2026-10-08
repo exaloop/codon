@@ -924,9 +924,9 @@ TEST(LLVMOptimizationTest, RequiresKnownNumpyOwnership) {
   };
   for (auto op : {NumPyExpr::NP_OP_NEG, NumPyExpr::NP_OP_ADD, NumPyExpr::NP_OP_EXP,
                   NumPyExpr::NP_OP_MATMUL, NumPyExpr::NP_OP_ZEROS_LIKE,
-                  NumPyExpr::NP_OP_ONES_LIKE, NumPyExpr::NP_OP_SUM,
-                  NumPyExpr::NP_OP_PROD, NumPyExpr::NP_OP_ANY, NumPyExpr::NP_OP_ALL,
-                  NumPyExpr::NP_OP_AMIN, NumPyExpr::NP_OP_AMAX}) {
+                  NumPyExpr::NP_OP_ONES_LIKE, NumPyExpr::NP_OP_ROLL,
+                  NumPyExpr::NP_OP_SUM, NumPyExpr::NP_OP_PROD, NumPyExpr::NP_OP_ANY,
+                  NumPyExpr::NP_OP_ALL, NumPyExpr::NP_OP_AMIN, NumPyExpr::NP_OP_AMAX}) {
     EXPECT_TRUE(owns(op));
     EXPECT_FALSE(owns(op, false));
   }
@@ -936,6 +936,100 @@ TEST(LLVMOptimizationTest, RequiresKnownNumpyOwnership) {
     EXPECT_FALSE(owns(op));
   NumPyExpr leaf(NumPyType(NumPyType::NP_TYPE_ARR_F64, 1), nullptr);
   EXPECT_FALSE(hasOwnedResult(leaf));
+}
+
+TEST(LLVMOptimizationTest, FusesSingleAxisNumpyRolls) {
+  ASSERT_EXIT(
+      {
+        auto compiler = compileAndOptimize(R"(
+import numpy as np
+
+@export
+def fused_roll(values: np.ndarray[float, 1], shift: int):
+    return np.roll(values, shift, 0) + 2.0 * np.roll(values, -shift, 0) + values
+
+@export
+def forwarded_roll(values: np.ndarray[float, 1], shift: int):
+    rolled = np.roll(values, shift, 0)
+    return rolled + values + shift
+)");
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        for (auto name : {"fused_roll", "forwarded_roll"}) {
+          auto *function = module->getFunction(name);
+          ASSERT_NE(function, nullptr);
+          llvm::DominatorTree dominators(*function);
+          llvm::LoopInfo loops(dominators);
+          int allocations = 0;
+          int vectorLoads = 0;
+          for (auto &block : *function) {
+            for (auto &instruction : block) {
+              if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction)) {
+                if (auto *callee = call->getCalledFunction()) {
+                  allocations += callee->getName() == "seq_alloc_atomic";
+                  EXPECT_FALSE(callee->getName().contains("std.numpy.routines.roll"));
+                }
+              }
+              if (auto *load = llvm::dyn_cast<llvm::LoadInst>(&instruction))
+                vectorLoads += load->getType()->isVectorTy();
+              if (loops.getLoopFor(&block)) {
+                EXPECT_NE(instruction.getOpcode(), llvm::Instruction::SDiv);
+                EXPECT_NE(instruction.getOpcode(), llvm::Instruction::UDiv);
+                EXPECT_NE(instruction.getOpcode(), llvm::Instruction::SRem);
+                EXPECT_NE(instruction.getOpcode(), llvm::Instruction::URem);
+              }
+            }
+          }
+          EXPECT_EQ(allocations, 1);
+          EXPECT_GT(vectorLoads, 0);
+        }
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(LLVMOptimizationTest, FusesMultiAxisNumpyRolls) {
+  ASSERT_EXIT(
+      {
+        auto compiler = compileAndOptimize(R"(
+import numpy as np
+
+@export
+def fused_laplacian(values: np.ndarray[float, 3]):
+    return (np.roll(values, 1, 0) + np.roll(values, -1, 0) +
+            np.roll(values, 1, 1) + np.roll(values, -1, 1) +
+            np.roll(values, 1, 2) + np.roll(values, -1, 2) - 6.0 * values)
+
+@export
+def fused_roll_energy(values: np.ndarray[float, 3]):
+    return np.mean((np.roll(values, -1, 0) - values) ** 2 +
+                   (np.roll(values, -1, 1) - values) ** 2 +
+                   (np.roll(values, -1, 2) - values) ** 2)
+)");
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        for (auto name : {"fused_laplacian", "fused_roll_energy"}) {
+          auto *function = module->getFunction(name);
+          ASSERT_NE(function, nullptr);
+          int allocations = 0;
+          int vectorLoads = 0;
+          for (auto &block : *function) {
+            for (auto &instruction : block) {
+              if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction)) {
+                if (auto *callee = call->getCalledFunction()) {
+                  allocations += callee->getName() == "seq_alloc_atomic";
+                  EXPECT_FALSE(callee->getName().contains("std.numpy.routines.roll"));
+                }
+              }
+              if (auto *load = llvm::dyn_cast<llvm::LoadInst>(&instruction))
+                vectorLoads += load->getType()->isVectorTy();
+            }
+          }
+          EXPECT_EQ(allocations, 1) << name;
+          EXPECT_GT(vectorLoads, 0) << name;
+        }
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
 }
 
 TEST(LLVMOptimizationTest, ReleasesNumpyUpdateTemporaries) {
