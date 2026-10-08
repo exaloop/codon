@@ -2316,7 +2316,9 @@ def roll(a, shift, axis = None):
     shifted_axis = -1
     shifted_axes = 0
     for dimension in static.range(ndim):
-        pshifts[dimension] %= a.shape[dimension]
+        size = a.shape[dimension]
+        normalized = shifts[dimension].cmod(size)
+        pshifts[dimension] = normalized + size if normalized < 0 else normalized
         if shifts[dimension] != 0:
             shifted_axis = dimension
             shifted_axes += 1

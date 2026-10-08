@@ -893,13 +893,14 @@ def test_repeated_copy_layouts():
             assert result.shape == (array.shape[0] * reps[0], array.shape[1] * reps[1])
             for row in range(result.shape[0]):
                 for column in range(result.shape[1]):
-                    assert result[row, column] == array[row % array.shape[0], column % array.shape[1]]
+                    assert result[row, column] == array[
+                        row.cmod(array.shape[0]), column.cmod(array.shape[1])]
         flat = array.ravel()
         for shape in ((4, 5), (1, 2), (0, 2)):
             result = np.resize(array, shape)
             assert result.shape == shape
             for index in range(result.size):
-                assert result.data[index] == flat[index % flat.size]
+                assert result.data[index] == flat[index.cmod(flat.size)]
         tiled = np.tile(array, (1, 1))
         tiled[0, 0] = -1
         assert array[0, 0] != -1
@@ -1009,6 +1010,25 @@ test_roll(np.reshape(np.arange(10), (2, 5)),
           axis=1)
 
 @test
+def test_roll_shift_normalization():
+    minimum_shift: Literal[int] = -9_223_372_036_854_775_808
+    maximum_shift: Literal[int] = 9_223_372_036_854_775_807
+    values = np.arange(6)
+    for shift in (-8, -2, minimum_shift):
+        assert np.array_equal(np.roll(values, shift, 0), [2, 3, 4, 5, 0, 1])
+    assert np.array_equal(np.roll(values, maximum_shift, 0), [5, 0, 1, 2, 3, 4])
+    assert np.array_equal(np.roll(values, -6, 0), values)
+    assert np.array_equal(np.roll(values, (-1, -1), (0, 0)), [2, 3, 4, 5, 0, 1])
+    assert np.array_equal(np.roll(values[::2], -1, 0), [2, 4, 0])
+    assert np.array_equal(np.roll(values[::-1], -1, 0), [4, 3, 2, 1, 0, 5])
+
+test_roll_shift_normalization()
+
+def wrap_roll_index(index: int, size: int):
+    remainder = index.cmod(size)
+    return remainder + size if remainder < 0 else remainder
+
+@test
 def test_roll_layouts():
     base = np.arange(24).reshape((4, 6))
     for array in (base, np.asfortranarray(base), base.T,
@@ -1020,8 +1040,8 @@ def test_roll_layouts():
                 assert result.shape == array.shape
                 for row in range(rows):
                     for column in range(columns):
-                        source_row = (row - shift) % rows if axis == 0 else row
-                        source_column = column if axis == 0 else (column - shift) % columns
+                        source_row = wrap_roll_index(row - shift, rows) if axis == 0 else row
+                        source_column = column if axis == 0 else wrap_roll_index(column - shift, columns)
                         assert result[row, column] == array[source_row, source_column]
             assert np.array_equal(np.roll(array, (shift, 2), (1, 1)),
                                   np.roll(array, shift + 2, 1))
@@ -1030,7 +1050,8 @@ def test_roll_layouts():
             result = np.roll(array, (shift, -shift), (0, 1))
             for row in range(rows):
                 for column in range(columns):
-                    assert result[row, column] == array[(row - shift) % rows, (column + shift) % columns]
+                    assert result[row, column] == array[
+                        wrap_roll_index(row - shift, rows), wrap_roll_index(column + shift, columns)]
         copied = np.roll(array, 0, 0)
         original = array[0, 0]
         copied[0, 0] = -1
@@ -1063,7 +1084,7 @@ def test_roll_tiny_regions(ndim: Literal[int], width: int):
             result = np.roll(array, shifts, axes)
             assert result.shape == array.shape
             for index in util.multirange(array.shape):
-                source = tuple((index[dimension] - shifts[dimension]) % array.shape[dimension]
+                source = tuple(wrap_roll_index(index[dimension] - shifts[dimension], array.shape[dimension])
                                for dimension in static.range(ndim))
                 assert result._ptr(index)[0] == array._ptr(source)[0]
             original = array.data[0]
@@ -1084,8 +1105,9 @@ def test_region_copy_layouts():
             for second in range(array.shape[1]):
                 for third in range(array.shape[2]):
                     assert result[first, second, third] == array[
-                        (first - 5) % array.shape[0], (second + 7) % array.shape[1],
-                        (third - 2) % array.shape[2]]
+                        wrap_roll_index(first - 5, array.shape[0]),
+                        wrap_roll_index(second + 7, array.shape[1]),
+                        wrap_roll_index(third - 2, array.shape[2])]
         padded = np.pad(array, ((1, 2), (2, 1), (1, 1)), constant_values=-1)
         assert np.array_equal(padded[1:-2, 2:-1, 1:-1], array)
         assert (padded[0] == -1).all()

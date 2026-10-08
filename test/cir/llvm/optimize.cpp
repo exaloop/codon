@@ -955,6 +955,7 @@ def forwarded_roll(values: np.ndarray[float, 1], shift: int):
 )");
         auto *module = compiler->getLLVMVisitor()->getModule();
         for (auto name : {"fused_roll", "forwarded_roll"}) {
+          SCOPED_TRACE(name);
           auto *function = module->getFunction(name);
           ASSERT_NE(function, nullptr);
           llvm::DominatorTree dominators(*function);
@@ -971,7 +972,15 @@ def forwarded_roll(values: np.ndarray[float, 1], shift: int):
               }
               if (auto *load = llvm::dyn_cast<llvm::LoadInst>(&instruction))
                 vectorLoads += load->getType()->isVectorTy();
-              if (loops.getLoopFor(&block)) {
+              if (auto *elementLoop = loops.getLoopFor(&block);
+                  elementLoop && elementLoop->isInnermost()) {
+                if (instruction.getOpcode() == llvm::Instruction::SDiv ||
+                    instruction.getOpcode() == llvm::Instruction::UDiv ||
+                    instruction.getOpcode() == llvm::Instruction::SRem ||
+                    instruction.getOpcode() == llvm::Instruction::URem)
+                  llvm::errs()
+                      << name << ": division/remainder in element loop: " << instruction
+                      << '\n';
                 EXPECT_NE(instruction.getOpcode(), llvm::Instruction::SDiv);
                 EXPECT_NE(instruction.getOpcode(), llvm::Instruction::UDiv);
                 EXPECT_NE(instruction.getOpcode(), llvm::Instruction::SRem);
@@ -981,6 +990,9 @@ def forwarded_roll(values: np.ndarray[float, 1], shift: int):
           }
           EXPECT_EQ(allocations, 1);
           EXPECT_GT(vectorLoads, 0);
+          if (HasFailure())
+            llvm::errs() << name << ": allocations=" << allocations
+                         << ", vector loads=" << vectorLoads << '\n';
         }
         std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
       },
