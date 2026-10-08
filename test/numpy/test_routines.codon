@@ -1040,8 +1040,39 @@ def test_roll_layouts():
     assert np.roll(np.array(7), 4).item() == 7
     assert np.array_equal(np.roll(np.arange(6).reshape((1, 6)), 2, 1),
                           np.array([[4, 5, 0, 1, 2, 3]]))
+    zero_bytes = np.empty((2, 3), dtype=type(()))
+    for array in (zero_bytes, np.asfortranarray(zero_bytes)):
+        assert np.roll(array, 1).shape == array.shape
+        assert np.roll(array, 1, 0).shape == array.shape
+        assert np.roll(array, (1, -1), (0, 1)).shape == array.shape
+        assert np.roll(array, 0, 1).itemsize == 0
 
 test_roll_layouts()
+
+@test
+def test_roll_tiny_regions(ndim: Literal[int], width: int):
+    import internal.static as static
+    from numpy import util
+
+    base = np.arange(width ** ndim).reshape((width,) * ndim)
+    axes = tuple(dimension for dimension in static.range(ndim))
+    for array in (base, np.asfortranarray(base), base[::-1],
+                  np.broadcast_to(base[:1], base.shape)):
+        for shifts in ((1,) * ndim,
+                       tuple(-3 if dimension.cmod(2) else 0 for dimension in static.range(ndim))):
+            result = np.roll(array, shifts, axes)
+            assert result.shape == array.shape
+            for index in util.multirange(array.shape):
+                source = tuple((index[dimension] - shifts[dimension]) % array.shape[dimension]
+                               for dimension in static.range(ndim))
+                assert result._ptr(index)[0] == array._ptr(source)[0]
+            original = array.data[0]
+            result.data[0] = -1
+            assert array.data[0] == original
+
+test_roll_tiny_regions(6, 2)
+test_roll_tiny_regions(3, 3)
+test_roll_tiny_regions(3, 4)
 
 @test
 def test_region_copy_layouts():
@@ -1099,6 +1130,30 @@ def test_array_copy_layouts():
     assert np.array(7).astype(float).item() == 7.0
 
 test_array_copy_layouts()
+
+@test
+def test_scaled_dtype_copies(dtype: type):
+    ticks = np.array([0, 1, -1, 6_000_000_000_000_000_000,
+                      6_000_000_000_000_000_001, -6_000_000_000_000_000_000,
+                      9_223_372_036_854_775_807, -9_223_372_036_854_775_808]).reshape((2, 4))
+    for values in (ticks[::-1, ::-1], ticks.T):
+        dates = values.view(dtype)
+        assert np.array_equal(dates.copy().view(int), values)
+        for order in ('C', 'F', 'A', 'K'):
+            assert np.array_equal(dates.astype(dtype, order=order).view(int), values)
+        for order in ('C', 'F'):
+            assert np.array_equal(dates.flatten(order).view(int), values.flatten(order))
+            assert np.array_equal(dates.ravel(order).view(int), values.ravel(order))
+            assert dates.tobytes(order) == values.tobytes(order)
+        assert np.array_equal(np.full(dates.shape, dates, dtype=dtype).view(int), values)
+        assert np.array_equal(np.full_like(dates, dates).view(int), values)
+        assert np.array_equal(np.roll(dates, (1, -1), (0, 1)).view(int),
+                              np.roll(values, (1, -1), (0, 1)))
+        assert np.array_equal(np.tile(dates, (2, 1)).view(int), np.tile(values, (2, 1)))
+
+test_scaled_dtype_copies(np.datetime64['ns', 2])
+test_scaled_dtype_copies(np.datetime64['D', 2])
+test_scaled_dtype_copies(np.timedelta64['ns', 2])
 
 @test
 def test_rot90(m, expected, k=1, axes=(0, 1)):

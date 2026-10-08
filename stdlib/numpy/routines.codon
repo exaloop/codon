@@ -905,7 +905,10 @@ def broadcast(*args):
     return _broadcast(arrays, shape)
 
 def _copy_element(dst: Ptr[D], src: Ptr[S], D: type, S: type):
-    dst[0] = util.cast(src[0], D)
+    if D is S:
+        dst[0] = src[0]
+    else:
+        dst[0] = util.cast(src[0], D)
 
 def full(shape, fill_value, dtype: type = NoneType, order: str = 'C'):
     if isinstance(shape, int):
@@ -2307,7 +2310,7 @@ def roll(a, shift, axis = None):
         pshifts[axis[i]] += shift[i]
 
     new = empty_like(a)
-    if a.size == 0:
+    if a.nbytes == 0:
         return new
 
     shifted_axis = -1
@@ -2335,6 +2338,16 @@ def roll(a, shift, axis = None):
             return new
 
     regions = tuple(2 if shifts[dimension] else 1 for dimension in static.range(ndim))
+    min_region_elements: Literal[int] = 8
+    if a.size.cdiv(util.count(regions)) < min_region_elements:
+        for index in util.multirange(a.shape):
+            source = tuple(index[dimension] - shifts[dimension]
+                           if index[dimension] >= shifts[dimension]
+                           else index[dimension] + (a.shape[dimension] - shifts[dimension])
+                           for dimension in static.range(ndim))
+            new._ptr(index)[0] = a._ptr(source)[0]
+        return new
+
     for region in util.multirange(regions):
         source = tuple(a.shape[dimension] - shifts[dimension] if region[dimension] else 0
                        for dimension in static.range(ndim))
