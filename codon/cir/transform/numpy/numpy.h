@@ -248,6 +248,7 @@ struct NumPyExpr {
     NP_OP_DEG2RAD,
     NP_OP_RAD2DEG,
     NP_OP_HEAVISIDE,
+    NP_OP_ROLL,
     NP_OP_CAST,
     NP_OP_ZEROS_LIKE,
     NP_OP_ONES_LIKE,
@@ -293,6 +294,7 @@ struct NumPyExpr {
 
   int64_t opcost() const;
   int64_t cost() const;
+  int64_t rollAxis() const;
 
   std::string opstring() const;
   void dump(std::ostream &os, int level, int &leafId) const;

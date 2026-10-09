@@ -520,7 +520,9 @@ INSTANTIATE_TEST_SUITE_P(
     testing::Combine(
       testing::Values(
         "core/numerics.codon",
-        "stdlib/math_test.codon"
+        "stdlib/math_test.codon",
+        "numpy/test_routines.codon",
+        "numpy/fusion/test_producers.codon"
       ),
       testing::Values(true, false),
       testing::Values(""),

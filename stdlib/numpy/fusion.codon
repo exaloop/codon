@@ -162,6 +162,81 @@ def _loop_alloc_layout(arrays, func, extra, layout, dtype: type):
     ndarray._loop((output,) + arrays, func, broadcast='first', extra=extra)
     return output
 
+def _roll_shift(array, shift: int, axis: Literal[int]):
+    if axis < 0:
+        return 0
+    else:
+        size = array.shape[axis]
+        if size == 0:
+            return 0
+        shift = shift.cmod(size)
+        return shift + size if shift < 0 else shift
+
+def _roll_region_size(shape, normalized):
+    size = util.count(shape)
+    for dimension in static.range(static.len(shape)):
+        regions = 1
+        for index in static.range(static.len(normalized)):
+            shift = normalized[index][dimension]
+            distinct = shift != 0
+            for previous in static.range(index):
+                distinct = distinct and shift != normalized[previous][dimension]
+            regions += int(distinct)
+        size = size.cdiv(regions)
+    return size
+
+def _loop_roll_regions(inputs, func, extra, output, normalized, position, shape):
+    axis: Literal[int] = static.len(position)
+    if axis == output.ndim:
+        sources = tuple(
+            ndarray(shape, inputs[index].strides,
+                    inputs[index]._ptr(tuple(
+                        position[dimension] - normalized[index][dimension]
+                        if position[dimension] >= normalized[index][dimension]
+                        else position[dimension] + (output.shape[dimension] -
+                                                   normalized[index][dimension])
+                        for dimension in static.range(output.ndim))))
+            for index in static.range(static.len(inputs)))
+        target = ndarray(shape, output.strides, output._ptr(position))
+        ndarray._loop((target,) + sources, func, broadcast='none', check=False, extra=extra)
+    else:
+        start = 0
+        extent = output.shape[axis]
+        while start < extent:
+            end = extent
+            for shifts in normalized:
+                if shifts[axis] > start:
+                    end = min(end, shifts[axis])
+            _loop_roll_regions(inputs, func, extra, output, normalized,
+                               position + (start,), shape + (end - start,))
+            start = end
+
+def _loop_alloc_roll(arrays, func, extra, layout, shifts, dtype: type):
+    output = ndarray(layout.shape, layout.strides, Ptr[dtype](layout.size))
+    inputs = tuple(broadcast_to(array, layout.shape) for array in arrays)
+    normalized = tuple(
+        tuple(_roll_shift(arrays[index], shifts[index][dimension],
+                          dimension - layout.ndim + arrays[index].ndim)
+              for dimension in static.range(layout.ndim))
+        for index in static.range(static.len(arrays)))
+    if output.size == 0:
+        return output
+    min_region_elements: Literal[int] = 64
+    if _roll_region_size(output.shape, normalized) < min_region_elements:
+        for position in util.multirange(output.shape):
+            sources = tuple(
+                inputs[index]._ptr(tuple(
+                    position[dimension] - normalized[index][dimension]
+                    if position[dimension] >= normalized[index][dimension]
+                    else position[dimension] + (output.shape[dimension] -
+                                               normalized[index][dimension])
+                    for dimension in static.range(output.ndim)))
+                for index in static.range(static.len(inputs)))
+            func(output._ptr(position), *sources, extra)
+        return output
+    _loop_roll_regions(inputs, func, extra, output, normalized, (), ())
+    return output
+
 def _loop_reduce_layout(arrays, func, extra, initial, layout,
                         element_dtype: type, dtype: type, operation: Literal[str]):
     return _loop_reduce_impl(arrays, func, extra, initial, element_dtype, dtype,

@@ -122,6 +122,49 @@ TEST(JITOptionsTest, CollectsAfterJITTeardown) {
       testing::ExitedWithCode(EXIT_SUCCESS), "");
 }
 
+TEST(JITFinalizerTest, EarlierCodeTriggersLaterFinalizers) {
+  ASSERT_EXIT(
+      {
+        auto options = codon::Options::getDefault("build/codon_test");
+        options->capture = true;
+        options->jit = true;
+        codon::jit::JIT jit(*options);
+        auto error = jit.init();
+        ASSERT_FALSE(bool(error)) << llvm::toString(std::move(error));
+        auto first = jit.execute("finalized = 0\n"
+                                 "@noinline\n"
+                                 "def old_tick():\n"
+                                 "    from C import GC_gcollect()\n"
+                                 "    before = finalized\n"
+                                 "    GC_gcollect()\n"
+                                 "    return finalized > before\n"
+                                 "old_tick()\n");
+        ASSERT_TRUE(bool(first)) << llvm::toString(first.takeError());
+        auto second =
+            jit.execute("class LaterFinalizer:\n"
+                        "    value: int\n"
+                        "    def __del__(self):\n"
+                        "        global finalized\n"
+                        "        finalized += 1\n"
+                        "        if finalized == 1:\n"
+                        "            raise BaseException('late finalizer warning')\n"
+                        "values = [LaterFinalizer(index) for index in range(10000)]\n");
+        ASSERT_TRUE(bool(second)) << llvm::toString(second.takeError());
+        auto third = jit.execute("values.clear()\n"
+                                 "progress = False\n"
+                                 "for attempt in range(4):\n"
+                                 "    progress = old_tick() or progress\n"
+                                 "assert progress\n"
+                                 "print('late finalizers ok')\n");
+        ASSERT_TRUE(bool(third)) << llvm::toString(third.takeError());
+        EXPECT_EQ(*third,
+                  "warning: exception in LaterFinalizer.__del__: BaseException: "
+                  "late finalizer warning\nlate finalizers ok\n");
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
 namespace {
 const std::string recursiveVirtualCode = R"codon(
 import internal.static as static

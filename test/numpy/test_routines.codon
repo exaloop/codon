@@ -884,6 +884,74 @@ test_resize(np.array([[0, 1], [2, 3]]), (2, 4),
             np.array([[0, 1, 2, 3], [0, 1, 2, 3]]))
 
 @test
+def test_repeated_copy_layouts():
+    base = np.arange(12).reshape((3, 4))
+    for array in (base, np.asfortranarray(base), base[::-1, ::-1],
+                  base[:, ::2], base[:1], np.broadcast_to(base[:1], (3, 4))):
+        for reps in ((1, 1), (2, 3), (0, 2), (2, 0)):
+            result = np.tile(array, reps)
+            assert result.shape == (array.shape[0] * reps[0], array.shape[1] * reps[1])
+            for row in range(result.shape[0]):
+                for column in range(result.shape[1]):
+                    assert result[row, column] == array[
+                        row.cmod(array.shape[0]), column.cmod(array.shape[1])]
+        flat = array.ravel()
+        for shape in ((4, 5), (1, 2), (0, 2)):
+            result = np.resize(array, shape)
+            assert result.shape == shape
+            for index in range(result.size):
+                assert result.data[index] == flat[index.cmod(flat.size)]
+        tiled = np.tile(array, (1, 1))
+        tiled[0, 0] = -1
+        assert array[0, 0] != -1
+    assert np.tile(np.empty((0, 2)), (3, 2)).shape == (0, 4)
+    assert np.array_equal(np.resize(np.empty((0, 2)), (2, 3)), np.zeros((2, 3)))
+    assert np.array_equal(np.tile(np.array(7), (2, 3)), np.full((2, 3), 7))
+    try:
+        np.tile(base, (-1, 2))
+        assert False
+    except ValueError:
+        pass
+
+test_repeated_copy_layouts()
+
+@test
+def test_elementwise_copy_layouts():
+    base = np.arange(12, dtype=float).reshape((3, 4))
+    for array in (base, np.asfortranarray(base), base[::-1, ::-1], base[:, ::2]):
+        fill = array[:1]
+        for order in ('C', 'F'):
+            result = np.full(array.shape, fill, dtype=np.float32, order=order)
+            assert result.shape == array.shape
+            for row in range(array.shape[0]):
+                for column in range(array.shape[1]):
+                    assert result[row, column] == np.float32(fill[0, column])
+        result = np.full_like(array, fill)
+        assert np.array_equal(result, np.broadcast_to(fill, array.shape))
+        result = np.full_like(array, fill, dtype=np.int32)
+        assert np.array_equal(result, np.broadcast_to(fill, array.shape))
+        assert np.isclose(array, array + 1e-7, atol=1e-6).all()
+        close = np.isclose(array, fill, rtol=0.0, atol=0.0)
+        assert np.array_equal(close, array == fill)
+        assert np.array_equal(np.asarray_chkfinite(array), array)
+    values = np.array([0., 1., np.inf, -np.inf, np.nan, 1.])
+    other = np.array([0., 1.000005, np.inf, np.inf, np.nan, 1.1])
+    assert np.array_equal(np.isclose(values, other),
+                          np.array([True, True, True, False, False, False]))
+    assert np.array_equal(np.isclose(values, other, equal_nan=True),
+                          np.array([True, True, True, False, True, False]))
+    assert np.isclose(np.array(2.), np.array(2.))
+    assert np.isclose(np.empty((0, 3)), np.ones((1, 3))).shape == (0, 3)
+    assert np.full((0, 3), np.ones(3)).shape == (0, 3)
+    try:
+        np.asarray_chkfinite(values)
+        assert False
+    except ValueError:
+        pass
+
+test_elementwise_copy_layouts()
+
+@test
 def test_trim_zeros(filt, expected, trim: str = 'fb'):
     assert (np.trim_zeros(filt, trim) == expected).all()
 
@@ -940,6 +1008,174 @@ test_roll(np.reshape(np.arange(10), (2, 5)),
           -1,
           np.array([[1, 2, 3, 4, 0], [6, 7, 8, 9, 5]]),
           axis=1)
+
+@test
+def test_roll_shift_normalization():
+    minimum_shift: Literal[int] = -9_223_372_036_854_775_808
+    maximum_shift: Literal[int] = 9_223_372_036_854_775_807
+    values = np.arange(6)
+    for shift in (-8, -2, minimum_shift):
+        assert np.array_equal(np.roll(values, shift, 0), [2, 3, 4, 5, 0, 1])
+    assert np.array_equal(np.roll(values, maximum_shift, 0), [5, 0, 1, 2, 3, 4])
+    assert np.array_equal(np.roll(values, -6, 0), values)
+    assert np.array_equal(np.roll(values, (-1, -1), (0, 0)), [2, 3, 4, 5, 0, 1])
+    assert np.array_equal(np.roll(values[::2], -1, 0), [2, 4, 0])
+    assert np.array_equal(np.roll(values[::-1], -1, 0), [4, 3, 2, 1, 0, 5])
+
+test_roll_shift_normalization()
+
+def wrap_roll_index(index: int, size: int):
+    remainder = index.cmod(size)
+    return remainder + size if remainder < 0 else remainder
+
+@test
+def test_roll_layouts():
+    base = np.arange(24).reshape((4, 6))
+    for array in (base, np.asfortranarray(base), base.T,
+                  base[::-1, ::-1], base[::2, ::2]):
+        rows, columns = array.shape
+        for shift in (-31, -6, -1, 0, 1, 6, 31):
+            for axis in (0, 1, -1):
+                result = np.roll(array, shift, axis)
+                assert result.shape == array.shape
+                for row in range(rows):
+                    for column in range(columns):
+                        source_row = wrap_roll_index(row - shift, rows) if axis == 0 else row
+                        source_column = column if axis == 0 else wrap_roll_index(column - shift, columns)
+                        assert result[row, column] == array[source_row, source_column]
+            assert np.array_equal(np.roll(array, (shift, 2), (1, 1)),
+                                  np.roll(array, shift + 2, 1))
+            assert np.array_equal(np.roll(array, (shift, 0), (0, 1)),
+                                  np.roll(array, shift, 0))
+            result = np.roll(array, (shift, -shift), (0, 1))
+            for row in range(rows):
+                for column in range(columns):
+                    assert result[row, column] == array[
+                        wrap_roll_index(row - shift, rows), wrap_roll_index(column + shift, columns)]
+        copied = np.roll(array, 0, 0)
+        original = array[0, 0]
+        copied[0, 0] = -1
+        assert array[0, 0] == original
+    assert np.roll(np.empty((0, 3)), 2, 0).shape == (0, 3)
+    assert np.roll(np.empty((3, 0)), 2, 1).shape == (3, 0)
+    assert np.roll(np.array(7), 4).item() == 7
+    assert np.array_equal(np.roll(np.arange(6).reshape((1, 6)), 2, 1),
+                          np.array([[4, 5, 0, 1, 2, 3]]))
+    zero_bytes = np.empty((2, 3), dtype=type(()))
+    for array in (zero_bytes, np.asfortranarray(zero_bytes)):
+        assert np.roll(array, 1).shape == array.shape
+        assert np.roll(array, 1, 0).shape == array.shape
+        assert np.roll(array, (1, -1), (0, 1)).shape == array.shape
+        assert np.roll(array, 0, 1).itemsize == 0
+
+test_roll_layouts()
+
+@test
+def test_roll_tiny_regions(ndim: Literal[int], width: int):
+    import internal.static as static
+    from numpy import util
+
+    base = np.arange(width ** ndim).reshape((width,) * ndim)
+    axes = tuple(dimension for dimension in static.range(ndim))
+    for array in (base, np.asfortranarray(base), base[::-1],
+                  np.broadcast_to(base[:1], base.shape)):
+        for shifts in ((1,) * ndim,
+                       tuple(-3 if dimension.cmod(2) else 0 for dimension in static.range(ndim))):
+            result = np.roll(array, shifts, axes)
+            assert result.shape == array.shape
+            for index in util.multirange(array.shape):
+                source = tuple(wrap_roll_index(index[dimension] - shifts[dimension], array.shape[dimension])
+                               for dimension in static.range(ndim))
+                assert result._ptr(index)[0] == array._ptr(source)[0]
+            original = array.data[0]
+            result.data[0] = -1
+            assert array.data[0] == original
+
+test_roll_tiny_regions(6, 2)
+test_roll_tiny_regions(3, 3)
+test_roll_tiny_regions(3, 4)
+
+@test
+def test_region_copy_layouts():
+    base = np.arange(24).reshape((2, 3, 4))
+    for array in (base, np.asfortranarray(base), base.transpose((2, 0, 1)),
+                  base[::-1, :, ::-1], np.broadcast_to(base[:1], base.shape)):
+        result = np.roll(array, (5, -7, 2), (0, 1, 2))
+        for first in range(array.shape[0]):
+            for second in range(array.shape[1]):
+                for third in range(array.shape[2]):
+                    assert result[first, second, third] == array[
+                        wrap_roll_index(first - 5, array.shape[0]),
+                        wrap_roll_index(second + 7, array.shape[1]),
+                        wrap_roll_index(third - 2, array.shape[2])]
+        padded = np.pad(array, ((1, 2), (2, 1), (1, 1)), constant_values=-1)
+        assert np.array_equal(padded[1:-2, 2:-1, 1:-1], array)
+        assert (padded[0] == -1).all()
+        assert (padded[-1] == -1).all()
+    assert np.pad(np.empty((0, 2)), ((1, 1), (1, 1))).shape == (2, 4)
+
+test_region_copy_layouts()
+
+@test
+def test_array_copy_layouts():
+    base = (np.arange(24, dtype=float).reshape((4, 6)) - 11) / 4
+    for array in (base, np.asfortranarray(base), base.T, base[::-1, ::-1],
+                  base[::2, ::2], np.broadcast_to(base[:1], base.shape)):
+        expected_c = np.array([array[row, column] for row in range(array.shape[0])
+                               for column in range(array.shape[1])])
+        expected_f = np.array([array[row, column] for column in range(array.shape[1])
+                               for row in range(array.shape[0])])
+        assert np.array_equal(array.ravel('C'), expected_c)
+        assert np.array_equal(array.ravel('F'), expected_f)
+        assert np.array_equal(array.flatten('C'), expected_c)
+        assert np.array_equal(array.flatten('F'), expected_f)
+        assert array.tobytes('C') == expected_c.tobytes()
+        assert array.tobytes('F') == expected_f.tobytes()
+        for order in ('C', 'F', 'A', 'K'):
+            copied = array.astype(float, order=order)
+            converted = array.astype(np.int32, order=order)
+            assert np.array_equal(copied, array)
+            for row in range(array.shape[0]):
+                for column in range(array.shape[1]):
+                    assert converted[row, column] == np.int32(array[row, column])
+            original = array[0, 0]
+            copied[0, 0] = 999
+            assert array[0, 0] == original
+            if order == 'C':
+                assert copied.flags.c_contiguous and converted.flags.c_contiguous
+            elif order == 'F':
+                assert copied.flags.f_contiguous and converted.flags.f_contiguous
+        reused = array.astype(float, copy=False)
+        assert reused.data == array.data
+    assert np.empty((0, 3)).astype(np.int32).shape == (0, 3)
+    assert np.empty((3, 0)).tobytes() == ''
+    assert np.array(7).astype(float).item() == 7.0
+
+test_array_copy_layouts()
+
+@test
+def test_scaled_dtype_copies(dtype: type):
+    ticks = np.array([0, 1, -1, 6_000_000_000_000_000_000,
+                      6_000_000_000_000_000_001, -6_000_000_000_000_000_000,
+                      9_223_372_036_854_775_807, -9_223_372_036_854_775_808]).reshape((2, 4))
+    for values in (ticks[::-1, ::-1], ticks.T):
+        dates = values.view(dtype)
+        assert np.array_equal(dates.copy().view(int), values)
+        for order in ('C', 'F', 'A', 'K'):
+            assert np.array_equal(dates.astype(dtype, order=order).view(int), values)
+        for order in ('C', 'F'):
+            assert np.array_equal(dates.flatten(order).view(int), values.flatten(order))
+            assert np.array_equal(dates.ravel(order).view(int), values.ravel(order))
+            assert dates.tobytes(order) == values.tobytes(order)
+        assert np.array_equal(np.full(dates.shape, dates, dtype=dtype).view(int), values)
+        assert np.array_equal(np.full_like(dates, dates).view(int), values)
+        assert np.array_equal(np.roll(dates, (1, -1), (0, 1)).view(int),
+                              np.roll(values, (1, -1), (0, 1)))
+        assert np.array_equal(np.tile(dates, (2, 1)).view(int), np.tile(values, (2, 1)))
+
+test_scaled_dtype_copies(np.datetime64['ns', 2])
+test_scaled_dtype_copies(np.datetime64['D', 2])
+test_scaled_dtype_copies(np.timedelta64['ns', 2])
 
 @test
 def test_rot90(m, expected, k=1, axes=(0, 1)):
