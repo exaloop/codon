@@ -172,6 +172,19 @@ def _roll_shift(array, shift: int, axis: Literal[int]):
         shift = shift.cmod(size)
         return shift + size if shift < 0 else shift
 
+def _roll_region_size(shape, normalized):
+    size = util.count(shape)
+    for dimension in static.range(static.len(shape)):
+        regions = 1
+        for index in static.range(static.len(normalized)):
+            shift = normalized[index][dimension]
+            distinct = shift != 0
+            for previous in static.range(index):
+                distinct = distinct and shift != normalized[previous][dimension]
+            regions += int(distinct)
+        size = size.cdiv(regions)
+    return size
+
 def _loop_roll_regions(inputs, func, extra, output, normalized, position, shape):
     axis: Literal[int] = static.len(position)
     if axis == output.ndim:
@@ -207,6 +220,19 @@ def _loop_alloc_roll(arrays, func, extra, layout, shifts, dtype: type):
               for dimension in static.range(layout.ndim))
         for index in static.range(static.len(arrays)))
     if output.size == 0:
+        return output
+    min_region_elements: Literal[int] = 64
+    if _roll_region_size(output.shape, normalized) < min_region_elements:
+        for position in util.multirange(output.shape):
+            sources = tuple(
+                inputs[index]._ptr(tuple(
+                    position[dimension] - normalized[index][dimension]
+                    if position[dimension] >= normalized[index][dimension]
+                    else position[dimension] + (output.shape[dimension] -
+                                               normalized[index][dimension])
+                    for dimension in static.range(output.ndim)))
+                for index in static.range(static.len(inputs)))
+            func(output._ptr(position), *sources, extra)
         return output
     _loop_roll_regions(inputs, func, extra, output, normalized, (), ())
     return output

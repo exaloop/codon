@@ -382,6 +382,56 @@ def test_multiaxis_roll_producers():
                           materialize(np.roll(expected, 1, -1)))
 
 @noinline
+def dense_roll_stencil(array):
+    return (np.roll(array, 1, 0) + np.roll(array, 2, 0) +
+            np.roll(array, 3, 0) + np.roll(array, 4, 0) +
+            np.roll(array, 1, 1) + np.roll(array, 2, 1) +
+            np.roll(array, 3, 1) + np.roll(array, 4, 1) +
+            np.roll(array, 1, 2) + np.roll(array, 2, 2) +
+            np.roll(array, 3, 2) + np.roll(array, 4, 2))
+
+def check_dense_roll_stencil(array):
+    expected = np.zeros_like(array)
+    for axis in range(3):
+        for shift in (1, 2, 3, 4):
+            expected = materialize(expected + materialize(np.roll(array, shift, axis)))
+    got = dense_roll_stencil(array)
+    assert got.dtype is expected.dtype
+    assert got.shape == expected.shape
+    assert got.strides == expected.strides
+    assert np.array_equal(got, expected)
+    if array.size:
+        original = array.data[0]
+        got.data[0] = array.dtype(42)
+        assert array.data[0] == original
+
+@test
+def test_roll_region_dispatch():
+    from numpy.fusion import _roll_region_size
+
+    shifts = ((1, 0, 0), (2, 0, 0), (3, 0, 0), (4, 0, 0),
+              (0, 1, 0), (0, 2, 0), (0, 3, 0), (0, 4, 0),
+              (0, 0, 1), (0, 0, 2), (0, 0, 3), (0, 0, 4))
+    assert _roll_region_size((5, 5, 5), shifts) == 1
+    assert _roll_region_size((19, 20, 21), shifts) == 63
+    assert _roll_region_size((20, 20, 20), shifts) == 64
+    assert _roll_region_size((21, 20, 20), shifts) == 67
+    assert _roll_region_size((20, 20, 20), shifts + shifts) == 64
+    assert _roll_region_size((20, 20, 20), ((0, 0, 0),) + shifts) == 64
+    assert _roll_region_size((5, 5, 5), ((0, 0, 0),)) == 125
+    assert _roll_region_size((), ((),)) == 1
+    assert _roll_region_size((0, 5, 5), ((0, 0, 0),)) == 0
+    for shape in ((5, 5, 5), (19, 20, 21), (20, 20, 20), (21, 20, 20)):
+        values = np.arange(shape[0] * shape[1] * shape[2], dtype=float).reshape(shape)
+        for array in (values, values.copy(order='F'), values.transpose((2, 0, 1)),
+                      values[::-1, ::-1, ::-1], values[:, ::2, ::2], values[:0],
+                      values[:1], np.broadcast_to(values[:1], values.shape)):
+            check_dense_roll_stencil(array)
+    values = np.arange(125.).reshape(5, 5, 5) * 0.125
+    check_dense_roll_stencil(values.astype(np.float32))
+    check_dense_roll_stencil(values.astype(np.int8))
+
+@noinline
 def dynamic_axis_roll(array, shift: int, axis: int):
     return np.roll(array, shift, axis) + 1
 
@@ -449,6 +499,7 @@ def test_roll_effects_and_errors():
 
 test_roll_producers()
 test_multiaxis_roll_producers()
+test_roll_region_dispatch()
 test_roll_fallbacks()
 test_roll_effects_and_errors()
 test_array_copies_and_casts()
