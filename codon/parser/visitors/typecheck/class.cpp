@@ -367,15 +367,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           std::make_shared<Cache::Class::ClassRealization>();
       realization->type = rt;
       realization->id = ++ctx->cache->classRealizationCnt;
-      auto *integer = makeIRType(rt.get());
-      ir::Type::RuntimeInfo runtimeInfo;
-      runtimeInfo.id = realization->id;
-      runtimeInfo.rawName = rt->realizedName();
-      runtimeInfo.niceName = rt->prettyString();
-      runtimeInfo.baseName = canonicalName;
-      runtimeInfo.mro = {integer};
-      runtimeInfo.parameters = {integer};
-      integer->setRuntimeInfo(std::move(runtimeInfo));
+      makeIRType(rt.get());
     }
   }
 
@@ -433,6 +425,8 @@ std::vector<std::shared_ptr<ClassType>> TypecheckVisitor::parseBaseClasses(
             getStdLibType(object)->shared_from_this());
         cachedCls->mro.push_back(objectType);
         getClass(objectType.get())->descendants.insert(clsTyp->name);
+
+        // Fix IR stuff [TODO: maybe move this to translate?!]
         realize(objectType.get());
         auto *objectIR = makeIRType(objectType.get());
         for (const auto &[name, realization] : cachedCls->realizations) {

@@ -322,43 +322,16 @@ types::Type *TypecheckVisitor::realizeType(types::ClassType *type) {
           std::make_unique<ir::MemberAttribute>(memberInfo));
     }
   }
-
-  ir::Type::RuntimeInfo runtimeInfo;
-  runtimeInfo.id = realization->id;
-  runtimeInfo.rawName = rt->realizedName();
-  runtimeInfo.niceName = rt->prettyString();
-  runtimeInfo.baseName = rt->name;
-  runtimeInfo.mro.push_back(lt);
-  for (const auto &base : realization->bases) {
-    auto baseType = realize(base.get())->getClass();
-    runtimeInfo.mro.push_back(makeIRType(baseType));
-  }
-  for (auto *base : runtimeInfo.mro) {
-    auto baseName = base->getAstType()->getClass()->name;
-    if (baseName == StdlibTypes::BaseException)
-      runtimeInfo.exceptionBase = base;
-    if (baseName == getMangledClass("std.internal.types.error", "SystemExit"))
-      runtimeInfo.systemExitBase = base;
-  }
   for (const auto &field : fields) {
     auto *owner = lt;
-    for (auto *base : runtimeInfo.mro) {
+    for (auto *base : lt->getRuntimeInfo()->mro) {
       if (base->getAstType()->getClass()->name == field.baseClass) {
         owner = base;
         break;
       }
     }
-    runtimeInfo.fieldOwners.push_back(owner);
+    lt->getRuntimeInfo()->fieldOwners.push_back(owner);
   }
-  if (!type->is(StdlibTypes::UnrealizedType)) {
-    for (const auto &generic : rt->generics) {
-      auto *parameter = generic.getType();
-      if (auto *literal = parameter->getStatic())
-        parameter = literal->getNonStaticType();
-      runtimeInfo.parameters.push_back(makeIRType(parameter->getClass()));
-    }
-  }
-  lt->setRuntimeInfo(std::move(runtimeInfo));
 
   return rt.get();
 }
@@ -592,7 +565,8 @@ ir::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
     realizedName = t->ClassType::realizedName();
     cls = ctx->cache->getClass(t);
   }
-  if (auto l = cls->realizations[realizedName]->ir) {
+  auto &realization = cls->realizations[realizedName];
+  if (auto l = realization->ir) {
     if (cls->hasRTTI())
       cast<ir::RefType>(l)->setPolymorphic();
     return l;
@@ -712,6 +686,38 @@ ir::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
   handle->setSrcInfo(t->getSrcInfo());
   handle->setAstType(
       std::const_pointer_cast<codon::ast::types::Type>(t->shared_from_this()));
+
+  ir::Type::RuntimeInfo runtimeInfo;
+  runtimeInfo.id = realization->id;
+  runtimeInfo.rawName = t->realizedName();
+  runtimeInfo.niceName = t->prettyString();
+  runtimeInfo.baseName = t->name;
+  runtimeInfo.mro.push_back(handle);
+  for (const auto &base : realization->bases) {
+    auto baseType = realize(base.get())->getClass();
+    runtimeInfo.mro.push_back(makeIRType(baseType));
+  }
+  for (auto *base : runtimeInfo.mro) {
+    auto baseName = base->getAstType()->getClass()->name;
+    if (baseName == StdlibTypes::BaseException)
+      runtimeInfo.exceptionBase = base;
+    if (baseName == getMangledClass("std.internal.types.error", "SystemExit"))
+      runtimeInfo.systemExitBase = base;
+  }
+  if (!t->is(StdlibTypes::UnrealizedType)) {
+    if (t->is(StdlibTypes::Int)) { // special case for Int[N] to avoid recursion
+      runtimeInfo.parameters.push_back(handle);
+    } else {
+      for (const auto &generic : t->generics) {
+        auto *parameter = generic.getType();
+        if (auto *literal = parameter->getStatic())
+          parameter = literal->getNonStaticType();
+        runtimeInfo.parameters.push_back(makeIRType(parameter->getClass()));
+      }
+    }
+  }
+  handle->setRuntimeInfo(std::move(runtimeInfo));
+
   return cls->realizations[realizedName]->ir = handle;
 }
 
@@ -785,6 +791,7 @@ ir::Func *TypecheckVisitor::makeIRFunction(
                                        types, r->ast->hasAttribute(Attr::CVarArg));
   irType->setAstType(r->type->shared_from_this());
   fn->realize(irType, names);
+  // TODO: move to IR maybe? why is it needed here?!
   if (auto *internal = ir::cast<ir::InternalFunc>(fn)) {
     if (r->type->getFuncName() == getMangledMethod("", "type", "_ref_alloc")) {
       internal->setIntrinsic(ir::InternalFunc::Intrinsic::ALLOCATE,

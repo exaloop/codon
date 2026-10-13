@@ -255,7 +255,7 @@ std::pair<Expr *, bool> TypecheckVisitor::getAttr(Expr *expr, const std::string 
     // Modify the call to push `self` to the front of the argument list.
     // Avoids creating partial functions.
     parentCall->items.insert(parentCall->items.begin(), expr);
-    parentCall->setAttribute(Attr::ExprVirtual);
+    parentCall->setAttribute(Attr::ExprVirtual, -1);
     return {transform(e), true};
   } else {
     // Instance access: `obj.method`
@@ -270,7 +270,7 @@ std::pair<Expr *, bool> TypecheckVisitor::getAttr(Expr *expr, const std::string 
     auto *call = N<CallExpr>(e, methodArgs);
     if (!bestMethod->ast->hasAttribute(Attr::StaticMethod) &&
         !bestMethod->ast->hasAttribute(Attr::Property))
-      call->setAttribute(Attr::ExprVirtual);
+      call->setAttribute(Attr::ExprVirtual, -1);
     return {transform(call), true};
   }
 }

@@ -39,8 +39,6 @@ from internal.types.collections.dict import *
 import internal.c_stubs as _C
 from internal.format import *
 
-__initialize_rtti__()
-
 def next(g: Generator[T], default: Optional[T] = None, T: type) -> T:
     if not g._advance():
         if default is not None:

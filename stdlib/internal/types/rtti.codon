@@ -19,9 +19,6 @@ def force_cast(obj, D: type):
     else:
         compile_error("bad cast!")
 
-def __initialize_rtti__():
-    pass
-
 @tuple
 class _MethodSlot:
     id: int

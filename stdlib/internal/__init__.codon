@@ -41,8 +41,6 @@ from internal.types.collections.set import *
 from internal.types.collections.dict import *
 from internal.types.collections.tuple import *
 
-__initialize_rtti__()
-
 from internal.builtin import *
 from internal.builtin import _jit_display
 from internal.types.str import *

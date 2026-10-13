@@ -231,7 +231,8 @@ void TypecheckVisitor::visit(CallExpr *expr) {
     // Case: normal function call
     unify(expr->getType(), calleeFn->getRetType());
     if (done) {
-      if (auto *thunk = expr->getAttribute<ir::IntValueAttribute>(Attr::ExprThunkId))
+      if (auto *thunk = expr->getAttribute<ir::IntValueAttribute>(Attr::ExprVirtual);
+          thunk && thunk->value != -1)
         ctx->cache->superCallSignatures[thunk->value] = calleeFn;
       expr->setDone();
     }
@@ -406,7 +407,7 @@ TypecheckVisitor::getCalleeFn(CallExpr *expr, PartialCallData &part) {
   if (auto partType = callee->getPartial()) {
     auto mask = partType->getPartialMask();
     if (partType->isPartialVirtual())
-      expr->setAttribute(Attr::ExprVirtual);
+      expr->setAttribute(Attr::ExprVirtual, -1);
     auto genFn = partType->getPartialFunc()->generalize(0);
     auto calleeFn =
         std::static_pointer_cast<types::FuncType>(instantiateType(genFn.get()));

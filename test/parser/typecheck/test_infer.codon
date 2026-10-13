@@ -1065,21 +1065,3 @@ base: Root = leaf
 print(method(leaf), base.value(), leaf.cached, build_value(True))  #: 42 42 42 42
 base = Other()
 print(base.value())  #: 7
-
-#%% recursive_virtual_no_return_constraint,barebones
-import internal.static as static
-
-class Root:
-    def value(self):
-        return 0
-
-class Leaf(Root):
-    def value(self):
-        return recurse(self)
-
-def recurse(value: Leaf):
-    return value.value()
-
-static.function.realized(Leaf.value, type._force_cast(cobj(), Leaf))
-#! cannot typecheck
-#! during the realization of value

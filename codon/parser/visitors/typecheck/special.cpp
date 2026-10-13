@@ -43,8 +43,18 @@ std::string TypecheckVisitor::vTableSignature(types::FuncType *ft) const {
 }
 
 void TypecheckVisitor::prepareVTables() {
+  auto typed_argument = [&](TypePtr type) -> Expr * {
+    auto *value = N<NoneExpr>();
+    value->setType(std::move(type));
+    value->setDone();
+    return value;
+  };
   auto adapt_target = [&](FuncType *signature, ClassType *receiver,
                           FuncType *target) -> std::shared_ptr<FuncType> {
+    // If the recever signature is not exactly the same
+    // (e.g., args are not ordered in same way, defaults etc.)
+    // create an adapter fn with the same arg order for dispatch pointer and resolve
+    // differences within it.
     bool compatible = signature->size() == target->size();
     for (size_t index = 1; compatible && index < signature->size(); ++index)
       compatible = extractFuncArgType(signature, index)->realizedName() ==
@@ -78,10 +88,7 @@ void TypecheckVisitor::prepareVTables() {
       else if (argumentStars[index] == 2)
         argument = N<KeywordStarExpr>(argument);
       arguments.emplace_back("", argument);
-      auto *placeholder = N<NoneExpr>();
-      placeholder->setType(argumentType->shared_from_this());
-      placeholder->setDone();
-      placeholders.push_back(placeholder);
+      placeholders.push_back(typed_argument(argumentType->shared_from_this()));
     }
     auto name = getTemporaryVar("dispatch.adapter");
     Stmt *adapter = N<FunctionStmt>(
@@ -96,81 +103,137 @@ void TypecheckVisitor::prepareVTables() {
     return std::static_pointer_cast<FuncType>(
         call->getExpr()->getType()->shared_from_this());
   };
-  auto realize_function = [&](FuncType *method,
-                              ClassType *descType) -> std::shared_ptr<FuncType> {
-    std::vector<Expr *> callArgs;
-    for (size_t i = 0, j = 0, gi = 0; i < method->ast->size(); i++) {
-      auto [_, varName] = (*method->ast)[i].getNameWithStars();
-      auto un = getUnmangledName(varName);
-      if (startswith(un, "$"))
+  auto virtual_arguments = [&](FuncType *signature, ClassType *receiver) {
+    std::vector<CallArg> arguments;
+    size_t index = 0;
+    for (const auto &parameter : *signature->ast) {
+      auto [_, name] = parameter.getNameWithStars();
+      if (!parameter.isValue() || startswith(getUnmangledName(name), "$"))
         continue;
-      if ((*method->ast)[i].isValue()) {
-        TypePtr at = extractFuncArgType(method, j++)->shared_from_this();
-        if (at->getStatic())
-          at = at->getStatic()->getNonStaticType()->shared_from_this();
-        callArgs.push_back(N<IdExpr>(getUnmangledName((*method->ast)[i].getName())));
-        callArgs.back()->setType(at);
-        callArgs.back()->setDone();
-      }
+      auto *type = extractFuncArgType(signature, index++);
+      if (auto *literal = type->getStatic())
+        type = literal->getNonStaticType();
+      arguments.emplace_back("", typed_argument(type->shared_from_this()));
     }
-    // Make first argument match the destType
-    callArgs[0]->setType(descType->shared_from_this());
-
-    auto bestMethod =
-        findBestMethod(descType, getUnmangledName(method->getFuncName()), callArgs);
-    if (bestMethod) {
-      auto call =
-          transform(N<CallExpr>(N<IdExpr>(bestMethod->getFuncName()), callArgs));
-      auto t = realize(call->getType());
-      seqassert(t, "cannot ralize stuff");
-      if (t->unify(method->getRetType(), nullptr) < 0) {
-        E(Error::CUSTOM, method->ast, "function {}.{} returns {}, expected {}",
-          getUnmangledName(descType->name), getUnmangledName(method->getFuncName()),
-          t->prettyString(), method->getRetType()->prettyString());
-      }
-      auto rt = cast<CallExpr>(call)->getExpr()->getType();
-      seqassert(rt->getFunc() && rt->canRealize(), "bad realization");
-      return adapt_target(method, descType, rt->getFunc());
+    arguments.front().getExpr()->setType(receiver->shared_from_this());
+    return arguments;
+  };
+  auto super_arguments = [&](FuncType *signature, ClassType *receiver) {
+    std::vector<CallArg> arguments;
+    arguments.emplace_back("", typed_argument(receiver->shared_from_this()));
+    for (const auto &generic : extractFuncArgType(signature, 1)->getClass()->generics)
+      arguments.emplace_back("", typed_argument(generic.type));
+    auto *keywordType = extractFuncArgType(signature, 2);
+    const auto &names = ctx->cache->generatedTupleNames[getIntLiteral(keywordType)];
+    auto *values = extractClassGeneric(keywordType, 1)->getClass();
+    for (size_t index = 0; index < names.size(); ++index)
+      arguments.emplace_back(names[index],
+                             typed_argument(values->generics[index].type));
+    return arguments;
+  };
+  auto find_target = [&](ClassType *receiver, const std::string &member,
+                         const std::vector<CallArg> &arguments,
+                         bool requireOwn) -> FuncType * {
+    auto methods =
+        findMatchingMethods(receiver, findMethod(receiver, member, false), arguments);
+    for (auto *method : methods) {
+      if (!requireOwn)
+        return method;
+      auto *owner =
+          method->ast->getAttribute<ir::StringValueAttribute>(Attr::ParentClass);
+      if (owner && owner->value == receiver->name)
+        return method;
     }
     return nullptr;
   };
-  auto realize_descendant_virtuals = [&](FuncType *method) -> bool {
-    auto base = extractFuncArgType(method)->getClass();
-    seqassert(base, "not a valid base");
+  auto realize_target = [&](FuncType *target, const std::vector<CallArg> &arguments) {
+    auto *call = cast<CallExpr>(
+        transform(N<CallExpr>(N<IdExpr>(target->getFuncName()), arguments)));
+    auto *returnType = realize(call->getType());
+    seqassert(returnType, "cannot realize dispatch return type");
+    auto *resolved = call->getExpr()->getType()->getFunc();
+    seqassert(resolved && resolved->canRealize(), "bad dispatch realization");
+    return resolved;
+  };
+  auto install_target = [&](Cache::Class::ClassRealization *realization, size_t id,
+                            FuncType *signature, ClassType *receiver,
+                            FuncType *target) {
+    auto adapted = adapt_target(signature, receiver, target);
+    realization->vtable[id] = adapted;
+    realization->ir->getRuntimeInfo()->methods[id] =
+        getFunction(adapted.get())->realizations.at(adapted->realizedName())->ir;
+    return adapted;
+  };
+  auto for_each_descendant = [&](ClassType *base, size_t id, const auto &prepare) {
     bool added = false;
-    auto key = vTableSignature(method);
-    size_t id = 0;
-    if (auto k = in(ctx->cache->thunkIds, key)) {
-      id = *k;
-    } else {
-      id = ctx->cache->thunkIds[key] = 1 + ctx->cache->thunkIds.size();
-    }
-    for (auto &desc : getClass(base->name)->descendants) {
-      for (const auto &[_, dr] : sorted_view(getClass(desc)->realizations)) {
-        ClassType *descType = nullptr;
-        for (auto &db : dr->bases)
-          if (db->realizedName() == base->realizedName()) {
-            descType = dr->getType();
-            break;
-          }
-        if (!descType && dr->getType()->realizedName() == base->realizedName()) {
-          descType = dr->getType();
-        }
-        if (!descType)
-          continue;
-        if (in(dr->vtable, id))
-          continue;
-        if (auto f = realize_function(method, descType)) {
-          dr->vtable[id] = f;
-          dr->ir->getRuntimeInfo()->methods[id] =
-              getFunction(f.get())->realizations.at(f->realizedName())->ir;
-          LOG_REALIZE("[dispatch] {} (desc={}, id={}) = {}", key,
-                      descType->debugString(2), id, f->debugString(2));
-          added = true;
-        }
-      }
-    }
+    for (const auto &descendant : sorted_view(getClass(base)->descendants))
+      for (const auto &[_, realization] :
+           sorted_view(getClass(descendant)->realizations))
+        if (!in(realization->vtable, id))
+          added |= prepare(realization.get());
     return added;
+  };
+  auto realize_descendant_virtuals = [&](FuncType *method) {
+    auto *base = extractFuncArgType(method)->getClass();
+    seqassert(base, "not a valid base");
+    auto key = vTableSignature(method);
+    auto [entry, inserted] =
+        ctx->cache->thunkIds.emplace(key, ctx->cache->thunkIds.size() + 1);
+    auto id = entry->second;
+    return for_each_descendant(
+        base, id, [&](Cache::Class::ClassRealization *realization) {
+          auto *receiver = realization->getType();
+          if (receiver->realizedName() != base->realizedName() &&
+              std::none_of(realization->bases.begin(), realization->bases.end(),
+                           [&](const auto &parent) {
+                             return parent->realizedName() == base->realizedName();
+                           }))
+            return false;
+          auto arguments = virtual_arguments(method, receiver);
+          auto *target = find_target(receiver, getUnmangledName(method->getFuncName()),
+                                     arguments, false);
+          if (!target)
+            return false;
+          auto *resolved = realize_target(target, arguments);
+          auto *returnType = resolved->getRetType();
+          if (returnType->unify(method->getRetType(), nullptr) < 0)
+            E(Error::CUSTOM, method->ast, "function {}.{} returns {}, expected {}",
+              getUnmangledName(receiver->name), getUnmangledName(method->getFuncName()),
+              returnType->prettyString(), method->getRetType()->prettyString());
+          auto adapted = install_target(realization, id, method, receiver, resolved);
+          LOG_REALIZE("[dispatch] {} (desc={}, id={}) = {}", key,
+                      receiver->debugString(2), id, adapted->debugString(2));
+          return true;
+        });
+  };
+  auto realize_descendant_supers = [&](size_t id, FuncType *signature) {
+    auto *lexical = extractClassGeneric(extractFuncArgType(signature))->getClass();
+    auto member = getStrLiteral(extractFuncGeneric(signature));
+    return for_each_descendant(
+        lexical, id, [&](Cache::Class::ClassRealization *realization) {
+          auto mro = getMRO(realization->getType());
+          auto anchor = std::find_if(mro.begin(), mro.end(), [&](const auto &base) {
+            return base->realizedName() == lexical->realizedName();
+          });
+          if (anchor == mro.end())
+            return false;
+          // super continues after the lexical class in the runtime receiver's MRO.
+          for (auto candidate = std::next(anchor); candidate != mro.end();
+               ++candidate) {
+            auto *receiver = candidate->get()->getClass();
+            auto arguments = super_arguments(signature, receiver);
+            auto *target = find_target(receiver, member, arguments, true);
+            if (!target)
+              continue;
+            auto *resolved = realize_target(target, arguments);
+            unify(resolved->getRetType(), signature->getRetType());
+            install_target(realization, id,
+                           ctx->cache->superCallSignatures.at(id).get(), receiver,
+                           resolved);
+            return true;
+          }
+          return false;
+        });
   };
 
   for (bool added = true; added;) {
@@ -191,72 +254,10 @@ void TypecheckVisitor::prepareVTables() {
         }
       }
     }
+    // Realizing a target can register more super calls; process a snapshot.
     auto superCalls = ctx->cache->superCalls;
-    for (const auto &[id, signature] : superCalls) {
-      auto *lexical =
-          extractClassGeneric(extractFuncArgType(signature.get()))->getClass();
-      auto member = getStrLiteral(extractFuncGeneric(signature.get()));
-      for (const auto &descendant : sorted_view(getClass(lexical)->descendants)) {
-        for (const auto &[_, realization] :
-             sorted_view(getClass(descendant)->realizations)) {
-          if (in(realization->vtable, id))
-            continue;
-          auto mro = getMRO(realization->getType());
-          auto anchor = std::find_if(mro.begin(), mro.end(), [&](const auto &base) {
-            return base->realizedName() == lexical->realizedName();
-          });
-          if (anchor == mro.end())
-            continue;
-          for (auto candidate = std::next(anchor); candidate != mro.end();
-               ++candidate) {
-            std::vector<CallArg> arguments;
-            auto argument = [&](const std::string &name, TypePtr argumentType) {
-              auto *value = N<NoneExpr>();
-              value->setType(argumentType);
-              value->setDone();
-              arguments.emplace_back(name, value);
-            };
-            argument("", *candidate);
-            for (const auto &generic :
-                 extractFuncArgType(signature.get(), 1)->getClass()->generics)
-              argument("", generic.type);
-            auto keywordType = extractFuncArgType(signature.get(), 2);
-            auto keywordId = getIntLiteral(keywordType);
-            auto &keywordNames = ctx->cache->generatedTupleNames[keywordId];
-            auto keywordValues = extractClassGeneric(keywordType, 1)->getClass();
-            for (size_t index = 0; index < keywordNames.size(); ++index)
-              argument(keywordNames[index], keywordValues->generics[index].type);
-            auto methods = findMatchingMethods(
-                candidate->get()->getClass(),
-                findMethod(candidate->get()->getClass(), member, false), arguments);
-            FuncType *target = nullptr;
-            for (auto *method : methods) {
-              auto *owner = method->ast->getAttribute<ir::StringValueAttribute>(
-                  Attr::ParentClass);
-              if (owner && owner->value == candidate->get()->getClass()->name) {
-                target = method;
-                break;
-              }
-            }
-            if (!target)
-              continue;
-            auto *call = cast<CallExpr>(
-                transform(N<CallExpr>(N<IdExpr>(target->getFuncName()), arguments)));
-            auto *resolved = call->getExpr()->getType()->getFunc();
-            unify(resolved->getRetType(), signature->getRetType());
-            auto adapted = adapt_target(ctx->cache->superCallSignatures.at(id).get(),
-                                        candidate->get()->getClass(), resolved);
-            realization->vtable[id] = adapted;
-            realization->ir->getRuntimeInfo()->methods[id] =
-                getFunction(adapted.get())
-                    ->realizations.at(adapted->realizedName())
-                    ->ir;
-            added = true;
-            break;
-          }
-        }
-      }
-    }
+    for (const auto &[id, signature] : superCalls)
+      added |= realize_descendant_supers(id, signature.get());
   }
 }
 
@@ -1325,7 +1326,7 @@ SuiteStmt *TypecheckVisitor::generateSuperDispatchAST(FuncType *type) {
                     N<DotExpr>(N<IdExpr>("self"), "_obj"),
                     N<IdExpr>((*base)->realizedName())),
         N<StarExpr>(N<IdExpr>("args")), N<KeywordStarExpr>(N<IdExpr>("kwargs")));
-    call->setAttribute(Attr::ExprThunkId, static_cast<int64_t>(thunkId));
+    call->setAttribute(Attr::ExprVirtual, static_cast<int64_t>(thunkId));
     return N<SuiteStmt>(N<ReturnStmt>(call));
   }
   E(Error::CUSTOM, getSrcInfo(), "super has no matching method '{}'", attr->value);
