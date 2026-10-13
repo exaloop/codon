@@ -172,6 +172,10 @@ void PassManager::registerStandardPasses() {
     registerPass(std::make_unique<pythonic::StrAdditionOptimization>());
     registerPass(std::make_unique<pythonic::GeneratorArgumentOptimization>());
     registerPass(std::make_unique<pythonic::EnumerateOptimization>());
+    // transform_enumerate_codon: enumerate can realize and clone iter() after
+    // the first RTTI pass. Lower those new virtual __iter__ calls before folding
+    // or generator fusion can mistake their static callee for the runtime target.
+    registerPass(std::make_unique<lowering::RTTILowering>());
     registerPass(std::make_unique<pythonic::IOCatOptimization>());
     registerPass(std::make_unique<pythonic::FormattingOptimization>());
 

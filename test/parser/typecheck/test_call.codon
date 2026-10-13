@@ -1362,3 +1362,13 @@ print(Int[a])
 #: side_N 3
 #: side_N 5
 #: <class 'Int[34]'>
+
+#%% generator_overload_element_types,barebones
+# core_containers_codon: iterable-to-generator conversion must use the actual
+# yielded type when choosing between scalar and key/value overloads.
+def consume(values: Generator[int]):
+    return "ints"
+@overload
+def consume(values: Generator[Tuple[int, int]]):
+    return "pairs"
+print(consume([1, 2]), consume([(1, 2), (3, 4)]))  #: ints pairs

@@ -1987,6 +1987,11 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
   const bool generator = x->isGenerator() || x->isAsync();
 
   if (generator) {
+    // ElidesRepeatedGeneratorPulls: keep a frontend marker on coroutine clones
+    // so the optimizer can identify generated resume functions without relying
+    // on a user function merely having a name ending in ".resume".
+    if (!x->isAsync())
+      func->addFnAttr("codon.generator");
     func->setPresplitCoroutine();
     auto *generatorType = cast<GeneratorType>(returnType);
     seqassertn(generatorType, "{} is not a generator type", *returnType);

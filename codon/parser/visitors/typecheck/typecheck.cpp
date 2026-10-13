@@ -692,10 +692,13 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
 
   else if (expectedClass && expectedClass->is("Generator") &&
            !exprClass->is(expectedClass->name) && !isEllipsis) {
-    if (findMethod(exprClass, "__iter__").empty())
+    // Select proper overload for type
+    auto *method =
+        findBestMethod(exprClass, "__iter__", std::vector<Type *>{exprClass});
+    if (!method)
       return {false, nullptr, nullptr};
-    // Note: do not do this in pipelines (TODO: why?)
-    type = instantiateType(expectedClass);
+    auto iterator = instantiateType(method, exprClass);
+    type = iterator->getFunc()->getRetType()->shared_from_this();
     fn = [&](Expr *expr) -> Expr * {
       return N<CallExpr>(N<DotExpr>(expr, "__iter__"));
     };
