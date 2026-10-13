@@ -589,3 +589,25 @@ B.apple["d"] = 4
 print(C.apple)
 #: {'a': 1, 'b': 2, 'c': 3, 'd': 4}
 
+
+#%% class_var_override,barebones
+# python_pybridge_codon: exception subclasses need independent _pytype slots;
+# inherited class variables must still share storage and follow the C3 MRO.
+class Root:
+    tag: ClassVar[int] = 1
+class Left(Root):
+    pass
+class Right(Root):
+    tag: ClassVar[int] = 2
+class Diamond(Left, Right):
+    pass
+class Own(Diamond):
+    tag: ClassVar[int] = 3
+
+assert Root.tag == 1 and Left.tag == 1
+assert Right.tag == 2 and Diamond.tag == 2 and Own.tag == 3
+Right.tag = 20
+assert Diamond.tag == 20 and Root.tag == 1 and Own.tag == 3
+Root.tag = 10
+assert Left.tag == 10 and Right.tag == 20
+print("class variable overrides ok")  #: class variable overrides ok

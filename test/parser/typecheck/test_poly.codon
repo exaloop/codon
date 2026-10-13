@@ -737,3 +737,49 @@ def test_diamond():
     assert not b.base_flag
 
 test_diamond()
+
+#%% dispatch_variance
+# return covariance and argument contravariance must
+# both work through a base-typed call, including super dispatch in a diamond.
+class ResultBase:
+    pass
+class ResultChild(ResultBase):
+    pass
+
+class Consumer:
+    def consume(self, value: ResultChild) -> ResultBase:
+        return value
+class ConsumerChild(Consumer):
+    def consume(self, value: ResultBase) -> ResultChild:
+        assert isinstance(value, ResultChild)
+        return ResultChild()
+class ConsumerLeft(Consumer):
+    def consume(self, value: ResultChild) -> ResultBase:
+        return super().consume(value)
+class ConsumerDiamond(ConsumerLeft, ConsumerChild):
+    pass
+
+@noinline
+def consume(value: Consumer, argument: ResultChild) -> ResultBase:
+    return value.consume(argument)
+
+assert isinstance(consume(ConsumerChild(), ResultChild()), ResultChild)
+assert isinstance(consume(ConsumerDiamond(), ResultChild()), ResultChild)
+print("dispatch variance ok")  # EXPECT: dispatch variance ok
+
+#%% dispatch_return_widening
+# dispatch_variance: an override returning a base of the promised result
+# is unsafe even though the reference representation is the same pointer.
+class ResultBase:
+    pass
+class ResultChild(ResultBase):
+    pass
+class Producer:
+    def produce(self) -> ResultChild:
+        return ResultChild()
+class ProducerChild(Producer):
+    def produce(self) -> ResultBase:
+        return ResultBase()
+value: Producer = ProducerChild()
+value.produce()
+#! function ProducerChild.produce returns ResultBase, expected ResultChild

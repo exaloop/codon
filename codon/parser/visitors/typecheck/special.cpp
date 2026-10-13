@@ -49,13 +49,33 @@ void TypecheckVisitor::prepareVTables() {
     value->setDone();
     return value;
   };
+  // virtual results are covariant;
+  // arguments flow in the opposite direction, from caller to implementation.
+  auto is_subtype = [&](Type *source, Type *destination) {
+    if (source->unify(destination, nullptr) >= 0)
+      return true;
+    auto *cls = source->getClass();
+    auto *base = destination->getClass();
+    if (!cls || !base || cls->isRecord() || base->isRecord())
+      return false;
+    for (const auto &parent : getMRO(cls))
+      if (parent->unify(base, nullptr) >= 0)
+        return true;
+    return false;
+  };
   auto adapt_target = [&](FuncType *signature, ClassType *receiver,
                           FuncType *target) -> std::shared_ptr<FuncType> {
-    // If the recever signature is not exactly the same
-    // (e.g., args are not ordered in same way, defaults etc.)
-    // create an adapter fn with the same arg order for dispatch pointer and resolve
-    // differences within it.
-    bool compatible = signature->size() == target->size();
+    // return types are covariant (derived class can return an extended/derived type)
+    if (!is_subtype(target->getRetType(), signature->getRetType()))
+      E(Error::CUSTOM, signature->ast, "function {}.{} returns {}, expected {}",
+        getUnmangledName(receiver->name), getUnmangledName(target->getFuncName()),
+        target->getRetType()->prettyString(), signature->getRetType()->prettyString());
+
+    // dispatch_variance: a covariant result also needs a wrapper so the CIR call
+    // retains its declared return type; the wrapper performs the result upcast.
+    bool compatible =
+        signature->size() == target->size() &&
+        signature->getRetType()->realizedName() == target->getRetType()->realizedName();
     for (size_t index = 1; compatible && index < signature->size(); ++index)
       compatible = extractFuncArgType(signature, index)->realizedName() ==
                    extractFuncArgType(target, index)->realizedName();
@@ -195,11 +215,6 @@ void TypecheckVisitor::prepareVTables() {
           if (!target)
             return false;
           auto *resolved = realize_target(target, arguments);
-          auto *returnType = resolved->getRetType();
-          if (returnType->unify(method->getRetType(), nullptr) < 0)
-            E(Error::CUSTOM, method->ast, "function {}.{} returns {}, expected {}",
-              getUnmangledName(receiver->name), getUnmangledName(method->getFuncName()),
-              returnType->prettyString(), method->getRetType()->prettyString());
           auto adapted = install_target(realization, id, method, receiver, resolved);
           LOG_REALIZE("[dispatch] {} (desc={}, id={}) = {}", key,
                       receiver->debugString(2), id, adapted->debugString(2));
@@ -226,7 +241,6 @@ void TypecheckVisitor::prepareVTables() {
             if (!target)
               continue;
             auto *resolved = realize_target(target, arguments);
-            unify(resolved->getRetType(), signature->getRetType());
             install_target(realization, id,
                            ctx->cache->superCallSignatures.at(id).get(), receiver,
                            resolved);

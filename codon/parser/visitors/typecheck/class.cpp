@@ -456,16 +456,6 @@ std::vector<std::shared_ptr<ClassType>> TypecheckVisitor::parseBaseClasses(
       g.type = g.getType()->generalize(ctx->typecheckLevel);
       typ->hiddenGenerics.push_back(g);
     }
-
-    // Add class variables
-    for (const auto &[varName, varCanonicalName] : sorted_view(cachedCls->classVars)) {
-      // Handle class variables. Transform them later to allow self-references
-      auto newName = fmt::format("{}.{}", canonicalName, varName);
-      auto newCanonicalName = ctx->generateCanonicalName(newName);
-      getClass(typ)->classVars[varName] = varCanonicalName;
-      ctx->add(newName, ctx->forceFind(varCanonicalName));
-      ctx->add(newCanonicalName, ctx->forceFind(varCanonicalName));
-    }
   }
 
   auto cls = getClass(canonicalName);
@@ -481,6 +471,24 @@ std::vector<std::shared_ptr<ClassType>> TypecheckVisitor::parseBaseClasses(
   asts = cls->mro; // use MRO order
   for (auto &m : cls->mro) {
     getClass(m.get())->descendants.insert(canonicalName);
+  }
+
+  // Resolve class names in C3 order so a sibling's override
+  // also wins over an earlier base's inherited variable.
+  for (const auto &base : asts) {
+    if (base->name == canonicalName)
+      continue;
+    for (const auto &[varName, varCanonicalName] :
+         sorted_view(getClass(base.get())->classVars)) {
+      if (varCanonicalName != fmt::format("{}.{}", base->name, varName) ||
+          in(cls->classVars, varName))
+        continue;
+      auto newName = fmt::format("{}.{}", canonicalName, varName);
+      auto newCanonicalName = ctx->generateCanonicalName(newName);
+      cls->classVars[varName] = varCanonicalName;
+      ctx->add(newName, ctx->forceFind(varCanonicalName));
+      ctx->add(newCanonicalName, ctx->forceFind(varCanonicalName));
+    }
   }
 
   // Add normal fields
