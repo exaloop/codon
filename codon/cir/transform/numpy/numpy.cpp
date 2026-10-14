@@ -580,6 +580,20 @@ std::unique_ptr<NumPyExpr> parse(Value *v,
   if (auto *c = cast<CallInstr>(v)) {
     auto *f = util::getFunc(c->getCallee());
 
+    if (f && c->numArgs() == 3 && isArrayType(c->front()->getType()) &&
+        (*std::next(c->begin()))->getType()->is(T.i64) &&
+        f->getName().rfind(ast::getMangledFunc("std.numpy.routines", "roll") + "[",
+                           0) == 0) {
+      auto *axis = cast<IntConst>(c->back());
+      if (axis && axis->getVal() >= -type.ndim && axis->getVal() < type.ndim) {
+        auto operand = parse(c->front(), leaves, T);
+        auto shift = parse(*std::next(c->begin()), leaves, T);
+        if (operand && shift)
+          return std::make_unique<NumPyExpr>(type, v, NumPyExpr::NP_OP_ROLL,
+                                             std::move(operand), std::move(shift));
+      }
+    }
+
     if (f && c->numArgs() == 4 && f->getUnmangledName() == "clip" &&
         (isArrayType(f->getParentType()) ||
          f->getName().rfind(ast::getMangledFunc("std.numpy.routines", "clip") + "[",
@@ -1242,6 +1256,7 @@ bool hasOwnedResult(const NumPyExpr &expr) {
   case NumPyExpr::NP_OP_DEG2RAD:
   case NumPyExpr::NP_OP_RAD2DEG:
   case NumPyExpr::NP_OP_HEAVISIDE:
+  case NumPyExpr::NP_OP_ROLL:
   case NumPyExpr::NP_OP_ZEROS_LIKE:
   case NumPyExpr::NP_OP_ONES_LIKE:
   case NumPyExpr::NP_OP_WHERE:
@@ -1306,6 +1321,22 @@ bool NumPyOptimizationUnit::optimize(NumPyPrimitiveTypes &T,
       hasUFuncArgumentEffects(*expr, sideEffects))
     return false;
 
+  bool hasRoll = false;
+  bool supportsRoll = true;
+  expr->apply([&](NumPyExpr &element) {
+    if (element.op == NumPyExpr::NP_OP_ROLL) {
+      hasRoll = true;
+      if (!element.lhs->isLeaf() || !element.rhs->isLeaf())
+        supportsRoll = false;
+    }
+    if (element.op == NumPyExpr::NP_OP_TRANSPOSE ||
+        element.op == NumPyExpr::NP_OP_MATMUL ||
+        (element.isReduction() && &element != expr.get()))
+      supportsRoll = false;
+  });
+  if (hasRoll && !supportsRoll)
+    return false;
+
   for (auto &leaf : leaves) {
     if (!isSafeFusionLeaf(leaf.second, T, sideEffects))
       return false;
@@ -1338,6 +1369,15 @@ bool NumPyOptimizationUnit::optimize(NumPyPrimitiveTypes &T,
   bool ownsResult = hasOwnedResult(*expr) && !reduction;
 
   codegenValidation(C, true);
+
+  if (reduction && hasRoll) {
+    auto *element = expr->lhs.get();
+    auto *input = element->codegenFusedEval(C);
+    NumPyExpr replacement(element->type, M->Nr<VarValue>(input));
+    replacement.ownedLastUse = true;
+    element->replace(replacement);
+    C.vars[element] = input;
+  }
 
   if (reduction) {
     expr->lhs->apply([&](NumPyExpr &element) {
