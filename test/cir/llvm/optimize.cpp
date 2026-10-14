@@ -257,6 +257,88 @@ TEST(RTTICodegenTest, FoldsUniformFieldsAndSpecializesCalls) {
       testing::ExitedWithCode(EXIT_SUCCESS), "");
 }
 
+TEST(RTTICodegenTest, BoundsDispatchByReceiverSelection) {
+  ASSERT_EXIT(
+      {
+        std::string source;
+        auto hierarchy = [&](const std::string &prefix, int receivers,
+                             int implementations, bool large) {
+          // An override marks fee virtual even when the selected subtree has
+          // only one implementation. Otherwise the frontend calls it directly.
+          if (implementations == 1)
+            source += "class " + prefix +
+                      "Root(object):\n    def fee(self, units: int): return units\n";
+          for (int index = 0; index < receivers; ++index) {
+            auto name = prefix + std::to_string(index);
+            auto parent = index ? prefix + "0"
+                                : (implementations == 1 ? prefix + "Root" : "object");
+            source += "class " + name + "(" + parent + "):\n";
+            if (index < implementations) {
+              source += "    def fee(self, units: int):\n";
+              if (large) {
+                for (int operation = 0; operation < 32; ++operation)
+                  source += "        units = (units * 17 + " +
+                            std::to_string(operation + 1) + ") & 1023\n";
+              }
+              source += "        return units * " + std::to_string(index + 17) + " + " +
+                        std::to_string(index + 3) + "\n";
+            } else {
+              source += "    pass\n";
+            }
+            source += "print(" + name + "().fee(7))\n";
+          }
+          source += "@export\ndef " + prefix + "_dispatch(value: " + prefix +
+                    "0, units: int):\n    return value.fee(units)\n";
+        };
+        hierarchy("Small", 4, 4, false);
+        hierarchy("SmallShared", 4, 2, false);
+        hierarchy("Boundary", 5, 5, false);
+        hierarchy("Expanded", 8, 8, false);
+        hierarchy("Shared", 64, 2, false);
+        hierarchy("Singleton", 64, 1, false);
+        hierarchy("SmallLarge", 3, 3, true);
+        hierarchy("Large", 6, 6, true);
+        hierarchy("General", 65, 65, false);
+        hierarchy("SingletonLimit", 65, 1, false);
+        auto compiler = compileAndOptimize(source);
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        for (auto &function : *module)
+          EXPECT_FALSE(function.getName().starts_with(".codon.dispatch.target."));
+        auto check = [&](const std::string &name, bool indirect) {
+          auto *kernel = module->getFunction(name + "_dispatch");
+          ASSERT_NE(kernel, nullptr);
+          size_t indirectCalls = 0;
+          for (auto &block : *kernel) {
+            for (auto &instruction : block) {
+              auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+              if (!call)
+                continue;
+              auto *callee = call->getCalledFunction();
+              indirectCalls += !callee;
+            }
+          }
+          EXPECT_EQ(indirectCalls, indirect ? 1u : 0u) << name;
+          if (testing::Test::HasFailure())
+            kernel->print(llvm::errs());
+        };
+        // Sharing helps only when it removes selection altogether. Otherwise,
+        // receiver count bounds per-site code regardless of method body size.
+        check("Small", false);
+        check("SmallShared", false);
+        check("Boundary", true);
+        check("Expanded", true);
+        check("Shared", true);
+        check("Singleton", false);
+        check("SmallLarge", false);
+        check("Large", true);
+        check("General", true);
+        check("SingletonLimit", true);
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
 TEST(RTTICodegenTest, ReusesJITFieldOwnerOffsets) {
   ASSERT_EXIT(
       {

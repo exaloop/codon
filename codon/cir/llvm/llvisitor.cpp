@@ -3394,9 +3394,14 @@ void LLVMVisitor::visit(const CallInstr *x) {
         if (cached == virtualTargets.end()) {
           // Cover every compatible subtype, not just observed allocations. An
           // incomplete target set or ABI mismatch must retain the original lookup.
-          // The budget bounds concrete receiver types, not distinct method bodies.
-          constexpr size_t MAX_SPECIALIZED_TYPES = 4;
+          // Bound the receiver-selection code, not just distinct method bodies.
+          // Keep the existing four-receiver expansion limit at every call site;
+          // larger sets are worthwhile only when they need no selection at all.
+          // The separate proof limit bounds work/storage for that singleton case.
+          constexpr size_t MAX_DIRECT_TYPES = 4;
+          constexpr size_t MAX_SINGLETON_TYPES = 64;
           std::vector<std::pair<int64_t, llvm::Function *>> candidates;
+          bool singleton = true;
           for (auto iterator = type->getModule()->types_begin();
                iterator != type->getModule()->types_end(); ++iterator) {
             auto *info = (*iterator)->getRuntimeInfo();
@@ -3410,11 +3415,19 @@ void LLVMVisitor::visit(const CallInstr *x) {
             }
             auto *function = getFunc(target->second);
             if (!function || function->getFunctionType() != funcType ||
-                candidates.size() == MAX_SPECIALIZED_TYPES) {
+                candidates.size() == MAX_SINGLETON_TYPES) {
               candidates.clear();
               break;
             }
             candidates.emplace_back(info->id, function);
+            singleton &= function == candidates.front().second;
+            if (!singleton && candidates.size() > MAX_DIRECT_TYPES) {
+              // Reject as soon as expansion is too large. Do not inspect method
+              // bodies or substitute another unproven lookup strategy: the
+              // original general lookup remains the fallback.
+              candidates.clear();
+              break;
+            }
           }
           cached = virtualTargets.emplace(key, std::move(candidates)).first;
         }

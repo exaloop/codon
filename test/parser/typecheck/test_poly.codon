@@ -212,8 +212,12 @@ assert caught
 print("rtti exception ok")  # EXPECT: rtti exception ok
 
 #%% test_rtti_call_order
+# Four receivers share two implementations, exercising bounded direct calls
+# and their normal continuations when argument or target evaluation throws.
 class DispatchBase:
     def method(self, value: int):
+        if value == 9:
+            raise ValueError("dispatch failure")
         return value
 
 class DispatchChild(DispatchBase):
@@ -221,10 +225,10 @@ class DispatchChild(DispatchBase):
         return value + 100
 
 class DispatchThrow(DispatchBase):
-    def method(self, value: int):
-        if value == 9:
-            raise ValueError("dispatch failure")
-        return value - 1
+    pass
+
+class DispatchInheritedOne(DispatchChild):
+    pass
 
 @noinline
 def check_dispatch(value: DispatchBase):
@@ -237,8 +241,10 @@ def receiver(events: list[int], value: DispatchBase) -> DispatchBase:
     events.append(1)
     return value
 
-def argument(events: list[int]):
+def argument(events: list[int], fail: bool = False):
     events.append(2)
+    if fail:
+        raise ValueError("argument failure")
     return 9
 
 value = DispatchChild()
@@ -248,20 +254,82 @@ assert receiver(events, value).method(argument(events)) == 109
 assert events == [1, 2]
 
 @noinline
-def checked_dispatch(value: DispatchBase, events: list[int]):
+def checked_dispatch(value: DispatchBase, events: list[int], fail: bool = False):
     try:
-        return value.method(argument(events))
+        return receiver(events, value).method(argument(events, fail))
     except ValueError:
         events.append(3)
         return -1
 
 events = []
 assert checked_dispatch(DispatchThrow(), events) == -1
-assert events == [2, 3]
+assert events == [1, 2, 3]
 events = []
 assert checked_dispatch(DispatchChild(), events) == 109
-assert events == [2]
+assert events == [1, 2]
+events = []
+assert checked_dispatch(DispatchInheritedOne(), events) == 109
+assert events == [1, 2]
+events = []
+assert checked_dispatch(DispatchChild(), events, True) == -1
+assert events == [1, 2, 3]
 print("rtti calls ok")  # EXPECT: rtti calls ok
+
+#%% test_rtti_fallback_order
+# Nine distinct overrides retain general AOT lookup. Receiver and argument
+# effects still happen once, and both argument and target exceptions unwind.
+class FallbackBase:
+    def method(self, value: int, events: list[int]):
+        return value
+
+class FallbackChild[N: Static[int]](FallbackBase):
+    def method(self, value: int, events: list[int]):
+        events.append(3)
+        if value < 0:
+            raise ValueError("target failure")
+        return value + N
+
+def fallback_receiver(value: FallbackBase, events: list[int]) -> FallbackBase:
+    events.append(1)
+    return value
+
+def fallback_argument(events: list[int], fail: int):
+    events.append(2)
+    if fail == 1:
+        raise ValueError("argument failure")
+    return -9 if fail == 2 else 9
+
+@noinline
+def invoke_fallback(value: FallbackBase, events: list[int], fail: int):
+    try:
+        return fallback_receiver(value, events).method(fallback_argument(events, fail), events)
+    except ValueError:
+        events.append(4)
+        return -1
+    finally:
+        events.append(5)
+
+values: list[FallbackBase] = []
+values.append(FallbackChild[0]())
+values.append(FallbackChild[1]())
+values.append(FallbackChild[2]())
+values.append(FallbackChild[3]())
+values.append(FallbackChild[4]())
+values.append(FallbackChild[5]())
+values.append(FallbackChild[6]())
+values.append(FallbackChild[7]())
+values.append(FallbackChild[8]())
+for index, value in enumerate(values):
+    events = []
+    assert invoke_fallback(value, events, 0) == 9 + index
+    assert events == [1, 2, 3, 5]
+    events = []
+    assert invoke_fallback(value, events, 1) == -1
+    assert events == [1, 2, 4, 5]
+    events = []
+    assert invoke_fallback(value, events, 2) == -1
+    assert events == [1, 2, 3, 4, 5]
+print("rtti fallback order ok")  # EXPECT: rtti fallback order ok
 
 #%% test_rtti_any
 class BoxBase:

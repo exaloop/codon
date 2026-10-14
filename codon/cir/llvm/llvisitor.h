@@ -160,8 +160,8 @@ private:
   /// LLVM VIRTUAL_LOOKUP helpers -> their static CIR receiver types. Retains the
   /// information needed to recognize lowered dispatch at a call site; per-module.
   std::unordered_map<llvm::Function *, const RefType *> virtualLookupTypes;
-  /// (Static receiver type ID, semantic thunk ID) -> (dynamic type ID, target) pairs.
-  /// Empty entries cache a decision not to specialize. LLVM targets are per-module.
+  /// (Static receiver type ID, semantic thunk ID) -> complete AOT target set.
+  /// Empty entries retain general lookup. All LLVM pointers are per-module.
   std::map<std::pair<int64_t, int64_t>,
            std::vector<std::pair<int64_t, llvm::Function *>>>
       virtualTargets;
