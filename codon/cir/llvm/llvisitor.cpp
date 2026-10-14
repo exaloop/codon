@@ -3792,8 +3792,8 @@ llvm::GlobalVariable *LLVMVisitor::getRuntimeTypeInfo(Type *type) {
   if (auto *existing = M->getNamedGlobal(name))
     return existing;
   // AOT descriptors are constants. A JIT descriptor keeps its symbol/address
-  // across cells, while its fields can be refreshed to reference new constant
-  // backing arrays. Existing objects must not keep a stale descriptor address.
+  // and immutable layout across cells; only its method table is refreshed.
+  // Existing objects must not keep a stale descriptor address.
   auto *result =
       new llvm::GlobalVariable(*M, getRuntimeTypeInfoType(), !options->jit,
                                options->jit ? llvm::GlobalValue::ExternalLinkage
@@ -3845,6 +3845,27 @@ llvm::GlobalVariable *LLVMVisitor::getRuntimeTypeInfo(Type *type) {
     return llvm::cast<llvm::ConstantInt>(first)->getZExtValue() <
            llvm::cast<llvm::ConstantInt>(second)->getZExtValue();
   });
+  if (polymorphic) {
+    // Keep the public offsets[0:n_mro] prefix in MRO order. The immutable tail
+    // holds a mask followed by keyed {owner ID, offset} slots, using the same
+    // bounded-probing hash as method tables. This avoids a depth-dependent scan
+    // without a dense table indexed by program-global type IDs or an ABI field.
+    // Offset zero is empty: every real segment follows the object header.
+    size_t capacity = 1;
+    while (capacity < 2 * mro.size())
+      capacity *= 2;
+    std::vector<llvm::Constant *> index(2 * capacity, B->getInt64(0));
+    for (size_t position = 0; position < mro.size(); ++position) {
+      auto id = llvm::cast<llvm::ConstantInt>(mro[position])->getZExtValue();
+      auto slot = runtime::methodHash(id) & (capacity - 1);
+      while (!llvm::cast<llvm::ConstantInt>(index[2 * slot + 1])->isZero())
+        slot = (slot + 1) & (capacity - 1);
+      index[2 * slot] = mro[position];
+      index[2 * slot + 1] = offsets[position];
+    }
+    offsets.push_back(B->getInt64(capacity - 1));
+    offsets.insert(offsets.end(), index.begin(), index.end());
+  }
   auto *stringType = llvm::StructType::get(*context, {B->getPtrTy(), B->getInt64Ty()});
   auto *slotType =
       llvm::StructType::get(*context, {stringType, B->getInt64Ty(), B->getInt64Ty()});
@@ -3968,10 +3989,17 @@ void LLVMVisitor::prepareRuntimeTypeInfo(Module *module) {
       llvm::FunctionType::get(B->getVoidTy(), false),
       llvm::GlobalValue::ExternalLinkage, runtimeInitializerName, M.get());
   llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", initializer));
-  // Refresh descriptors before publishing the registry. JIT cell initialization
-  // is serial; these stores are not a concurrent-reader publication protocol.
-  for (const auto &[destination, contents] : typeInfoUpdates)
-    builder.CreateStore(contents, destination);
+  // Layout and ancestry are fixed once a JIT type is published. Preserve their
+  // original backing arrays so field accesses can safely reuse invariant loads
+  // even when a later cell realizes more methods on an existing type. Dispatch
+  // remains mutable and is refreshed before publishing the registry. Cell
+  // initialization is serial, not a concurrent-reader publication protocol.
+  for (const auto &[destination, contents] : typeInfoUpdates) {
+    for (auto field : {runtime::METHOD_COUNT, runtime::METHODS})
+      builder.CreateStore(
+          contents->getAggregateElement(unsigned(field)),
+          builder.CreateStructGEP(getRuntimeTypeInfoType(), destination, field));
+  }
   builder.CreateStore(
       llvm::ConstantStruct::get(llvm::cast<llvm::StructType>(registry->getValueType()),
                                 B->getInt64(entries.size()), table),
@@ -4084,39 +4112,84 @@ llvm::Value *LLVMVisitor::getFieldAddress(llvm::Value *object, RefType *type,
                           B->CreateAdd(offset, B->getInt64(localOffset)));
     }
   }
-  // General/JIT fallback: an old Base-typed helper may receive a new subclass
-  // whose extra fields move Base's segment. Resolve the owner in the actual MRO
-  // and trap if it is absent rather than treating an unrelated segment as the field.
+  // Keep the open-world lookup in one non-inlined resolver, rather than adding
+  // a probe loop to the caller for every field load/store. Its only reads are
+  // from immutable layout arrays; the method table is deliberately not involved.
+  auto *resolver = M->getFunction(".codon.field.offset.dynamic");
+  if (!resolver) {
+    resolver = llvm::Function::Create(
+        llvm::FunctionType::get(
+            B->getInt64Ty(), {B->getInt64Ty(), B->getPtrTy(), B->getInt64Ty()}, false),
+        llvm::GlobalValue::PrivateLinkage, ".codon.field.offset.dynamic", M.get());
+    // Every caller passes private constant globals emitted by getRuntimeTypeInfo,
+    // never payload storage or mutable descriptor fields. Reads of this immutable
+    // memory have no observable memory effects, so identical calls remain commonable
+    // across payload stores. This contract would not hold for arbitrary arrays.
+    resolver->setMemoryEffects(llvm::MemoryEffects::none());
+    resolver->addFnAttr(llvm::Attribute::NoInline);
+    resolver->addFnAttr(llvm::Attribute::NoUnwind);
+    resolver->addFnAttr(llvm::Attribute::WillReturn);
+    resolver->addParamAttr(1, llvm::Attribute::NoCapture);
+    auto *entry = llvm::BasicBlock::Create(*context, "entry", resolver);
+    auto *loop = llvm::BasicBlock::Create(*context, "field.probe", resolver);
+    auto *check = llvm::BasicBlock::Create(*context, "field.check", resolver);
+    auto *next = llvm::BasicBlock::Create(*context, "field.next", resolver);
+    auto *found = llvm::BasicBlock::Create(*context, "field.found", resolver);
+    auto *missing = llvm::BasicBlock::Create(*context, "field.missing", resolver);
+    llvm::IRBuilder<> builder(entry);
+    auto *maskAddress = builder.CreateGEP(builder.getInt64Ty(), resolver->getArg(1),
+                                          resolver->getArg(0));
+    auto *mask = builder.CreateLoad(builder.getInt64Ty(), maskAddress);
+    auto *slots =
+        builder.CreateGEP(builder.getInt64Ty(), maskAddress, builder.getInt64(1));
+    auto *mixed = builder.CreateMul(resolver->getArg(2),
+                                    builder.getInt64(runtime::METHOD_HASH_MULTIPLIER));
+    auto *hashed =
+        builder.CreateXor(mixed, builder.CreateLShr(mixed, runtime::METHOD_HASH_SHIFT));
+    auto *start = builder.CreateAnd(hashed, mask);
+    builder.CreateBr(loop);
+    builder.SetInsertPoint(loop);
+    auto *position = builder.CreatePHI(builder.getInt64Ty(), 2);
+    position->addIncoming(start, entry);
+    auto *slot = builder.CreateGEP(builder.getInt64Ty(), slots,
+                                   builder.CreateMul(position, builder.getInt64(2)));
+    auto *offset = builder.CreateLoad(
+        builder.getInt64Ty(),
+        builder.CreateGEP(builder.getInt64Ty(), slot, builder.getInt64(1)));
+    builder.CreateCondBr(builder.CreateICmpEQ(offset, builder.getInt64(0)), missing,
+                         check);
+    builder.SetInsertPoint(check);
+    auto *id = builder.CreateLoad(builder.getInt64Ty(), slot);
+    builder.CreateCondBr(builder.CreateICmpEQ(id, resolver->getArg(2)), found, next);
+    builder.SetInsertPoint(next);
+    auto *nextPosition =
+        builder.CreateAnd(builder.CreateAdd(position, builder.getInt64(1)), mask);
+    position->addIncoming(nextPosition, next);
+    builder.CreateCondBr(builder.CreateICmpEQ(nextPosition, start), missing, loop);
+    builder.SetInsertPoint(missing);
+    builder.CreateCall(llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::trap));
+    builder.CreateUnreachable();
+    builder.SetInsertPoint(found);
+    for (auto *field : {mask, id, offset})
+      field->setMetadata(llvm::LLVMContext::MD_invariant_load,
+                         llvm::MDNode::get(*context, {}));
+    builder.CreateRet(offset);
+  }
+
+  // An old Base-typed helper may receive a future subclass with a different
+  // segment offset. Resolve using that object's immutable layout, never the
+  // set of types known when the helper was compiled. Payload and method-table
+  // loads are not invariant: user code and later cells can still change them.
   auto *info = B->CreateLoad(B->getPtrTy(), object);
+  info->setMetadata(llvm::LLVMContext::MD_invariant_load,
+                    llvm::MDNode::get(*context, {}));
   auto *count = loadRuntimeField(info, runtime::MRO_COUNT);
-  auto *ids = loadRuntimeField(info, runtime::MRO_IDS);
   auto *offsets = loadRuntimeField(info, runtime::MRO_OFFSETS);
-  auto *entry = block;
-  auto *loop = llvm::BasicBlock::Create(*context, "field.mro", func);
-  auto *check = llvm::BasicBlock::Create(*context, "field.check", func);
-  auto *next = llvm::BasicBlock::Create(*context, "field.next", func);
-  auto *found = llvm::BasicBlock::Create(*context, "field.found", func);
-  auto *missing = llvm::BasicBlock::Create(*context, "field.missing", func);
-  B->CreateBr(loop);
-  B->SetInsertPoint(loop);
-  auto *position = B->CreatePHI(B->getInt64Ty(), 2);
-  position->addIncoming(B->getInt64(0), entry);
-  B->CreateCondBr(B->CreateICmpULT(position, count), check, missing);
-  B->SetInsertPoint(check);
-  auto *id =
-      B->CreateLoad(B->getInt64Ty(), B->CreateGEP(B->getInt64Ty(), ids, position));
-  B->CreateCondBr(B->CreateICmpEQ(id, B->getInt64(owner->getRuntimeInfo()->id)), found,
-                  next);
-  B->SetInsertPoint(next);
-  position->addIncoming(B->CreateAdd(position, B->getInt64(1)), next);
-  B->CreateBr(loop);
-  B->SetInsertPoint(missing);
-  B->CreateCall(llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::trap));
-  B->CreateUnreachable();
-  B->SetInsertPoint(found);
-  block = found;
-  auto *offset =
-      B->CreateLoad(B->getInt64Ty(), B->CreateGEP(B->getInt64Ty(), offsets, position));
+  for (auto *field : {count, offsets})
+    llvm::cast<llvm::LoadInst>(field)->setMetadata(llvm::LLVMContext::MD_invariant_load,
+                                                   llvm::MDNode::get(*context, {}));
+  auto *offset = B->CreateCall(
+      resolver, {count, offsets, B->getInt64(owner->getRuntimeInfo()->id)});
   return B->CreateGEP(B->getInt8Ty(), object,
                       B->CreateAdd(offset, B->getInt64(localOffset)));
 }

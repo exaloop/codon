@@ -171,6 +171,101 @@ print("second")
   }
 }
 
+TEST(JITRTTITest, PreservesLayoutsWhileRefreshingMethods) {
+  for (bool debug : {false, true}) {
+    auto options = codon::Options::getDefault("build/codon_test");
+    options->jit = true;
+    options->debug = debug;
+    options->capture = true;
+    codon::jit::JIT instance(*options);
+    auto error = instance.init();
+    ASSERT_FALSE(bool(error)) << llvm::toString(std::move(error));
+    auto first = instance.execute(R"(
+class LayoutBase(object):
+  balance: int
+  accrued: int
+  def method(self, *values, **options) -> int:
+    return len(values) + options['extra']
+class LayoutChild(LayoutBase):
+  def method(self, *values, **options) -> int:
+    return 100 + len(values) + options['extra']
+@noinline
+def update_old(value: LayoutBase, delta: int):
+  value.balance += delta
+  value.accrued += value.balance
+  return value.balance + value.accrued
+@noinline
+def dispatch_old(value: LayoutBase):
+  return value.method(1, extra=2)
+old: LayoutBase = LayoutChild(10, 1)
+assert update_old(old, 2) == 25
+assert dispatch_old(old) == 103
+old_info = TypeInfo.cache(LayoutChild)
+old_mro = old_info.mro
+old_offsets = old_info.offsets
+old_methods = old_info.methods
+print('first')
+)");
+    ASSERT_TRUE(bool(first)) << llvm::toString(first.takeError());
+    EXPECT_EQ(*first, "first\n");
+
+    // A new variadic signature refreshes an already published method table.
+    // Old callers must retain valid layout loads but see newly installed thunks.
+    auto second = instance.execute(R"(
+@noinline
+def dispatch_new(value: LayoutBase):
+  return value.method(1, 'two', extra=3)
+assert dispatch_new(old) == 105
+assert dispatch_old(old) == 103
+assert TypeInfo.cache(LayoutChild).__raw__() == old_info.__raw__()
+assert old_info.mro == old_mro
+assert old_info.offsets == old_offsets
+assert old_info.methods != old_methods
+assert update_old(old, 3) == 43
+class LayoutSide(object):
+  side: int
+class LayoutLater(LayoutSide, LayoutChild):
+  padding: Tuple[int, int, int]
+  def method(self, *values, **options) -> int:
+    return 200 + len(values) + options['extra']
+later = __magic__.new(LayoutLater)
+later.padding = (7, 8, 9)
+later.side = 99
+later.balance = 20
+later.accrued = 5
+assert update_old(later, 4) == 53
+assert later.balance == 24 and later.accrued == 29
+assert later.padding == (7, 8, 9) and later.side == 99
+assert dispatch_old(later) == 203
+assert dispatch_new(later) == 205
+pointer = __ptr__(later.balance)
+pointer[0] = 30
+assert update_old(later, 1) == 91
+assert update_old(old, 1) == 60
+print('second')
+)");
+    ASSERT_TRUE(bool(second)) << llvm::toString(second.takeError());
+    EXPECT_EQ(*second, "second\n");
+
+    auto rejected = instance.execute(R"(
+class LayoutBad(LayoutBase):
+  def method(self, *values, **options) -> str:
+    return 'incompatible'
+bad: LayoutBase = LayoutBad(0, 0)
+dispatch_old(bad)
+)");
+    ASSERT_FALSE(bool(rejected));
+    EXPECT_NE(llvm::toString(rejected.takeError()).find("returns str, expected int"),
+              std::string::npos);
+    auto recovered = instance.execute("assert dispatch_old(old) == 103\n"
+                                      "assert dispatch_new(later) == 205\n"
+                                      "assert update_old(later, 1) == 124\n"
+                                      "print('recovered')\n");
+    ASSERT_TRUE(bool(recovered)) << llvm::toString(recovered.takeError());
+    EXPECT_EQ(*recovered, "recovered\n");
+  }
+}
+
 TEST(JITOptionsTest, CollectsAfterJITTeardown) {
   ASSERT_EXIT(
       {

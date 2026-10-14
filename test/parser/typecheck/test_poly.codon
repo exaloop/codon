@@ -767,6 +767,94 @@ assert isinstance(consume(ConsumerChild(), ResultChild()), ResultChild)
 assert isinstance(consume(ConsumerDiamond(), ResultChild()), ResultChild)
 print("dispatch variance ok")  # EXPECT: dispatch variance ok
 
+#%% dispatch_variadic_packs
+# Resolution must unpack each realized signature exactly once, including empty
+# and heterogeneous packs. Bound calls and super retain the same packed ABI.
+class VariadicBase:
+    def count(self, prefix: int = 7, *values, **options) -> int:
+        return prefix + 10 * len(values) + 100 * len(options.__keys__())
+
+    def total(self, *values) -> int:
+        return sum(values)
+
+    def keywords(self, **values) -> int:
+        return values['left'] * 10 + values['right']
+
+class VariadicChild(VariadicBase):
+    def count(self, prefix: int = 7, *values, **options) -> int:
+        return super().count(prefix, *values, **options) + 1000
+
+    def total(self, *values) -> int:
+        return sum(values) + 1000
+
+    def keywords(self, **values) -> int:
+        return values['left'] * 10 + values['right'] + 1000
+
+class VariadicInherited(VariadicChild):
+    pass
+
+@noinline
+def count_variadic(value: VariadicBase):
+    bound = value.count
+    return value.count(), bound(2, 3, 'four', left=5, right='six'), value.count(1, 2, 3, left=4)
+
+@noinline
+def sum_variadic(value: VariadicBase):
+    return value.total(2, 3, 4)
+
+@noinline
+def keyword_variadic(value: VariadicBase):
+    return value.keywords(left=2, right=3), value.keywords(right=3, left=2)
+
+assert count_variadic(VariadicBase()) == (7, 222, 121)
+assert count_variadic(VariadicChild()) == (1007, 1222, 1121)
+assert count_variadic(VariadicInherited()) == (1007, 1222, 1121)
+assert sum_variadic(VariadicBase()) == 9
+assert sum_variadic(VariadicChild()) == 1009
+assert keyword_variadic(VariadicBase()) == (23, 23)
+assert keyword_variadic(VariadicChild()) == (1023, 1023)
+
+# A covariant return forces adapter generation; the adapter must expand its
+# packed parameters when it invokes the override, just as resolution does.
+class PackedResult:
+    count: int
+class PackedChildResult(PackedResult):
+    pass
+class PackedProducer:
+    def produce(self, *values, **options) -> PackedResult:
+        return PackedResult(len(values) + 10 * len(options.__keys__()))
+class PackedChildProducer(PackedProducer):
+    def produce(self, *values, **options) -> PackedChildResult:
+        return PackedChildResult(len(values) + 10 * len(options.__keys__()))
+
+@noinline
+def produce_packed(value: PackedProducer) -> PackedResult:
+    return value.produce(2, 'three', left=4, right='five')
+
+result = produce_packed(PackedChildProducer())
+assert isinstance(result, PackedChildResult)
+assert result.count == 22
+
+# An additional overload does not hide a compatible inherited implementation.
+class KeywordOverload(VariadicBase):
+    def keywords(self, required: int) -> int:
+        return required
+assert keyword_variadic(KeywordOverload()) == (23, 23)
+print("variadic dispatch ok")  # EXPECT: variadic dispatch ok
+
+#%% dispatch_keyword_return_mismatch
+# Resolving a keyword pack must still check the implementation's return type
+# before installing a target with the caller's ABI.
+class MissingBase:
+    def method(self, **values) -> int:
+        return values['left']
+class MissingChild(MissingBase):
+    def method(self, **values) -> str:
+        return 'incompatible'
+value: MissingBase = MissingChild()
+value.method(left=2)
+#! function MissingChild.method returns str, expected int
+
 #%% dispatch_return_widening
 # dispatch_variance: an override returning a base of the promised result
 # is unsafe even though the reference representation is the same pointer.
