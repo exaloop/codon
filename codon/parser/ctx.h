@@ -86,6 +86,7 @@ public:
       removeFromMap(name);
     stack.pop_front();
   }
+  std::list<std::string> getBlock() { return stack.front(); }
 
   void removeFromTopStack(const std::string &name) {
     auto it = std::ranges::find(stack.front(), name);

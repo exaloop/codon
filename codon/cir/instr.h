@@ -76,6 +76,8 @@ private:
   Value *val;
   /// the field
   std::string field;
+  /// indicates if the class is polymorphic
+  bool polymorphic;
 
 public:
   static const char NodeId;
@@ -84,8 +86,10 @@ public:
   /// @param val the value being manipulated
   /// @param field the field
   /// @param name the instruction's name
-  explicit ExtractInstr(Value *val, std::string field, std::string name = "")
-      : AcceptorExtend(std::move(name)), val(val), field(std::move(field)) {}
+  explicit ExtractInstr(Value *val, std::string field, std::string name = "",
+                        bool polymorphic = false)
+      : AcceptorExtend(std::move(name)), val(val), field(std::move(field)),
+        polymorphic(polymorphic) {}
 
   /// @return the location
   Value *getVal() { return val; }
@@ -100,6 +104,8 @@ public:
   /// Sets the field.
   /// @param f the new field
   void setField(std::string f) { field = std::move(f); }
+
+  bool isPolymorphic() const { return polymorphic; }
 
 protected:
   Type *doGetType() const override;
@@ -116,6 +122,8 @@ private:
   std::string field;
   /// the value being inserted
   Value *rhs;
+  /// indicates if the class is polymorphic
+  bool polymorphic;
 
 public:
   static const char NodeId;
@@ -125,8 +133,10 @@ public:
   /// @param field the field
   /// @param rhs the new value
   /// @param name the instruction's name
-  explicit InsertInstr(Value *lhs, std::string field, Value *rhs, std::string name = "")
-      : AcceptorExtend(std::move(name)), lhs(lhs), field(std::move(field)), rhs(rhs) {}
+  explicit InsertInstr(Value *lhs, std::string field, Value *rhs, std::string name = "",
+                       bool polymorphic = false)
+      : AcceptorExtend(std::move(name)), lhs(lhs), field(std::move(field)), rhs(rhs),
+        polymorphic(polymorphic) {}
 
   /// @return the left-hand side
   Value *getLhs() { return lhs; }
@@ -150,6 +160,8 @@ public:
   /// @param f the new field
   void setField(std::string f) { field = std::move(f); }
 
+  bool isPolymorphic() const { return polymorphic; }
+
 protected:
   Type *doGetType() const override { return lhs->getType(); }
   std::vector<Value *> doGetUsedValues() const override { return {lhs, rhs}; }
@@ -163,6 +175,8 @@ private:
   Value *callee;
   /// the arguments
   std::vector<Value *> args;
+  /// ID of a thunk if the callee is polymorphic (0 if not)
+  size_t thunk_id;
 
 public:
   static const char NodeId;
@@ -171,14 +185,16 @@ public:
   /// @param callee the function
   /// @param args the arguments
   /// @param name the instruction's name
-  CallInstr(Value *callee, std::vector<Value *> args, std::string name = "")
-      : AcceptorExtend(std::move(name)), callee(callee), args(std::move(args)) {}
+  CallInstr(Value *callee, std::vector<Value *> args, std::string name = "",
+            size_t thunk_id = 0)
+      : AcceptorExtend(std::move(name)), callee(callee), args(std::move(args)),
+        thunk_id(thunk_id) {}
 
   /// Constructs a call instruction with no arguments.
   /// @param callee the function
   /// @param name the instruction's name
-  explicit CallInstr(Value *callee, std::string name = "")
-      : CallInstr(callee, {}, std::move(name)) {}
+  explicit CallInstr(Value *callee, std::string name = "", size_t thunk_id = 0)
+      : CallInstr(callee, {}, std::move(name), thunk_id) {}
 
   /// @return the callee
   Value *getCallee() { return callee; }
@@ -221,6 +237,8 @@ public:
 
   /// @return the number of arguments
   int numArgs() const { return args.size(); }
+
+  size_t getThunkID() const { return thunk_id; }
 
 protected:
   Type *doGetType() const override;

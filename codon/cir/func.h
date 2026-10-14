@@ -175,9 +175,46 @@ public:
 /// Internal, LLVM-only function.
 class InternalFunc : public AcceptorExtend<InternalFunc, Func> {
 public:
+  enum class Intrinsic {
+    NONE,
+    ALLOCATE,
+    ALLOCATION_SIZE,
+    TYPEINFO,
+    TYPEINFO_LOOKUP,
+    VIRTUAL_LOOKUP
+  };
+
+private:
+  Intrinsic intrinsic = Intrinsic::NONE;
+  Type *intrinsicType = nullptr;
+
+public:
   static const char NodeId;
 
   using AcceptorExtend::AcceptorExtend;
+
+  Intrinsic getIntrinsic() const { return intrinsic; }
+  Type *getIntrinsicType() const { return intrinsicType; }
+  void setIntrinsic(Intrinsic kind, Type *type = nullptr) {
+    intrinsic = kind;
+    intrinsicType = type;
+  }
+
+protected:
+  std::vector<Type *> doGetUsedTypes() const override {
+    auto types = Func::doGetUsedTypes();
+    if (intrinsicType)
+      types.push_back(intrinsicType);
+    return types;
+  }
+  int doReplaceUsedType(const std::string &name, Type *type) override {
+    auto count = Func::doReplaceUsedType(name, type);
+    if (intrinsicType && intrinsicType->getName() == name) {
+      intrinsicType = type;
+      ++count;
+    }
+    return count;
+  }
 };
 
 /// LLVM function defined in Seq source.

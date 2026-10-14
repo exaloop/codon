@@ -681,3 +681,23 @@ def test_abrupt_break_continue():
 # EXPECT: io1
 # EXPECT: 5
 test_abrupt_break_continue()
+
+# core_exceptions_codon: copying through an exception base must accept an
+# override returning its concrete subclass and preserve that dynamic type.
+class CopyBaseError(Exception):
+    def __copy__(self) -> CopyBaseError:
+        return CopyBaseError(self.message)
+
+class CopyLeafError(CopyBaseError):
+    def __copy__(self) -> CopyLeafError:
+        return CopyLeafError(self.message)
+
+@test
+def test_covariant_exception_copy():
+    error: CopyBaseError = CopyLeafError("copied")
+    copied = error.__copy__()
+    assert copied is not error
+    assert isinstance(copied, CopyLeafError)
+    assert copied.message == "copied"
+
+test_covariant_exception_copy()

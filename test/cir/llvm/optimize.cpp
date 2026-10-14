@@ -8,6 +8,7 @@
 #include "codon/cir/util/irtools.h"
 #include "codon/compiler/compiler.h"
 #include "codon/compiler/options.h"
+#include "codon/runtime/rtti.h"
 
 #include <cstdlib>
 
@@ -203,6 +204,125 @@ protected:
   }
 };
 } // namespace
+
+TEST(RTTICodegenTest, FoldsUniformFieldsAndSpecializesCalls) {
+  ASSERT_EXIT(
+      {
+        auto compiler =
+            compileAndOptimize("import sys\n"
+                               "class FixedBase:\n"
+                               "    value: int\n"
+                               "    def result(self): return self.value + 1\n"
+                               "class FixedChild(FixedBase):\n"
+                               "    def result(self): return self.value + 2\n"
+                               "@noinline\n"
+                               "def field_kernel(value: FixedBase):\n"
+                               "    value.value += 1\n"
+                               "    return value.value\n"
+                               "@noinline\n"
+                               "def dispatch_kernel(value: FixedBase):\n"
+                               "    return value.result()\n"
+                               "if len(sys.argv) & 1:\n"
+                               "    value: FixedBase = FixedBase(len(sys.argv))\n"
+                               "else:\n"
+                               "    value: FixedBase = FixedChild(len(sys.argv))\n"
+                               "print(field_kernel(value), dispatch_kernel(value))\n");
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        bool foundFields = false;
+        bool foundDispatch = false;
+        for (auto &function : *module) {
+          bool fields = function.getName().starts_with("field_kernel.");
+          bool dispatch = function.getName().starts_with("dispatch_kernel.");
+          foundFields |= fields;
+          foundDispatch |= dispatch;
+          for (auto &block : function) {
+            for (auto &instruction : block) {
+              if (fields) {
+                if (auto *load = llvm::dyn_cast<llvm::LoadInst>(&instruction))
+                  EXPECT_FALSE(load->getType()->isPointerTy());
+              }
+              if (dispatch) {
+                if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction))
+                  EXPECT_NE(call->getCalledFunction(), nullptr);
+              }
+            }
+          }
+        }
+        EXPECT_TRUE(foundFields);
+        EXPECT_TRUE(foundDispatch);
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(RTTICodegenTest, CompactMethodTablesPreserveCollisions) {
+  ASSERT_EXIT(
+      {
+        std::string code;
+        for (int index = 0; index < 32; ++index) {
+          auto suffix = std::to_string(index);
+          code += "class TableBase" + suffix +
+                  ":\n"
+                  "    def result(self): return 1\n"
+                  "class TableChild" +
+                  suffix + "(TableBase" + suffix +
+                  "):\n"
+                  "    def result(self): return 2\n"
+                  "@noinline\n"
+                  "def dispatch" +
+                  suffix + "(value: TableBase" + suffix +
+                  "):\n"
+                  "    return value.result()\n"
+                  "print(dispatch" +
+                  suffix + "(TableChild" + suffix +
+                  "()))\n"
+                  "@export\n"
+                  "def descriptor" +
+                  suffix +
+                  "():\n"
+                  "    return TypeInfo.cache(TableChild" +
+                  suffix + ")\n";
+        }
+        auto compiler = compileAndOptimize(code);
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        size_t tables = 0;
+        size_t collisions = 0;
+        for (auto &global : module->globals()) {
+          if (!global.getName().ends_with(".methods") || !global.hasInitializer())
+            continue;
+          auto *array = llvm::cast<llvm::ArrayType>(global.getValueType());
+          auto capacity = array->getNumElements();
+          EXPECT_EQ(capacity & (capacity - 1), 0u);
+          size_t live = 0;
+          for (unsigned position = 0; position < capacity; ++position) {
+            auto *entry = global.getInitializer()->getAggregateElement(position);
+            auto *id = llvm::cast<llvm::ConstantInt>(entry->getAggregateElement(0u));
+            if (id->isZero())
+              continue;
+            ++live;
+            auto expected = runtime::methodHash(id->getZExtValue()) & (capacity - 1);
+            collisions += expected != position;
+            while (expected != position) {
+              auto *previous =
+                  global.getInitializer()->getAggregateElement(unsigned(expected));
+              EXPECT_FALSE(
+                  llvm::cast<llvm::ConstantInt>(previous->getAggregateElement(0u))
+                      ->isZero());
+              expected = (expected + 1) & (capacity - 1);
+            }
+          }
+          EXPECT_GE(capacity, 2 * live);
+          EXPECT_LE(capacity, 4 * live);
+          ++tables;
+        }
+        EXPECT_GE(tables, 32u);
+        EXPECT_GT(collisions, 0u);
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
 
 TEST_F(GPUCodegenTest, FoldsNumpyArrayOrderChecks) {
   // Keep compiler state isolated, as in the source-file test harness.

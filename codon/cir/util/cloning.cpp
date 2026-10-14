@@ -131,6 +131,7 @@ void CloneVisitor::visit(const ExternalFunc *v) {
 
 void CloneVisitor::visit(const InternalFunc *v) {
   auto *res = Nt(v);
+  res->setIntrinsic(v->getIntrinsic(), v->getIntrinsicType());
   std::vector<std::string> argNames;
   for (auto it = v->arg_begin(); it != v->arg_end(); ++it)
     argNames.push_back((*it)->getName());
@@ -283,18 +284,21 @@ void CloneVisitor::visit(const AssignInstr *v) {
 }
 
 void CloneVisitor::visit(const ExtractInstr *v) {
-  result = Nt(v, clone(v->getVal()), v->getField());
+  result = module->N<ExtractInstr>(v, clone(v->getVal()), v->getField(), v->getName(),
+                                   v->isPolymorphic());
 }
 
 void CloneVisitor::visit(const InsertInstr *v) {
-  result = Nt(v, clone(v->getLhs()), v->getField(), clone(v->getRhs()));
+  result = module->N<InsertInstr>(v, clone(v->getLhs()), v->getField(),
+                                  clone(v->getRhs()), v->getName(), v->isPolymorphic());
 }
 
 void CloneVisitor::visit(const CallInstr *v) {
   std::vector<Value *> args;
   for (const auto *a : *v)
     args.push_back(clone(a));
-  result = Nt(v, clone(v->getCallee()), std::move(args));
+  result = module->N<CallInstr>(v, clone(v->getCallee()), std::move(args), v->getName(),
+                                v->getThunkID());
 }
 
 void CloneVisitor::visit(const StackAllocInstr *v) {

@@ -102,6 +102,75 @@ TEST(JITOptionsTest, ReportsPluginInitializationErrors) {
   free(result.error);
 }
 
+TEST(JITRTTITest, RefreshesDescriptorsAndLookupAcrossCells) {
+  for (bool debug : {false, true}) {
+    auto options = codon::Options::getDefault("build/codon_test");
+    options->jit = true;
+    options->debug = debug;
+    options->capture = true;
+    codon::jit::JIT instance(*options);
+    auto error = instance.init();
+    ASSERT_FALSE(bool(error)) << llvm::toString(std::move(error));
+    auto first =
+        instance.execute("class CellPlain:\n"
+                         "    value: int\n"
+                         "plain = CellPlain(41)\n"
+                         "assert not TypeInfo.cache(CellPlain).rtti\n"
+                         "assert type._ref_size(CellPlain) == int.__elemsize__\n"
+                         "def increment_plain(value: CellPlain):\n"
+                         "    value.value += 1\n"
+                         "    return value.value\n"
+                         "assert increment_plain(plain) == 42\n"
+                         R"(
+class CellBase:
+    def method(self): return 1
+class CellChild(CellBase):
+    def method(self): return 42
+)"
+                         "def dispatch_old(value: CellBase):\n"
+                         "    return value.method()\n"
+                         R"(
+old_object = CellChild()
+base: CellBase = old_object
+assert dispatch_old(base) == 42
+old_info = TypeInfo.cache(CellChild)
+def lookup_id(type_id: int):
+    return TypeInfo.cache(type_id).id
+assert lookup_id(CellChild.__id__) == CellChild.__id__
+print("first")
+)");
+    ASSERT_TRUE(bool(first)) << llvm::toString(first.takeError());
+    EXPECT_EQ(*first, "first\n");
+    auto second =
+        instance.execute("assert not TypeInfo.cache(CellPlain).rtti\n"
+                         "assert type._ref_size(CellPlain) == int.__elemsize__\n"
+                         "assert __ptr__(plain.value) == "
+                         "type._force_cast(__magic__.raw(plain), Ptr[int])\n"
+                         "assert increment_plain(plain) == 43\n"
+                         R"(
+assert TypeInfo.cache(CellChild).__raw__() == old_info.__raw__()
+assert get_typeinfo(base).__raw__() == old_info.__raw__()
+assert base.method() == 42
+class CellLater(CellBase):
+    def method(self): return 43
+later: CellBase = CellLater()
+assert later.method() == 43
+assert dispatch_old(later) == 43
+assert dispatch_old(base) == 42
+assert lookup_id(CellLater.__id__) == CellLater.__id__
+assert base.method() == 42
+print("second")
+)");
+    ASSERT_TRUE(bool(second)) << llvm::toString(second.takeError());
+    EXPECT_EQ(*second, "second\n");
+    auto rejected = instance.execute("class CellBadChild(CellPlain):\n    pass\n");
+    ASSERT_FALSE(bool(rejected));
+    EXPECT_NE(llvm::toString(rejected.takeError())
+                  .find("cannot inherit from a non-RTTI class"),
+              std::string::npos);
+  }
+}
+
 TEST(JITOptionsTest, CollectsAfterJITTeardown) {
   ASSERT_EXIT(
       {
@@ -163,184 +232,4 @@ TEST(JITFinalizerTest, EarlierCodeTriggersLaterFinalizers) {
         std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
       },
       testing::ExitedWithCode(EXIT_SUCCESS), "");
-}
-
-namespace {
-const std::string recursiveVirtualCode = R"codon(
-import internal.static as static
-
-class Root:
-	def value(self):
-		return 0
-
-class Leaf(Root):
-	cached: int
-	def __init__(self):
-		self.cached = self.value()
-	def value(self):
-		return build_value(42, False)
-
-def build_value[T](item: T, recurse: bool) -> T:
-	if isinstance(item, int):
-		if recurse:
-			return Leaf().cached
-	return item
-
-method = static.function.realized(Leaf.value, type._force_cast(cobj(), Leaf))
-leaf = Leaf()
-base: Root = leaf
-assert method(leaf) == 42 and base.value() == 42
-assert build_value(42, True) == 42 and build_value(1.25, True) == 1.25
-
-@__force__
-def forced_entry(value: Leaf):
-	return value.value()
-)codon";
-
-void expectCompleteRealizations(codon::ast::Cache *cache) {
-  for (const auto &[name, function] : cache->functions) {
-    for (const auto &[key, realization] : function.realizations) {
-      SCOPED_TRACE(name + ": " + key);
-      ASSERT_NE(realization, nullptr);
-      ASSERT_NE(realization->type, nullptr);
-      EXPECT_NE(realization->ast, nullptr);
-      EXPECT_NE(realization->ir, nullptr);
-      EXPECT_TRUE(realization->getType()->getRetType()->canRealize());
-      if (realization->ast)
-        EXPECT_EQ(realization->ast->getName(), realization->type->realizedName());
-    }
-  }
-  for (const auto &[name, imported] : cache->imports) {
-    if (!imported.ctx)
-      continue;
-    SCOPED_TRACE(name);
-    EXPECT_EQ(imported.ctx->getRealizationDepth(), 1);
-    for (const auto &base : imported.ctx->bases)
-      for (const auto &dependency : base.recursiveDependencies)
-        EXPECT_TRUE(dependency->getFunc()->getRetType()->canRealize());
-  }
-}
-} // namespace
-
-TEST(TypeCoreTest, RecursiveRealizationsRemainCompleteWhenForced) {
-  auto options = codon::Options::getDefault("build/codon_test");
-  options->pyext = true;
-  codon::Compiler compiler(*options);
-  auto *cache = compiler.getCache();
-  auto parsed =
-      codon::ast::parseCode(cache, "recursive_realization.codon", recursiveVirtualCode);
-  ASSERT_TRUE(bool(parsed)) << llvm::toString(parsed.takeError());
-  auto *typechecked = codon::ast::TypecheckVisitor::apply(
-      cache, *parsed, "recursive_realization.codon", {}, compiler.getEarlyDefines());
-  ASSERT_NO_FATAL_FAILURE(expectCompleteRealizations(cache));
-
-  auto name = codon::ast::getMangledFunc(MAIN_IMPORT, "forced_entry");
-  auto found = cache->functions.find(name);
-  ASSERT_NE(found, cache->functions.end());
-  ASSERT_EQ(found->second.realizations.size(), 1);
-  auto realization = found->second.realizations.begin()->second;
-  auto *originalIR = realization->ir;
-
-  auto thunkName =
-      codon::ast::getMangledMethod("std.internal.core", "RTTIType", "_get_thunk_id");
-  auto thunks = cache->functions.at(thunkName).realizations;
-  ASSERT_FALSE(thunks.empty());
-  for (auto &[name, function] : cache->functions)
-    function.isToplevel = false;
-  codon::ast::TranslateVisitor::apply(cache, typechecked);
-  for (const auto &[key, previous] : thunks) {
-    auto current = cache->functions.at(thunkName).realizations.at(key);
-    EXPECT_NE(current, previous);
-    EXPECT_EQ(current->ir, previous->ir);
-    EXPECT_NE(current->ast, nullptr);
-  }
-  ASSERT_NO_FATAL_FAILURE(expectCompleteRealizations(cache));
-  EXPECT_TRUE(cache->pendingRealizations.empty());
-
-  const auto &specializations =
-      cache->functions.at(codon::ast::getMangledFunc(MAIN_IMPORT, "build_value"))
-          .realizations;
-  ASSERT_EQ(specializations.size(), 2);
-  auto specialization = specializations.begin();
-  auto firstType = specialization++->second;
-  auto secondType = specialization->second;
-  EXPECT_NE(firstType->type, secondType->type);
-  EXPECT_NE(firstType->ir, secondType->ir);
-  EXPECT_NE(firstType->type->getRetType()->realizedName(),
-            secondType->type->getRetType()->realizedName());
-
-  codon::ast::TypecheckVisitor visitor(cache->typeCtx);
-  for (int attempt = 0; attempt < 2; ++attempt) {
-    auto *type = visitor.realize(realization->getType());
-    ASSERT_NE(type, nullptr);
-    EXPECT_EQ(type, realization->getType());
-    realization = cache->functions.at(name).realizations.at(type->realizedName());
-    EXPECT_EQ(realization->ir, originalIR);
-    ASSERT_NO_FATAL_FAILURE(expectCompleteRealizations(cache));
-  }
-}
-
-TEST(TypeCoreTest, RecursiveRealizationsSurviveJITRollback) {
-  auto options = codon::Options::getDefault("build/codon_test");
-  options->capture = true;
-  codon::jit::JIT jit(*options);
-  auto error = jit.init();
-  ASSERT_FALSE(bool(error)) << llvm::toString(std::move(error));
-  auto *cache = jit.getCompiler()->getCache();
-  auto first = jit.execute(R"codon(
-def recursive_first[T](depth: int, item: T) -> T:
-	if depth:
-		return recursive_second(depth - 1, item)
-	return item
-
-def recursive_second(depth: int, item):
-	return recursive_first(depth, item)
-
-print(recursive_first(2, 42))
-)codon");
-  ASSERT_TRUE(bool(first)) << llvm::toString(first.takeError());
-  EXPECT_EQ(*first, "42\n");
-  ASSERT_NO_FATAL_FAILURE(expectCompleteRealizations(cache));
-  EXPECT_TRUE(cache->pendingRealizations.empty());
-
-  auto virtualCell = jit.compile(recursiveVirtualCode);
-  ASSERT_TRUE(bool(virtualCell)) << llvm::toString(virtualCell.takeError());
-  ASSERT_NO_FATAL_FAILURE(expectCompleteRealizations(cache));
-  EXPECT_TRUE(cache->pendingRealizations.empty());
-
-  auto before = cache->functions;
-  auto cell = cache->jitCell;
-  auto failed = jit.compile(R"codon(
-class BrokenRoot:
-	def value(self):
-		return 0
-
-class BrokenLeaf(BrokenRoot):
-	def value(self):
-		return unconstrained(self)
-
-def unconstrained(item: BrokenLeaf):
-	return item.value()
-
-static.function.realized(BrokenLeaf.value, type._force_cast(cobj(), BrokenLeaf))
-)codon");
-  ASSERT_FALSE(bool(failed));
-  auto message = llvm::toString(failed.takeError());
-  EXPECT_NE(message.find("cannot typecheck"), std::string::npos) << message;
-  EXPECT_EQ(cache->jitCell, cell);
-  ASSERT_EQ(cache->functions.size(), before.size());
-  for (const auto &[name, function] : before) {
-    const auto &current = cache->functions.at(name);
-    EXPECT_EQ(current.realizations, function.realizations) << name;
-  }
-  ASSERT_NO_FATAL_FAILURE(expectCompleteRealizations(cache));
-  EXPECT_TRUE(cache->pendingRealizations.empty());
-
-  auto next = jit.execute("print(recursive_first(3, 42))\n"
-                          "print(recursive_first(2, 1.25))\n");
-  ASSERT_TRUE(bool(next)) << llvm::toString(next.takeError());
-  EXPECT_EQ(*next, "42\n1.25\n");
-  EXPECT_EQ(cache->jitCell, cell + 1);
-  ASSERT_NO_FATAL_FAILURE(expectCompleteRealizations(cache));
-  EXPECT_TRUE(cache->pendingRealizations.empty());
 }

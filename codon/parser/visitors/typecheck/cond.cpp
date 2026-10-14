@@ -37,10 +37,8 @@ void TypecheckVisitor::visit(RangeExpr *expr) {
 /// Also wrap conditional expressions to match each other. See @c wrapExpr for more
 /// details.
 void TypecheckVisitor::visit(IfExpr *expr) {
-  auto oldExpectedType = getStdLibType("bool")->shared_from_this();
-  std::swap(ctx->expectedType, oldExpectedType);
+  expr->getCond()->setExpectedType(getStdLibType(StdlibTypes::Bool));
   expr->cond = transform(expr->getCond());
-  std::swap(ctx->expectedType, oldExpectedType);
 
   // Static if evaluation
   if (expr->getCond()->getType()->getStaticKind()) {
@@ -48,7 +46,11 @@ void TypecheckVisitor::visit(IfExpr *expr) {
         expr->getCond(),
         [&](bool isTrue) {
           LOG_TYPECHECK("[static::cond] {}: {}", getSrcInfo(), isTrue);
-          return transform(isTrue ? expr->getIf() : expr->getElse());
+          Expr *s = isTrue ? expr->getIf() : expr->getElse();
+          if (hasSideEffect(expr->getCond()))
+            s = N<StmtExpr>(N<ExprStmt>(expr->getCond()), s);
+          s = transform(s);
+          return s;
         },
         [&]() -> Expr * { return nullptr; });
     if (resultExpr)
@@ -61,7 +63,7 @@ void TypecheckVisitor::visit(IfExpr *expr) {
   expr->ifexpr = transform(expr->getIf());
   expr->elsexpr = transform(expr->getElse());
 
-  wrapExpr(&expr->cond, getStdLibType("bool"));
+  wrapExpr(&expr->cond, getStdLibType(StdlibTypes::Bool));
   // Add wrappers and unify both sides
   if (expr->getIf()->getType()->getStatic())
     expr->getIf()->setType(
@@ -75,6 +77,20 @@ void TypecheckVisitor::visit(IfExpr *expr) {
   wrapExpr(&expr->elsexpr, expr->getIf()->getType(), nullptr, /*allowUnwrap*/ false);
   wrapExpr(&expr->ifexpr, expr->getElse()->getType(), nullptr, /*allowUnwrap*/ false);
 
+  // Types not compatible! Check if an union can be made
+  if (expr->getIf()->getType()->unify(expr->getElse()->getType(), nullptr) < 0 &&
+      expr->getExpectedType() && expr->getExpectedType()->is(StdlibTypes::Union)) {
+    if (!expr->getIf()->getType()->canRealize() ||
+        !expr->getElse()->getType()->canRealize())
+      return;
+    auto T = N<InstantiateExpr>(
+        N<IdExpr>(StdlibTypes::Union),
+        std::vector<Expr *>{N<IdExpr>(expr->getIf()->getType()->realizedName()),
+                            N<IdExpr>(expr->getElse()->getType()->realizedName())});
+    expr->ifexpr = transform(N<CallExpr>(T, expr->getIf()));
+    expr->elsexpr = transform(N<CallExpr>(clone(T), expr->getElse()));
+  }
+
   unify(expr->getType(), expr->getIf()->getType());
   unify(expr->getType(), expr->getElse()->getType());
   if (expr->getCond()->isDone() && expr->getIf()->isDone() && expr->getElse()->isDone())
@@ -84,10 +100,43 @@ void TypecheckVisitor::visit(IfExpr *expr) {
 /// Typecheck if statements. Evaluate static if blocks if possible.
 /// See @c wrapExpr for more details.
 void TypecheckVisitor::visit(IfStmt *stmt) {
-  auto oldExpectedType = getStdLibType("bool")->shared_from_this();
-  std::swap(ctx->expectedType, oldExpectedType);
+  stmt->getCond()->setExpectedType(getStdLibType(StdlibTypes::Bool));
   stmt->cond = transform(stmt->getCond());
-  std::swap(ctx->expectedType, oldExpectedType);
+
+  if (auto ci = cast<CallExpr>(stmt->getCond())) {
+    if (auto ei = cast<IdExpr>(ci->getExpr());
+        ei && ei->getType() && ei->getType()->getFunc() &&
+        (startswith(ei->getType()->getFunc()->getFuncName(),
+                    getMangledMethod("", "RTTIType", "_isinstance")) ||
+         startswith(ei->getType()->getFunc()->getFuncName(),
+                    getMangledMethod("", "Any", "_isinstance")))) {
+      if (auto arg = cast<IdExpr>((*ci)[0])) {
+        // isinstance(a, T) ->
+        // { if (c := isinstance(a, T)): i = getinstance(a, T)) } ; c
+        std::string tmpName =
+            ctx->generateCanonicalName(getUnmangledName(arg->getValue()));
+        std::string condName = getTemporaryVar("cond");
+        stmt->getIf()->setAttribute(
+            Attr::LocalRenames, std::make_unique<ir::KeyValueAttribute>(
+                                    std::unordered_map<std::string, std::string>{
+                                        {getUnmangledName(arg->getValue()), tmpName}}));
+        auto s = N<SuiteStmt>(
+            N<AssignStmt>(N<IdExpr>(condName), stmt->getCond()),
+            N<IfStmt>(N<IdExpr>(condName),
+                      N<SuiteStmt>(
+                          N<AssignStmt>(
+                              N<IdExpr>(tmpName),
+                              N<CallExpr>(N<IdExpr>(replace(
+                                              ei->getType()->getFunc()->getFuncName(),
+                                              "_isinstance", "_getinstance")),
+                                          (*ci)[0], (*ci)[1])),
+                          stmt->getIf()),
+                      stmt->getElse()));
+        resultStmt = transform(s);
+        return;
+      }
+    }
+  }
 
   // Static if evaluation
   if (stmt->getCond()->getType()->getStaticKind()) {
@@ -95,14 +144,17 @@ void TypecheckVisitor::visit(IfStmt *stmt) {
         stmt->getCond(),
         [&](bool isTrue) {
           LOG_TYPECHECK("[static::cond] {}: {}", getSrcInfo(), isTrue);
-          auto t = transform(isTrue ? stmt->getIf() : stmt->getElse());
-          return t ? t : transform(N<SuiteStmt>());
+          Stmt *s = isTrue ? stmt->getIf() : stmt->getElse();
+          if (hasSideEffect(stmt->getCond()))
+            s = N<SuiteStmt>(N<ExprStmt>(stmt->getCond()), s);
+          s = transform(s);
+          return s ? s : transform(N<SuiteStmt>());
         },
         [&]() -> Stmt * { return nullptr; });
     return;
   }
 
-  wrapExpr(&stmt->cond, getStdLibType("bool"));
+  wrapExpr(&stmt->cond, getStdLibType(StdlibTypes::Bool));
   ctx->blockLevel++;
   stmt->ifSuite = SuiteStmt::wrap(transform(stmt->getIf()));
   stmt->elseSuite = SuiteStmt::wrap(transform(stmt->getElse()));
@@ -145,7 +197,7 @@ void TypecheckVisitor::visit(MatchStmt *stmt) {
 
 /// Transform a match pattern into a series of if statements.
 /// @example
-///   `case True`          -> `if isinstance(var, "bool"): if var == True`
+///   `case True`          -> `if isinstance(var, bool): if var == True`
 ///   `case 1`             -> `if isinstance(var, "int"): if var == 1`
 ///   `case 1...3`         -> ```if isinstance(var, "int"):
 ///                                if var >= 1: if var <= 3```
@@ -181,8 +233,9 @@ Stmt *TypecheckVisitor::transformPattern(Expr *var, Expr *pattern, Stmt *suite) 
   // See the above examples for transformation details
   if (cast<IntExpr>(pattern) || cast<BoolExpr>(pattern)) {
     // Bool and int patterns
-    return N<IfStmt>(isinstance(var, cast<BoolExpr>(pattern) ? "bool" : "int"),
-                     N<IfStmt>(N<BinaryExpr>(var, "==", pattern), suite));
+    return N<IfStmt>(
+        isinstance(var, cast<BoolExpr>(pattern) ? StdlibTypes::Bool : "int"),
+        N<IfStmt>(N<BinaryExpr>(var, "==", pattern), suite));
   } else if (auto er = cast<RangeExpr>(pattern)) {
     // Range pattern
     return N<IfStmt>(
@@ -196,7 +249,7 @@ Stmt *TypecheckVisitor::transformPattern(Expr *var, Expr *pattern, Stmt *suite) 
           transformPattern(N<IndexExpr>(clone(var), N<IntExpr>(it)), (*et)[it], suite);
     }
     return N<IfStmt>(
-        isinstance(var, "Tuple"),
+        isinstance(var, StdlibTypes::Tuple),
         N<IfStmt>(N<BinaryExpr>(
                       N<CallExpr>(
                           N<IdExpr>(getMangledFunc("std.internal.static", "len")), var),
@@ -253,8 +306,8 @@ Stmt *TypecheckVisitor::transformPattern(Expr *var, Expr *pattern, Stmt *suite) 
       N<IfStmt>(N<CallExpr>(N<DotExpr>(clone(var), "__match__"), clone(pattern)),
                 clone(suite)),
       N<IfStmt>(N<CallExpr>(N<IdExpr>("isinstance"),
-                            N<CallExpr>(N<IdExpr>("type"), clone(var)),
-                            N<CallExpr>(N<IdExpr>("type"), clone(pattern))),
+                            N<CallExpr>(N<IdExpr>(StdlibTypes::Type), clone(var)),
+                            N<CallExpr>(N<IdExpr>(StdlibTypes::Type), clone(pattern))),
                 N<IfStmt>(N<BinaryExpr>(var, "==", pattern), suite)));
   return p;
 }

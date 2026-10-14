@@ -20,6 +20,7 @@ from internal.types.collections.bytearray import *
 from internal.types.type import *
 from internal.types.tuple import *
 from internal.types.rtti import *
+from internal.types.rtti import *
 from internal.types.function import *
 from internal.types.union import *
 from internal.types.any import *
@@ -32,90 +33,10 @@ from internal.types.slice import *
 from internal.types.range import *
 from internal.types.complex import *
 from internal.types.strbuf import strbuf as _strbuf
-
+from internal.types.collections.list import *
+from internal.types.collections.set import *
+from internal.types.collections.dict import *
 import internal.c_stubs as _C
-
-class Set:
-    items: List[T]
-    T: type = NoneType
-
-    def __init__(self):
-        self.items = []
-
-    def __iter__(self) -> Generator[T]:
-        yield from self.items
-
-    def add(self, what: T):
-        if what not in self.items:
-            self.items.append(what)
-
-    def __repr__(self) -> str:
-        if len(self.items) == 0:
-            return "set()"
-        s = self.items.__repr__()
-        s._store_codepoint(0, 123)  # {
-        s._store_codepoint(len(s) - 1, 125)  # }
-        return s
-
-class Dict:
-    keys: List[K]
-    values: List[V]
-    K: type = NoneType
-    V: type = NoneType
-
-    def __init__(self):
-        self.keys = []
-        self.values = []
-
-    def __iter__(self) -> Generator[K]:
-        yield from self.keys
-
-    def items(self) -> Generator[Tuple[K, V]]:
-        for i in range(self.keys._len):
-            yield (self.keys[i], self.values[i])
-
-    def __contains__(self, key: K) -> bool:
-        return self.keys.find(key) != -1
-
-    def __getitem__(self, key: K) -> V:
-        i = self.keys.find(key)
-        return self.values[i]
-
-    def __setitem__(self, key: K, val: V):
-        i = self.keys.find(key)
-        if i != -1:
-            self.values[i] = val
-        else:
-            self.keys.append(key)
-            self.values.append(val)
-
-    def __len__(self) -> int:
-        return self.keys._len
-
-    def __repr__(self) -> str:
-        n = self.__len__()
-        if n == 0:
-            return "{}"
-        else:
-            lst = []
-            lst.append("{")
-            first = True
-            for k, v in self.items():
-                if not first:
-                    lst.append(", ")
-                else:
-                    first = False
-                lst.append(k.__repr__())
-                lst.append(": ")
-                lst.append(v.__repr__())
-            lst.append("}")
-            return str.cat(lst)
-
-set = Set
-dict = Dict
-
-from internal.builtin import *
-from internal.types.str import *
 from internal.format import *
 
 def next(g: Generator[T], default: Optional[T] = None, T: type) -> T:
@@ -127,6 +48,12 @@ def next(g: Generator[T], default: Optional[T] = None, T: type) -> T:
     return g._get()
 
 from C import seq_print_full(str, cobj)
+set = Set
+dict = Dict
+
+from internal.builtin import *
+from internal.types.str import *
+from internal.format import *
 
 # from openmp import Ident as __OMPIdent, for_par
 from internal.dlopen import dlsym as _dlsym

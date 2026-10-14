@@ -274,15 +274,15 @@ Type *Module::getBytesType() {
 Type *Module::getPointerType(Type *base) {
   if (!base)
     base = getIntType(8, /*sign=*/false);
-  return getOrRealizeType("Ptr", {base});
+  return getOrRealizeType(ast::StdlibTypes::Ptr, {base});
 }
 
 Type *Module::getGeneratorType(Type *base) {
-  return getOrRealizeType("Generator", {base});
+  return getOrRealizeType(ast::StdlibTypes::Generator, {base});
 }
 
 Type *Module::getOptionalType(Type *base) {
-  return getOrRealizeType("Optional", {base});
+  return getOrRealizeType(ast::StdlibTypes::Optional, {base});
 }
 
 Type *Module::getFuncType(Type *rType, std::vector<Type *> argTypes, bool variadic) {
@@ -305,11 +305,11 @@ Type *Module::getIntType(unsigned int len, bool sign) {
   // Check for core 'int' type
   if (len == 64 && sign)
     return unsafeGetIntType(len, sign);
-  return getOrRealizeType(sign ? "Int" : "UInt", {len});
+  return getOrRealizeType(sign ? ast::StdlibTypes::Int : ast::StdlibTypes::UInt, {len});
 }
 
 Type *Module::getVectorType(unsigned count, Type *base) {
-  return getOrRealizeType(ast::getMangledClass("std.simd", "Vec"), {base, count});
+  return getOrRealizeType(ast::StdlibTypes::Vec, {base, count});
 }
 
 Type *Module::getTupleType(std::vector<Type *> args) {
@@ -330,7 +330,7 @@ Type *Module::getUnionType(std::vector<Type *> types) {
   return cache->makeUnion(argTypes);
 }
 
-Type *Module::getNoneType() { return getOrRealizeType("NoneType"); }
+Type *Module::getNoneType() { return getOrRealizeType(ast::StdlibTypes::NoneType); }
 
 Value *Module::getInt(int64_t v) { return Nr<IntConst>(v, getIntType()); }
 

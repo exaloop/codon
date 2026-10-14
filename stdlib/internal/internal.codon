@@ -233,5 +233,3 @@ class PyObject:
 class PyWrapper[T]:
     head: PyObject
     data: T
-
-RTTIType._init_vtables()

@@ -437,7 +437,8 @@ INSTANTIATE_TEST_SUITE_P(
       "parser/typecheck/test_op.codon",
       "parser/typecheck/test_parser.codon",
       "parser/typecheck/test_python.codon",
-      "parser/typecheck/test_typecheck.codon"
+      "parser/typecheck/test_typecheck.codon",
+      "parser/typecheck/test_poly.codon"
     })),
     getTypeTestNameFromParam);
 

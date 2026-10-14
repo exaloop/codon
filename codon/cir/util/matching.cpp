@@ -57,7 +57,9 @@ public:
   }
   VISIT(InternalFunc);
   void handle(const InternalFunc *x, const InternalFunc *y) {
-    result = x->getParentType() == y->getParentType() && compareFuncs(x, y);
+    result = x->getParentType() == y->getParentType() &&
+             x->getIntrinsic() == y->getIntrinsic() &&
+             x->getIntrinsicType() == y->getIntrinsicType() && compareFuncs(x, y);
   }
   VISIT(LLVMFunc);
   void handle(const LLVMFunc *x, const LLVMFunc *y) {
@@ -174,16 +176,19 @@ public:
   }
   VISIT(ExtractInstr);
   void handle(const ExtractInstr *x, const ExtractInstr *y) {
-    result = process(x->getVal(), y->getVal()) && x->getField() == y->getField();
+    result = x->isPolymorphic() == y->isPolymorphic() &&
+             process(x->getVal(), y->getVal()) && x->getField() == y->getField();
   }
   VISIT(InsertInstr);
   void handle(const InsertInstr *x, const InsertInstr *y) {
-    result = process(x->getLhs(), y->getLhs()) && x->getField() == y->getField() &&
+    result = x->isPolymorphic() == y->isPolymorphic() &&
+             process(x->getLhs(), y->getLhs()) && x->getField() == y->getField() &&
              process(x->getRhs(), y->getRhs());
   }
   VISIT(CallInstr);
   void handle(const CallInstr *x, const CallInstr *y) {
-    result = process(x->getCallee(), y->getCallee()) &&
+    result = x->getThunkID() == y->getThunkID() &&
+             process(x->getCallee(), y->getCallee()) &&
              std::equal(x->begin(), x->end(), y->begin(), y->end(),
                         [this](auto *x, auto *y) { return process(x, y); });
   }

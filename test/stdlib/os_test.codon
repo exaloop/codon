@@ -564,10 +564,13 @@ def test_filesystem():
     from C import symlink(cobj, cobj) -> i32
     from C import setenv(cobj, cobj, i32) -> i32
     from C import getenv(cobj) -> cobj
-    test_directory = os.environ.get("CODON_OS_TEST_TMPDIR", "build")
+    test_directory = os.environ.get("CODON_OS_TEST_TMPDIR", os.getcwd())
     template = os._cstring(path.join(test_directory, "codon-os-test-XXXXXX"))
     result = mkdtemp(template)
-    assert result
+    # stdlib_os_test_codon: @test assertions report and continue, so stop before
+    # decoding a null C pointer if the configured temp directory is unavailable
+    if not result:
+        raise OSError(os._errno(), "mkdtemp failed", test_directory)
     root = bytes.from_ptr(result).decode("utf-8", "surrogateescape")
     original = os.getcwd()
     sub = path.join(root, "dir-é")

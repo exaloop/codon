@@ -95,7 +95,7 @@ class ScopingVisitor : public CallbackASTVisitor<bool, bool> {
     std::map<std::string, SrcInfo> firstSeen;
     std::pair<std::string, std::unordered_set<std::string>> classDeduce;
 
-    bool adding = false;
+    // bool adding = false;
     ASTNode *root = nullptr;
     FunctionStmt *functionScope = nullptr;
     bool inClass = false;
@@ -145,14 +145,15 @@ public:
   }
 
   static llvm::Error apply(Cache *, Stmt *s,
-                           std::unordered_map<std::string, size_t> * = nullptr);
+                           std::unordered_map<std::string, size_t> * = nullptr,
+                           bool dominateAll = false);
   bool transform(Expr *expr) override;
   bool transform(Stmt *stmt) override;
 
   // Can error!
   bool visitName(const std::string &name, bool = false, ASTNode * = nullptr,
                  const SrcInfo & = SrcInfo());
-  bool transformAdding(Expr *e, ASTNode *);
+  // bool transformAdding(Expr *e, ASTNode *);
   bool transformScope(Expr *);
   bool transformScope(Stmt *);
 

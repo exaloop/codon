@@ -27,18 +27,18 @@ def test_class():
 
     f = Foo(6)
     pf = __ptr__(f.x)
-    print pf[0]  # 6
+    print pf[0]  #: 6
     f.x = 7
-    print pf[0]  # 7
+    print pf[0]  #: 7
 
     def foo(x):
         return Foo(x)
     ff = foo(16)
     pff = __ptr__(ff.x)
-    print pff[0]  # 16
+    print pff[0]  #: 16
     ff.x = 17
-    print pff[0]  # 17
-# test_class()
+    print pff[0]  #: 17
+test_class()
 
 
 @tuple
@@ -60,13 +60,13 @@ print(x)  #: (b: (a: (n: 55)))
 
 
 #%% call_ptr_error,barebones
-__ptr__(1) #! __ptr__() only takes identifiers or tuple fields as arguments
+__ptr__(1) #! __ptr__() only takes identifiers or fields rooted in identifiers as arguments
 
 #%% call_ptr_error_3,barebones
 v = 1
 __ptr__(v, 1) #! __ptr__() takes 1 arguments (2 given)
 
-#%% call_ptr_error_4,barebones
+#%% call_ptr_reference_fields,barebones
 @tuple
 class A:
     n: int
@@ -79,7 +79,9 @@ class C:
     b: B
 
 x = C(B(A(1)))
-print(__ptr__(x.b.a.n)) #! __ptr__() only takes identifiers or tuple fields as arguments
+pointer = __ptr__(x.b.a.n)
+pointer[0] = 55
+print(x.b.a.n)  #: 55
 
 #%% call_ptr_error_5,barebones
 @tuple
@@ -94,7 +96,7 @@ class C:
     b: B
 
 x = C(B(A(1)))
-print(__ptr__(A(1).n))   #! __ptr__() only takes identifiers or tuple fields as arguments
+print(__ptr__(A(1).n))   #! __ptr__() only takes identifiers or fields rooted in identifiers as arguments
 
 
 #%% call_array,barebones
@@ -468,12 +470,12 @@ class AX[T]:
 class Side:
     def __init__(self):
         pass
-class BX[T,U](Static[AX[T]], Static[Side]):
+class BX[T,U](AX[T], Side):
     b: U
     def __init__(self, a: T, b: U):
         super().__init__(a)
         self.b = b
-class CX[T,U](Static[BX[T,U]]):
+class CX[T,U](BX[T,U]):
     c: int
     def __init__(self, a: T, b: U):
         super().__init__(a, b)
@@ -540,7 +542,7 @@ class A[T]:
         self.a = t
     def foo(self):
         return f'A:{self.a}'
-class B(Static[A[str]]):
+class B(A[str]):
     b: int
     def __init__(self):
         super().__init__('s')
@@ -554,10 +556,11 @@ print b.baz() #: A:s::6
 class AX[T]:
     a: T
     def __init__(self, a: T):
+        print super().__class__.__name__
         self.a = a
     def foo(self):
         return f'[AX:{self.a}]'
-class BX[T,U](Static[AX[T]]):
+class BX[T,U](AX[T]):
     b: U
     def __init__(self, a: T, b: U):
         print super().__class__.__name__
@@ -565,7 +568,7 @@ class BX[T,U](Static[AX[T]]):
         self.b = b
     def foo(self):
         return f'[BX:{super().foo()}:{self.b}]'
-class CX[T,U](Static[BX[T,U]]):
+class CX[T,U](BX[T,U]):
     c: int
     def __init__(self, a: T, b: U):
         print super().__class__.__name__
@@ -575,8 +578,9 @@ class CX[T,U](Static[BX[T,U]]):
         return f'CX:{super().foo()}:{self.c}'
 c = CX('a', False)
 print c.__class__.__name__, c.foo()
-#: BX[str,bool]
-#: AX[str]
+#: Super[CX[str,bool]]
+#: Super[BX[str,bool]]
+#: Super[AX[str]]
 #: CX[str,bool] CX:[BX:[AX:a]:False]:1
 
 #%% super_vtable_2
@@ -628,35 +632,14 @@ print(C(42).n)
 #: A init, set 42
 #: 42
 
-#%% super_tuple,barebones
-@tuple
-class A[T]:
-    a: T
-    x: int
-    def __new__(a: T) -> A[T]:
-        return A[T](a, 1)
-    def foo(self):
-        return f'A:{self.a}'
-@tuple
-class B(Static[A[str]]):
-    b: int
-    def __new__() -> B:
-        return B(*(A('s')), 6)
-    def baz(self):
-        return f'{super().foo()}::{self.b}'
-
-b = B()
-print b.foo() #: A:s
-print b.baz() #: A:s::6
-
-
 #%% super_error,barebones
 class A:
     def __init__(self):
         super().__init__()
 a = A()
-#! no super methods found
-#! during the realization of __init__(self: A)
+#! classes are not polymorphic
+#! during the realization
+#! during the realization
 
 #%% super_error_2,barebones
 super().foo(1) #! no super methods found
@@ -689,12 +672,6 @@ class Bear:
         return superf(x) + f' bear w--f {x}'
 print Bear.woof('!')
 #: bear woof ! bear w--f !
-
-class PolarBear(Static[Bear]):
-    def woof():
-        return 'polar ' + superf('@')
-print PolarBear.woof()
-#: polar bear woof @ bear w--f @
 
 #%% superf_error,barebones
 class Foo:
@@ -842,8 +819,8 @@ a = A(1)
 l = [a, B(2,3), X(2,3,-1)]
 for i in l: foo(i)
 #: A(1) 1 A.bar A.aaz
-#: B(2,3) 4 B.bar A.aaz
-#: X(2,3,-1) 3 X.bar A.aaz
+#: B(3,2) 3 B.bar A.aaz
+#: X(3,2,-1) 2 X.bar A.aaz
 
 def moo(m: M):
     print(m.moo())
@@ -916,13 +893,71 @@ for i in l:
 #: I'm driving a Yugo SUV True True True True True
 
 
-#%% polymorphism_error_1,barebones
+#%% polymorphism_object,barebones
 class M[T]:
     m: T
 class X(M[int]):
     pass
 l = [M[float](1.1), X(2)]
-#! 'X' does not match expected type 'M[float]'
+print(l.__class__.__name__)  #: List[object]
+
+
+
+'''
+Root1   Root2
+|    \    /
+P1    \  /
+|      P3
+P2    /
+|    /
+Middle
+|     \
+P4    P5
+|     |
+End---+
+'''
+
+class Root1:
+    r1: int
+
+class Root2:
+    r2: int
+
+class P1(Root1):
+    p1: int
+
+class P2(P1):
+    p2: int
+
+class P3(Root1, Root2):
+    p3: int
+
+class Middle(P2, P3):
+    middle: int
+
+m = Middle(1, 2, 3, 4, 5, 6)
+print(Middle.__mro__)
+print(tuple(m))
+#: (<class 'Middle'>, <class 'P2'>, <class 'P1'>, <class 'P3'>, <class 'Root1'>, <class 'Root2'>, <class 'object'>)
+#: (1, 2, 3, 4, 5, 6)
+
+
+class P4(Middle):
+    p4: int
+
+class P5(Middle):
+    p5: int
+
+class End(P4, P5):
+    end: int
+
+e = End(1, 2, 3, 4, 5, 6, 7, 8, 9)
+print(End.__mro__)
+print(tuple(e))
+#: (<class 'End'>, <class 'P4'>, <class 'P5'>, <class 'Middle'>, <class 'P2'>, <class 'P1'>, <class 'P3'>, <class 'Root1'>, <class 'Root2'>, <class 'object'>)
+#: (1, 2, 3, 4, 5, 6, 7, 8, 9)
+
+
 
 #%% polymorphism_2
 class Expr:
@@ -1141,11 +1176,12 @@ print(s.hai())
 table.test()
 #: test/CX: 17
 
-c: List[BX] = [BX(), s, table]
+c: List[BX] = [BX(), s._obj, table]
 #: init/BX
 #: init/AX
 print(c[0].hai())  #: hai/BX: 15
-print(c[1].hai())  #: hai/BX: 17
+print(c[1].hai())  #: hai/CX: 17
+print(s.hai())     #: hai/BX: 17
 print(c[2].hai())  #: hai/CX: 17
 
 
@@ -1221,6 +1257,40 @@ for s in shapes:
 #: A square with width 3.0 and height 3.0
 #: 9.0
 
+#%% polymorphism_6_isinstance_cast
+class Vehicle(object):
+    def drive(self): return "vehicle"
+class Car(Vehicle):
+    make: str
+    def drive(self): return "car"
+class Truck(Vehicle):
+    def drive(self): return "truck"
+class SUV(Car, Truck):
+    color: int
+    def drive(self): return "SUV"
+    def suv(self): return True
+class YugoSUV(SUV):
+    def drive(self): return "YugoSUV"
+y = YugoSUV(5, "niva")
+t = Truck("ford")
+v: Vehicle = y
+l = [v, t]
+
+for i, o in enumerate(l):
+    if isinstance(o, SUV):
+        print(i, "suv", o.drive(), o.make, o.color, o.suv())
+    else: print(i, o.drive())
+#: 0 suv YugoSUV niva 5 True
+#: 1 truck
+
+la = [Any(v), Any(t)]
+for i, o in enumerate(la):
+    if isinstance(o, SUV):
+        print(i, "suv", str(o)[:11], cast(Vehicle, o).drive(), o.make, o.color, o.suv())
+    else: print(i, cast(Vehicle, o).drive())
+#: 0 suv <SUV object YugoSUV niva 5 True
+#: 1 truck
+
 #%% side_effects,barebones
 def foo(a, b, T: type, N: Literal[int]):
     print(a, b, N, T.__class__.__name__)
@@ -1292,3 +1362,13 @@ print(Int[a])
 #: side_N 3
 #: side_N 5
 #: <class 'Int[34]'>
+
+#%% generator_overload_element_types,barebones
+# core_containers_codon: iterable-to-generator conversion must use the actual
+# yielded type when choosing between scalar and key/value overloads.
+def consume(values: Generator[int]):
+    return "ints"
+@overload
+def consume(values: Generator[Tuple[int, int]]):
+    return "pairs"
+print(consume([1, 2]), consume([(1, 2), (3, 4)]))  #: ints pairs

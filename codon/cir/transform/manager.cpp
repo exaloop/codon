@@ -16,6 +16,7 @@
 #include "codon/cir/transform/lowering/await.h"
 #include "codon/cir/transform/lowering/imperative.h"
 #include "codon/cir/transform/lowering/pipeline.h"
+#include "codon/cir/transform/lowering/rtti.h"
 #include "codon/cir/transform/manager.h"
 #include "codon/cir/transform/numpy/indexing.h"
 #include "codon/cir/transform/numpy/numpy.h"
@@ -154,6 +155,7 @@ void PassManager::invalidate(const std::string &key) {
 }
 
 void PassManager::registerStandardPasses() {
+  registerPass(std::make_unique<lowering::RTTILowering>());
   if (options->pmempty) {
     /* do nothing */
   } else if (options->debug && !options->test) {
@@ -170,6 +172,10 @@ void PassManager::registerStandardPasses() {
     registerPass(std::make_unique<pythonic::StrAdditionOptimization>());
     registerPass(std::make_unique<pythonic::GeneratorArgumentOptimization>());
     registerPass(std::make_unique<pythonic::EnumerateOptimization>());
+    // transform_enumerate_codon: enumerate can realize and clone iter() after
+    // the first RTTI pass. Lower those new virtual __iter__ calls before folding
+    // or generator fusion can mistake their static callee for the runtime target.
+    registerPass(std::make_unique<lowering::RTTILowering>());
     registerPass(std::make_unique<pythonic::IOCatOptimization>());
     registerPass(std::make_unique<pythonic::FormattingOptimization>());
 

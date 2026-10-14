@@ -2,143 +2,214 @@
 
 import internal.static as static
 
+_MAX_LINEAR_MRO: Literal[int] = 8
 
-__vtables__ = Ptr[Ptr[cobj]]()
-__vtable_size__ = 0
+@inline
+def force_cast(obj, D: type):
+    # cast obj to D. Handles optionals.
+    # Assumes type(obj) can be cast to D!
+    # Assumes type(obj) and D are RTTI
+    if D is TypeWrap:
+        return force_cast(obj, D.T)
+    elif isinstance(obj, Optional) and isinstance(D, Optional):
+        if obj is None: return None
+        else: return D(force_cast(unwrap(obj), D.T))
+    elif not isinstance(obj, Optional) and D is not Optional:
+        return type._force_cast(obj, D)  # basically same pointer, LLVM should elide this
+    else:
+        compile_error("bad cast!")
 
+@tuple
+class _MethodSlot:
+    id: int
+    target: cobj
+
+@__internal__
+class TypeInfo:
+    id: int
+    n_mro: int
+    mro: Ptr[int]
+    offsets: Ptr[int]
+    sorted_mro: Ptr[int]
+    n_slots: int
+    slots: Ptr[Tuple[str, int, int]]
+    n_methods: int
+    methods: Ptr[_MethodSlot]
+    rtti: bool
+    raw_name: str
+    nice_name: str
+    base_name: str
+    n_params: int
+    params: Ptr[int]
+    size: int
+    reference: bool
+    exception_offset: int
+    system_exit_offset: int
+
+    def __raw__(self) -> Ptr[u8]:
+        return __magic__.raw(self)
+
+    @__internal__
+    def _get(T: type) -> TypeInfo:
+        pass
+
+    @__internal__
+    def _lookup(id: int) -> TypeInfo:
+        pass
+
+    def cache(id: int) -> TypeInfo:
+        return TypeInfo._lookup(id)
+
+    def cache(T: type) -> TypeInfo:
+        if T is TypeWrap:
+            return TypeInfo._get(T.T)
+        else:
+            return TypeInfo._get(T)
+
+    def __iter__(self):
+        for index in range(self.n_slots):
+            name, id, offset = self.slots[index]
+            yield name, TypeInfo.cache(id), offset
+
+    def is_parent(self, T: type) -> bool:
+        for index in range(1, self.n_mro):
+            if self.mro[index] == T.__id__:
+                return True
+        return False
+
+    def wrap(arg: Ptr[u8], T: type) -> str:
+        if isinstance(T, ByVal):
+            p = type._force_cast(arg, Ptr[T])
+            return repr(p[0])
+        else:
+            obj = type._force_cast(arg, T)
+            return repr(obj)
+
+    def _dist_to(self, B: type):
+        for index in range(self.n_mro):
+            if self.mro[index] == B.__id__:
+                return self.offsets[index]
+        raise TypeError("type is not in the object's MRO")
+
+    def __str__(self):
+        return self.nice_name
+
+    def __repr__(self):
+        return self.__str__()
+
+    def __eq__(self, other: TypeInfo):
+        return self.id == other.id
+
+    def __ne__(self, other: TypeInfo):
+        return self.id != other.id
+
+    def _isinstance(self, ti: TypeInfo):
+        if self.n_mro <= _MAX_LINEAR_MRO:
+            for index in range(self.n_mro):
+                if self.mro[index] == ti.id:
+                    return True
+            return False
+        lower = 0
+        upper = self.n_mro
+        while lower < upper:
+            middle = lower + ((upper - lower) >> 1)
+            candidate = self.sorted_mro[middle]
+            if candidate == ti.id:
+                return True
+            if candidate < ti.id:
+                lower = middle + 1
+            else:
+                upper = middle
+        return False
+
+    def _isinstance(self, T: type):
+        if T is unrealized_type:
+            return self.base_name == T.T.__generic_name__
+        return self._isinstance(TypeInfo.cache(T))
+
+@pure
+@llvm
+def get_typeinfo(obj) -> TypeInfo:
+    %info = load ptr, ptr %obj
+    ret ptr %info
 
 @extend
 class RTTIType:
-    def _new(data: Ptr[u8], typeinfo: Ptr[u8], T: type) -> T:
-        """
-        Creates a new RTTIType wrapper for data and casts it to T.
-
-        Internal use only. No type checks are performed.
-        """
-
-        p = type._ref_new(RTTIType)
-        p.data = data
-        p.typeinfo = typeinfo
-        return type._force_cast(p, T)
+    def _typeinfo(obj) -> TypeInfo:
+        return get_typeinfo(obj)
 
     @inline
-    def _dist(B: type, D: type) -> int:
-        """Calculates the byte distance of base class B and derived class D. Compiler generated."""
-        return 0
+    def _force_cast(obj, T: type):
+        return force_cast(obj, T)
 
-    @inline
-    def _to_derived(b: B, B: type, D: type) -> D:
-        if not (static.has_rtti(D) and static.has_rtti(B)):
-            compile_error("classes are not polymorphic")
-        off = RTTIType._dist(B, D)
-        rtti = type._force_cast(b, RTTIType)
-        return RTTIType._new(rtti.data - off, rtti.typeinfo, D)
+    def _isinstance(obj, T: type) -> bool:
+        return get_typeinfo(obj)._isinstance(T)
 
+    def _getinstance(obj, T: type):
+        return force_cast(obj, T)
 
-    ### vTable & thunk setup. Mostly compiler-generated.
-
-    def _init_vtables():
-        """
-        Create a global vtable.
-        """
-
-        from internal.gc import alloc_atomic_uncollectable, sizeof
-
-        global __vtables__
-        sz = __vtable_size__ + 1
-        p = alloc_atomic_uncollectable(sz * sizeof(Ptr[Ptr[u8]]))
-        __vtables__ = Ptr[Ptr[Ptr[u8]]](p)
-        RTTIType._populate_vtables()
-
-    def _populate_vtables():
-        """
-        Populate content of vtables. Compiler generated.
-        Corresponds to:
-            for each realized class C:
-                _init_vtable(<C's realization ID>, <C's vtable size> + 1, T=C)
-                for each fn F in C's vtable:
-                    _set_vtable_fn(
-                        <C's realization ID>, <F's vtable ID>, Function(<instantiated F>).__raw__(), T=C
-                    )
-        """
-        pass
-
-    def _init_vtable(sz: int, T: type):
-        from internal.gc import alloc_atomic_uncollectable, sizeof
-
-        if not static.has_rtti(T):
-            compile_error("class is not polymorphic")
-        p = alloc_atomic_uncollectable((sz + 1) * sizeof(Ptr[u8]))
-        id = T.__id__
-        __vtables__[id] = Ptr[Ptr[u8]](p)
-        # Set typeinfo
-        p = TypeInfo(T)
-        __vtables__[id][0] = p.__raw__().as_byte()
-
-    def _set_vtable_fn(id: int, fid: int, f: Ptr[u8], T: type):
-        if not static.has_rtti(T):
-            compile_error("class is not polymorphic")
-        __vtables__[id][fid] = f
-
-    def _get_thunk_id(F: type, T: type) -> int:
-        """Compiler-generated"""
-        return 0
-
-    def _thunk_debug(base, func, sig, *args):
-        # print("![thunk]!", base, func, sig, args[0].__raw__())
-        pass
-
-    @no_argument_wrap
-    def _thunk_dispatch(slf, cls_id, *args, F: type):
-        if not static.has_rtti(type(slf)):
-            compile_error("class is not polymorphic")
-
-        converted = static.function.wrap_args(F, slf, *args)
-        FR = type(static.function.realized(F, *converted))
-        T = type(slf)
-        thunk_id = RTTIType._get_thunk_id(FR, T)
-
-        # Get RTTI table
-        if cls_id == 0:
-            cls_id = type._force_cast(type._force_cast(slf, RTTIType).typeinfo, TypeInfo).id
-        fptr = __vtables__[cls_id][thunk_id]
-        f = FR(fptr)
-        return f(*converted)
-
-    def _get_typeinfo(obj: T, T: type) -> TypeInfo:
-        if static.has_rtti(T):
-            ti = type._force_cast(obj, RTTIType).typeinfo
-            return type._force_cast(ti, TypeInfo)
+    def _unwrap(obj, T: type):
+        if T is TypeWrap:
+            return RTTIType._unwrap(obj, T.T)
         else:
-            compile_error("classes are not polymorphic")
+            if RTTIType._isinstance(obj, T):
+                return Optional[T](force_cast(obj, T))
+            return None
 
-    def _isinstance(obj, TW: type) -> bool:
-        obj_info = RTTIType._get_typeinfo(obj)
-        return obj_info.id == TW.__id__ or obj_info.is_parent(TW)
+    def _cast(obj, T: type):
+        if T is TypeWrap:
+            return RTTIType._cast(obj, T.T)
+        elif isinstance(obj, Optional) and T is Optional:
+            if obj is None:
+                return None
+            return T(RTTIType._cast(unwrap(obj), T.T))
+        else:
+            if not RTTIType._isinstance(obj, T):
+                raise TypeError("object is not an instance of the requested type")
+            return force_cast(obj, T)
+
+    def _hasattr(obj, attr: Literal[str]):
+        children = static.children(type(obj))
+        for child in children:
+            if hasattr(child, attr) and RTTIType._isinstance(obj, child):
+                return True
+        return False
+
+    def _getattr(obj, attr: Literal[str], attr_type: type):
+        children = static.children(type(obj))
+        for child in children:
+            if hasattr(child, attr):
+                if RTTIType._isinstance(obj, child):
+                    instance = force_cast(obj, child.T)
+                    if attr_type is NoneType:
+                        return _getattr(instance, attr)
+                    else:
+                        return _getattr(instance, attr, attr_type)
+        raise AttributeError(f"cannot find {attr}")
+        return attr_type()
+
+    def _setattr(obj, attr: Literal[str], value):
+        children = static.children(type(obj))
+        for child in children:
+            if hasattr(child, attr):
+                if RTTIType._isinstance(obj, child):
+                    setattr(force_cast(obj, child.T), attr, value)
+                    return
+        raise AttributeError(f"cannot find {attr}")
 
 
 @extend
 class Super:
-    def __repr__(self):
-        return f'<super: {__T__} {self.__obj__}>'
+    def __new__(B: type, obj: D, D: type) -> Super[B]:
+        if not (static.has_rtti(D) and static.has_rtti(B)):
+            compile_error("classes are not polymorphic")
+        obj_B: B = force_cast(obj, B)
+        return type._force_value_cast((obj_B, 0), Super[B])
 
-    def _super(obj, B: type, use_super_type: Literal[int] = 0):
-        D = type(obj)
-        if not static.has_rtti(D):  # static inheritance
-            return type._force_cast(obj, B)
-        else:
-            if not static.has_rtti(B):
-                compile_error("classes are not polymorphic")
-            off = RTTIType._dist(B, D)
-            rtti = type._force_cast(obj, RTTIType)
-            res = RTTIType._new(rtti.data + off, rtti.typeinfo, B)
-            if use_super_type:
-                # This is explicit super()
-                return type._force_value_cast((res, ), Super[B])
-            else:
-                # Implicit super() just used for casting
-                return res
+    def __getattr__(self, attr: Literal[str]):
+        return Super[T]._dispatch(self, attr=attr, ...)
 
-    def _unwrap(obj: Super[B], B: type) -> B:
-        rtti = type._force_cast(obj.__obj__, RTTIType)
-        return RTTIType._new(rtti.data, TypeInfo(B).__raw__(), B)
+    @inline
+    @__generated__
+    def _dispatch(self, attr: Literal[str], *args, **kwargs):
+        pass

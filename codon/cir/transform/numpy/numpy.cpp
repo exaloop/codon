@@ -7,6 +7,7 @@
 #include "codon/cir/analyze/module/side_effect.h"
 #include "codon/cir/util/cloning.h"
 #include "codon/cir/util/irtools.h"
+#include "codon/parser/cache.h"
 
 #include "llvm/Support/CommandLine.h"
 
@@ -56,8 +57,7 @@ llvm::cl::opt<bool> Verbose("npfuse-verbose",
 
 bool isArrayType(Type *t) {
   return t && isA<RecordType>(t) &&
-         t->getName().rfind(ast::getMangledClass("std.numpy.ndarray", "ndarray") + "[",
-                            0) == 0;
+         t->getName().rfind(ast::StdlibTypes::NDArray + "[", 0) == 0;
 }
 
 bool isUFuncType(Type *t) {
@@ -128,8 +128,8 @@ NumPyPrimitiveTypes::NumPyPrimitiveTypes(Module *M)
       i32(M->getIntType(32, true)), u32(M->getIntType(32, false)),
       i64(M->getIntType(64, true)), u64(M->getIntType(64, false)),
       f16(M->getFloat16Type()), f32(M->getFloat32Type()), f64(M->getFloatType()),
-      c64(M->getType(ast::getMangledClass("std.internal.types.complex", "complex64"))),
-      c128(M->getType(ast::getMangledClass("std.internal.types.complex", "complex"))) {}
+      c64(M->getType(ast::StdlibTypes::Complex64)),
+      c128(M->getType(ast::StdlibTypes::Complex)) {}
 
 NumPyType::NumPyType(TypeCode dtype, int64_t ndim) : dtype(dtype), ndim(ndim) {
   seqassertn(ndim >= 0, "ndim must be non-negative");
