@@ -7,6 +7,7 @@
 #include "codon/cir/transform/numpy/numpy.h"
 #include "codon/cir/util/irtools.h"
 #include "codon/compiler/compiler.h"
+#include "codon/compiler/jit.h"
 #include "codon/compiler/options.h"
 #include "codon/runtime/rtti.h"
 
@@ -256,6 +257,82 @@ TEST(RTTICodegenTest, FoldsUniformFieldsAndSpecializesCalls) {
       testing::ExitedWithCode(EXIT_SUCCESS), "");
 }
 
+TEST(RTTICodegenTest, ReusesJITFieldOwnerOffsets) {
+  ASSERT_EXIT(
+      {
+        auto options = Options::getDefault("build/codon_test");
+        options->jit = true;
+        options->debug = false;
+        jit::JIT instance(*options);
+        llvm::cantFail(instance.init());
+        llvm::cantFail(instance.compile(
+            "class FieldBase(object):\n"
+            "    balance: int\n"
+            "    accrued: int\n"
+            "@export\n"
+            "def field_kernel(value: FieldBase, interest: int):\n"
+            "    value.balance += interest\n"
+            "    value.accrued += value.balance\n"
+            "    return value.balance + value.accrued\n"
+            "@export\n"
+            "def field_loop(value: FieldBase, rounds: int):\n"
+            "    for index in range(rounds):\n"
+            "        value.balance = (value.balance * 3 + index) & 65535\n"
+            "    return value.balance\n"));
+        auto *compiler = instance.getCompiler();
+        compiler->getPassManager()->run(compiler->getModule());
+        auto moduleAndContext =
+            compiler->getLLVMVisitor()->takeModule(compiler->getModule());
+        auto *module = moduleAndContext.first.get();
+        ir::optimize(module, compiler->getOptions());
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        auto *kernel = module->getFunction("field_kernel");
+        ASSERT_NE(kernel, nullptr);
+        size_t lookups = 0;
+        for (auto &block : *kernel) {
+          for (auto &instruction : block) {
+            auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+            auto *callee = call ? call->getCalledFunction() : nullptr;
+            if (callee && callee->getName().starts_with(".codon.field.offset"))
+              ++lookups;
+          }
+        }
+        // Both fields belong to one owner. Payload writes must not force a new
+        // ancestry search for each subsequent field read or write.
+        std::string code;
+        llvm::raw_string_ostream output(code);
+        kernel->print(output);
+        EXPECT_EQ(lookups, 1u) << code;
+        llvm::DominatorTree dominators(*kernel);
+        llvm::LoopInfo loops(dominators);
+        EXPECT_TRUE(loops.empty()) << code;
+        if (testing::Test::HasFailure())
+          llvm::errs() << code;
+
+        auto *loopKernel = module->getFunction("field_loop");
+        ASSERT_NE(loopKernel, nullptr);
+        llvm::DominatorTree loopDominators(*loopKernel);
+        llvm::LoopInfo kernelLoops(loopDominators);
+        EXPECT_FALSE(kernelLoops.empty());
+        size_t loopLookups = 0;
+        for (auto &block : *loopKernel) {
+          for (auto &instruction : block) {
+            auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+            auto *callee = call ? call->getCalledFunction() : nullptr;
+            if (callee && callee->getName().starts_with(".codon.field.offset")) {
+              ++loopLookups;
+              // The receiver is unchanged, so its owner offset belongs outside
+              // the loop even though each iteration mutates its payload.
+              EXPECT_EQ(kernelLoops.getLoopFor(&block), nullptr);
+            }
+          }
+        }
+        EXPECT_EQ(loopLookups, 1u);
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
 TEST(RTTICodegenTest, CompactMethodTablesPreserveCollisions) {
   ASSERT_EXIT(
       {
@@ -289,7 +366,63 @@ TEST(RTTICodegenTest, CompactMethodTablesPreserveCollisions) {
         EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
         size_t tables = 0;
         size_t collisions = 0;
+        size_t offsetTables = 0;
+        size_t offsetCollisions = 0;
         for (auto &global : module->globals()) {
+          if (global.getName().ends_with(".offsets") && global.hasInitializer()) {
+            auto name = global.getName().drop_back(8);
+            auto *descriptor = module->getNamedGlobal(name);
+            ASSERT_NE(descriptor, nullptr);
+            auto *initializer = descriptor->getInitializer();
+            auto count = llvm::cast<llvm::ConstantInt>(
+                             initializer->getAggregateElement(runtime::MRO_COUNT))
+                             ->getZExtValue();
+            auto size =
+                llvm::cast<llvm::ArrayType>(global.getValueType())->getNumElements();
+            bool polymorphic =
+                !llvm::cast<llvm::ConstantInt>(
+                     initializer->getAggregateElement(runtime::POLYMORPHIC))
+                     ->isZero();
+            if (!polymorphic) {
+              // Header-free classes do not pay for the owner index.
+              EXPECT_EQ(size, count);
+              continue;
+            }
+            auto *mro = module->getNamedGlobal((name + ".mro").str());
+            ASSERT_NE(mro, nullptr);
+            auto element = [&](uint64_t index) {
+              return llvm::cast<llvm::ConstantInt>(
+                         global.getInitializer()->getAggregateElement(unsigned(index)))
+                  ->getZExtValue();
+            };
+            auto mask = element(count);
+            auto capacity = mask + 1;
+            EXPECT_EQ(capacity & mask, 0u);
+            EXPECT_GE(capacity, 2 * count);
+            EXPECT_LE(capacity, 4 * count);
+            EXPECT_EQ(size, count + 1 + 2 * capacity);
+            for (unsigned position = 0; position < count; ++position) {
+              auto id = llvm::cast<llvm::ConstantInt>(
+                            mro->getInitializer()->getAggregateElement(position))
+                            ->getZExtValue();
+              auto slot = runtime::methodHash(id) & mask;
+              bool found = false;
+              for (uint64_t probe = 0; probe < capacity; ++probe) {
+                auto offset = element(count + 2 + 2 * slot);
+                ASSERT_NE(offset, 0u);
+                if (element(count + 1 + 2 * slot) == id) {
+                  EXPECT_EQ(offset, element(position));
+                  offsetCollisions += probe != 0;
+                  found = true;
+                  break;
+                }
+                slot = (slot + 1) & mask;
+              }
+              EXPECT_TRUE(found);
+            }
+            ++offsetTables;
+            continue;
+          }
           if (!global.getName().ends_with(".methods") || !global.hasInitializer())
             continue;
           auto *array = llvm::cast<llvm::ArrayType>(global.getValueType());
@@ -319,6 +452,8 @@ TEST(RTTICodegenTest, CompactMethodTablesPreserveCollisions) {
         }
         EXPECT_GE(tables, 32u);
         EXPECT_GT(collisions, 0u);
+        EXPECT_GE(offsetTables, 32u);
+        EXPECT_GT(offsetCollisions, 0u);
         std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
       },
       testing::ExitedWithCode(EXIT_SUCCESS), "");
@@ -964,6 +1099,48 @@ exit:
       }
       EXPECT_TRUE(returns);
       EXPECT_EQ(sameInitial && nullEdge, alwaysEqual);
+    }
+  }
+}
+
+TEST(LLVMOptimizationTest, RespectsResumeNoInlineAttributes) {
+  for (bool calleeNoInline : {false, true}) {
+    for (bool callNoInline : {false, true}) {
+      SCOPED_TRACE("callee noinline: " + std::to_string(calleeNoInline));
+      SCOPED_TRACE("call noinline: " + std::to_string(callNoInline));
+      std::string code = "define internal void @values.resume(ptr nocapture %frame) "
+                         "\"codon.generator\" " +
+                         std::string(calleeNoInline ? "noinline" : "") + R"( {
+entry:
+  %value = load i64, ptr %frame
+  %updated = add i64 %value, 1
+  store i64 %updated, ptr %frame
+  ret void
+}
+
+define i64 @test(i64 %initial) {
+entry:
+  %frame = alloca i64
+  store i64 %initial, ptr %frame
+  call void @values.resume(ptr %frame))" +
+                         (callNoInline ? " noinline" : "") + R"(
+  %result = load i64, ptr %frame
+  ret i64 %result
+}
+)";
+      auto optimized = compileAndOptimizeIR(code);
+      ASSERT_NE(nullptr, optimized.module);
+      auto *function = optimized.module->getFunction("test");
+      ASSERT_NE(nullptr, function);
+      bool hasResumeCall = false;
+      for (auto &block : *function) {
+        for (auto &instruction : block) {
+          auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+          auto *callee = call ? call->getCalledFunction() : nullptr;
+          hasResumeCall |= callee && callee->getName().starts_with("values.resume");
+        }
+      }
+      EXPECT_EQ(calleeNoInline || callNoInline, hasResumeCall);
     }
   }
 }

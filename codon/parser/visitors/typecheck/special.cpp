@@ -127,13 +127,28 @@ void TypecheckVisitor::prepareVTables() {
     std::vector<CallArg> arguments;
     size_t index = 0;
     for (const auto &parameter : *signature->ast) {
-      auto [_, name] = parameter.getNameWithStars();
+      auto [stars, name] = parameter.getNameWithStars();
       if (!parameter.isValue() || startswith(getUnmangledName(name), "$"))
         continue;
       auto *type = extractFuncArgType(signature, index++);
       if (auto *literal = type->getStatic())
         type = literal->getNonStaticType();
-      arguments.emplace_back("", typed_argument(type->shared_from_this()));
+      // The signature stores variadic arguments in their packed runtime form.
+      // Reconstruct the source call for overload resolution: passing a pack as
+      // one argument would repack it on every virtual-realization iteration.
+      // Keep the signature itself packed for dispatch and adapter generation.
+      if (stars == 1) {
+        for (const auto &generic : type->getClass()->generics)
+          arguments.emplace_back("", typed_argument(generic.type));
+      } else if (stars == 2) {
+        const auto &names = ctx->cache->generatedTupleNames[getIntLiteral(type)];
+        auto *values = extractClassGeneric(type, 1)->getClass();
+        for (size_t keyword = 0; keyword < names.size(); ++keyword)
+          arguments.emplace_back(names[keyword],
+                                 typed_argument(values->generics[keyword].type));
+      } else {
+        arguments.emplace_back("", typed_argument(type->shared_from_this()));
+      }
     }
     arguments.front().getExpr()->setType(receiver->shared_from_this());
     return arguments;
@@ -212,8 +227,12 @@ void TypecheckVisitor::prepareVTables() {
           auto arguments = virtual_arguments(method, receiver);
           auto *target = find_target(receiver, getUnmangledName(method->getFuncName()),
                                      arguments, false);
+          // Every reachable receiver needs this thunk. Silently omitting it
+          // accepts a program that can only fail in the runtime lookup trap.
           if (!target)
-            return false;
+            E(Error::CUSTOM, method->ast,
+              "no compatible virtual implementation of {} for {}", key,
+              receiver->prettyString());
           auto *resolved = realize_target(target, arguments);
           auto adapted = install_target(realization, id, method, receiver, resolved);
           LOG_REALIZE("[dispatch] {} (desc={}, id={}) = {}", key,

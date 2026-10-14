@@ -53,6 +53,10 @@ struct TypeInfo {
   seq_int_t id;
   seq_int_t n_mro;
   const seq_int_t *mro;
+  // The first n_mro entries are segment offsets in MRO order. For RTTI objects,
+  // an immutable keyed index follows: mask, then mask+1 {owner ID, offset} pairs.
+  // It uses methodHash and linear probing, with offset zero marking an empty slot.
+  // The prefix remains suitable for reflection and exception base adjustment.
   const seq_int_t *offsets;
   const seq_int_t *sorted_mro;
   seq_int_t n_slots;

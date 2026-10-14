@@ -1391,7 +1391,7 @@ struct CoroResumeInliner : public llvm::PassInfoMixin<CoroResumeInliner> {
           if (callee && callee != &function && callee->hasLocalLinkage() &&
               callee->hasFnAttribute("codon.generator") &&
               callee->getName().ends_with(".resume") && call->arg_size() == 1 &&
-              !callee->hasFnAttribute(llvm::Attribute::NoInline) &&
+              !call->hasFnAttr(llvm::Attribute::NoInline) &&
               callee->getInstructionCount() <= 128)
             calls.push_back(call);
         }
