@@ -260,6 +260,7 @@ set(CODON_HPPFILES
   codon/cir/transform/lowering/await.h
   codon/cir/transform/lowering/imperative.h
   codon/cir/transform/lowering/pipeline.h
+  codon/cir/transform/lowering/throw.h
   codon/cir/transform/manager.h
   codon/cir/transform/parallel/openmp.h
   codon/cir/transform/parallel/schedule.h
@@ -371,6 +372,7 @@ set(CODON_CPPFILES
   codon/cir/transform/lowering/await.cpp
   codon/cir/transform/lowering/imperative.cpp
   codon/cir/transform/lowering/pipeline.cpp
+  codon/cir/transform/lowering/throw.cpp
   codon/cir/transform/manager.cpp
   codon/cir/transform/parallel/openmp.cpp
   codon/cir/transform/parallel/schedule.cpp

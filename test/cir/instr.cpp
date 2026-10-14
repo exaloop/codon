@@ -259,12 +259,27 @@ TEST_F(CIRCoreTest, ThrowInstrQueryReplaceAndCloning) {
   auto *val = module->Nr<IntConst>(1, module->getIntType());
   auto *instr = module->Nr<ThrowInstr>(val);
   ASSERT_EQ(val, instr->getValue());
+  ASSERT_EQ(nullptr, instr->getFallback());
 
   ASSERT_EQ(1, instr->getUsedValues().size());
   ASSERT_EQ(1, instr->replaceUsedValue(val, nullptr));
   ASSERT_EQ(0, instr->getUsedValues().size());
 
   ASSERT_TRUE(util::match(instr, cv->clone(instr)));
+
+  auto *bare = module->Nr<ThrowInstr>();
+  bare->setFallback(val);
+  ASSERT_EQ(val, bare->getFallback());
+  ASSERT_EQ(1, bare->getUsedValues().size());
+  ASSERT_FALSE(util::match(instr, bare));
+  auto *cloned = cast<ThrowInstr>(cv->clone(bare));
+  ASSERT_NE(nullptr, cloned);
+  ASSERT_TRUE(util::match(bare, cloned));
+  ASSERT_TRUE(util::match(val, cloned->getFallback()));
+  ASSERT_EQ(1, bare->replaceUsedValue(val, nullptr));
+  ASSERT_EQ(nullptr, bare->getFallback());
+  ASSERT_EQ(0, bare->getUsedValues().size());
+  ASSERT_TRUE(util::match(instr, bare));
 }
 
 TEST_F(CIRCoreTest, FlowInstrQueryAndReplace) {

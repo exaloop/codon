@@ -288,7 +288,12 @@ public:
                makeFormatter(v->getValue()), v->isGenerator());
   }
   void visit(const ThrowInstr *v) override {
-    fmt::print(os, FMT_STRING("(throw {})"), makeFormatter(v->getValue()));
+    if (v->getFallback()) {
+      fmt::print(os, FMT_STRING("(throw {} (fallback {}))"),
+                 makeFormatter(v->getValue()), makeFormatter(v->getFallback()));
+    } else {
+      fmt::print(os, FMT_STRING("(throw {})"), makeFormatter(v->getValue()));
+    }
   }
   void visit(const FlowInstr *v) override {
     fmt::print(os, FMT_STRING("(flow {} {})"), makeFormatter(v->getFlow()),

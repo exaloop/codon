@@ -681,3 +681,349 @@ def test_abrupt_break_continue():
 # EXPECT: io1
 # EXPECT: 5
 test_abrupt_break_continue()
+
+def test_returns_through_finally():
+    @noinline
+    def fail(kind: int) -> int:
+        if kind == 0:
+            raise ValueError('return expression')
+        raise KeyError('return expression')
+
+    def from_handler(events, kind: int):
+        try:
+            if kind < 2:
+                return fail(kind)
+            return 7
+        except ValueError:
+            return 42
+        except Exception as error:
+            return 43
+        finally:
+            events.append('handler')
+
+    def from_else(events):
+        try:
+            events.append('try')
+        except Exception:
+            return -1
+        else:
+            return 42
+        finally:
+            events.append('else')
+
+    def nested_handler(events):
+        try:
+            try:
+                return fail(0)
+            except ValueError:
+                return 42
+            finally:
+                events.append('inner')
+        finally:
+            events.append('outer')
+
+    def nested_try_in_handler(events, cleanup: bool):
+        try:
+            return fail(0)
+        except ValueError:
+            if cleanup:
+                try:
+                    return 42
+                finally:
+                    events.append('inner')
+            else:
+                try:
+                    return 42
+                except KeyError:
+                    return -1
+        finally:
+            events.append('outer')
+
+    def return_none(events):
+        try:
+            fail(0)
+        except:
+            return
+        finally:
+            events.append('void')
+
+    def nested_loop_control(events):
+        for iteration in range(2):
+            try:
+                fail(0)
+            except ValueError:
+                try:
+                    if iteration == 0:
+                        continue
+                    break
+                finally:
+                    events.append('inner')
+            finally:
+                events.append('outer')
+
+    def generator(events, cleanup: bool):
+        try:
+            yield 1
+            fail(0)
+        except ValueError:
+            if cleanup:
+                try:
+                    return
+                finally:
+                    events.append('inner')
+            return
+        finally:
+            events.append('generator')
+
+    for kind in range(3):
+        events = []
+        assert from_handler(events, kind) == (42, 43, 7)[kind]
+        assert events == ['handler']
+    events = []
+    assert from_else(events) == 42
+    assert events == ['try', 'else']
+    events = []
+    assert nested_handler(events) == 42
+    assert events == ['inner', 'outer']
+    for cleanup in (False, True):
+        events = []
+        assert nested_try_in_handler(events, cleanup) == 42
+        assert events == (['inner', 'outer'] if cleanup else ['outer'])
+    events = []
+    return_none(events)
+    assert events == ['void']
+    events = []
+    nested_loop_control(events)
+    assert events == ['inner', 'outer', 'inner', 'outer']
+    for cleanup in (False, True):
+        events = []
+        assert list(generator(events, cleanup)) == [1]
+        assert events == (['inner', 'generator'] if cleanup else ['generator'])
+
+test_returns_through_finally()
+
+def test_pending_finally_state():
+    def pending(events, action: int):
+        try:
+            for iteration in range(2):
+                try:
+                    events.append(str(iteration))
+                    if action == 0:
+                        return 42
+                    if action == 1:
+                        raise TypeError('original')
+                    if action == 2:
+                        break
+                    continue
+                finally:
+                    try:
+                        events.append('normal cleanup')
+                    except KeyError:
+                        assert False
+                    events.append('after cleanup')
+                    try:
+                        raise ValueError('temporary')
+                    except ValueError:
+                        events.append('handled temporary')
+        except TypeError as error:
+            assert str(error) == 'original'
+            events.append('caught original')
+            return 42
+        finally:
+            events.append('outer finally')
+        return 99
+
+    for action in range(4):
+        events = []
+        assert pending(events, action) == (42 if action < 2 else 99)
+        expected = ['0', 'normal cleanup', 'after cleanup', 'handled temporary']
+        if action == 1:
+            expected.append('caught original')
+        if action == 3:
+            expected.extend(['1', 'normal cleanup', 'after cleanup', 'handled temporary'])
+        expected.append('outer finally')
+        assert events == expected
+
+    def suppress(events, action: int):
+        for iteration in range(2):
+            try:
+                try:
+                    try:
+                        raise ValueError('original')
+                    finally:
+                        events.append('inner finally')
+                        if action == 0:
+                            return 42
+                        if action == 1:
+                            break
+                        continue
+                except ValueError:
+                    assert False
+                finally:
+                    events.append('middle finally')
+            except ValueError:
+                assert False
+            finally:
+                events.append('outer finally')
+        return 43
+
+    for action in range(3):
+        events = []
+        assert suppress(events, action) == (42 if action == 0 else 43)
+        assert events == ['inner finally', 'middle finally', 'outer finally'] * (2 if action == 2 else 1)
+
+test_pending_finally_state()
+
+def test_escaping_cleanup_exception():
+    def from_handler(events, cleanup: bool):
+        try:
+            try:
+                raise ValueError('first')
+            except ValueError:
+                if cleanup:
+                    try:
+                        raise TypeError('second')
+                    except KeyError:
+                        assert False
+                    finally:
+                        events.append('inner finally')
+                else:
+                    try:
+                        raise TypeError('second')
+                    except KeyError:
+                        assert False
+            finally:
+                events.append('outer finally')
+        except TypeError as error:
+            assert str(error) == 'second'
+            events.append('caught')
+
+    def from_else(events):
+        try:
+            try:
+                events.append('try')
+            except ValueError:
+                assert False
+            else:
+                try:
+                    raise TypeError('second')
+                finally:
+                    events.append('inner finally')
+            finally:
+                events.append('outer finally')
+        except TypeError as error:
+            assert str(error) == 'second'
+            events.append('caught')
+
+    for cleanup in (False, True):
+        events = []
+        from_handler(events, cleanup)
+        assert events == (['inner finally', 'outer finally', 'caught'] if cleanup else ['outer finally', 'caught'])
+    events = []
+    from_else(events)
+    assert events == ['try', 'inner finally', 'outer finally', 'caught']
+
+test_escaping_cleanup_exception()
+
+def test_finally_bare_raise():
+    def pending(events, original, nested: bool):
+        try:
+            raise original
+        finally:
+            if nested:
+                try:
+                    raise TypeError('temporary')
+                except TypeError:
+                    events.append('handled temporary')
+            events.append('finally')
+            raise
+
+    for nested in (False, True):
+        events = []
+        original = ValueError('original')
+        try:
+            pending(events, original, nested)
+            assert False
+        except ValueError as error:
+            assert error is original
+        assert events == (['handled temporary', 'finally'] if nested else ['finally'])
+
+    def in_handler(outer, inner, throw_inner: bool):
+        try:
+            raise outer
+        except ValueError:
+            try:
+                if throw_inner:
+                    raise inner
+            finally:
+                raise
+
+    outer = ValueError('outer')
+    inner = TypeError('inner')
+    for throw_inner in (False, True):
+        try:
+            in_handler(outer, inner, throw_inner)
+            assert False
+        except ValueError as error:
+            assert not throw_inner and error is outer
+        except TypeError as error:
+            assert throw_inner and error is inner
+
+    def no_active_exception(handled: bool, return_from_handler: bool):
+        if handled:
+            try:
+                raise ValueError('handled')
+            except ValueError:
+                if return_from_handler:
+                    return 42
+            finally:
+                raise
+        else:
+            try:
+                pass
+            finally:
+                raise
+        return 99
+
+    for handled in (False, True):
+        for return_from_handler in (False, True):
+            try:
+                no_active_exception(handled, return_from_handler)
+                assert False
+            except RuntimeError as error:
+                assert str(error) == 'No active exception to reraise'
+
+    def bare_raise():
+        raise
+
+    try:
+        bare_raise()
+        assert False
+    except RuntimeError as error:
+        assert str(error) == 'No active exception to reraise'
+
+    def generator(events, original):
+        try:
+            raise original
+        finally:
+            yield 1
+            try:
+                raise TypeError('temporary')
+            except TypeError:
+                events.append('handled temporary')
+            yield 2
+            raise
+
+    events = []
+    yielded = []
+    original = ValueError('original')
+    try:
+        for item in generator(events, original):
+            yielded.append(item)
+        assert False
+    except ValueError as error:
+        assert error is original
+    assert yielded == [1, 2]
+    assert events == ['handled temporary']
+
+test_finally_bare_raise()

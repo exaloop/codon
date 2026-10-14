@@ -230,7 +230,8 @@ public:
   }
   VISIT(ThrowInstr);
   void handle(const ThrowInstr *x, const ThrowInstr *y) {
-    result = process(x->getValue(), y->getValue());
+    result = process(x->getValue(), y->getValue()) &&
+             process(x->getFallback(), y->getFallback());
   }
   VISIT(FlowInstr);
   void handle(const FlowInstr *x, const FlowInstr *y) {

@@ -252,17 +252,25 @@ int YieldInstr::doReplaceUsedValue(id_t id, Value *newValue) {
 const char ThrowInstr::NodeId = 0;
 
 std::vector<Value *> ThrowInstr::doGetUsedValues() const {
+  std::vector<Value *> used;
   if (value)
-    return {value};
-  return {};
+    used.push_back(value);
+  if (fallback)
+    used.push_back(fallback);
+  return used;
 }
 
 int ThrowInstr::doReplaceUsedValue(id_t id, Value *newValue) {
+  int replacements = 0;
   if (value && value->getId() == id) {
     setValue(newValue);
-    return 1;
+    ++replacements;
   }
-  return 0;
+  if (fallback && fallback->getId() == id) {
+    setFallback(newValue);
+    ++replacements;
+  }
+  return replacements;
 }
 
 const char FlowInstr::NodeId = 0;
