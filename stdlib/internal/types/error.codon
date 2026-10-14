@@ -232,6 +232,9 @@ class RuntimeError(Exception):
         super().__init__(message)
         self.python_type = self.__class__._pytype
 
+def _raise_no_active_exception():
+    raise RuntimeError("No active exception to reraise")
+
 class NotImplementedError(RuntimeError):
     _pytype: ClassVar[cobj] = cobj()
     def __init__(self, message: str = ""):
