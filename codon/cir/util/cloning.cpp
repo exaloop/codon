@@ -336,7 +336,11 @@ void CloneVisitor::visit(const AwaitInstr *v) {
   result = Nt(v, clone(v->getValue()), v->getType(), v->isGenerator());
 }
 
-void CloneVisitor::visit(const ThrowInstr *v) { result = Nt(v, clone(v->getValue())); }
+void CloneVisitor::visit(const ThrowInstr *v) {
+  auto *cloned = Nt(v, clone(v->getValue()));
+  cloned->setFallback(clone(v->getFallback()));
+  result = cloned;
+}
 
 void CloneVisitor::visit(const FlowInstr *v) {
   result = Nt(v, clone(v->getFlow()), clone(v->getValue()));

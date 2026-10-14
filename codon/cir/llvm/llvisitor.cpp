@@ -1456,7 +1456,13 @@ void LLVMVisitor::exitCatch() {
 }
 
 LLVMVisitor::TryCatchData *LLVMVisitor::getInnermostTryCatch() {
-  return trycatch.empty() ? nullptr : &trycatch.back();
+  if (trycatch.empty())
+    return finally.empty() ? nullptr : &finally.back();
+  if (finally.empty())
+    return &trycatch.back();
+  return trycatch.back().sequenceNumber > finally.back().sequenceNumber
+             ? &trycatch.back()
+             : &finally.back();
 }
 
 LLVMVisitor::TryCatchData *LLVMVisitor::getInnermostTryCatchBeforeLoop() {
@@ -2788,7 +2794,9 @@ bool anyMatch(Type *type, std::vector<Type *> types) {
 } // namespace
 
 void LLVMVisitor::visit(const TryCatchFlow *x) {
-  const bool isRoot = trycatch.empty();
+  const bool isRoot = !getInnermostTryCatch();
+  const int parentFinallySequence =
+      finally.empty() ? -1 : finally.back().sequenceNumber;
   const bool supportBreakAndContinue = !loops.empty();
   auto *finallyFlow = cast<SeriesFlow>(x->getFinally());
   const bool haveFinally = (finallyFlow && finallyFlow->begin() != finallyFlow->end());
@@ -2836,21 +2844,69 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
     B->CreateStore(B->getInt64(0), tc.delegateDepth);
     B->CreateStore(B->getInt64(-1), tc.loopSequence);
   } else {
-    tc.excFlag = trycatch[0].excFlag;
-    tc.catchStore = trycatch[0].catchStore;
-    tc.delegateDepth = trycatch[0].delegateDepth;
-    tc.retStore = trycatch[0].retStore;
-    tc.loopSequence = trycatch[0].loopSequence;
+    auto *parent = getInnermostTryCatch();
+    tc.excFlag = parent->excFlag;
+    tc.catchStore = parent->catchStore;
+    tc.delegateDepth = parent->delegateDepth;
+    tc.retStore = parent->retStore;
+    tc.loopSequence = parent->loopSequence;
   }
 
   // translate finally
   block = tc.finallyBlock;
+  B->SetInsertPoint(block);
+  std::vector<std::pair<llvm::Value *, llvm::Value *>> savedState;
+  if (haveFinally) {
+    auto save = [&](llvm::Value *storage, llvm::Type *type) {
+      auto *saved = B->CreateLoad(type, storage);
+      savedState.emplace_back(storage, saved);
+      return saved;
+    };
+    auto *pendingState = save(tc.excFlag, B->getInt8Ty());
+    auto *pendingException = save(tc.catchStore, padType);
+    save(tc.delegateDepth, B->getInt64Ty());
+    save(tc.loopSequence, B->getInt64Ty());
+    if (tc.retStore)
+      save(tc.retStore, func->getReturnType());
+    B->CreateStore(excStateNotThrown, tc.excFlag);
+    B->CreateStore(B->getInt64(0), tc.delegateDepth);
+
+    auto *exceptionActive =
+        llvm::BasicBlock::Create(*context, "trycatch.finally.active", func);
+    auto *finallyBody =
+        llvm::BasicBlock::Create(*context, "trycatch.finally.body", func);
+    auto *hasException = B->CreateOr(B->CreateICmpEQ(pendingState, excStateThrown),
+                                     B->CreateICmpEQ(pendingState, excStateRethrow));
+    B->CreateCondBr(hasException, exceptionActive, finallyBody);
+    B->SetInsertPoint(exceptionActive);
+    auto *unwindException = B->CreateExtractValue(pendingException, 0);
+    auto *exceptionPtr = B->CreateConstGEP1_64(B->getInt8Ty(), unwindException,
+                                               (uint64_t)seq_exc_offset());
+    auto *exception = B->CreateLoad(B->getPtrTy(), exceptionPtr);
+    B->CreateBr(finallyBody);
+    B->SetInsertPoint(finallyBody);
+    auto *activeException = B->CreatePHI(B->getPtrTy(), 2);
+    activeException->addIncoming(exception, exceptionActive);
+    activeException->addIncoming(catches.empty()
+                                     ? llvm::ConstantPointerNull::get(B->getPtrTy())
+                                     : catches.back().exception,
+                                 tc.finallyBlock);
+    CatchData active;
+    active.exception = activeException;
+    active.typeId = nullptr;
+    enterCatch(active);
+    block = finallyBody;
+  }
   process(x->getFinally());
+  if (haveFinally)
+    exitCatch();
   auto *finallyBlock = block;
   B->SetInsertPoint(finallyBlock);
+  for (auto &saved : savedState)
+    B->CreateStore(saved.second, saved.first);
   auto *excFlagRead = B->CreateLoad(B->getInt8Ty(), tc.excFlag);
 
-  if (!isRoot) {
+  if (!trycatch.empty()) {
     auto *depthRead = B->CreateLoad(B->getInt64Ty(), tc.delegateDepth);
     auto *delegate = B->CreateICmpSGT(depthRead, B->getInt64(0));
     auto *finallyNormal =
@@ -2879,8 +2935,7 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
 
     B->CreateStore(finallyCaughtResult, tc.catchStore);
     B->CreateStore(excStateRethrow, tc.excFlag);
-    auto *depthMax = B->getInt64(trycatch.size());
-    B->CreateStore(depthMax, tc.delegateDepth);
+    B->CreateStore(B->getInt64(0), tc.delegateDepth);
     B->CreateBr(tc.finallyBlock);
   } else {
     B->CreateUnreachable();
@@ -2907,11 +2962,11 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
       B->CreateRetVoid();
     }
   } else {
-    theSwitch->addCase(excStateReturn, trycatch.back().finallyBlock);
+    theSwitch->addCase(excStateReturn, getInnermostTryCatch()->finallyBlock);
   }
 
   if (supportBreakAndContinue) {
-    auto prevSeq = isRoot ? -1 : trycatch.back().sequenceNumber;
+    auto prevSeq = isRoot ? -1 : getInnermostTryCatch()->sequenceNumber;
 
     auto *finallyBreak =
         llvm::BasicBlock::Create(*context, "trycatch.finally.break", func);
@@ -2939,11 +2994,11 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
         B->CreateSwitch(B->CreateLoad(B->getInt64Ty(), tc.loopSequence), endBlock, 0);
 
     for (auto &l : loops) {
-      if (!trycatch.empty() && l.sequenceNumber < prevSeq) {
+      if (!isRoot && l.sequenceNumber < prevSeq) {
         breakSwitch->addCase(B->getInt64(l.sequenceNumber),
-                             trycatch.back().finallyBlock);
+                             getInnermostTryCatch()->finallyBlock);
         continueSwitch->addCase(B->getInt64(l.sequenceNumber),
-                                trycatch.back().finallyBlock);
+                                getInnermostTryCatch()->finallyBlock);
       } else {
         breakSwitch->addCase(B->getInt64(l.sequenceNumber), finallyBreakDone);
         breakDoneSwitch->addCase(B->getInt64(l.sequenceNumber), l.breakBlock);
@@ -3003,6 +3058,8 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
   B->SetInsertPoint(unwindResumeBlock);
   if (options->noexc) {
     B->CreateUnreachable();
+  } else if (!isRoot) {
+    B->CreateBr(rethrowBlock);
   } else {
     B->CreateResume(B->CreateLoad(padType, tc.catchStore));
   }
@@ -3015,6 +3072,8 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
 
   unsigned catchAllDepth = 0;
   for (auto it = trycatch.rbegin(); it != trycatch.rend(); ++it) {
+    if (it->sequenceNumber < parentFinallySequence)
+      break;
     if (catchAll) // can't ever delegate past catch-all
       break;
 
@@ -3065,8 +3124,7 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
   auto *unwindException = B->CreateExtractValue(caughtResultOrUndef, 0);
   B->CreateStore(caughtResultOrUndef, tc.catchStore);
   B->CreateStore(excStateThrown, tc.excFlag);
-  auto *depthMax = B->getInt64(trycatch.size());
-  B->CreateStore(depthMax, tc.delegateDepth);
+  B->CreateStore(B->getInt64(0), tc.delegateDepth);
 
   auto *unwindExceptionClass = B->CreateLoad(
       B->getInt64Ty(), B->CreateStructGEP(unwindType, unwindException, 0));
@@ -3140,7 +3198,7 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
 
   // rethrow if handling 'finally' after exception raised from 'except'/'else'
   B->SetInsertPoint(rethrowBlock);
-  if (!haveFinally || options->noexc) {
+  if ((!haveFinally && isRoot) || options->noexc) {
     B->CreateUnreachable();
   } else {
     auto throwFunc = makeThrowFunc();
@@ -3638,16 +3696,23 @@ void LLVMVisitor::visit(const ThrowInstr *x) {
   auto excAllocFunc = makeExcAllocFunc();
   auto throwFunc = makeThrowFunc();
   llvm::Value *obj = nullptr;
-  llvm::Value *typ = nullptr;
 
   if (x->getValue()) {
     process(x->getValue());
     obj = value;
-    typ = B->getInt32(getTypeIdx(x->getValue()->getType()));
   } else {
-    seqassertn(!catches.empty(), "empty raise outside of except block");
-    obj = catches.back().exception;
-    typ = catches.back().typeId;
+    obj = catches.empty() ? llvm::ConstantPointerNull::get(B->getPtrTy())
+                          : catches.back().exception;
+    B->SetInsertPoint(block);
+    auto *noException = llvm::BasicBlock::Create(*context, "raise.empty", func);
+    auto *raiseException = llvm::BasicBlock::Create(*context, "raise.active", func);
+    B->CreateCondBr(B->CreateIsNull(obj), noException, raiseException);
+    block = noException;
+    seqassertn(x->getFallback(), "empty raise instruction not lowered");
+    process(x->getFallback());
+    B->SetInsertPoint(block);
+    B->CreateUnreachable();
+    block = raiseException;
   }
 
   B->SetInsertPoint(block);

@@ -575,12 +575,15 @@ class ThrowInstr : public AcceptorExtend<ThrowInstr, Instr> {
 private:
   /// the value
   Value *value;
+  /// fallback expression for a bare throw with no active exception
+  /// Must not return normally; ignored when an explicit value is supplied.
+  Value *fallback;
 
 public:
   static const char NodeId;
 
   explicit ThrowInstr(Value *value = nullptr, std::string name = "")
-      : AcceptorExtend(std::move(name)), value(value) {}
+      : AcceptorExtend(std::move(name)), value(value), fallback(nullptr) {}
 
   /// @return the value
   Value *getValue() { return value; }
@@ -589,6 +592,14 @@ public:
   /// Sets the value.
   /// @param v the new value
   void setValue(Value *v) { value = v; }
+
+  /// @return the fallback expression, or nullptr if unset
+  Value *getFallback() { return fallback; }
+  /// @return the fallback expression, or nullptr if unset
+  const Value *getFallback() const { return fallback; }
+  /// Sets the no-active-exception fallback for a bare throw.
+  /// @param fallback the non-returning fallback expression, or nullptr to clear it
+  void setFallback(Value *fallback) { this->fallback = fallback; }
 
 protected:
   std::vector<Value *> doGetUsedValues() const override;

@@ -17,6 +17,7 @@
 #include "codon/cir/transform/lowering/imperative.h"
 #include "codon/cir/transform/lowering/pipeline.h"
 #include "codon/cir/transform/lowering/rtti.h"
+#include "codon/cir/transform/lowering/throw.h"
 #include "codon/cir/transform/manager.h"
 #include "codon/cir/transform/numpy/indexing.h"
 #include "codon/cir/transform/numpy/numpy.h"
@@ -161,6 +162,7 @@ void PassManager::registerStandardPasses() {
   } else if (options->debug && !options->test) {
     registerPass(std::make_unique<lowering::PipelineLowering>());
     registerPass(std::make_unique<lowering::ImperativeForFlowLowering>());
+    registerPass(std::make_unique<lowering::ThrowLowering>());
     registerPass(std::make_unique<lowering::AsyncForLowering>());
     registerPass(std::make_unique<lowering::AwaitLowering>());
     registerPass(std::make_unique<parallel::OpenMPPass>());
@@ -182,6 +184,7 @@ void PassManager::registerStandardPasses() {
     // lowering
     registerPass(std::make_unique<lowering::PipelineLowering>());
     registerPass(std::make_unique<lowering::ImperativeForFlowLowering>());
+    registerPass(std::make_unique<lowering::ThrowLowering>());
 
     // folding
     auto cfgKey = registerAnalysis(std::make_unique<analyze::dataflow::CFAnalysis>());
