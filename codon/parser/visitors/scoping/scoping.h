@@ -156,6 +156,7 @@ public:
   // bool transformAdding(Expr *e, ASTNode *);
   bool transformScope(Expr *);
   bool transformScope(Stmt *);
+  bool transformPattern(Expr *);
 
   void visit(StringExpr *) override;
   void visit(IdExpr *) override;

@@ -468,12 +468,16 @@ match_stmt <- 'match' SPACE expression _ ':' (_ EOL)+
   return asts(Match, LOC, ac_expr(V0), VS.transform<MatchCase>(1));
 }
 case <-
-  / 'case' SPACE expression SPACE 'if' SPACE pipe _ ':' _ suite {
+  / 'case' SPACE match_pattern SPACE 'if' SPACE pipe _ ':' _ suite {
     return MatchCase{ac_expr(V0), ac_expr(V1), ac_stmt(V2)};
   }
-  / 'case' SPACE expression _ ':' _ suite {
+  / 'case' SPACE match_pattern _ ':' _ suite {
     return MatchCase{ac_expr(V0), nullptr, ac_stmt(V1)};
   }
+match_pattern <- expression (SPACE 'as' SPACE NAME)? {
+  return VS.size() == 1 ? ac_expr(V0)
+    : aste(Assign, LOC, aste(Id, LOC, ac<string>(V1)), ac_expr(V0));
+}
 custom_stmt <-
   / NAME SPACE expression _ ':' _ suite {
     return asts(Custom, LOC, ac<string>(V0), ac_expr(V1), ac_stmt(V2));

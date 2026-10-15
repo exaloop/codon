@@ -1257,12 +1257,12 @@ class TryStmt(Stmt, ItemIterator):
     @dataclass(init=False)
     class Except(Stmt):
         var: str = ""
-        exc: Expr
+        exc: Expr | None
         suite: SuiteStmt
 
         def __init__(
             self,
-            exc: Expr,
+            exc: Expr | None = None,
             var: str = "",
             suite: Stmt | None = None,
             **kwargs,

@@ -388,10 +388,47 @@ void ScopingVisitor::visit(IfStmt *stmt) {
 void ScopingVisitor::visit(MatchStmt *stmt) {
   CHECK(transform(stmt->getExpr()));
   for (auto &m : *stmt) {
-    CHECK(transform(m.getPattern()));
+    // match_capture_scope: captures define names for both the guard and body.
+    ConditionalBlock block(ctx.get(), m.getSuite());
+    CHECK(transformPattern(m.getPattern()));
     CHECK(transform(m.getGuard()));
-    CHECK(transformScope(m.getSuite()));
+    CHECK(transform(m.getSuite()));
   }
+}
+
+bool ScopingVisitor::transformPattern(Expr *pattern) {
+  if (auto id = cast<IdExpr>(pattern)) {
+    if (id->getValue() == "_")
+      return true;
+    SetInScope binding(&(ctx->root), (ASTNode *)id);
+    return transform(id);
+  } else if (auto tuple = cast<TupleExpr>(pattern)) {
+    for (auto *item : *tuple)
+      if (!transformPattern(item))
+        return false;
+    return true;
+  } else if (auto list = cast<ListExpr>(pattern)) {
+    for (auto *item : *list)
+      if (!transformPattern(item))
+        return false;
+    return true;
+  } else if (auto binary = cast<BinaryExpr>(pattern);
+             binary && (binary->getOp() == "|" || binary->getOp() == "||")) {
+    return transformPattern(binary->getLhs()) && transformPattern(binary->getRhs());
+  } else if (auto assign = cast<AssignExpr>(pattern)) {
+    return transformPattern(assign->getExpr()) && transformPattern(assign->getVar());
+  } else if (auto call = cast<CallExpr>(pattern)) {
+    if (!transform(call->getExpr()))
+      return false;
+    for (auto &arg : *call)
+      if (!(arg.getName().empty() ? transform(arg.getExpr())
+                                  : transformPattern(arg.getExpr())))
+        return false;
+    return true;
+  } else if (auto star = cast<StarExpr>(pattern)) {
+    return transformPattern(star->getExpr());
+  }
+  return transform(pattern);
 }
 
 void ScopingVisitor::visit(WhileStmt *stmt) {
