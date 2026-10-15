@@ -77,6 +77,11 @@ class TypeInfo:
         target = self._lookup_method(TypeInfo._value_method_id('_equal_values'))
         return Function[[Ptr[byte], Ptr[byte]], bool](target)(left, right)
 
+    def value_dict(self, data: Ptr[byte]):
+        """Copy an erased dictionary through its typed items iterator."""
+        target = self._lookup_method(TypeInfo._value_method_id('_dict_value'))
+        return Function[[Ptr[byte]], Dict[Any, Any]](target)(data)
+
     def cache(id: int) -> TypeInfo:
         return TypeInfo._lookup(id)
 
@@ -120,6 +125,13 @@ class TypeInfo:
 
     def _unsupported_hash(data: Ptr[byte], T: type) -> int:
         raise TypeError(f"unhashable type: '{T.__name__}'")
+
+    def _dict_value(data: Ptr[byte], T: type):
+        source = TypeInfo._value(data, T)
+        result: Dict[Any, Any] = {}
+        for key, value in source.items():
+            result[Any(key)] = Any(value)
+        return result
 
     def _unsupported_equal(left: Ptr[byte], right: Ptr[byte], T: type) -> bool:
         raise TypeError(f"unsupported operand type(s) for ==: '{T.__name__}' and '{T.__name__}'")

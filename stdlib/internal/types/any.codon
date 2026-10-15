@@ -98,34 +98,9 @@ class Any:
             else:
                 raise ValueError("expected list or tuple")
         elif T is Dict[Any, Any]:
-            import internal.khash as khash
-
             if not self._typeinfo._isinstance(unrealized_type[Dict]):
                 raise ValueError("expected dict")
-
-            nbuckets = self.__getattr__("_n_buckets", int)
-            flags = self.__getattr__("_flags", Ptr[u32])
-
-            ti, data = self._real_contents()
-
-            kidx, vidx = 5, 6
-            kti, vti = TypeInfo.cache(ti.slots[kidx][1]), TypeInfo.cache(ti.slots[vidx][1])
-            kti, vti = TypeInfo.cache(kti.params[0]), TypeInfo.cache(vti.params[0])
-            kptr, vptr = data + ti.slots[kidx][2], data + ti.slots[vidx][2]
-            kptr, vptr = Ptr[Ptr[byte]](kptr)[0], Ptr[Ptr[byte]](vptr)[0]
-            d: Dict[Any, Any] = {}
-            i = 0
-            while i < nbuckets:
-                if not khash.__ac_iseither(flags, i):
-                    kp = kptr + i * kti.size
-                    if kti.reference:
-                        kp = Ptr[Ptr[byte]](kp)[0]
-                    vp = vptr + i * vti.size
-                    if vti.reference:
-                        vp = Ptr[Ptr[byte]](vp)[0]
-                    d[Any(kti, kp)] = Any(vti, vp)
-                i += 1
-            return d
+            return self._real_typeinfo().value_dict(self._data)
         else:
             return self.__unwrap__(T)
 

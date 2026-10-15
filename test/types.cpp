@@ -407,6 +407,52 @@ print('compared')
   }
 }
 
+TEST(JITRTTITest, RefreshesAnyDictionaryAdaptersAcrossCells) {
+  for (bool debug : {false, true}) {
+    auto options = codon::Options::getDefault("build/codon_test");
+    options->jit = true;
+    options->debug = debug;
+    options->capture = true;
+    codon::jit::JIT instance(*options);
+    auto error = instance.init();
+    ASSERT_FALSE(bool(error)) << llvm::toString(std::move(error));
+    auto first = instance.execute(R"(
+source = {'second': 2, 'first': 1}
+saved = Any(source)
+old_info = TypeInfo.cache(type(source))
+dict_method_id = TypeInfo._value_method_id('_dict_value')
+print('boxed')
+)");
+    ASSERT_TRUE(bool(first)) << llvm::toString(first.takeError());
+    EXPECT_EQ(*first, "boxed\n");
+
+    auto second = instance.execute(R"(
+def convert_any(value: Any): return value.__cast__(Dict[Any, Any])
+converted = convert_any(saved)
+assert [(key.__unwrap__(str), value.__unwrap__(int))
+        for key, value in converted.items()] == list(source.items())
+assert TypeInfo._value_method_id('_dict_value') == dict_method_id
+assert TypeInfo.cache(type(source)).__raw__() == old_info.__raw__()
+print('converted')
+)");
+    ASSERT_TRUE(bool(second)) << llvm::toString(second.takeError());
+    EXPECT_EQ(*second, "converted\n");
+
+    auto third = instance.execute(R"(
+later = convert_any(Any({3: 1.5}))
+assert later[Any(3)].__unwrap__(float) == 1.5
+source['third'] = 3
+assert [key.__unwrap__(str) for key in convert_any(saved)] == ['second', 'first', 'third']
+assert [value.__unwrap__(int) for value in converted.values()] == [2, 1]
+assert TypeInfo._value_method_id('_dict_value') == dict_method_id
+assert TypeInfo.cache(type(source)).__raw__() == old_info.__raw__()
+print('refreshed')
+)");
+    ASSERT_TRUE(bool(third)) << llvm::toString(third.takeError());
+    EXPECT_EQ(*third, "refreshed\n");
+  }
+}
+
 TEST(JITOptionsTest, CollectsAfterJITTeardown) {
   ASSERT_EXIT(
       {

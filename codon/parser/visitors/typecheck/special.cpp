@@ -278,10 +278,13 @@ void TypecheckVisitor::prepareVTables() {
   auto realize_value_methods = [&]() {
     auto *hashFunction = getFunction(getMangledMethod("", "Any", "__hash__"));
     auto *equalFunction = getFunction(getMangledMethod("", "Any", "__eq__"));
+    auto *dictFunction = getFunction(getMangledMethod("", "TypeInfo", "value_dict"));
     bool needHash = hashFunction && !hashFunction->realizations.empty();
     bool needEqual = equalFunction && !equalFunction->realizations.empty();
-    if (!needHash && !needEqual)
+    bool needDict = dictFunction && !dictFunction->realizations.empty();
+    if (!needHash && !needEqual && !needDict)
       return false;
+    auto *dictType = needDict ? getStdLibType(StdlibTypes::Dict)->getClass() : nullptr;
     std::vector<ir::Type *> pending;
     auto *getInfo = getFunction(getMangledMethod("", "TypeInfo", "_get"));
     for (const auto &[name, realization] : sorted_view(getInfo->realizations))
@@ -324,7 +327,8 @@ void TypecheckVisitor::prepareVTables() {
           }
         }
       }
-      auto install = [&](const std::string &member, size_t count) {
+      auto install = [&](const std::string &member, size_t count,
+                         const std::string &fallback) {
         auto id = valueMethodId(member);
         if (info->methods.count(id))
           return;
@@ -370,7 +374,8 @@ void TypecheckVisitor::prepareVTables() {
                 ++iterator;
             }
           }
-          auto fallback = count == 1 ? "_unsupported_hash" : "_unsupported_equal";
+          if (fallback.empty())
+            throw;
           call = cast<CallExpr>(transform(N<CallExpr>(
               N<IdExpr>(getMangledMethod("", "TypeInfo", fallback)), arguments)));
         }
@@ -380,9 +385,14 @@ void TypecheckVisitor::prepareVTables() {
         added = true;
       };
       if (needHash)
-        install("_hash_value", 1);
+        install("_hash_value", 1, "_unsupported_hash");
       if (needEqual)
-        install("_equal_values", 2);
+        install("_equal_values", 2, "_unsupported_equal");
+      if (needDict &&
+          std::any_of(info->mro.begin(), info->mro.end(), [&](ir::Type *base) {
+            return base->getAstType()->getClass()->name == dictType->name;
+          }))
+        install("_dict_value", 1, "");
     }
     return added;
   };

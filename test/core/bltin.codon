@@ -2700,3 +2700,73 @@ def test_any_tuple():
         assert str(error) == 'hash'
 
 test_any_tuple()
+
+@test
+def test_any_dict_cast():
+    from C import GC_gcollect()
+
+    source = {'second': 2, 'first': 1, 'third': 3}
+    del source['first']
+    source['first'] = 10
+    boxed = Any(source)
+    assert isinstance(boxed, Dict[Any, Any])
+    converted = boxed.__cast__(Dict[Any, Any])
+    assert [(key.__unwrap__(str), value.__unwrap__(int))
+            for key, value in converted.items()] == list(source.items())
+    assert converted[Any('first')].__unwrap__(int) == 10
+    assert len(Any(Dict[str, int]()).__cast__(Dict[Any, Any])) == 0
+
+    resized = {index: 3 * index for index in range(128)}
+    for index in range(0, 128, 3):
+        del resized[index]
+    expected = list(resized.items())
+    copied = Any(resized).__cast__(Dict[Any, Any])
+    resized[1] = -1
+    resized.clear()
+    GC_gcollect()
+    assert [(key.__unwrap__(int), value.__unwrap__(int))
+            for key, value in copied.items()] == expected
+    assert copied[Any(1)].__unwrap__(int) == 3
+
+    class Value:
+        number: int
+
+    value = Value(23)
+    references = Any({('key', 7): value}).__cast__(Dict[Any, Any])
+    assert references[Any(('key', 7))].__unwrap__(Value) is value
+    value.number = 29
+    assert references[Any(('key', 7))].__unwrap__(Value).number == 29
+
+    class Holder:
+        mapping: Dict[float, str]
+
+    reflected = Any(Holder({1.5: 'reflected'})).__getattr__('mapping')
+    assert reflected.__cast__(Dict[Any, Any])[Any(1.5)].__unwrap__(str) == 'reflected'
+
+    raw_source = {True: (31, 'raw')}
+    raw_box = Any(TypeInfo.cache(type(raw_source).__id__), raw_source.__raw__())
+    assert raw_box.__cast__(Dict[Any, Any])[Any(True)].__unwrap__(Tuple[int, str]) == (31, 'raw')
+
+    preboxed = {Any('nested'): Any({5: 'value'})}
+    outer = Any(preboxed).__cast__(Dict[Any, Any])
+    inner = outer[Any('nested')].__cast__(Dict[Any, Any])
+    assert inner[Any(5)].__unwrap__(str) == 'value'
+
+    @noinline
+    def retained():
+        local = {str(73): Value(73)}
+        result = Any(local).__cast__(Dict[Any, Any])
+        local.clear()
+        return result
+
+    owned = retained()
+    GC_gcollect()
+    assert owned[Any('73')].__unwrap__(Value).number == 73
+
+    try:
+        Any([1, 2]).__cast__(Dict[Any, Any])
+        assert False
+    except ValueError as error:
+        assert str(error) == 'expected dict'
+
+test_any_dict_cast()
