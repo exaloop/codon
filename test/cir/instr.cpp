@@ -153,6 +153,27 @@ TEST_F(CIRCoreTest, PolymorphicInstructionMetadata) {
       util::match(call, module->Nr<CallInstr>(callee, std::vector<Value *>{receiver})));
   ASSERT_FALSE(util::match(
       call, module->Nr<CallInstr>(callee, std::vector<Value *>{receiver}, "", 8)));
+
+  extract->setPolymorphic(false);
+  insert->setPolymorphic(false);
+  ASSERT_FALSE(extract->isPolymorphic());
+  ASSERT_FALSE(insert->isPolymorphic());
+  ASSERT_FALSE(util::match(extract, extractClone));
+  ASSERT_FALSE(util::match(insert, insertClone));
+  ASSERT_TRUE(
+      util::match(extract, module->Nr<ExtractInstr>(receiver, "field", "extract")));
+  ASSERT_TRUE(
+      util::match(insert, module->Nr<InsertInstr>(receiver, "field", value, "insert")));
+  util::CloneVisitor updatedCloner(module.get());
+  ASSERT_FALSE(cast<ExtractInstr>(updatedCloner.clone(extract))->isPolymorphic());
+  ASSERT_FALSE(cast<InsertInstr>(updatedCloner.clone(insert))->isPolymorphic());
+
+  extract->setPolymorphic(true);
+  insert->setPolymorphic(true);
+  ASSERT_TRUE(extract->isPolymorphic());
+  ASSERT_TRUE(insert->isPolymorphic());
+  ASSERT_TRUE(util::match(extract, extractClone));
+  ASSERT_TRUE(util::match(insert, insertClone));
 }
 
 TEST_F(CIRCoreTest, StackAllocInstrQueryAndReplace) {

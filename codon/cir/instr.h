@@ -108,6 +108,9 @@ public:
 
   /// @return true if the accessed class is polymorphic
   bool isPolymorphic() const { return polymorphic; }
+  /// Sets whether the accessed class is polymorphic.
+  /// @param value the new polymorphic flag
+  void setPolymorphic(bool value) { polymorphic = value; }
 
 protected:
   Type *doGetType() const override;
@@ -165,6 +168,9 @@ public:
 
   /// @return true if the accessed class is polymorphic
   bool isPolymorphic() const { return polymorphic; }
+  /// Sets whether the accessed class is polymorphic.
+  /// @param value the new polymorphic flag
+  void setPolymorphic(bool value) { polymorphic = value; }
 
 protected:
   Type *doGetType() const override { return lhs->getType(); }
