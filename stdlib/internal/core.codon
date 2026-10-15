@@ -7,7 +7,6 @@ class type[T]:
     #  __new__ / __init__: always done internally
     pass
 
-
 @tuple
 @__internal__
 @__noextend__
@@ -219,7 +218,6 @@ def derives():
 def __generated__():
     pass
 
-
 @extend
 class NoneType:
     @pure
@@ -353,9 +351,6 @@ def setattr(obj, attr: Literal[str], what):
 class object:
     def __init__(self, *args, **kwargs):
         pass
-
-    # def __repr__(self) -> str:
-    #     return f"<{self.__class__.__name__} object at {self.__raw__()}>"
 
 @tuple
 @__internal__

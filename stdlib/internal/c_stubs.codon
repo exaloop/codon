@@ -95,6 +95,21 @@ def seq_lock_acquire(a: cobj, b: bool, c: float) -> bool:
 def seq_lock_release(a: cobj) -> None:
     pass
 
+@no_side_effect
+@C
+def seq_cond_new() -> cobj:
+    pass
+
+@nocapture
+@C
+def seq_cond_wait(condition: cobj, lock: cobj, timeout: float) -> None:
+    pass
+
+@nocapture
+@C
+def seq_cond_notify(condition: cobj) -> None:
+    pass
+
 @pure
 @C
 def seq_rlock_new() -> cobj:

@@ -608,6 +608,566 @@ def test_custom_await():
     asyncio.run(main())
 
 
+@test
+def test_heterogeneous_task_results():
+    loop = new_loop()
+    callbacks: List[str] = []
+    none_future = loop.create_future(NoneType)
+    none_future.set_result(NoneType())
+    assert none_future.result() is None
+
+    async def produce(value):
+        await sleep_async(0)
+        return value
+
+    async def produce_none():
+        await sleep_async(0)
+
+    def record(callbacks, task):
+        callbacks.append(str(task.result()))
+
+    async def main(loop, callbacks):
+        tasks = (loop.create_task(produce_none()),
+                 loop.create_task(produce(True)),
+                 loop.create_task(produce(42)),
+                 loop.create_task(produce(2.5)),
+                 loop.create_task(produce('result' * 100)),
+                 loop.create_task(produce(b'bytes' * 100)),
+                 loop.create_task(produce((True, 17, 'tuple'))),
+                 loop.create_task(produce([3, 5, 8])))
+        for task in tasks:
+            task.add_done_callback(record(callbacks, ...))
+        results = await gather(*tasks)
+        await sleep_async(0)
+        for task in tasks:
+            assert task.done()
+            assert task.exception() is None
+            assert str(task.result()) in callbacks
+        return results
+
+    results = loop.run_until_complete(loop.create_task(main(loop, callbacks)))
+    assert results[0] is None
+    assert results[1:] == (True, 42, 2.5, 'result' * 100,
+                          b'bytes' * 100, (True, 17, 'tuple'), [3, 5, 8])
+    assert len(callbacks) == 8
+
+@test
+def test_current_task_shared_state_and_identity():
+    loop = new_loop()
+    views: List[asyncio.Task[None]] = []
+    callbacks: List[asyncio.Future[str]] = []
+
+    def record(callbacks, task):
+        callbacks.append(task)
+
+    async def main(loop, views):
+        current = unwrap(asyncio.current_task())
+        assert current is unwrap(asyncio.current_task())
+        assert current.get_loop() is loop
+        assert current.get_name() == 'original'
+        current.set_name('renamed')
+        views.append(current)
+        await sleep_async(0)
+        assert current is unwrap(asyncio.current_task())
+        return 'done'
+
+    task = loop.create_task(main(loop, views), name='original')
+    task.add_done_callback(record(callbacks, ...))
+    assert loop.run_until_complete(task) == 'done'
+    assert task.get_name() == 'renamed'
+    assert views[0].done()
+    assert views[0].exception() is None
+    assert not views[0].cancel()
+    loop.run_until_complete(loop.create_task(sleep_async(0)))
+    assert len(callbacks) == 1
+    assert callbacks[0] is task
+    assert callbacks[0].result() == 'done'
+
+    async def none_result(views):
+        views.append(unwrap(asyncio.current_task()))
+
+    none_task = loop.create_task(none_result(views))
+    loop.run_until_complete(none_task)
+    assert views[-1] is none_task
+
+@test
+def test_heterogeneous_task_cancellation():
+    loop = new_loop()
+    log: List[str] = []
+    pending = loop.create_future(str)
+
+    async def child(pending, log):
+        try:
+            log.append('child started')
+            return await pending
+        finally:
+            log.append('child finished')
+
+    async def parent(child_task, log):
+        try:
+            log.append('parent started')
+            return (7, await child_task)
+        finally:
+            log.append('parent finished')
+
+    async def main(loop, pending, log):
+        child_task = loop.create_task(child(pending, log))
+        parent_task = loop.create_task(parent(child_task, log))
+        await sleep_async(0)
+        assert parent_task.cancel('stop mixed tasks')
+        try:
+            await parent_task
+            assert False
+        except CancelledError as error:
+            assert str(error) == 'stop mixed tasks'
+        await sleep_async(0)
+        assert child_task.cancelled()
+        assert parent_task.cancelled()
+        assert log.count('child finished') == 1
+        assert log.count('parent finished') == 1
+        assert pending.cancelled()
+        try:
+            pending.set_result('late result')
+            assert False
+        except InvalidStateError:
+            pass
+        await sleep_async(0)
+        assert log.count('child finished') == 1
+        assert log.count('parent finished') == 1
+
+    loop.run_until_complete(loop.create_task(main(loop, pending, log)))
+
+
+@test
+def test_async_iteration_with_shared_task_state():
+    loop = new_loop()
+
+    async def values():
+        for value in range(3):
+            await sleep_async(0)
+            yield str(value)
+
+    async def consume():
+        results: List[str] = []
+        async for value in values():
+            results.append(value)
+        return results
+
+    assert loop.run_until_complete(loop.create_task(consume())) == ['0', '1', '2']
+
+
+@test
+def test_task_cancellation_lifecycle():
+    loop = new_loop()
+    log: List[str] = []
+
+    async def suppress():
+        try:
+            await sleep_async(10)
+        except CancelledError:
+            return 7
+        return 9
+
+    async def cleanup(log):
+        try:
+            log.append('started')
+            await sleep_async(10)
+        finally:
+            log.append('cleanup started')
+            await sleep_async(0)
+            log.append('cleanup finished')
+
+    async def explicit_cancel():
+        raise CancelledError('explicit')
+        return 0
+
+    async def never_started(log):
+        log.append('unexpected start')
+        return 1
+
+    async def parent(child):
+        return await child
+
+    async def main(loop, log):
+        task = loop.create_task(suppress())
+        await sleep_async(0)
+        assert task.cancel('suppress')
+        assert not task.done()
+        assert await task == 7
+        assert not task.cancelled()
+
+        child = loop.create_task(suppress())
+        task = loop.create_task(parent(child))
+        await sleep_async(0)
+        assert task.cancel('delegated')
+        assert await task == 7
+        assert not child.cancelled()
+        assert not task.cancelled()
+
+        task = loop.create_task(cleanup(log))
+        await sleep_async(0)
+        assert task.cancel('cleanup')
+        assert not task.done()
+        try:
+            await task
+            assert False
+        except CancelledError as error:
+            assert str(error) == 'cleanup'
+        assert log == ['started', 'cleanup started', 'cleanup finished']
+
+        explicit = loop.create_task(explicit_cancel())
+        try:
+            await explicit
+            assert False
+        except CancelledError as error:
+            assert str(error) == 'explicit'
+        assert explicit.cancelled()
+
+        before_start = loop.create_task(never_started(log))
+        assert before_start.cancel('before start')
+        assert not before_start.done()
+        try:
+            await before_start
+            assert False
+        except CancelledError as error:
+            assert str(error) == 'before start'
+        assert before_start.cancelled()
+        assert 'unexpected start' not in log
+
+    loop.run_until_complete(loop.create_task(main(loop, log)))
+    loop.close()
+
+
+@test
+def test_gather_cancelled_child():
+    loop = new_loop()
+
+    async def main(loop):
+        child = loop.create_future(int)
+        child.cancel('cancelled child')
+        result = gather(child)
+        try:
+            await result
+            assert False
+        except CancelledError as error:
+            assert str(error) == 'cancelled child'
+        assert result.done()
+        assert not result.cancelled()
+
+        delayed = loop.create_future(str)
+        successful = loop.create_future(int)
+        result = gather(successful, delayed)
+        successful.set_result(42)
+        delayed.cancel('delayed cancellation')
+        try:
+            await result
+            assert False
+        except CancelledError as error:
+            assert str(error) == 'delayed cancellation'
+
+    loop.run_until_complete(loop.create_task(main(loop)))
+    loop.close()
+
+
+@test
+def test_gather_duplicate_coroutines():
+    loop = new_loop()
+    log: List[str] = []
+
+    async def number(log):
+        log.append('number')
+        await sleep_async(0)
+        return 7
+
+    async def text(log):
+        log.append('text')
+        await sleep_async(0)
+        return 'result'
+
+    async def main(loop, log):
+        integer = number(log)
+        string = text(log)
+        assert await gather(integer, string, integer, string) == (7, 'result', 7, 'result')
+        assert log == ['number', 'text']
+        task = loop.create_task(number(log))
+        assert await gather(task, task) == (7, 7)
+        assert log == ['number', 'text', 'number']
+
+    loop.run_until_complete(loop.create_task(main(loop, log)))
+    loop.close()
+
+
+@test
+def test_stop_preserves_queued_callbacks():
+    loop = new_loop()
+    log: List[int] = []
+    loop.call_soon(log.append, 1)
+    loop.call_soon(loop.stop)
+    loop.call_soon(log.append, 2)
+    loop.call_soon(log.append, 3)
+    loop.run_forever()
+    loop.call_soon(loop.stop)
+    loop.run_forever()
+    assert log == [1, 2, 3]
+    loop.close()
+
+
+@test
+def test_call_at_absolute_deadline():
+    loop = new_loop()
+    log: List[int] = []
+    deadline = loop.time() + 0.01
+    handle = loop.call_at(deadline, log.append, 1)
+    assert handle.when() == deadline
+    loop.call_at(deadline - 1, log.append, 0)
+    loop.call_later(0.03, loop.stop)
+    loop.run_forever()
+    assert log == [0, 1]
+    loop.close()
+
+
+@test
+def test_run_closes_loop_and_drains_background_tasks():
+    log: List[str] = []
+
+    async def background(log, value):
+        try:
+            await sleep_async(10)
+        finally:
+            log.append(f'cleanup started {value}')
+            await sleep_async(0)
+            log.append(f'cleanup finished {value}')
+        return value
+
+    async def main(log):
+        asyncio.create_task(background(log, 7))
+        asyncio.create_task(background(log, 'text'))
+        await sleep_async(0)
+        return get_running_loop()
+
+    async def fresh_loop():
+        return get_running_loop()
+
+    first = asyncio.run(main(log))
+    assert first.is_closed()
+    assert not first.is_running()
+    assert sorted(log) == ['cleanup finished 7', 'cleanup finished text',
+                           'cleanup started 7', 'cleanup started text']
+    second = asyncio.run(fresh_loop())
+    assert second is not first
+    assert second.is_closed()
+    try:
+        get_running_loop()
+        assert False
+    except RuntimeError:
+        pass
+
+
+@test
+def test_run_exception_shutdown():
+    @tuple
+    class LoopFactory:
+        loop: asyncio.EventLoop
+
+        def __call__(self):
+            return self.loop
+
+    async def background(log):
+        try:
+            await sleep_async(10)
+        finally:
+            await sleep_async(0)
+            log.append('cleaned')
+
+    async def fail(log, mode):
+        asyncio.create_task(background(log))
+        await sleep_async(0)
+        if mode == 0:
+            raise ValueError('main failed')
+        elif mode == 1:
+            raise SystemExit(3)
+        else:
+            raise AssertionError('main assertion')
+
+    for mode in range(3):
+        loop = new_loop()
+        log: List[str] = []
+        caught = False
+        try:
+            asyncio.run(fail(log, mode), loop_factory=LoopFactory(loop))
+        except ValueError:
+            assert mode == 0
+            caught = True
+        except SystemExit:
+            assert mode == 1
+            caught = True
+        except AssertionError:
+            assert mode == 2
+            caught = True
+        assert caught
+        assert log == ['cleaned']
+        assert loop.is_closed()
+        assert not loop.is_running()
+
+
+@test
+def test_task_ready_queue_membership():
+    loop = new_loop()
+    counts = [0, 0, 0]
+
+    async def worker(counts):
+        counts[0] += 1
+        try:
+            await sleep_async(0)
+        finally:
+            counts[1] += 1
+        return 1
+
+    def finished(counts, task):
+        assert task.cancelled()
+        counts[2] += 1
+
+    async def main(loop, counts):
+        for started in (False, True):
+            tasks = [loop.create_task(worker(counts)) for index in range(64)]
+            if started:
+                await sleep_async(0)
+            for task in tasks:
+                assert task._data._queued == 1
+                task.add_done_callback(finished(counts, ...))
+                assert task.cancel()
+                assert task.cancel()
+                assert task._data._queued == 1
+            await sleep_async(0)
+            for task in tasks:
+                assert task.cancelled()
+                assert task._data._queued == 0
+        assert counts == [64, 64, 128]
+
+    loop.run_until_complete(loop.create_task(main(loop, counts)))
+    loop.close()
+
+    loop = new_loop()
+    pending = loop.create_task(worker(counts))
+    handle = loop._call_soon(asyncio.WorkItem(pending), return_handle=True)
+    assert pending._data._queued == 2
+    handle.cancel()
+    handle.cancel()
+    assert pending._data._queued == 1
+    loop.close()
+    assert pending._data._queued == 0
+
+    loop = new_loop()
+    seen: List[int] = []
+    handle = loop.call_soon(seen.append, 1)
+    loop.call_soon(handle.cancel)
+    loop.call_soon(seen.append, 2)
+    loop.call_soon(loop.stop)
+    loop.run_forever()
+    assert seen == [1, 2]
+    assert handle.cancelled()
+    loop.close()
+
+
+@test
+def test_direct_future_completion_before_idle_wait():
+    @tuple
+    class CompletesDuringCheck:
+        future: asyncio.Future[int]
+
+        def done(self):
+            if not self.future.done():
+                self.future.set_result(42)
+                return False
+            return True
+
+        def result(self):
+            return self.future.result()
+
+    loop = new_loop()
+    future = loop.create_future(int)
+    assert loop.run_until_complete(CompletesDuringCheck(future)) == 42
+    loop.close()
+
+
+@test
+def test_cross_thread_idle_wakeups():
+    from C import GC_gcollect()
+
+    def watchdog(loop, expired):
+        expired[0] = True
+        loop.stop()
+
+    def delivered(loop, seen):
+        seen.append(42)
+        loop.stop()
+
+    for action in ['callback', 'timer', 'stop', 'result', 'close'] * 3:
+        loop = new_loop()
+        future = loop.create_future(int)
+        seen: List[int] = []
+        expired = Ptr[bool](1)
+        observed_wait = Ptr[bool](1)
+        result = Ptr[int](1)
+        expired[0] = False
+        observed_wait[0] = False
+        result[0] = 0
+        loop.call_later(2, watchdog, loop, expired)
+
+        @par(num_threads=2)
+        for role in range(2):
+            if role == 0:
+                if action == 'result':
+                    result[0] = loop.run_until_complete(future)
+                else:
+                    loop.run_forever()
+            else:
+                deadline = time() + 1
+                while time() < deadline:
+                    with loop._lock:
+                        waiting = loop._waiting
+                    if waiting:
+                        observed_wait[0] = True
+                        break
+                    sleep(0.0001)
+                GC_gcollect()
+                if action == 'callback':
+                    loop.call_soon_threadsafe(delivered, loop, seen)
+                elif action == 'timer':
+                    loop.call_later(0.001, delivered, loop, seen)
+                elif action == 'stop':
+                    loop.stop()
+                elif action == 'result':
+                    future.set_result(42)
+                else:
+                    loop.close()
+
+        assert observed_wait[0]
+        assert not expired[0]
+        assert not loop.is_running()
+        if action == 'callback' or action == 'timer':
+            assert seen == [42]
+        elif action == 'result':
+            assert result[0] == 42
+        elif action == 'close':
+            assert loop.is_closed()
+        loop.close()
+
+
+test_cross_thread_idle_wakeups()
+test_direct_future_completion_before_idle_wait()
+test_task_ready_queue_membership()
+test_run_closes_loop_and_drains_background_tasks()
+test_run_exception_shutdown()
+test_stop_preserves_queued_callbacks()
+test_call_at_absolute_deadline()
+test_gather_duplicate_coroutines()
+test_task_cancellation_lifecycle()
+test_gather_cancelled_child()
+test_heterogeneous_task_results()
+test_current_task_shared_state_and_identity()
+test_heterogeneous_task_cancellation()
+test_async_iteration_with_shared_task_state()
 test_call_soon_fifo_order()
 test_call_soon_threadsafe()
 test_loop_stop_from_callback()
