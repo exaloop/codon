@@ -206,6 +206,129 @@ protected:
 };
 } // namespace
 
+TEST(IntrinsicCodegenTest, TypeQueriesAreConstantsBeforeOptimization) {
+  ASSERT_EXIT(
+      {
+        for (auto architecture : {"", "x86"}) {
+          for (bool debug : {false, true}) {
+            auto options = Options::getDefault("build/codon_test");
+            options->debug = debug;
+            options->standalone = true;
+            options->march = architecture;
+            options->mcpu = "generic";
+            Compiler compiler(*options);
+            llvm::cantFail(compiler.parseCode(
+                "intrinsic_queries.codon",
+                "class Payload:\n    left: int\n    right: int\n"
+                "@export\ndef query_size(): return Payload.__elemsize__\n"
+                "@export\ndef query_atomic(): return int.__atomic__\n"
+                "@export\ndef query_contents(): return Payload.__contents_atomic__\n"));
+            llvm::cantFail(compiler.compile());
+            auto *module = compiler.getLLVMVisitor()->getModule();
+            EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+            if (std::string(architecture) == "x86")
+              EXPECT_EQ(module->getDataLayout().getPointerSize(), 4u);
+            for (auto &function : *module) {
+              EXPECT_FALSE(function.getName().contains("intrinsic.sizeof"));
+              EXPECT_FALSE(function.getName().contains("intrinsic.is_atomic"));
+              EXPECT_FALSE(function.getName().contains("intrinsic.is_content_atomic"));
+            }
+            for (auto name : {"query_size", "query_atomic", "query_contents"}) {
+              auto *function = module->getFunction(name);
+              EXPECT_NE(function, nullptr);
+              if (!function)
+                continue;
+              bool found = false;
+              uint64_t expected = std::string(name) == "query_size"
+                                      ? module->getDataLayout().getPointerSize()
+                                      : 1;
+              for (auto &block : *function) {
+                for (auto &instruction : block) {
+                  EXPECT_FALSE(llvm::isa<llvm::CallBase>(instruction));
+                  if (auto *ret = llvm::dyn_cast<llvm::ReturnInst>(&instruction)) {
+                    auto *constant =
+                        llvm::dyn_cast<llvm::ConstantInt>(ret->getReturnValue());
+                    found |= constant && constant->getZExtValue() == expected;
+                  }
+                }
+              }
+              EXPECT_TRUE(found) << name;
+            }
+          }
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(IntrinsicCodegenTest, MaterializesSharedAddressTakenQuery) {
+  ASSERT_EXIT(
+      {
+        for (bool debug : {false, true}) {
+          auto options = Options::getDefault("build/codon_test");
+          options->debug = debug;
+          options->standalone = true;
+          Compiler compiler(*options);
+          llvm::cantFail(compiler.parseCode("intrinsic_address.codon",
+                                            "@export\ndef indirect_query(): return 0\n"
+                                            "@export\ndef second_query(): return 0\n"));
+          auto *module = compiler.getModule();
+          compiler.getPassManager()->run(module);
+          auto *query =
+              module->getIntrinsic(ir::InternalFunc::Intrinsic::SIZEOF,
+                                   module->unsafeGetPointerType(module->getIntType()));
+          for (auto *variable : *module) {
+            auto *function = ir::cast<ir::BodiedFunc>(variable);
+            if (!function || (function->getUnmangledName() != "indirect_query" &&
+                              function->getUnmangledName() != "second_query"))
+              continue;
+            auto *holder = module->Nr<ir::Var>(query->getType());
+            function->push_back(holder);
+            auto *prefix = module->Nr<ir::SeriesFlow>();
+            prefix->push_back(
+                module->Nr<ir::AssignInstr>(holder, module->Nr<ir::VarValue>(query)));
+            auto *callee =
+                module->Nr<ir::FlowInstr>(prefix, module->Nr<ir::VarValue>(holder));
+            auto *body = module->Nr<ir::SeriesFlow>();
+            body->push_back(
+                module->Nr<ir::ReturnInstr>(module->Nr<ir::CallInstr>(callee)));
+            function->setBody(body);
+          }
+          compiler.getLLVMVisitor()->visit(module);
+          auto *llvmModule = compiler.getLLVMVisitor()->getModule();
+          EXPECT_FALSE(llvm::verifyModule(*llvmModule, &llvm::errs()));
+          size_t wrappers = 0;
+          for (auto &function : *llvmModule) {
+            if (!function.getName().contains("intrinsic.sizeof"))
+              continue;
+            ++wrappers;
+            EXPECT_TRUE(function.hasPrivateLinkage());
+            auto *returned = llvm::dyn_cast<llvm::ReturnInst>(
+                function.getEntryBlock().getTerminator());
+            ASSERT_NE(returned, nullptr);
+            auto *constant =
+                llvm::dyn_cast<llvm::ConstantInt>(returned->getReturnValue());
+            ASSERT_NE(constant, nullptr);
+            EXPECT_EQ(constant->getZExtValue(),
+                      llvmModule->getDataLayout().getPointerSize());
+          }
+          EXPECT_EQ(wrappers, 1u);
+          for (auto name : {"indirect_query", "second_query"}) {
+            auto *function = llvmModule->getFunction(name);
+            ASSERT_NE(function, nullptr);
+            size_t indirect = 0;
+            for (auto &block : *function)
+              for (auto &instruction : block)
+                if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction))
+                  indirect += !call->getCalledFunction();
+            EXPECT_EQ(indirect, 1u);
+          }
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
 TEST(RTTICodegenTest, FoldsUniformFieldsAndSpecializesCalls) {
   ASSERT_EXIT(
       {

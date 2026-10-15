@@ -179,31 +179,34 @@ TEST_F(CIRCoreTest, StackAllocInstrCloning) {
   ASSERT_TRUE(util::match(instr, cv->clone(instr)));
 }
 
-TEST_F(CIRCoreTest, TypePropertyInstrQueryAndReplace) {
+TEST_F(CIRCoreTest, IntrinsicQueryCallTypesAndReplacement) {
   auto *type = module->unsafeGetPointerType(module->getIntType());
-  auto *instr =
-      module->Nr<TypePropertyInstr>(type, TypePropertyInstr::Property::IS_ATOMIC);
-
-  ASSERT_EQ(type, instr->getInspectType());
-  ASSERT_EQ(TypePropertyInstr::Property::IS_ATOMIC, instr->getProperty());
+  auto *atomic = module->getIntrinsic(InternalFunc::Intrinsic::IS_ATOMIC, type);
+  auto *callee = module->Nr<VarValue>(atomic);
+  auto *instr = module->Nr<CallInstr>(callee);
   ASSERT_EQ(module->getBoolType(), instr->getType());
-
-  instr->setProperty(TypePropertyInstr::Property::SIZEOF);
+  ASSERT_EQ(0, instr->numArgs());
+  auto *size = module->getIntrinsic(InternalFunc::Intrinsic::SIZEOF, type);
+  ASSERT_EQ(1, instr->replaceUsedValue(callee, module->Nr<VarValue>(size)));
   ASSERT_EQ(module->getIntType(), instr->getType());
-
-  auto usedTypes = instr->getUsedTypes();
-  ASSERT_EQ(1, usedTypes.size());
-  ASSERT_EQ(type, usedTypes[0]);
-
-  ASSERT_EQ(1, instr->replaceUsedType(
-                   type, module->unsafeGetPointerType(module->getFloatType())));
 }
 
-TEST_F(CIRCoreTest, TypePropertyInstrCloning) {
+TEST_F(CIRCoreTest, IntrinsicQueryCloningAndTypeDependencies) {
   auto *type = module->unsafeGetPointerType(module->getIntType());
-  auto *instr =
-      module->Nr<TypePropertyInstr>(type, TypePropertyInstr::Property::IS_ATOMIC);
+  auto *query = module->getIntrinsic(InternalFunc::Intrinsic::IS_ATOMIC, type);
+  auto *instr = module->Nr<CallInstr>(module->Nr<VarValue>(query));
   ASSERT_TRUE(util::match(instr, cv->clone(instr)));
+  auto *cloned = cast<InternalFunc>(cv->forceClone(query));
+  ASSERT_NE(query, cloned);
+  ASSERT_TRUE(util::match(query, cloned));
+  ASSERT_TRUE(cloned->hasValidIntrinsicSignature());
+  auto usedTypes = cloned->getUsedTypes();
+  ASSERT_NE(std::find(usedTypes.begin(), usedTypes.end(), type), usedTypes.end());
+  auto *replacement = module->unsafeGetPointerType(module->getFloatType());
+  ASSERT_EQ(1, cloned->replaceUsedType(type, replacement));
+  ASSERT_EQ(replacement, cloned->getIntrinsicType());
+  ASSERT_FALSE(util::match(query, cloned));
+  ASSERT_TRUE(cloned->hasValidIntrinsicSignature());
 }
 
 TEST_F(CIRCoreTest, YieldInInstrQueryAndReplace) {

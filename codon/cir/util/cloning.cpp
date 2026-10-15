@@ -305,10 +305,6 @@ void CloneVisitor::visit(const StackAllocInstr *v) {
   result = Nt(v, v->getPtrType(), v->getCount());
 }
 
-void CloneVisitor::visit(const TypePropertyInstr *v) {
-  result = Nt(v, v->getInspectType(), v->getProperty());
-}
-
 void CloneVisitor::visit(const YieldInInstr *v) {
   result = Nt(v, v->getType(), v->isSuspending());
 }

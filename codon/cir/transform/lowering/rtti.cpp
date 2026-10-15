@@ -21,14 +21,12 @@ void RTTILowering::handle(CallInstr *call) {
   auto *temporary =
       module->Nr<Var>(receiver->getType(), false, false, false, "rtti.self");
   parent->push_back(temporary);
-  auto *lookup = module->Nr<InternalFunc>("rtti.lookup");
-  lookup->setIntrinsic(InternalFunc::Intrinsic::VIRTUAL_LOOKUP, receiver->getType());
-  lookup->setGlobal();
-  lookup->realize(
-      cast<FuncType>(module->unsafeGetFuncType(
-          "rtti.lookup." + call->getCallee()->getType()->getName(),
-          call->getCallee()->getType(), {receiver->getType(), module->getIntType()})),
-      {"self", "thunk"});
+  auto *signature = module->unsafeGetFuncType(
+      "rtti.lookup[" + receiver->getType()->getName() + "]." +
+          call->getCallee()->getType()->getName(),
+      call->getCallee()->getType(), {receiver->getType(), module->getIntType()});
+  auto *lookup = module->getIntrinsic(InternalFunc::Intrinsic::VIRTUAL_LOOKUP,
+                                      receiver->getType(), signature);
   auto *prefix = module->Nr<SeriesFlow>();
   prefix->push_back(call->getCallee());
   prefix->push_back(module->Nr<AssignInstr>(temporary, receiver));

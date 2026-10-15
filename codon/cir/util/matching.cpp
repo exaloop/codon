@@ -196,11 +196,6 @@ public:
   void handle(const StackAllocInstr *x, const StackAllocInstr *y) {
     result = x->getCount() == y->getCount() && process(x->getType(), y->getType());
   }
-  VISIT(TypePropertyInstr);
-  void handle(const TypePropertyInstr *x, const TypePropertyInstr *y) {
-    result = x->getProperty() == y->getProperty() &&
-             process(x->getInspectType(), y->getInspectType());
-  }
   VISIT(YieldInInstr);
   void handle(const YieldInInstr *x, const YieldInInstr *y) {
     result = process(x->getType(), y->getType());

@@ -355,6 +355,44 @@ Type *Module::unsafeGetPointerType(Type *base) {
   return Nr<PointerType>(base);
 }
 
+InternalFunc *Module::getIntrinsic(InternalFunc::Intrinsic kind, Type *type,
+                                   Type *signature) {
+  if (!signature) {
+    if (!InternalFunc::isTypeQuery(kind))
+      compilationError("intrinsic requires an explicit signature");
+    auto *result =
+        kind == InternalFunc::Intrinsic::SIZEOF ? getIntType() : getBoolType();
+    signature = unsafeGetFuncType(".intrinsic.query." + result->getName(), result, {});
+  }
+  auto key = std::make_tuple(kind, type ? type->getName() : "", signature->getName());
+  auto found = intrinsics.find(key);
+  if (found != intrinsics.end()) {
+    auto *function = cast<InternalFunc>(getVar(found->second));
+    // A client may remove or rewrite a declaration after it was cached.
+    if (function && function->getIntrinsic() == kind &&
+        function->getIntrinsicType() == type && function->getType() == signature &&
+        function->hasValidIntrinsicSignature())
+      return function;
+  }
+  auto *functionType = cast<FuncType>(signature);
+  if (!functionType)
+    compilationError("intrinsic signature is not a function type");
+  auto *function = Nr<InternalFunc>(std::string(".intrinsic.") +
+                                    InternalFunc::getIntrinsicName(kind));
+  function->setIntrinsic(kind, type);
+  function->setGlobal();
+  std::vector<std::string> names;
+  for (size_t index = 0;
+       index < std::distance(functionType->begin(), functionType->end()); ++index)
+    names.push_back("arg" + std::to_string(index));
+  function->realize(signature, names);
+  if (!function->hasValidIntrinsicSignature())
+    compilationError("invalid intrinsic signature: " +
+                     std::string(function->getIntrinsicName()));
+  intrinsics[key] = function->getId();
+  return function;
+}
+
 Type *Module::unsafeGetGeneratorType(Type *base) {
   auto name = GeneratorType::getInstanceName(base);
   if (auto *rVal = getType(name))
@@ -444,6 +482,8 @@ void Module::popArena() {
     typesMap.erase(it);
   }
   arenas.pop_back();
+  std::erase_if(intrinsics,
+                [this](const auto &entry) { return !getVar(entry.second); });
 }
 
 } // namespace ir

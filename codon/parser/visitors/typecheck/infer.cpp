@@ -791,7 +791,7 @@ ir::Func *TypecheckVisitor::makeIRFunction(
                                        types, r->ast->hasAttribute(Attr::CVarArg));
   irType->setAstType(r->type->shared_from_this());
   fn->realize(irType, names);
-  // TODO: move to IR maybe? why is it needed here?!
+  // Identify builtins at the frontend boundary; CIR consumers use intrinsic IDs.
   if (auto *internal = ir::cast<ir::InternalFunc>(fn)) {
     if (r->type->getFuncName() == getMangledMethod("", "type", "_ref_alloc")) {
       internal->setIntrinsic(ir::InternalFunc::Intrinsic::ALLOCATE,
@@ -804,6 +804,14 @@ ir::Func *TypecheckVisitor::makeIRFunction(
                              makeIRType(extractFuncGeneric(r->getType())->getClass()));
     } else if (r->type->getFuncName() == getMangledMethod("", "TypeInfo", "_lookup")) {
       internal->setIntrinsic(ir::InternalFunc::Intrinsic::TYPEINFO_LOOKUP);
+    } else if (unmangledName == "__new__" &&
+               ir::isA<ir::RecordType>(internal->getParentType())) {
+      internal->setIntrinsic(ir::InternalFunc::Intrinsic::RECORD_NEW,
+                             ir::cast<ir::FuncType>(irType)->getReturnType());
+    } else if (r->type->getFuncName() ==
+               getMangledMethod("", "Generator", "__promise__")) {
+      internal->setIntrinsic(ir::InternalFunc::Intrinsic::GENERATOR_PROMISE,
+                             internal->getParentType());
     }
   }
   return fn;

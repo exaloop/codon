@@ -374,13 +374,13 @@ void TranslateVisitor::visit(DotExpr *expr) {
     auto t = TypecheckVisitor(ctx->cache->typeCtx).extractType(ei->getType());
     auto type = ctx->find(t->realizedName())->getType();
     seqassert(type, "{} is not a type", ei->getValue());
-    result = make<ir::TypePropertyInstr>(
-        expr, type,
-        expr->getMember() == "__atomic__"
-            ? ir::TypePropertyInstr::Property::IS_ATOMIC
-            : (expr->getMember() == "__contents_atomic__"
-                   ? ir::TypePropertyInstr::Property::IS_CONTENT_ATOMIC
-                   : ir::TypePropertyInstr::Property::SIZEOF));
+    auto kind = expr->getMember() == "__atomic__"
+                    ? ir::InternalFunc::Intrinsic::IS_ATOMIC
+                    : (expr->getMember() == "__contents_atomic__"
+                           ? ir::InternalFunc::Intrinsic::IS_CONTENT_ATOMIC
+                           : ir::InternalFunc::Intrinsic::SIZEOF);
+    auto *intrinsic = ctx->getModule()->getIntrinsic(kind, type);
+    result = make<ir::CallInstr>(expr, make<ir::VarValue>(expr, intrinsic));
   } else {
     auto name = expr->getExpr()->getClassType()->name;
     auto cls = in(ctx->cache->classes, name);

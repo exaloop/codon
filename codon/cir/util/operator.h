@@ -111,7 +111,6 @@ public:
   LAMBDA_VISIT(InsertInstr);
   LAMBDA_VISIT(CallInstr);
   LAMBDA_VISIT(StackAllocInstr);
-  LAMBDA_VISIT(TypePropertyInstr);
   LAMBDA_VISIT(YieldInInstr);
   LAMBDA_VISIT(TernaryInstr);
   LAMBDA_VISIT(BreakInstr);

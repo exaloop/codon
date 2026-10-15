@@ -284,46 +284,6 @@ protected:
   int doReplaceUsedType(const std::string &name, Type *newType) override;
 };
 
-/// Instr representing getting information about a type.
-class TypePropertyInstr : public AcceptorExtend<TypePropertyInstr, Instr> {
-public:
-  enum Property { IS_ATOMIC, IS_CONTENT_ATOMIC, SIZEOF };
-
-private:
-  /// the type being inspected
-  Type *inspectType;
-  /// the property being checked
-  Property property;
-
-public:
-  static const char NodeId;
-
-  /// Constructs a type property instruction.
-  /// @param type the type being inspected
-  /// @param name the name
-  explicit TypePropertyInstr(Type *type, Property property, std::string name = "")
-      : AcceptorExtend(std::move(name)), inspectType(type), property(property) {}
-
-  /// @return the type being inspected
-  Type *getInspectType() { return inspectType; }
-  /// @return the type being inspected
-  Type *getInspectType() const { return inspectType; }
-  /// Sets the type being inspected
-  /// @param t the new type
-  void setInspectType(Type *t) { inspectType = t; }
-
-  /// @return the property being inspected
-  Property getProperty() const { return property; }
-  /// Sets the property.
-  /// @param p the new value
-  void setProperty(Property p) { property = p; }
-
-protected:
-  Type *doGetType() const override;
-  std::vector<Type *> doGetUsedTypes() const override { return {inspectType}; }
-  int doReplaceUsedType(const std::string &name, Type *newType) override;
-};
-
 /// Instr representing a Python yield expression.
 class YieldInInstr : public AcceptorExtend<YieldInInstr, Instr> {
 private:

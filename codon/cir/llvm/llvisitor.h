@@ -237,9 +237,11 @@ private:
   /// type; chooses a proven AOT offset/resolver or a dynamic MRO search
   llvm::Value *getFieldAddress(llvm::Value *object, RefType *type,
                                const std::string &field);
-  /// Emit allocation, descriptor access, or virtual lookup for an RTTI intrinsic
-  llvm::Value *codegenRuntimeIntrinsic(const InternalFunc *function,
-                                       const std::vector<llvm::Value *> &args);
+  /// Evaluate a type query with this module's target layout.
+  llvm::Constant *codegenTypeQuery(const InternalFunc *function);
+  /// Emit a compiler intrinsic, including its normal control-flow effects.
+  llvm::Value *codegenIntrinsic(const InternalFunc *function,
+                                const std::vector<llvm::Value *> &args);
   llvm::StructType *getPadType();
   llvm::StructType *getExceptionType();
   llvm::GlobalVariable *getTypeIdxVar(Type *catchType);
@@ -471,7 +473,6 @@ public:
   void visit(const InsertInstr *) override;
   void visit(const CallInstr *) override;
   void visit(const StackAllocInstr *) override;
-  void visit(const TypePropertyInstr *) override;
   void visit(const YieldInInstr *) override;
   void visit(const TernaryInstr *) override;
   void visit(const BreakInstr *) override;

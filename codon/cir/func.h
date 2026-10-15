@@ -4,6 +4,7 @@
 
 #include "codon/cir/flow.h"
 #include "codon/cir/util/iterators.h"
+#include "codon/cir/util/side_effect.h"
 #include "codon/cir/var.h"
 
 namespace codon {
@@ -181,7 +182,12 @@ public:
     ALLOCATION_SIZE,
     TYPEINFO,
     TYPEINFO_LOOKUP,
-    VIRTUAL_LOOKUP
+    VIRTUAL_LOOKUP,
+    RECORD_NEW,
+    GENERATOR_PROMISE,
+    SIZEOF,
+    IS_ATOMIC,
+    IS_CONTENT_ATOMIC
   };
 
 private:
@@ -199,6 +205,14 @@ public:
     intrinsic = kind;
     intrinsicType = type;
   }
+
+  static const char *getIntrinsicName(Intrinsic kind);
+  const char *getIntrinsicName() const { return getIntrinsicName(intrinsic); }
+  static bool isTypeQuery(Intrinsic kind);
+  bool isTypeQuery() const { return isTypeQuery(intrinsic); }
+  bool hasValidIntrinsicSignature() const;
+  util::SideEffectStatus getIntrinsicSideEffectStatus() const;
+  bool intrinsicDerivesFromArguments() const;
 
 protected:
   std::vector<Type *> doGetUsedTypes() const override {

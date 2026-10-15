@@ -131,6 +131,8 @@ void LLVMVisitor::registerGlobal(const Var *var) {
     return;
 
   if (auto *f = cast<Func>(var)) {
+    if (auto *internal = cast<InternalFunc>(f); internal && internal->isTypeQuery())
+      return;
     auto *function = makeLLVMFunction(f);
     insertFunc(f, function);
     if (auto *internal = cast<InternalFunc>(f)) {
@@ -215,6 +217,21 @@ llvm::Value *LLVMVisitor::getVar(const Var *var) {
 
 llvm::Function *LLVMVisitor::getFunc(const Func *func) {
   auto it = funcs.find(func->getId());
+  if (auto *internal = cast<InternalFunc>(func);
+      internal && internal->isTypeQuery() && (it == funcs.end() || !it->second)) {
+    // Direct queries never need an LLVM function. Materialize a wrapper only
+    // when its address is used, without changing the caller's insertion point.
+    auto *wrapper = makeLLVMFunction(internal);
+    wrapper->setLinkage(llvm::GlobalValue::PrivateLinkage);
+    wrapper->addFnAttr(llvm::Attribute::AlwaysInline);
+    wrapper->setDoesNotAccessMemory();
+    wrapper->setDoesNotThrow();
+    wrapper->setWillReturn();
+    llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", wrapper));
+    builder.CreateRet(codegenTypeQuery(internal));
+    funcs[func->getId()] = wrapper;
+    return wrapper;
+  }
   if (options->jit) {
     if (it != funcs.end()) {
       if (!it->second) { // if value is null, it's from another module
@@ -1711,43 +1728,16 @@ void LLVMVisitor::visit(const ExternalFunc *x) {
     func->setDoesNotAccessMemory();
 }
 
-namespace {
-// internal function type checking
-template <typename ParentType>
-bool internalFuncMatchesIgnoreArgs(const std::string &name, const InternalFunc *x) {
-  return name == x->getUnmangledName() && cast<ParentType>(x->getParentType());
-}
-
-template <typename ParentType, typename... ArgTypes, std::size_t... Index>
-bool internalFuncMatches(const std::string &name, const InternalFunc *x,
-                         std::index_sequence<Index...>) {
-  auto *funcType = cast<FuncType>(x->getType());
-  if (name != x->getUnmangledName() ||
-      std::distance(funcType->begin(), funcType->end()) != sizeof...(ArgTypes))
-    return false;
-  std::vector<Type *> argTypes(funcType->begin(), funcType->end());
-  std::vector<bool> m = {bool(cast<ParentType>(x->getParentType())),
-                         bool(cast<ArgTypes>(argTypes[Index]))...};
-  const bool match = std::all_of(m.begin(), m.end(), [](bool b) { return b; });
-  return match;
-}
-
-template <typename ParentType, typename... ArgTypes>
-bool internalFuncMatches(const std::string &name, const InternalFunc *x) {
-  return internalFuncMatches<ParentType, ArgTypes...>(
-      name, x, std::make_index_sequence<sizeof...(ArgTypes)>());
-}
-} // namespace
-
 void LLVMVisitor::visit(const InternalFunc *x) {
+  if (!x->hasValidIntrinsicSignature())
+    compilationError("invalid intrinsic signature: " +
+                     std::string(x->getIntrinsicName()));
+  if (x->isTypeQuery())
+    return;
   func = M->getFunction(getNameForFunction(x));
   coro = {};
   seqassertn(func, "{} not inserted", *x);
   setDebugInfoForNode(x);
-
-  Type *parentType = x->getParentType();
-  auto *funcType = cast<FuncType>(x->getType());
-  std::vector<Type *> argTypes(funcType->begin(), funcType->end());
 
   func->setLinkage(llvm::GlobalValue::PrivateLinkage);
   func->addFnAttr(llvm::Attribute::AttrKind::AlwaysInline);
@@ -1757,37 +1747,9 @@ void LLVMVisitor::visit(const InternalFunc *x) {
   }
   block = llvm::BasicBlock::Create(*context, "entry", func);
   B->SetInsertPoint(block);
-  llvm::Value *result = nullptr;
-
-  if (x->getIntrinsic() != InternalFunc::Intrinsic::NONE) {
-    result = codegenRuntimeIntrinsic(x, args);
-    if (B->GetInsertBlock()->getTerminator())
-      return;
-  } else if (internalFuncMatches<GeneratorType, GeneratorType>("__promise__", x)) {
-    auto *generatorType = cast<GeneratorType>(parentType);
-    auto *baseType = getLLVMType(generatorType->getBase());
-    if (baseType->isVoidTy()) {
-      result = llvm::ConstantPointerNull::get(B->getVoidTy()->getPointerTo());
-    } else {
-      llvm::FunctionCallee coroPromise =
-          llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::coro_promise);
-      auto *aln = B->getInt32(M->getDataLayout().getPrefTypeAlign(baseType).value());
-      auto *from = B->getFalse();
-      auto *ptr = B->CreateCall(coroPromise, {args[0], aln, from});
-      result = ptr;
-    }
-  }
-
-  else if (internalFuncMatchesIgnoreArgs<RecordType>("__new__", x)) {
-    auto *recordType = cast<RecordType>(cast<FuncType>(x->getType())->getReturnType());
-    seqassertn(args.size() == std::distance(recordType->begin(), recordType->end()),
-               "args size does not match: {} vs {}", args.size(),
-               std::distance(recordType->begin(), recordType->end()));
-    result = llvm::UndefValue::get(getLLVMType(recordType));
-    for (auto i = 0; i < args.size(); i++) {
-      result = B->CreateInsertValue(result, args[i], i);
-    }
-  }
+  auto *result = codegenIntrinsic(x, args);
+  if (B->GetInsertBlock()->getTerminator())
+    return;
 
   seqassertn(result, "internal function {} not found", *x);
   B->CreateRet(result);
@@ -3372,6 +3334,16 @@ void LLVMVisitor::visit(const InsertInstr *x) {
 
 void LLVMVisitor::visit(const CallInstr *x) {
   B->SetInsertPoint(block);
+  if (auto *callee = cast<VarValue>(x->getCallee())) {
+    if (auto *internal = cast<InternalFunc>(callee->getVar());
+        internal && internal->isTypeQuery()) {
+      if (x->numArgs() || x->getThunkID())
+        compilationError(
+            "type query cannot have runtime arguments or virtual dispatch");
+      value = codegenTypeQuery(internal);
+      return;
+    }
+  }
   process(x->getCallee());
   auto *f = value;
   auto *funcType = getLLVMFuncType(x->getCallee()->getType());
@@ -3513,24 +3485,6 @@ void LLVMVisitor::visit(const CallInstr *x) {
   }
 
   value = callResult;
-}
-
-void LLVMVisitor::visit(const TypePropertyInstr *x) {
-  B->SetInsertPoint(block);
-  switch (x->getProperty()) {
-  case TypePropertyInstr::Property::SIZEOF:
-    value = B->getInt64(
-        M->getDataLayout().getTypeAllocSize(getLLVMType(x->getInspectType())));
-    break;
-  case TypePropertyInstr::Property::IS_ATOMIC:
-    value = B->getInt8(x->getInspectType()->isAtomic() ? 1 : 0);
-    break;
-  case TypePropertyInstr::Property::IS_CONTENT_ATOMIC:
-    value = B->getInt8(x->getInspectType()->isContentAtomic() ? 1 : 0);
-    break;
-  default:
-    seqassertn(0, "unknown type property");
-  }
 }
 
 void LLVMVisitor::visit(const YieldInInstr *x) {
@@ -4207,11 +4161,52 @@ llvm::Value *LLVMVisitor::getFieldAddress(llvm::Value *object, RefType *type,
                       B->CreateAdd(offset, B->getInt64(localOffset)));
 }
 
-llvm::Value *
-LLVMVisitor::codegenRuntimeIntrinsic(const InternalFunc *function,
-                                     const std::vector<llvm::Value *> &args) {
+llvm::Constant *LLVMVisitor::codegenTypeQuery(const InternalFunc *function) {
+  if (!function->hasValidIntrinsicSignature())
+    compilationError("invalid type query signature");
+  auto *type = function->getIntrinsicType();
+  switch (function->getIntrinsic()) {
+  case InternalFunc::Intrinsic::SIZEOF:
+    return B->getInt64(M->getDataLayout().getTypeAllocSize(getLLVMType(type)));
+  case InternalFunc::Intrinsic::IS_ATOMIC:
+    return B->getInt8(type->isAtomic() ? 1 : 0);
+  case InternalFunc::Intrinsic::IS_CONTENT_ATOMIC:
+    return B->getInt8(type->isContentAtomic() ? 1 : 0);
+  default:
+    compilationError("intrinsic is not a type query");
+    return nullptr;
+  }
+}
+
+llvm::Value *LLVMVisitor::codegenIntrinsic(const InternalFunc *function,
+                                           const std::vector<llvm::Value *> &args) {
   using Intrinsic = InternalFunc::Intrinsic;
   switch (function->getIntrinsic()) {
+  case Intrinsic::SIZEOF:
+  case Intrinsic::IS_ATOMIC:
+  case Intrinsic::IS_CONTENT_ATOMIC:
+    return codegenTypeQuery(function);
+  case Intrinsic::RECORD_NEW: {
+    auto *type = cast<RecordType>(function->getIntrinsicType());
+    seqassertn(type && args.size() == std::distance(type->begin(), type->end()),
+               "invalid record constructor");
+    llvm::Value *result = llvm::UndefValue::get(getLLVMType(type));
+    for (size_t index = 0; index < args.size(); ++index)
+      result = B->CreateInsertValue(result, args[index], index);
+    return result;
+  }
+  case Intrinsic::GENERATOR_PROMISE: {
+    auto *type = cast<GeneratorType>(function->getIntrinsicType());
+    seqassertn(type && args.size() == 1, "invalid generator promise access");
+    auto *baseType = getLLVMType(type->getBase());
+    if (baseType->isVoidTy())
+      return llvm::ConstantPointerNull::get(B->getPtrTy());
+    auto promise =
+        llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::coro_promise);
+    auto *alignment =
+        B->getInt32(M->getDataLayout().getPrefTypeAlign(baseType).value());
+    return B->CreateCall(promise, {args[0], alignment, B->getFalse()});
+  }
   case Intrinsic::ALLOCATION_SIZE: {
     auto *type = cast<RefType>(function->getIntrinsicType());
     seqassertn(type, "allocation size requires a reference type");

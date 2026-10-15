@@ -117,6 +117,18 @@ TEST(JITRTTITest, RefreshesDescriptorsAndLookupAcrossCells) {
                          "plain = CellPlain(41)\n"
                          "assert not TypeInfo.cache(CellPlain).rtti\n"
                          "assert type._ref_size(CellPlain) == int.__elemsize__\n"
+                         "assert CellPlain.__elemsize__ == Ptr[int].__elemsize__\n"
+                         "assert not CellPlain.__atomic__\n"
+                         "assert CellPlain.__contents_atomic__\n"
+                         "assert type(()).__elemsize__ == 0\n"
+                         "@tuple\nclass CellMixed:\n"
+                         "    owner: CellPlain\n    count: int\n"
+                         "assert not CellMixed.__atomic__\n"
+                         "assert CellMixed.__contents_atomic__\n"
+                         "class CellOwner:\n    owner: CellPlain\n"
+                         "assert not CellOwner.__contents_atomic__\n"
+                         "def saved_size_query(): return CellMixed.__elemsize__\n"
+                         "assert saved_size_query() == 2 * int.__elemsize__\n"
                          "def increment_plain(value: CellPlain):\n"
                          "    value.value += 1\n"
                          "    return value.value\n"
@@ -133,6 +145,11 @@ class CellChild(CellBase):
 old_object = CellChild()
 base: CellBase = old_object
 assert dispatch_old(base) == 42
+class CellPayload(CellBase):
+  left: int
+  right: int
+assert CellPayload.__elemsize__ == Ptr[int].__elemsize__
+assert type._ref_size(CellPayload) == CellPayload.__elemsize__ + 2 * int.__elemsize__
 old_info = TypeInfo.cache(CellChild)
 def lookup_id(type_id: int):
     return TypeInfo.cache(type_id).id
@@ -144,6 +161,10 @@ print("first")
     auto second =
         instance.execute("assert not TypeInfo.cache(CellPlain).rtti\n"
                          "assert type._ref_size(CellPlain) == int.__elemsize__\n"
+                         "assert CellPlain.__elemsize__ == Ptr[int].__elemsize__\n"
+                         "assert CellPlain.__contents_atomic__\n"
+                         "assert saved_size_query() == CellMixed.__elemsize__\n"
+                         "assert not CellMixed.__atomic__\n"
                          "assert __ptr__(plain.value) == "
                          "type._force_cast(__magic__.raw(plain), Ptr[int])\n"
                          "assert increment_plain(plain) == 43\n"
