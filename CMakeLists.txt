@@ -29,7 +29,7 @@ endif()
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 include_directories(.)
 
-option(SYSTEM_BLAS "Use system-provided BLAS" ON)
+option(SYSTEM_BLAS "Use system-provided BLAS" OFF)
 set(APPLE_ARM OFF)
 if (APPLE AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "arm64")
   set(APPLE_ARM ON)
