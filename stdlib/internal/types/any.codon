@@ -13,10 +13,13 @@ class Any:
         return f"Any({self._typeinfo.nice_name})"
 
     def __hash__(self):
-        return self._data.__int__().__hash__()
+        return self._real_typeinfo().value_hash(self._data)
 
     def __eq__(self, o):
-        return self._data == o._data and self._typeinfo == o._typeinfo
+        info = self._real_typeinfo()
+        if info != o._real_typeinfo():
+            return False
+        return info.value_equal(self._data, o._data)
 
     def __ne__(self, o):
         return not (self == o)

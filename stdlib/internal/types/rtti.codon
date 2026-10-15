@@ -57,6 +57,26 @@ class TypeInfo:
     def _lookup(id: int) -> TypeInfo:
         pass
 
+    @__internal__
+    def _lookup_method(self, id: int) -> cobj:
+        """Return the target for a registered method ID; trap if it is absent."""
+        pass
+
+    @__generated__
+    def _value_method_id(method: Literal[str]) -> int:
+        """Return the program's stable method ID for an erased value adapter."""
+        pass
+
+    def value_hash(self, data: Ptr[byte]) -> int:
+        """Hash an erased payload using this descriptor's registered adapter."""
+        target = self._lookup_method(TypeInfo._value_method_id('_hash_value'))
+        return Function[[Ptr[byte]], int](target)(data)
+
+    def value_equal(self, left: Ptr[byte], right: Ptr[byte]) -> bool:
+        """Compare two erased payloads of this descriptor's type."""
+        target = self._lookup_method(TypeInfo._value_method_id('_equal_values'))
+        return Function[[Ptr[byte], Ptr[byte]], bool](target)(left, right)
+
     def cache(id: int) -> TypeInfo:
         return TypeInfo._lookup(id)
 
@@ -76,6 +96,33 @@ class TypeInfo:
             if self.mro[index] == T.__id__:
                 return True
         return False
+
+    def _value(data: Ptr[byte], T: type) -> T:
+        if isinstance(T, ByVal):
+            return Ptr[T](data)[0]
+        else:
+            return type._force_cast(data, T)
+
+    def _hash_value(data: Ptr[byte], T: type) -> int:
+        value = TypeInfo._value(data, T)
+        if hasattr(value, '__hash__'):
+            return hash(value)
+        else:
+            return TypeInfo._unsupported_hash(data, T)
+
+    def _equal_values(left: Ptr[byte], right: Ptr[byte], T: type) -> bool:
+        left_value = TypeInfo._value(left, T)
+        right_value = TypeInfo._value(right, T)
+        if hasattr(left_value, '__eq__'):
+            return left_value == right_value
+        else:
+            return TypeInfo._unsupported_equal(left, right, T)
+
+    def _unsupported_hash(data: Ptr[byte], T: type) -> int:
+        raise TypeError(f"unhashable type: '{T.__name__}'")
+
+    def _unsupported_equal(left: Ptr[byte], right: Ptr[byte], T: type) -> bool:
+        raise TypeError(f"unsupported operand type(s) for ==: '{T.__name__}' and '{T.__name__}'")
 
     def wrap(arg: Ptr[u8], T: type) -> str:
         if isinstance(T, ByVal):

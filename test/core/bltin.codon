@@ -2468,6 +2468,15 @@ def test_any_tuple():
         number: int
         values: list[int]
 
+        def __eq__(self, other: Record):
+            return self.number == other.number and self.values == other.values
+
+        def __ne__(self, other: Record):
+            return not self == other
+
+        def __hash__(self):
+            return hash((self.number, self.values))
+
     @tuple
     class Nested:
         value: Any
@@ -2492,22 +2501,56 @@ def test_any_tuple():
     assert number.__unwrap__(Any) == number
     assert hash(Any(number)) == hash(number)
     distinct = box(17)
-    assert distinct != number
+    assert distinct == number
+    assert hash(number) == hash(17)
+    hash_method_id = TypeInfo._value_method_id('_hash_value')
+    equal_method_id = TypeInfo._value_method_id('_equal_values')
+    assert hash_method_id > 0 and equal_method_id > 0
+    assert hash_method_id != equal_method_id
+    integer_info = TypeInfo.cache(int)
+    hash_target = integer_info._lookup_method(hash_method_id)
+    equal_target = integer_info._lookup_method(equal_method_id)
+    assert Function[[Ptr[byte]], int](hash_target)(number._data) == hash(17)
+    assert Function[[Ptr[byte], Ptr[byte]], bool](equal_target)(number._data, distinct._data)
+    for index in range(integer_info.n_methods):
+        slot = integer_info.methods[index]
+        if slot.id:
+            assert integer_info._lookup_method(slot.id) == slot.target
+    field_names = [name for name, member_type, offset in TypeInfo.cache(TypeInfo)]
+    assert 'value_hash' not in field_names and 'value_equal' not in field_names
+    assert box(18) != number
+    assert box(17.0) != number
+    assert box(True) != box(1)
+    assert box('value') == box('value')
+    assert box('value') != box('other')
+    assert hash(box('value')) == hash('value')
+    assert box((3, 'value')) == box((3, 'value'))
+    assert hash(box((3, 'value'))) == hash((3, 'value'))
+    assert box([3, 5]) == box([3, 5])
+    assert hash(box([3, 5])) == hash([3, 5])
+    nan = box(float('nan'))
+    assert nan != nan
     keys = {number: 'original'}
     assert keys[Any(number)] == 'original'
     keys[distinct] = 'distinct'
-    assert len(keys) == 2
-    assert len({number, Any(number), distinct}) == 2
+    assert len(keys) == 1 and keys[number] == 'distinct'
+    assert len({number, Any(number), distinct}) == 1
 
     record = Record(41, [1, 2])
     boxed = box(record)
     alias = boxed
     assert Any(record) == boxed
+    assert Any(Record(41, [1, 2])) == boxed
+    assert Any(Record(40, [1, 2])) != boxed
     saved_hash = hash(boxed)
+    assert saved_hash == hash(record)
     alias.__setattr__('number', 42)
     assert record.number == 42
     assert boxed.__getattr__('number', int) == 42
-    assert hash(boxed) == saved_hash
+    assert hash(boxed) == hash(record)
+    assert hash(boxed) != saved_hash
+    assert boxed.__getattr__('number') == box(42)
+    assert hash(boxed.__getattr__('number')) == hash(42)
     assert boxed.__unwrap__(Record) is record
     assert boxed.__getattr__('values', list[int]) is record.values
     try:
@@ -2542,6 +2585,8 @@ def test_any_tuple():
     assert Any(List[Any]()).__cast__(List[Any]) == []
     integer_values = Any([3, 5]).__cast__(List[Any])
     assert [value.__unwrap__(int) for value in integer_values] == [3, 5]
+    assert integer_values[0] == box(3)
+    assert hash(integer_values[1]) == hash(5)
     reference_values = Any([record]).__cast__(List[Any])
     assert reference_values[0].__unwrap__(Record) is record
     tuple_values = Any((17, 'text', number)).__cast__(List[Any])
@@ -2564,5 +2609,94 @@ def test_any_tuple():
     assert retained[0].__unwrap__(Record).values == [7, 3]
     assert retained[1].__unwrap__(Tuple[str, list[int]]) == ('owned', [8, 9])
     assert retained[2].__unwrap__(int) == 71
+
+    class Missing:
+        value: int
+
+    missing = box(Missing(1))
+    assert missing != number
+    try:
+        missing == missing
+        assert False
+    except TypeError:
+        pass
+    try:
+        hash(missing)
+        assert False
+    except TypeError:
+        pass
+
+    unsupported_values = [box([Missing(1)]), box((Missing(1),))]
+    for unsupported in unsupported_values:
+        try:
+            hash(unsupported)
+            assert False
+        except TypeError:
+            pass
+        try:
+            unsupported == unsupported
+            assert False
+        except TypeError:
+            pass
+    assert box(17) == number and hash(number) == hash(17)
+
+    class RawValue:
+        value: int
+
+        def __eq__(self, other: RawValue):
+            return self.value == other.value
+
+        def __hash__(self):
+            return hash(self.value)
+
+    raw_value = RawValue(29)
+    raw_box = Any(TypeInfo.cache(RawValue.__id__), raw_value.__raw__())
+    assert raw_box == raw_box
+    assert hash(raw_box) == hash(29)
+
+    class RawBase:
+        def __eq__(self, other: RawBase):
+            return True
+
+        def __hash__(self):
+            return 31
+
+    class RawChild(RawBase):
+        pass
+
+    raw_child = RawChild()
+    dynamic_box = Any(get_typeinfo(raw_child), raw_child.__raw__())
+    assert dynamic_box == dynamic_box
+    assert hash(dynamic_box) == 31
+
+    @tuple
+    class ReflectedValue:
+        value: float
+
+    class ReflectedHolder:
+        value: ReflectedValue
+
+    reflected = box(ReflectedHolder(ReflectedValue(7.5))).__getattr__('value')
+    assert reflected == reflected
+    assert hash(reflected) == hash(ReflectedValue(7.5))
+
+    class Raising:
+        def __eq__(self, other: Raising) -> bool:
+            raise ValueError('equality')
+
+        def __hash__(self) -> int:
+            raise ValueError('hash')
+
+    raising = box(Raising())
+    try:
+        raising == raising
+        assert False
+    except ValueError as error:
+        assert str(error) == 'equality'
+    try:
+        hash(raising)
+        assert False
+    except ValueError as error:
+        assert str(error) == 'hash'
 
 test_any_tuple()

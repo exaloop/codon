@@ -42,6 +42,12 @@ std::string TypecheckVisitor::vTableSignature(types::FuncType *ft) const {
   return fmt::format("{}.{}({})", base->name, getUnmangledName(ft->getFuncName()), f1);
 }
 
+size_t TypecheckVisitor::valueMethodId(const std::string &method) {
+  auto [entry, inserted] =
+      ctx->cache->thunkIds.emplace("$any." + method, ctx->cache->thunkIds.size() + 1);
+  return entry->second;
+}
+
 void TypecheckVisitor::prepareVTables() {
   auto typed_argument = [&](TypePtr type) -> Expr * {
     auto *value = N<NoneExpr>();
@@ -269,6 +275,118 @@ void TypecheckVisitor::prepareVTables() {
         });
   };
 
+  auto realize_value_methods = [&]() {
+    auto *hashFunction = getFunction(getMangledMethod("", "Any", "__hash__"));
+    auto *equalFunction = getFunction(getMangledMethod("", "Any", "__eq__"));
+    bool needHash = hashFunction && !hashFunction->realizations.empty();
+    bool needEqual = equalFunction && !equalFunction->realizations.empty();
+    if (!needHash && !needEqual)
+      return false;
+    std::vector<ir::Type *> pending;
+    auto *getInfo = getFunction(getMangledMethod("", "TypeInfo", "_get"));
+    for (const auto &[name, realization] : sorted_view(getInfo->realizations))
+      pending.push_back(
+          makeIRType(extractFuncGeneric(realization->getType())->getClass()));
+    auto *getDynamicInfo =
+        getFunction(getMangledFunc("std.internal.types.rtti", "get_typeinfo"));
+    for (const auto &[name, realization] : sorted_view(getDynamicInfo->realizations))
+      pending.push_back(
+          makeIRType(extractFuncArgType(realization->getType())->getClass()));
+    for (auto iterator = ctx->cache->module->types_begin();
+         iterator != ctx->cache->module->types_end(); ++iterator) {
+      auto *type = *iterator;
+      if (auto *info = type->getRuntimeInfo(); info && info->valueAccessed)
+        pending.push_back(type);
+    }
+    std::set<ir::Type *> seen;
+    bool added = false;
+    while (!pending.empty()) {
+      auto *type = pending.back();
+      pending.pop_back();
+      if (!type || !seen.insert(type).second)
+        continue;
+      if (type->getAstType() && type->getAstType()->is(getMangledClass("", "Any")))
+        continue;
+      for (auto *used : type->getUsedTypes())
+        pending.push_back(used);
+      auto *info = type->getRuntimeInfo();
+      if (!info)
+        continue;
+      auto *receiver = type->getAstType()->getClass();
+      for (const auto &descendant : sorted_view(getClass(receiver)->descendants)) {
+        for (const auto &[name, realization] :
+             sorted_view(getClass(descendant)->realizations)) {
+          for (const auto &base : realization->bases) {
+            if (base->realizedName() == receiver->realizedName()) {
+              pending.push_back(realization->ir);
+              break;
+            }
+          }
+        }
+      }
+      auto install = [&](const std::string &member, size_t count) {
+        auto id = valueMethodId(member);
+        if (info->methods.count(id))
+          return;
+        auto pointer =
+            getClassFieldTypes(getStdLibType(getMangledClass("", "Any"))->getClass())
+                .front();
+        std::vector<CallArg> arguments;
+        for (size_t index = 0; index < count; ++index)
+          arguments.emplace_back("", typed_argument(pointer));
+        arguments.emplace_back("", N<IdExpr>(receiver->realizedName()));
+        auto oldContext = ctx;
+        auto oldLevel = getLogger().level;
+        auto oldErrors = ctx->cache->errors;
+        std::vector<std::pair<std::shared_ptr<TypeContext>, TypeContext>> contexts;
+        for (const auto &[name, imported] : ctx->cache->imports)
+          if (imported.ctx)
+            contexts.emplace_back(imported.ctx, *imported.ctx);
+        std::set<std::pair<std::string, std::string>> incomplete;
+        for (const auto &[name, function] : ctx->cache->functions)
+          for (const auto &[key, realization] : function.realizations)
+            if (!realization->ir)
+              incomplete.emplace(name, key);
+        CallExpr *call = nullptr;
+        try {
+          call = cast<CallExpr>(transform(N<CallExpr>(
+              N<IdExpr>(getMangledMethod("", "TypeInfo", member)), arguments)));
+        } catch (const exc::ParserException &) {
+          ctx = oldContext;
+          getLogger().level = oldLevel;
+          ctx->cache->errors = std::move(oldErrors);
+          for (auto &[active, saved] : contexts) {
+            for (const auto &[name, items] : *active)
+              if (items.back()->isGlobal() && !saved.Context<TypecheckItem>::find(name))
+                saved.addToplevel(name, items.back());
+            *active = std::move(saved);
+          }
+          for (auto &[name, function] : ctx->cache->functions) {
+            for (auto iterator = function.realizations.begin();
+                 iterator != function.realizations.end();) {
+              if (!iterator->second->ir && !incomplete.count({name, iterator->first}))
+                iterator = function.realizations.erase(iterator);
+              else
+                ++iterator;
+            }
+          }
+          auto fallback = count == 1 ? "_unsupported_hash" : "_unsupported_equal";
+          call = cast<CallExpr>(transform(N<CallExpr>(
+              N<IdExpr>(getMangledMethod("", "TypeInfo", fallback)), arguments)));
+        }
+        auto *resolved = call->getExpr()->getType()->getFunc();
+        info->methods[id] =
+            getFunction(resolved)->realizations.at(resolved->realizedName())->ir;
+        added = true;
+      };
+      if (needHash)
+        install("_hash_value", 1);
+      if (needEqual)
+        install("_equal_values", 2);
+    }
+    return added;
+  };
+
   for (bool added = true; added;) {
     added = false;
     for (const auto &[cls_name, cls] : sorted_view(ctx->cache->classes)) {
@@ -291,6 +409,7 @@ void TypecheckVisitor::prepareVTables() {
     auto superCalls = ctx->cache->superCalls;
     for (const auto &[id, signature] : superCalls)
       added |= realize_descendant_supers(id, signature.get());
+    added |= realize_value_methods();
   }
 }
 
@@ -502,6 +621,10 @@ SuiteStmt *TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     return generateTupleMulAST(type);
   } else if (startswith(ast->name, getMangledMethod("", "TypeInfo", "_init_params"))) {
     return generateTypeInfoInitAST(type);
+  } else if (startswith(ast->name,
+                        getMangledMethod("", "TypeInfo", "_value_method_id"))) {
+    return N<SuiteStmt>(N<ReturnStmt>(
+        N<IntExpr>(valueMethodId(getStrLiteral(extractFuncGeneric(type))))));
   } else if (startswith(ast->name, getMangledMethod("", "Super", "_dispatch"))) {
     return generateSuperDispatchAST(type);
   }

@@ -117,6 +117,8 @@ const char *InternalFunc::getIntrinsicName(Intrinsic kind) {
     return "typeinfo";
   case Intrinsic::TYPEINFO_LOOKUP:
     return "typeinfo_lookup";
+  case Intrinsic::TYPEINFO_METHOD_LOOKUP:
+    return "typeinfo_method_lookup";
   case Intrinsic::VIRTUAL_LOOKUP:
     return "virtual_lookup";
   case Intrinsic::RECORD_NEW:
@@ -165,6 +167,10 @@ bool InternalFunc::hasValidIntrinsicSignature() const {
     return !intrinsicType && arguments.size() == 1 &&
            arguments[0] == module->getIntType() &&
            (isA<RefType>(result) || isA<PointerType>(result));
+  case Intrinsic::TYPEINFO_METHOD_LOOKUP:
+    return !intrinsicType && arguments.size() == 2 &&
+           (isA<RefType>(arguments[0]) || isA<PointerType>(arguments[0])) &&
+           arguments[1] == module->getIntType() && isA<PointerType>(result);
   case Intrinsic::VIRTUAL_LOOKUP:
     return isA<RefType>(intrinsicType) && arguments.size() == 2 &&
            arguments[0] == intrinsicType && arguments[1] == module->getIntType() &&
@@ -202,6 +208,7 @@ util::SideEffectStatus InternalFunc::getIntrinsicSideEffectStatus() const {
     // An unused allocation can disappear, but two allocations are not equal.
     return util::NO_SIDE_EFFECT;
   case Intrinsic::TYPEINFO_LOOKUP:
+  case Intrinsic::TYPEINFO_METHOD_LOOKUP:
   case Intrinsic::VIRTUAL_LOOKUP:
     // Lookups can trap and observe registry/method-table updates in the JIT.
     return util::UNKNOWN;

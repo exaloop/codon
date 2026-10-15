@@ -170,7 +170,7 @@ private:
   /// Last emitted semantic-thunk -> CIR-function-ID map for each type. Comparing
   /// these maps detects JIT method-table changes without retaining LLVM pointers.
   std::unordered_map<int64_t, std::map<size_t, id_t>> emittedTypeMethods;
-  /// Pending (existing JIT descriptor, new initializer) updates. Only method-table
+  /// Pending (existing JIT descriptor, new initializer) updates. Only dispatch
   /// fields are copied before publishing the registry; layout fields stay immutable.
   std::vector<std::pair<llvm::GlobalVariable *, llvm::Constant *>> typeInfoUpdates;
   /// Whether the shared registry global has been emitted; later JIT modules refer

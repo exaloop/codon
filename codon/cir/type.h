@@ -82,8 +82,10 @@ public:
     std::vector<Type *> fieldOwners;
     /// runtime reflection types for generic parameters
     std::vector<Type *> parameters;
-    /// semantic thunk IDs mapped to realized method targets
+    /// semantic method IDs mapped to virtual targets and erased value adapters
     std::map<size_t, Func *> methods;
+    /// true if __id__ was accessed, making this type a value-callback discovery root
+    bool valueAccessed = false;
     /// BaseException type in the MRO, or null for non-exception types
     Type *exceptionBase = nullptr;
     /// SystemExit type in the MRO, or null otherwise
@@ -104,14 +106,15 @@ public:
 
   /// @return types referenced by the type's structure or runtime metadata
   std::vector<Type *> getUsedTypes() const final;
-  /// @return runtime method targets referenced by this type
+  /// @return runtime method targets and value callbacks referenced by this type
   std::vector<Var *> getUsedVariables() final;
-  /// @return runtime method targets referenced by this type
+  /// @return runtime method targets and value callbacks referenced by this type
   std::vector<const Var *> getUsedVariables() const final;
-  /// Replaces or removes runtime method targets with the given variable ID.
+  /// Replaces runtime method targets and value callbacks with the given variable ID.
+  /// A null replacement erases all matching method-table entries.
   /// @param id the ID of the function to replace
-  /// @param newVar the replacement function, or null to remove matching entries
-  /// @return the number of method entries replaced or removed
+  /// @param newVar the replacement function, or null to remove matching references
+  /// @return the number of method-table entries replaced or removed
   int replaceUsedVariable(id_t id, Var *newVar) final;
   using Node::replaceUsedVariable;
   int replaceUsedType(const std::string &name, Type *newType) final {

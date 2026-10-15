@@ -804,6 +804,9 @@ ir::Func *TypecheckVisitor::makeIRFunction(
                              makeIRType(extractFuncGeneric(r->getType())->getClass()));
     } else if (r->type->getFuncName() == getMangledMethod("", "TypeInfo", "_lookup")) {
       internal->setIntrinsic(ir::InternalFunc::Intrinsic::TYPEINFO_LOOKUP);
+    } else if (r->type->getFuncName() ==
+               getMangledMethod("", "TypeInfo", "_lookup_method")) {
+      internal->setIntrinsic(ir::InternalFunc::Intrinsic::TYPEINFO_METHOD_LOOKUP);
     } else if (unmangledName == "__new__" &&
                ir::isA<ir::RecordType>(internal->getParentType())) {
       internal->setIntrinsic(ir::InternalFunc::Intrinsic::RECORD_NEW,

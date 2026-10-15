@@ -279,6 +279,11 @@ public:
   friend class types::UnionType;
 
 private: // Helpers
+  /// Returns a stable value-adapter ID from the shared virtual-method ID registry.
+  /// @param method the adapter name, kept in a separate internal key namespace
+  /// @return the existing or newly allocated nonzero method ID
+  size_t valueMethodId(const std::string &method);
+
   std::shared_ptr<std::vector<std::pair<std::string, types::Type *>>>
   unpackTupleTypes(const Expr *);
   std::tuple<bool, bool, Stmt *, std::vector<ASTNode *>>

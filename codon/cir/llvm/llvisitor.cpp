@@ -3756,7 +3756,7 @@ llvm::GlobalVariable *LLVMVisitor::getRuntimeTypeInfo(Type *type) {
   if (auto *existing = M->getNamedGlobal(name))
     return existing;
   // AOT descriptors are constants. A JIT descriptor keeps its symbol/address
-  // and immutable layout across cells; only its method table is refreshed.
+  // and immutable layout across cells; only its dispatch fields are refreshed.
   // Existing objects must not keep a stale descriptor address.
   auto *result =
       new llvm::GlobalVariable(*M, getRuntimeTypeInfoType(), !options->jit,
@@ -4265,11 +4265,14 @@ llvm::Value *LLVMVisitor::codegenIntrinsic(const InternalFunc *function,
     B->CreateUnreachable();
     return nullptr;
   }
-  case Intrinsic::VIRTUAL_LOOKUP: {
+  case Intrinsic::VIRTUAL_LOOKUP:
+  case Intrinsic::TYPEINFO_METHOD_LOOKUP: {
     // Probe the keyed table emitted by getRuntimeTypeInfo(), using the same hash
     // and wraparound rule. Semantic thunk IDs stay stable even when a JIT update
     // changes capacity and moves entries to different physical slots.
-    auto *info = B->CreateLoad(B->getPtrTy(), args.at(0));
+    auto *info = function->getIntrinsic() == Intrinsic::VIRTUAL_LOOKUP
+                     ? B->CreateLoad(B->getPtrTy(), args.at(0))
+                     : args.at(0);
     auto *count = loadRuntimeField(info, runtime::METHOD_COUNT);
     auto *valid = llvm::BasicBlock::Create(*context, "method.valid", func);
     auto *probe = llvm::BasicBlock::Create(*context, "method.probe", func);

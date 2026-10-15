@@ -318,6 +318,95 @@ dispatch_old(bad)
   }
 }
 
+TEST(JITRTTITest, RefreshesAnyValueCallbacksAcrossCells) {
+  for (bool debug : {false, true}) {
+    auto options = codon::Options::getDefault("build/codon_test");
+    options->jit = true;
+    options->debug = debug;
+    options->capture = true;
+    codon::jit::JIT instance(*options);
+    auto error = instance.init();
+    ASSERT_FALSE(bool(error)) << llvm::toString(std::move(error));
+    auto first = instance.execute(R"(
+class ValueBase:
+  value: int
+  def __eq__(self, other: ValueBase): return self.value == other.value
+  def __hash__(self): return hash(self.value)
+  def marker(self): return self.value
+class ValueChild(ValueBase):
+  def __hash__(self): return hash(self.value + 100)
+  def marker(self): return self.value + 10
+def box_base(value: ValueBase) -> Any:
+  return Any(value)
+def marker_base(value: ValueBase): return value.marker()
+child = ValueChild(17)
+assert marker_base(child) == 27
+saved = box_base(child)
+number = Any(17)
+old_info = TypeInfo.cache(ValueChild)
+hash_method_id = TypeInfo._value_method_id('_hash_value')
+equal_method_id = TypeInfo._value_method_id('_equal_values')
+assert hash_method_id > 0 and equal_method_id > 0
+assert hash_method_id != equal_method_id
+class ValueMissing:
+  value: int
+unsupported = Any([ValueMissing(5)])
+print('boxed')
+)");
+    ASSERT_TRUE(bool(first)) << llvm::toString(first.takeError());
+    EXPECT_EQ(*first, "boxed\n");
+
+    auto second = instance.execute(R"(
+def hash_any(value: Any): return hash(value)
+assert hash_any(saved) == hash(child)
+assert hash_any(number) == hash(17)
+assert TypeInfo._value_method_id('_hash_value') == hash_method_id
+hash_target = old_info._lookup_method(hash_method_id)
+assert Function[[Ptr[byte]], int](hash_target)(saved._data) == hash(child)
+assert marker_base(child) == 27
+try:
+  hash_any(unsupported)
+  assert False
+except TypeError:
+  pass
+assert TypeInfo.cache(ValueChild).__raw__() == old_info.__raw__()
+print('hashed')
+)");
+    ASSERT_TRUE(bool(second)) << llvm::toString(second.takeError());
+    EXPECT_EQ(*second, "hashed\n");
+
+    auto third = instance.execute(R"(
+def equal_any(left: Any, right: Any): return left == right
+assert TypeInfo._value_method_id('_equal_values') == equal_method_id
+refreshed_hash = old_info._lookup_method(hash_method_id)
+assert Function[[Ptr[byte]], int](refreshed_hash)(saved._data) == hash(child)
+assert equal_any(saved, box_base(ValueChild(17)))
+assert not equal_any(saved, box_base(ValueBase(17)))
+assert equal_any(number, Any(17))
+assert not equal_any(number, Any(17.0))
+try:
+  equal_any(unsupported, unsupported)
+  assert False
+except TypeError:
+  pass
+class ValueLater(ValueBase):
+  def __hash__(self): return hash(self.value + 200)
+  def marker(self): return self.value + 20
+later = ValueLater(19)
+assert marker_base(later) == 39
+assert marker_base(child) == 27
+assert equal_any(box_base(later), box_base(ValueLater(19)))
+assert not equal_any(saved, box_base(later))
+assert hash_any(box_base(later)) == hash(later)
+assert hash_any(saved) == hash(child)
+assert TypeInfo.cache(ValueChild).__raw__() == old_info.__raw__()
+print('compared')
+)");
+    ASSERT_TRUE(bool(third)) << llvm::toString(third.takeError());
+    EXPECT_EQ(*third, "compared\n");
+  }
+}
+
 TEST(JITOptionsTest, CollectsAfterJITTeardown) {
   ASSERT_EXIT(
       {

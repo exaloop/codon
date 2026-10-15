@@ -335,8 +335,20 @@ print("rtti fallback order ok")  # EXPECT: rtti fallback order ok
 class BoxBase:
     number: int
 
+    def __eq__(self, other: BoxBase):
+        return self.number == other.number
+
+    def __hash__(self):
+        return hash(self.number)
+
 class BoxChild(BoxBase):
     payload: list[int]
+
+    def __eq__(self, other: BoxBase):
+        return self.number == other.number and self.payload == type._force_cast(other, BoxChild).payload
+
+    def __hash__(self):
+        return hash((self.number, self.payload))
 
 child = __magic__.new(BoxChild)
 child.number = 41
@@ -346,6 +358,17 @@ boxed = Any(base)
 assert Any.__elemsize__ == Ptr[byte].__elemsize__ + TypeInfo.__elemsize__
 assert Any(boxed) == boxed
 assert hash(Any(boxed)) == hash(boxed)
+assert Any(child) == boxed
+assert hash(boxed) == hash(child)
+equal_child = __magic__.new(BoxChild)
+equal_child.number = 41
+equal_child.payload = [1, 2]
+assert Any(equal_child) == boxed
+equal_child.payload = [1, 3]
+assert Any(equal_child) != boxed
+plain = BoxBase(41)
+assert Any(plain) != boxed
+assert boxed != Any(plain)
 boxed_pointer = Ptr[Any](1)
 boxed_pointer[0] = boxed
 assert Any(TypeInfo.cache(Any), boxed_pointer.as_byte()) == boxed
@@ -353,6 +376,8 @@ assert isinstance(boxed, BoxChild)
 assert boxed.__unwrap__(BoxChild) is child
 assert boxed.__unwrap__(BoxBase) is child
 assert boxed.__getattr__("number", int) == 41
+assert boxed.__getattr__("number") == Any(41)
+assert hash(boxed.__getattr__("payload")) == hash([1, 2])
 boxed.__setattr__("number", 42)
 assert child.number == 42
 replacement = [3, 4]

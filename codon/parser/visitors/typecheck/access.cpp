@@ -220,8 +220,10 @@ std::pair<Expr *, bool> TypecheckVisitor::getAttr(Expr *expr, const std::string 
   }
   // Special case: cls.__id__
   if (isTypeExpr(expr) && member == "__id__") {
-    if (auto c = realize(extractType(expr)))
+    if (auto c = realize(extractType(expr))) {
+      makeIRType(c->getClass())->getRuntimeInfo()->valueAccessed = true;
       return {wrapSide(N<IntExpr>(getClassRealization(c)->id)), true};
+    }
     return {nullptr, true};
   }
 

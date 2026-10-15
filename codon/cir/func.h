@@ -188,6 +188,8 @@ public:
     TYPEINFO,
     /// Looks up a runtime type descriptor by type ID.
     TYPEINFO_LOOKUP,
+    /// Looks up a method ID in a TypeInfo descriptor and returns its function pointer.
+    TYPEINFO_METHOD_LOOKUP,
     /// Looks up a virtual method by receiver and thunk ID.
     VIRTUAL_LOOKUP,
     /// Constructs a record from its field values.

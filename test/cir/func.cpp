@@ -106,6 +106,28 @@ TEST_F(CIRCoreTest, InternalFuncParentTypeUnmangledNameAndCloning) {
   ASSERT_EQ(fn->getIntrinsicType(), module->getIntType());
 }
 
+TEST_F(CIRCoreTest, TypeInfoMethodLookupContract) {
+  auto *descriptor = module->unsafeGetMemberedType("lookup.descriptor", true);
+  auto *pointer = module->unsafeGetPointerType(module->getIntType());
+  auto *lookup = module->Nr<InternalFunc>("lookup.method");
+  lookup->realize(module->unsafeGetFuncType("lookup.signature", pointer,
+                                            {descriptor, module->getIntType()}),
+                  {"info", "id"});
+  lookup->setIntrinsic(InternalFunc::Intrinsic::TYPEINFO_METHOD_LOOKUP);
+  ASSERT_TRUE(lookup->hasValidIntrinsicSignature());
+  ASSERT_STREQ(InternalFunc::getIntrinsicName(lookup->getIntrinsic()),
+               "typeinfo_method_lookup");
+  ASSERT_EQ(lookup->getIntrinsicSideEffectStatus(), util::UNKNOWN);
+  auto *cloned = cast<InternalFunc>(cv->forceClone(lookup));
+  ASSERT_TRUE(cloned->hasValidIntrinsicSignature());
+  ASSERT_TRUE(util::match(lookup, cloned));
+  lookup->realize(
+      module->unsafeGetFuncType("lookup.invalid", pointer,
+                                {module->getIntType(), module->getIntType()}),
+      {"info", "id"});
+  ASSERT_FALSE(lookup->hasValidIntrinsicSignature());
+}
+
 TEST_F(CIRCoreTest, RuntimeMetadataDependencies) {
   auto *type = module->unsafeGetMemberedType("runtime.dependencies", true);
   auto *method = module->Nr<BodiedFunc>("runtime.method");
