@@ -58,7 +58,7 @@ class LookupResult:
     slot: int
     found: bool
 
-class OrderedDict(object):
+class OrderedDict:
     _used: int
     _usable: int
     _indices: cobj
@@ -571,7 +571,7 @@ class OrderedDict(object):
 # Unordered #
 #############
 
-class UnorderedDict(object):
+class UnorderedDict:
     _n_buckets: int
     _size: int
     _n_occupied: int

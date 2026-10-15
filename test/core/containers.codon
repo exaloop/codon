@@ -1522,32 +1522,32 @@ def test_counter():
         q.update({'h':1, 'i':-1, 'j':0})
 
         c = p.__copy__()
-        c_id = id(c)
+        c_id = id(c._dict)
         regular_result = c + q
         inplace_result = c.__iadd__(q)
         assert inplace_result == regular_result
-        assert id(inplace_result) == c_id
+        assert id(inplace_result._dict) == c_id
 
         c = p.__copy__()
-        c_id = id(c)
+        c_id = id(c._dict)
         regular_result = c - q
         inplace_result = c.__isub__(q)
         assert inplace_result == regular_result
-        assert id(inplace_result) == c_id
+        assert id(inplace_result._dict) == c_id
 
         c = p.__copy__()
-        c_id = id(c)
+        c_id = id(c._dict)
         regular_result = c | q
         inplace_result = c.__ior__(q)
         assert inplace_result == regular_result
-        assert id(inplace_result) == c_id
+        assert id(inplace_result._dict) == c_id
 
         c = p.__copy__()
-        c_id = id(c)
+        c_id = id(c._dict)
         regular_result = c & q
         inplace_result = c.__iand__(q)
         assert inplace_result == regular_result
-        assert id(inplace_result) == c_id
+        assert id(inplace_result._dict) == c_id
 
 
     # subtract
@@ -1860,3 +1860,131 @@ def test_ordereddict_termination():
     d[Key(4)] = 4
     assert (Key(-1) in d) == False
 test_ordereddict_termination()
+
+@test
+def test_composed_mappings():
+    from collections import Counter, defaultdict
+    from internal.static import has_rtti, len as static_len
+
+    assert not has_rtti(OrderedDict[str, int])
+    assert not has_rtti(UnorderedDict[str, int])
+    assert not has_rtti(Counter[str])
+
+    counter = Counter('abca')
+    assert static_len(counter) == 1
+    assert Counter[str].__elemsize__ == Dict[str, int].__elemsize__
+    assert not isinstance(counter, Dict[str, int])
+    assert list(counter) == ['a', 'b', 'c']
+    assert list(reversed(counter)) == ['c', 'b', 'a']
+    assert counter.get('missing') is None
+    assert counter.pop('missing', None) is None
+    assert counter.pop('missing', 9) == 9
+    counter.resize(100)
+    counter.increment('d', 4)
+    counter['e'] = counter.get('e', 8) + 2
+    counter['f'] += 3
+    assert counter['d'] == 4 and counter['e'] == 10 and counter['f'] == 3
+    assert Counter[str].fromkeys(ks='xy', v=2) == {'x': 2, 'y': 2}
+    for cloned in (counter.copy(), copy(counter), deepcopy(counter), Counter(counter)):
+        assert isinstance(cloned, Counter[str])
+        assert cloned == counter and cloned._dict is not counter._dict
+        cloned['a'] = 100
+        assert counter['a'] == 2
+    assert {'a': 2, 'b': 1, 'c': 1, 'd': 4, 'e': 10, 'f': 3} == counter
+    assert {'a': 1} != counter
+    merged = counter | {'a': -1, 'extra': 5}
+    assert isinstance(merged, Counter[str])
+    assert merged['a'] == -1 and counter['a'] == 2
+    original = merged
+    merged |= [('a', -2)]
+    assert merged._dict is original._dict and merged['a'] == -2
+    converted = dict(counter)
+    converted.clear()
+    assert counter and not converted
+    counter_alias = counter
+    counter_alias['shared'] += 1
+    assert counter['shared'] == 1
+    counter_alias.clear()
+    assert not counter
+
+    def make_default(calls):
+        calls[0] += 1
+        return 7
+
+    calls = 0
+    mapping = defaultdict(make_default(__ptr__(calls), ...), {'seed': 3})
+    assert static_len(mapping) == 2
+    assert not has_rtti(type(mapping))
+    assert not isinstance(mapping, Dict[str, int])
+    assert mapping.get('missing') is None
+    assert mapping.get('missing', 9) == 9
+    assert mapping.pop('missing', None) is None
+    assert mapping.pop('missing', 9) == 9
+    assert 'missing' not in mapping
+    try:
+        mapping.pop('missing')
+        assert False
+    except KeyError:
+        pass
+    try:
+        del mapping['missing']
+        assert False
+    except KeyError:
+        pass
+    assert calls == 0
+    assert mapping.setdefault('plain', 4) == 4
+    mapping.increment('incremented', 5)
+    mapping['explicit'] = mapping.get('explicit', 10) + 2
+    assert calls == 0
+    mapping['created'] += 2
+    assert mapping['created'] == 9 and calls == 1
+    mapping['created'] += 3
+    assert mapping['created'] == 12 and calls == 1
+    mapping.resize(100)
+    assert list(mapping.keys()) == ['seed', 'plain', 'incremented', 'explicit', 'created']
+    assert list(mapping.values()) == [3, 4, 5, 12, 12]
+    assert list(reversed(mapping)) == ['created', 'explicit', 'incremented', 'plain', 'seed']
+    assert type(mapping).fromkeys(ks='xy', v=2) == {'x': 2, 'y': 2}
+    for cloned in (mapping.copy(), copy(mapping), deepcopy(mapping)):
+        assert isinstance(cloned, type(mapping))
+        assert cloned == mapping and cloned._dict is not mapping._dict
+        assert cloned['fresh'] == 7 and 'fresh' not in mapping
+    assert calls == 4
+    assert dict(mapping) == mapping
+    assert {'seed': -1} != mapping
+    assert mapping.popitem() == ('created', 12)
+    assert mapping.pop('plain') == 4
+    del mapping['explicit']
+    alias = mapping
+    mapping.clear()
+    assert alias._dict is mapping._dict and not alias and len(mapping) == 0
+    assert mapping['after-clear'] == 7 and calls == 5
+
+    other = defaultdict(int, {'x': 2, 'y': 1})
+    counted = Counter(other)
+    assert counted == other and other == counted
+    assert not (counted != other) and not (other != counted)
+    counted.update(other)
+    counted.subtract(other)
+    assert counted == other
+    copied = defaultdict(int, other)
+    from_counter = defaultdict(int, counted)
+    callable_copy = defaultdict(make_default(__ptr__(calls), ...), other)
+    callable_counter = defaultdict(make_default(__ptr__(calls), ...), counted)
+    assert copied == other and from_counter == other
+    assert callable_copy == other and callable_counter == other
+    from_counter['x'] = 10
+    assert counted['x'] == 2
+    other.update(Counter({'z': 6}))
+    copied.update(other)
+    plain: Dict[str, int] = {}
+    plain.update(counted)
+    plain.update(other)
+    assert plain == copied == other
+    assert (Dict[str, int]() | counted) == counted
+    assert (Dict[str, int]() | other) == other
+    assert (other | counted) == other
+    assert (counted | other) == other
+    assert calls == 5
+
+test_composed_mappings()
