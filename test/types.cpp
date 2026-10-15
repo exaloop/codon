@@ -6,6 +6,7 @@
 #include <fstream>
 #include <gc.h>
 #include <iostream>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <sys/types.h>
@@ -24,6 +25,36 @@
 #include "codon/parser/visitors/translate/translate.h"
 #include "codon/util/common.h"
 #include "gtest/gtest.h"
+
+TEST(ASTFormattingTest, FloatValues) {
+  const std::vector<std::pair<double, std::string>> cases = {
+      {0.0, "0.0"},
+      {-0.0, "-0.0"},
+      {1.0, "1.0"},
+      {-1.5, "-1.5"},
+      {0.1, "0.1"},
+      {1.2345678901234567, "1.2345678901234567"},
+      {1e-5, "1e-05"},
+      {1e-4, "0.0001"},
+      {-1e-4, "-0.0001"},
+      {1e15, "1000000000000000.0"},
+      {-1e15, "-1000000000000000.0"},
+      {1e16, "1e+16"},
+      {1e20, "1e+20"},
+      {std::numeric_limits<double>::min(), "2.2250738585072014e-308"},
+      {std::numeric_limits<double>::max(), "1.7976931348623157e+308"},
+      {std::numeric_limits<double>::denorm_min(), "5e-324"},
+      {std::numeric_limits<double>::infinity(), "inf"},
+      {-std::numeric_limits<double>::infinity(), "-inf"},
+      {std::numeric_limits<double>::quiet_NaN(), "nan"},
+  };
+  for (const auto &[value, expected] : cases) {
+    const codon::ast::FloatExpr expression(value);
+    EXPECT_EQ(expression.toCodonString(false, -1),
+              "FloatExpr(value='" + expression.getRawData().first +
+                  "', float_value=" + expected + ")");
+  }
+}
 
 TEST(TypeCoreTest, NewFunctionRealizationIsIncomplete) {
   auto realization =
