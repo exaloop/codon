@@ -3336,8 +3336,7 @@ void LLVMVisitor::visit(const CallInstr *x) {
   if (auto *callee = cast<VarValue>(x->getCallee())) {
     if (auto *internal = cast<InternalFunc>(callee->getVar());
         internal && internal->isTypeQuery()) {
-      seqassertn(x->numArgs() == 0 && x->getThunkID() == 0,
-                 "type query cannot have runtime arguments or virtual dispatch");
+      seqassertn(x->numArgs() == 0, "type query cannot have runtime arguments");
       value = codegenTypeQuery(internal);
       return;
     }
@@ -3347,7 +3346,7 @@ void LLVMVisitor::visit(const CallInstr *x) {
   auto *funcType = getLLVMFuncType(x->getCallee()->getType());
   std::vector<std::pair<int64_t, llvm::Function *>> targets;
   llvm::Value *dynamicId = nullptr;
-  // RTTILowering represents obj.method(args) as lookup(obj, thunk)(args). The
+  // Virtual dispatch represents obj.method(args) as lookup(obj, thunk)(args). The
   // helper's recorded receiver type distinguishes this from an arbitrary indirect
   // call. Specialize only in AOT: later JIT cells can add types or refresh targets.
   if (!options->jit) {

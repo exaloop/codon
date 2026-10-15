@@ -248,9 +248,7 @@ public:
   }
   void visit(const CallInstr *v) override {
     auto args = makeFormatters(v->begin(), v->end());
-    fmt::print(os, FMT_STRING("(call{} {}\n{}\n)"),
-               v->getThunkID() ? fmt::format("_virtual {}", v->getThunkID()) : "",
-               makeFormatter(v->getCallee()),
+    fmt::print(os, FMT_STRING("(call {}\n{}\n)"), makeFormatter(v->getCallee()),
                fmt::join(args.begin(), args.end(), "\n"));
   }
   void visit(const StackAllocInstr *v) override {

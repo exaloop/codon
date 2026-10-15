@@ -9,6 +9,7 @@
 
 #include "codon/cir/transform/parallel/schedule.h"
 #include "codon/cir/util/cloning.h"
+#include "codon/cir/util/irtools.h"
 #include "codon/compiler/compiler.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
@@ -363,7 +364,12 @@ void TranslateVisitor::visit(CallExpr *expr) {
       thunkId = *key;
     }
   }
-  result = make<ir::CallInstr>(expr, callee, std::move(items), "", thunkId);
+  if (thunkId) {
+    result = ir::util::virtualCall(callee, std::move(items), thunkId, ctx->getBase());
+    result->setSrcInfo(expr->getSrcInfo());
+  } else {
+    result = make<ir::CallInstr>(expr, callee, std::move(items));
+  }
 }
 
 void TranslateVisitor::visit(DotExpr *expr) {

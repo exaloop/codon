@@ -187,8 +187,7 @@ public:
   }
   VISIT(CallInstr);
   void handle(const CallInstr *x, const CallInstr *y) {
-    result = x->getThunkID() == y->getThunkID() &&
-             process(x->getCallee(), y->getCallee()) &&
+    result = process(x->getCallee(), y->getCallee()) &&
              std::equal(x->begin(), x->end(), y->begin(), y->end(),
                         [this](auto *x, auto *y) { return process(x, y); });
   }

@@ -1,5 +1,6 @@
 #include "test.h"
 
+#include "codon/cir/util/irtools.h"
 #include "codon/cir/util/matching.h"
 
 using namespace codon::ir;
@@ -121,6 +122,70 @@ TEST_F(CIRCoreTest, CallInstrCloning) {
   ASSERT_TRUE(util::match(instr, cv->clone(instr)));
 }
 
+TEST_F(CIRCoreTest, VirtualCallConstructionAndCloning) {
+  constexpr size_t thunkId = 7;
+  auto *type = cast<RefType>(module->unsafeGetMemberedType("virtual.receiver", true));
+  type->realize({module->getIntType()}, {"field"});
+  type->setPolymorphic();
+  auto *receiver = module->Nr<VarValue>(module->Nr<Var>(type));
+  auto *argument = module->getInt(42);
+  auto *method = module->Nr<BodiedFunc>();
+  method->realize(module->unsafeGetFuncType("virtual.method", module->getIntType(),
+                                            {type, module->getIntType()}),
+                  {"self", "value"});
+  auto *callee =
+      module->Nr<FlowInstr>(module->Nr<SeriesFlow>(), module->Nr<VarValue>(method));
+  auto *parent = module->Nr<BodiedFunc>();
+  auto *call = util::virtualCall(callee, {receiver, argument}, thunkId, parent);
+  call->setName("virtual.call");
+  call->setSrcInfo({"virtual.codon", 12, 3, 1});
+  EXPECT_EQ(module->getIntType(), call->getType());
+  EXPECT_EQ(argument, call->back());
+  auto *target = cast<FlowInstr>(call->getCallee());
+  ASSERT_NE(nullptr, target);
+  auto *prefix = cast<SeriesFlow>(target->getFlow());
+  ASSERT_NE(nullptr, prefix);
+  ASSERT_EQ(2, std::distance(prefix->begin(), prefix->end()));
+  EXPECT_EQ(callee, *prefix->begin());
+  auto *assignment = cast<AssignInstr>(*std::next(prefix->begin()));
+  ASSERT_NE(nullptr, assignment);
+  EXPECT_EQ(receiver, assignment->getRhs());
+  auto *temporary = assignment->getLhs();
+  EXPECT_EQ(temporary, util::getVar(call->front()));
+  EXPECT_NE(parent->end(), std::find(parent->begin(), parent->end(), temporary));
+  auto *lookup = cast<CallInstr>(target->getValue());
+  ASSERT_NE(nullptr, lookup);
+  auto *intrinsic = cast<InternalFunc>(util::getFunc(lookup->getCallee()));
+  ASSERT_NE(nullptr, intrinsic);
+  EXPECT_EQ(InternalFunc::Intrinsic::VIRTUAL_LOOKUP, intrinsic->getIntrinsic());
+  EXPECT_EQ(temporary, util::getVar(lookup->front()));
+  EXPECT_TRUE(util::isConst(lookup->back(), static_cast<int64_t>(thunkId)));
+  EXPECT_FALSE(util::match(
+      lookup, util::call(intrinsic, {lookup->front(), module->getInt(thunkId + 1)})));
+
+  auto *clonedParent = module->Nr<BodiedFunc>();
+  auto *clonedCall = cast<CallInstr>(cv->clone(call, clonedParent));
+  ASSERT_NE(nullptr, clonedCall);
+  EXPECT_EQ("virtual.call", clonedCall->getName());
+  EXPECT_EQ(12, clonedCall->getSrcInfo().line);
+  auto *clonedTemporary = util::getVar(clonedCall->front());
+  ASSERT_NE(nullptr, clonedTemporary);
+  EXPECT_NE(temporary, clonedTemporary);
+  EXPECT_NE(clonedParent->end(),
+            std::find(clonedParent->begin(), clonedParent->end(), clonedTemporary));
+  auto *clonedTarget = cast<FlowInstr>(clonedCall->getCallee());
+  ASSERT_NE(nullptr, clonedTarget);
+  auto *clonedLookup = cast<CallInstr>(clonedTarget->getValue());
+  ASSERT_NE(nullptr, clonedLookup);
+  EXPECT_EQ(clonedTemporary, util::getVar(clonedLookup->front()));
+  EXPECT_TRUE(util::isConst(clonedLookup->back(), static_cast<int64_t>(thunkId)));
+  auto *clonedPrefix = cast<SeriesFlow>(clonedTarget->getFlow());
+  ASSERT_NE(nullptr, clonedPrefix);
+  auto *clonedAssignment = cast<AssignInstr>(*std::next(clonedPrefix->begin()));
+  ASSERT_NE(nullptr, clonedAssignment);
+  EXPECT_EQ(clonedTemporary, clonedAssignment->getLhs());
+}
+
 TEST_F(CIRCoreTest, PolymorphicInstructionMetadata) {
   auto *type = cast<RefType>(module->unsafeGetMemberedType("polymorphic", true));
   type->realize({module->getIntType()}, {"field"});
@@ -129,30 +194,17 @@ TEST_F(CIRCoreTest, PolymorphicInstructionMetadata) {
   auto *value = module->getInt(42);
   auto *extract = module->Nr<ExtractInstr>(receiver, "field", "extract", true);
   auto *insert = module->Nr<InsertInstr>(receiver, "field", value, "insert", true);
-  auto *function = module->Nr<BodiedFunc>();
-  function->realize(module->unsafeGetFuncType("method", module->getIntType(), {type}),
-                    {"self"});
-  auto *callee = module->Nr<VarValue>(function);
-  auto *call = module->Nr<CallInstr>(callee, std::vector<Value *>{receiver}, "call", 7);
 
   auto *extractClone = cast<ExtractInstr>(cv->clone(extract));
   auto *insertClone = cast<InsertInstr>(cv->clone(insert));
-  auto *callClone = cast<CallInstr>(cv->clone(call));
   ASSERT_TRUE(extractClone->isPolymorphic());
   ASSERT_TRUE(insertClone->isPolymorphic());
-  ASSERT_EQ(callClone->getThunkID(), 7);
   ASSERT_EQ(extractClone->getName(), "extract");
   ASSERT_EQ(insertClone->getName(), "insert");
-  ASSERT_EQ(callClone->getName(), "call");
   ASSERT_TRUE(util::match(extract, extractClone));
   ASSERT_TRUE(util::match(insert, insertClone));
-  ASSERT_TRUE(util::match(call, callClone));
   ASSERT_FALSE(util::match(extract, module->Nr<ExtractInstr>(receiver, "field")));
   ASSERT_FALSE(util::match(insert, module->Nr<InsertInstr>(receiver, "field", value)));
-  ASSERT_FALSE(
-      util::match(call, module->Nr<CallInstr>(callee, std::vector<Value *>{receiver})));
-  ASSERT_FALSE(util::match(
-      call, module->Nr<CallInstr>(callee, std::vector<Value *>{receiver}, "", 8)));
 
   extract->setPolymorphic(false);
   insert->setPolymorphic(false);
