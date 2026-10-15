@@ -3,14 +3,13 @@
 import internal.static as static
 
 
+@tuple(init=False, container=False)
 @__internal__
 class Any:
     _data: Ptr[u8]
     _typeinfo: TypeInfo
 
     def __str__(self):
-        # if self._typeinfo.repr.__raw__() != cobj():
-        #     return f"Any({self._typeinfo.repr(self._data)}, {self._typeinfo})"
         return f"Any({self._typeinfo.nice_name})"
 
     def __hash__(self):
@@ -25,32 +24,23 @@ class Any:
     def __repr__(self):
         return self.__str__()
 
-    def __new__() -> Any:
-        return __magic__.new(Any)
-
-    def __init__(self, ti: TypeInfo, data: Ptr[byte]):
+    def __new__(ti: TypeInfo, data: Ptr[byte]) -> Any:
         if ti._isinstance(Any):  # Disallow Any[Any]
-            obj = type._force_cast(data, Any)
-            self._typeinfo = obj._typeinfo
-            self._data = obj._data
-        else:
-            self._typeinfo = ti
-            self._data = data
+            return Ptr[Any](data)[0]
+        return type._force_value_cast((data, ti), Any)
 
-    def __init__(self, obj):
+    def __new__(obj) -> Any:
         if isinstance(obj, Any):  # Disallow Any[Any]
-            self._typeinfo = obj._typeinfo
-            self._data = obj._data
-            return
+            return obj
 
         T: type = type(obj)
-        self._typeinfo = TypeInfo.cache(T)
+        typeinfo = TypeInfo.cache(T)
         if isinstance(T, ByVal):
-            p = Ptr[T](1)
-            p[0] = obj
-            self._data = p.as_byte()
+            pointer = Ptr[T](1)
+            pointer[0] = obj
+            return Any(typeinfo, pointer.as_byte())
         else:
-            self._data = obj.__raw__().as_byte()
+            return Any(typeinfo, obj.__raw__().as_byte())
 
     def __unwrap__(self, T: type) -> T:
         if T is Any:
@@ -88,9 +78,8 @@ class Any:
         elif T is List[Any]:
             if self._typeinfo._isinstance(unrealized_type[list]):
                 ti = TypeInfo.cache(self._typeinfo.params[0])
-                sz = Ptr[int](self._data)[0]
-                data = self._data + int.__elemsize__ * 2
-                data = Ptr[Ptr[byte]](data)[0]
+                sz = self.__getattr__("_len", int)
+                data = Ptr[Ptr[byte]](self._data)[0]
                 lst = List[Any](sz)
                 for i in range(sz):
                     ptr = data + ti.size * i

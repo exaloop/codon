@@ -2458,3 +2458,111 @@ def test_round():
     assert isinstance(round(123, -1), int)
 
 test_round()
+
+@test
+def test_any_tuple():
+    from internal.static import len as static_len
+    from C import GC_gcollect()
+
+    class Record:
+        number: int
+        values: list[int]
+
+    @tuple
+    class Nested:
+        value: Any
+
+    class Holder:
+        value: Any
+        marker: int
+
+    @noinline
+    def box(value) -> Any:
+        return value
+
+    def unbox(value: Any) -> int:
+        return value
+
+    assert Any.__elemsize__ == Ptr[byte].__elemsize__ + TypeInfo.__elemsize__
+    assert not Any.__atomic__
+    number = box(17)
+    assert static_len(number) == 2
+    assert unbox(number) == 17
+    assert Any(number) == number
+    assert number.__unwrap__(Any) == number
+    assert hash(Any(number)) == hash(number)
+    distinct = box(17)
+    assert distinct != number
+    keys = {number: 'original'}
+    assert keys[Any(number)] == 'original'
+    keys[distinct] = 'distinct'
+    assert len(keys) == 2
+    assert len({number, Any(number), distinct}) == 2
+
+    record = Record(41, [1, 2])
+    boxed = box(record)
+    alias = boxed
+    assert Any(record) == boxed
+    saved_hash = hash(boxed)
+    alias.__setattr__('number', 42)
+    assert record.number == 42
+    assert boxed.__getattr__('number', int) == 42
+    assert hash(boxed) == saved_hash
+    assert boxed.__unwrap__(Record) is record
+    assert boxed.__getattr__('values', list[int]) is record.values
+    try:
+        number.__unwrap__(str)
+        assert False
+    except TypeError:
+        pass
+
+    storage = Ptr[Any](1)
+    storage[0] = number
+    assert Any(TypeInfo.cache(Any), storage.as_byte()) == number
+    assert Any(storage).__cast__(Ptr[Any])[0] == number
+    integers = Ptr[int](1)
+    integers[0] = 23
+    assert Any(integers).__cast__(Ptr[Any])[0].__unwrap__(int) == 23
+
+    present = Any(Optional[Any](number)).__cast__(Optional[Any])
+    assert present is not None and unwrap(present) == number
+    assert Any(Optional[Any]()).__cast__(Optional[Any]) is None
+    present_int = Any(Optional[int](19)).__cast__(Optional[Any])
+    assert present_int is not None and unwrap(present_int).__unwrap__(int) == 19
+    present_ref = Any(Optional[Record](record)).__cast__(Optional[Any])
+    assert present_ref is not None and unwrap(present_ref).__unwrap__(Record) is record
+    assert Any(Optional[Record]()).__cast__(Optional[Any]) is None
+
+    values: list[Any] = [number, box('text'), boxed]
+    viewed = Any(values).__cast__(List[Any])
+    assert len(viewed) == 3
+    assert viewed[0] == number
+    assert viewed[1].__unwrap__(str) == 'text'
+    assert viewed[2].__unwrap__(Record) is record
+    assert Any(List[Any]()).__cast__(List[Any]) == []
+    integer_values = Any([3, 5]).__cast__(List[Any])
+    assert [value.__unwrap__(int) for value in integer_values] == [3, 5]
+    reference_values = Any([record]).__cast__(List[Any])
+    assert reference_values[0].__unwrap__(Record) is record
+    tuple_values = Any((17, 'text', number)).__cast__(List[Any])
+    assert tuple_values[0].__unwrap__(int) == 17
+    assert tuple_values[1].__unwrap__(str) == 'text'
+    assert tuple_values[2] == number
+    assert Any(Nested(number)).__getattr__('value') == number
+    holder = Holder(number, 99)
+    wrapped_holder = Any(holder)
+    assert wrapped_holder.__getattr__('value') == number
+    wrapped_holder.__setattr__('value', distinct)
+    assert holder.value == distinct and holder.marker == 99
+
+    @noinline
+    def retained_values() -> list[Any]:
+        return [Any(Record(73, [7, 3])), Any(('owned', [8, 9])), Any(71)]
+
+    retained = retained_values()
+    GC_gcollect()
+    assert retained[0].__unwrap__(Record).values == [7, 3]
+    assert retained[1].__unwrap__(Tuple[str, list[int]]) == ('owned', [8, 9])
+    assert retained[2].__unwrap__(int) == 71
+
+test_any_tuple()

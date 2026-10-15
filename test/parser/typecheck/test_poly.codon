@@ -343,6 +343,12 @@ child.number = 41
 child.payload = [1, 2]
 base: BoxBase = child
 boxed = Any(base)
+assert Any.__elemsize__ == Ptr[byte].__elemsize__ + TypeInfo.__elemsize__
+assert Any(boxed) == boxed
+assert hash(Any(boxed)) == hash(boxed)
+boxed_pointer = Ptr[Any](1)
+boxed_pointer[0] = boxed
+assert Any(TypeInfo.cache(Any), boxed_pointer.as_byte()) == boxed
 assert isinstance(boxed, BoxChild)
 assert boxed.__unwrap__(BoxChild) is child
 assert boxed.__unwrap__(BoxBase) is child
