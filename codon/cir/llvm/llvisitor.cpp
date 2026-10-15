@@ -1729,9 +1729,8 @@ void LLVMVisitor::visit(const ExternalFunc *x) {
 }
 
 void LLVMVisitor::visit(const InternalFunc *x) {
-  if (!x->hasValidIntrinsicSignature())
-    compilationError("invalid intrinsic signature: " +
-                     std::string(x->getIntrinsicName()));
+  seqassertn(x->hasValidIntrinsicSignature(), "invalid intrinsic signature: {}",
+             x->getIntrinsicName());
   if (x->isTypeQuery())
     return;
   func = M->getFunction(getNameForFunction(x));
@@ -3337,9 +3336,8 @@ void LLVMVisitor::visit(const CallInstr *x) {
   if (auto *callee = cast<VarValue>(x->getCallee())) {
     if (auto *internal = cast<InternalFunc>(callee->getVar());
         internal && internal->isTypeQuery()) {
-      if (x->numArgs() || x->getThunkID())
-        compilationError(
-            "type query cannot have runtime arguments or virtual dispatch");
+      seqassertn(x->numArgs() == 0 && x->getThunkID() == 0,
+                 "type query cannot have runtime arguments or virtual dispatch");
       value = codegenTypeQuery(internal);
       return;
     }
@@ -4162,8 +4160,7 @@ llvm::Value *LLVMVisitor::getFieldAddress(llvm::Value *object, RefType *type,
 }
 
 llvm::Constant *LLVMVisitor::codegenTypeQuery(const InternalFunc *function) {
-  if (!function->hasValidIntrinsicSignature())
-    compilationError("invalid type query signature");
+  seqassertn(function->hasValidIntrinsicSignature(), "invalid type query signature");
   auto *type = function->getIntrinsicType();
   switch (function->getIntrinsic()) {
   case InternalFunc::Intrinsic::SIZEOF:
@@ -4173,7 +4170,7 @@ llvm::Constant *LLVMVisitor::codegenTypeQuery(const InternalFunc *function) {
   case InternalFunc::Intrinsic::IS_CONTENT_ATOMIC:
     return B->getInt8(type->isContentAtomic() ? 1 : 0);
   default:
-    compilationError("intrinsic is not a type query");
+    seqassertn(false, "intrinsic is not a type query");
     return nullptr;
   }
 }

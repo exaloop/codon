@@ -358,8 +358,8 @@ Type *Module::unsafeGetPointerType(Type *base) {
 InternalFunc *Module::getIntrinsic(InternalFunc::Intrinsic kind, Type *type,
                                    Type *signature) {
   if (!signature) {
-    if (!InternalFunc::isTypeQuery(kind))
-      compilationError("intrinsic requires an explicit signature");
+    seqassertn(InternalFunc::isTypeQuery(kind),
+               "intrinsic requires an explicit signature");
     auto *result =
         kind == InternalFunc::Intrinsic::SIZEOF ? getIntType() : getBoolType();
     signature = unsafeGetFuncType(".intrinsic.query." + result->getName(), result, {});
@@ -375,8 +375,7 @@ InternalFunc *Module::getIntrinsic(InternalFunc::Intrinsic kind, Type *type,
       return function;
   }
   auto *functionType = cast<FuncType>(signature);
-  if (!functionType)
-    compilationError("intrinsic signature is not a function type");
+  seqassertn(functionType, "intrinsic signature is not a function type");
   auto *function = Nr<InternalFunc>(std::string(".intrinsic.") +
                                     InternalFunc::getIntrinsicName(kind));
   function->setIntrinsic(kind, type);
@@ -386,9 +385,8 @@ InternalFunc *Module::getIntrinsic(InternalFunc::Intrinsic kind, Type *type,
        index < std::distance(functionType->begin(), functionType->end()); ++index)
     names.push_back("arg" + std::to_string(index));
   function->realize(signature, names);
-  if (!function->hasValidIntrinsicSignature())
-    compilationError("invalid intrinsic signature: " +
-                     std::string(function->getIntrinsicName()));
+  seqassertn(function->hasValidIntrinsicSignature(), "invalid intrinsic signature: {}",
+             function->getIntrinsicName());
   intrinsics[key] = function->getId();
   return function;
 }

@@ -66,21 +66,33 @@ public:
 /// Type from which other CIR types derive. Generally types are immutable.
 class Type : public ReplaceableNodeBase<Type> {
 public:
+  /// Metadata used to emit runtime type descriptors and virtual method tables.
   struct RuntimeInfo {
+    /// runtime type ID, or 0 if unassigned
     int64_t id = 0;
+    /// canonical name of the realized type
     std::string rawName;
+    /// human-readable name of the realized type
     std::string niceName;
+    /// canonical class name before generic realization
     std::string baseName;
+    /// method resolution order, beginning with this type
     std::vector<Type *> mro;
+    /// declaring type for each field, in source-visible member order
     std::vector<Type *> fieldOwners;
+    /// runtime reflection types for generic parameters
     std::vector<Type *> parameters;
+    /// semantic thunk IDs mapped to realized method targets
     std::map<size_t, Func *> methods;
+    /// BaseException type in the MRO, or null for non-exception types
     Type *exceptionBase = nullptr;
+    /// SystemExit type in the MRO, or null otherwise
     Type *systemExitBase = nullptr;
   };
 
 private:
   ast::types::TypePtr astType;
+  /// runtime metadata owned by this type, or null if absent
   std::unique_ptr<RuntimeInfo> runtimeInfo;
 
 public:
@@ -90,9 +102,16 @@ public:
 
   virtual ~Type() noexcept = default;
 
+  /// @return types referenced by the type's structure or runtime metadata
   std::vector<Type *> getUsedTypes() const final;
+  /// @return runtime method targets referenced by this type
   std::vector<Var *> getUsedVariables() final;
+  /// @return runtime method targets referenced by this type
   std::vector<const Var *> getUsedVariables() const final;
+  /// Replaces or removes runtime method targets with the given variable ID.
+  /// @param id the ID of the function to replace
+  /// @param newVar the replacement function, or null to remove matching entries
+  /// @return the number of method entries replaced or removed
   int replaceUsedVariable(id_t id, Var *newVar) final;
   using Node::replaceUsedVariable;
   int replaceUsedType(const std::string &name, Type *newType) final {
@@ -122,8 +141,13 @@ public:
   /// @param t the new type
   void setAstType(ast::types::TypePtr t) { getActual()->astType = std::move(t); }
 
+  /// @return the type's runtime metadata, or null if none has been attached
   RuntimeInfo *getRuntimeInfo() { return getActual()->runtimeInfo.get(); }
+  /// @return the type's runtime metadata, or null if none has been attached
   const RuntimeInfo *getRuntimeInfo() const { return getActual()->runtimeInfo.get(); }
+  /// Sets the type's runtime metadata.
+  /// Replaces existing metadata, invalidating pointers returned by getRuntimeInfo().
+  /// @param info the new runtime metadata
   void setRuntimeInfo(RuntimeInfo info) {
     getActual()->runtimeInfo = std::make_unique<RuntimeInfo>(std::move(info));
   }

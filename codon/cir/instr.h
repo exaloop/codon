@@ -86,6 +86,7 @@ public:
   /// @param val the value being manipulated
   /// @param field the field
   /// @param name the instruction's name
+  /// @param polymorphic true if the accessed class is polymorphic
   explicit ExtractInstr(Value *val, std::string field, std::string name = "",
                         bool polymorphic = false)
       : AcceptorExtend(std::move(name)), val(val), field(std::move(field)),
@@ -105,6 +106,7 @@ public:
   /// @param f the new field
   void setField(std::string f) { field = std::move(f); }
 
+  /// @return true if the accessed class is polymorphic
   bool isPolymorphic() const { return polymorphic; }
 
 protected:
@@ -133,6 +135,7 @@ public:
   /// @param field the field
   /// @param rhs the new value
   /// @param name the instruction's name
+  /// @param polymorphic true if the accessed class is polymorphic
   explicit InsertInstr(Value *lhs, std::string field, Value *rhs, std::string name = "",
                        bool polymorphic = false)
       : AcceptorExtend(std::move(name)), lhs(lhs), field(std::move(field)), rhs(rhs),
@@ -160,6 +163,7 @@ public:
   /// @param f the new field
   void setField(std::string f) { field = std::move(f); }
 
+  /// @return true if the accessed class is polymorphic
   bool isPolymorphic() const { return polymorphic; }
 
 protected:
@@ -182,9 +186,11 @@ public:
   static const char NodeId;
 
   /// Constructs a call instruction.
+  /// Virtual calls require the receiver as the first argument.
   /// @param callee the function
   /// @param args the arguments
   /// @param name the instruction's name
+  /// @param thunk_id the semantic thunk ID for virtual dispatch, or 0 for a normal call
   CallInstr(Value *callee, std::vector<Value *> args, std::string name = "",
             size_t thunk_id = 0)
       : AcceptorExtend(std::move(name)), callee(callee), args(std::move(args)),
@@ -193,6 +199,7 @@ public:
   /// Constructs a call instruction with no arguments.
   /// @param callee the function
   /// @param name the instruction's name
+  /// @param thunk_id the semantic thunk ID; add a receiver before lowering if nonzero
   explicit CallInstr(Value *callee, std::string name = "", size_t thunk_id = 0)
       : CallInstr(callee, {}, std::move(name), thunk_id) {}
 
@@ -238,6 +245,7 @@ public:
   /// @return the number of arguments
   int numArgs() const { return args.size(); }
 
+  /// @return the semantic thunk ID for virtual dispatch, or 0 for a normal call
   size_t getThunkID() const { return thunk_id; }
 
 protected:

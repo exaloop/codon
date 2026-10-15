@@ -135,11 +135,9 @@ private:
   std::unordered_map<std::string, std::list<std::unique_ptr<Type>>::iterator> typesMap;
   /// the arena stack
   std::vector<Arena> arenas;
-
-  /// Intrinsic declarations are cached by identity, never by a borrowed pointer.
+  /// intrinsic declarations cached by identity
   std::map<std::tuple<InternalFunc::Intrinsic, std::string, std::string>, id_t>
       intrinsics;
-
   /// the type-checker cache
   ast::Cache *cache = nullptr;
 
@@ -386,8 +384,14 @@ public:
   /// @param variadic true if variadic (e.g. "printf" in C)
   /// @return the void type
   Type *getFuncType(Type *rType, std::vector<Type *> argTypes, bool variadic = false);
+  /// Gets an intrinsic function declaration.
   /// Reuses a validated intrinsic declaration. A null signature is allowed only
   /// for the three zero-argument type queries, whose signatures are inferred.
+  /// The signature and type operand must be valid for the selected intrinsic.
+  /// @param kind the kind of intrinsic function
+  /// @param type the intrinsic's type operand, or null if unused
+  /// @param signature the function type, or null to infer a type query's signature
+  /// @return the intrinsic function declaration
   InternalFunc *getIntrinsic(InternalFunc::Intrinsic kind, Type *type,
                              Type *signature = nullptr);
   /// Gets a vector type.
