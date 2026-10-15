@@ -281,11 +281,9 @@ assert boxed(IdExpr("boxed")) == "boxed"
 assert boxed(1) == "other"
 print("optional patterns ok")  #: optional patterns ok
 
-#%% match_function_pattern_rejected,barebones
-# A call-shaped pattern requires a class; it must never call a function.
-events = List[str]()
+#%% match_function_keyword_pattern_err,barebones
+# Function-call patterns must be rejected during compilation.
 def identity(value):
-    events.append("called")
     return value
 def compare(value):
     match value:
@@ -293,19 +291,16 @@ def compare(value):
             return True
         case _:
             return False
-try:
-    compare(7)
-    assert False
-except TypeError as error:
-    assert error.message == "called match pattern must be a class"
-try:
-    match 7:
-        case identity(7):
-            assert False
-except TypeError:
-    pass
-assert events == []
-print("function patterns rejected")  #: function patterns rejected
+compare(7)
+#! called match pattern must be a class
+#! during the realization of compare(value: int)
+
+#%% match_function_positional_pattern_err,barebones
+def identity(value):
+    return value
+match 7:
+    case identity(7): pass
+#! called match pattern must be a class
 
 #%% match_star_wildcard,barebones
 def sequence(value):

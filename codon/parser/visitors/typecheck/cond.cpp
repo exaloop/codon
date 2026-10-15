@@ -313,9 +313,7 @@ Stmt *TypecheckVisitor::transformPattern(Expr *var, Expr *pattern, Stmt *suite) 
     auto head = transform(clone(call->getExpr()));
     // Never evaluate a function-call pattern.
     if (!isTypeExpr(head))
-      return N<ThrowStmt>(
-          N<CallExpr>(N<IdExpr>("TypeError"),
-                      N<StringExpr>("called match pattern must be a class")));
+      E(Error::CUSTOM, call, "called match pattern must be a class");
     // Keyword/empty class patterns inspect the existing object. Preserve the
     // existing value-pattern behavior for positional constructor expressions.
     bool keyword = false;
