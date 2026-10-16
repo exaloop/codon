@@ -2570,6 +2570,21 @@ def test_any_tuple():
     integers[0] = 23
     assert Any(integers).__cast__(Ptr[Any])[0].__unwrap__(int) == 23
 
+    reference = Record(51, [5, 1])
+    neighbor = Record(63, [6, 3])
+    references = Ptr[Record](2)
+    references[0] = reference
+    references[1] = neighbor
+    converted_reference = cast(Ptr[Any], Any(references))[0]
+    restored_reference = cast(Record, converted_reference)
+    assert restored_reference is reference
+    assert restored_reference.number == 51 and restored_reference.values == [5, 1]
+    restored_reference.number = 52
+    converted_reference.__setattr__('values', [5, 2])
+    assert reference.number == 52 and reference.values == [5, 2]
+    assert references[0] is reference and references[1] is neighbor
+    assert neighbor.number == 63 and neighbor.values == [6, 3]
+
     present = Any(Optional[Any](number)).__cast__(Optional[Any])
     assert present is not None and unwrap(present) == number
     assert Any(Optional[Any]()).__cast__(Optional[Any]) is None
@@ -2658,6 +2673,8 @@ def test_any_tuple():
     assert hash(raw_box) == hash(29)
 
     class RawBase:
+        number: int
+
         def __eq__(self, other: RawBase):
             return True
 
@@ -2665,12 +2682,28 @@ def test_any_tuple():
             return 31
 
     class RawChild(RawBase):
-        pass
+        extra: int
 
-    raw_child = RawChild()
+    raw_child = RawChild(number=71, extra=73)
     dynamic_box = Any(get_typeinfo(raw_child), raw_child.__raw__())
     assert dynamic_box == dynamic_box
     assert hash(dynamic_box) == 31
+
+    base_pointer = Ptr[RawBase](1)
+    base_pointer[0] = raw_child
+    converted_child = cast(Ptr[Any], Any(base_pointer))[0]
+    assert isinstance(converted_child, RawChild)
+    assert cast(RawBase, converted_child) is raw_child
+    restored_child = cast(RawChild, converted_child)
+    assert restored_child is raw_child
+    assert restored_child.number == 71 and restored_child.extra == 73
+    restored_child.number = 72
+    converted_child.__setattr__('extra', 74)
+    assert base_pointer[0] is raw_child
+    assert raw_child.number == 72 and raw_child.extra == 74
+    GC_gcollect()
+    assert cast(RawChild, converted_child) is raw_child
+    assert converted_child == dynamic_box and hash(converted_child) == 31
 
     @tuple
     class ReflectedValue:
@@ -2682,6 +2715,13 @@ def test_any_tuple():
     reflected = box(ReflectedHolder(ReflectedValue(7.5))).__getattr__('value')
     assert reflected == reflected
     assert hash(reflected) == hash(ReflectedValue(7.5))
+
+    value_pointer = Ptr[ReflectedValue](1)
+    value_pointer[0] = ReflectedValue(8.5)
+    converted_value = cast(Ptr[Any], Any(value_pointer))[0]
+    assert cast(ReflectedValue, converted_value).value == 8.5
+    converted_value.__setattr__('value', 9.5)
+    assert value_pointer[0].value == 9.5
 
     class Raising:
         def __eq__(self, other: Raising) -> bool:

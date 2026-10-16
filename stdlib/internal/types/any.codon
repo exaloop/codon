@@ -90,9 +90,11 @@ class Any:
             if not self._typeinfo._isinstance(unrealized_type[Ptr]):
                 raise ValueError("expected ptr")
             ti = TypeInfo.cache(self._typeinfo.params[0])
-            ptr = Ptr[Ptr[byte]](self._data)
+            data = Ptr[Ptr[byte]](self._data)[0]
+            if ti.reference:
+                data = Ptr[Ptr[byte]](data)[0]
             p = Ptr[Any](1)
-            p[0] = Any(ti, ptr[0])
+            p[0] = Any(ti, data)
             return p
         elif T is Optional[Any]:
             if not self._typeinfo._isinstance(unrealized_type[Optional]):
