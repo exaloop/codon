@@ -25,6 +25,7 @@ enum TypeInfoField : unsigned {
   PARAMETERS,
   VALUE_SIZE,
   REFERENCE,
+  INLINE_VALUE,
   EXCEPTION_OFFSET,
   SYSTEM_EXIT_OFFSET
 };
@@ -38,6 +39,7 @@ struct TypeSlot {
 constexpr uint64_t METHOD_HASH_MULTIPLIER = 0x9e3779b97f4a7c15ULL;
 constexpr unsigned METHOD_HASH_SHIFT = 32;
 constexpr seq_int_t MAX_LINEAR_MRO = 8;
+constexpr unsigned ANY_INLINE_BYTES = 8;
 
 constexpr uint64_t methodHash(uint64_t id) {
   auto mixed = id * METHOD_HASH_MULTIPLIER;
@@ -71,6 +73,7 @@ struct TypeInfo {
   const seq_int_t *params;
   seq_int_t size;
   bool reference;
+  bool inline_value;
   seq_int_t exception_offset;
   seq_int_t system_exit_offset;
 };

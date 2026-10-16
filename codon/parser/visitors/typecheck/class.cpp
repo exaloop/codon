@@ -522,9 +522,8 @@ std::vector<Stmt *> TypecheckVisitor::prepareEnum(ClassStmt *stmt, ClassType *ty
   // enum_test: inherit Enum's __new__ and no-op __init__; all enum behavior
   // lives in the base class rather than compiler-generated method bodies.
   if (auto magic = stmt->getAttribute<ir::StringListAttribute>(Attr::ClassMagic))
-    std::erase_if(magic->values, [](const auto &name) {
-      return name == "init" || name == "new";
-    });
+    std::erase_if(magic->values,
+                  [](const auto &name) { return name == "init" || name == "new"; });
   return init;
 }
 

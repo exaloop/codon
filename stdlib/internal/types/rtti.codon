@@ -43,6 +43,7 @@ class TypeInfo:
     params: Ptr[int]
     size: int
     reference: bool
+    inline_value: bool
     exception_offset: int
     system_exit_offset: int
 

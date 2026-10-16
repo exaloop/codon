@@ -9,17 +9,36 @@ class Any:
     _data: Ptr[u8]
     _typeinfo: TypeInfo
 
+    def _is_inline(self) -> bool:
+        return self._typeinfo.inline_value
+
+    @pure
+    @llvm
+    def _pack_inline(value: T, T: type) -> Ptr[byte]:
+        %storage = alloca i64, align 8
+        store i64 0, ptr %storage, align 8
+        store {=T} %value, ptr %storage, align 1
+        %bits = load i64, ptr %storage, align 8
+        %packed = inttoptr i64 %bits to ptr
+        ret ptr %packed
+
     def __str__(self):
         return f"Any({self._typeinfo.nice_name})"
 
     def __hash__(self):
-        return self._real_typeinfo().value_hash(self._data)
+        payload = self._data
+        data = __ptr__(payload).as_byte() if self._is_inline() else payload
+        return self._real_typeinfo().value_hash(data)
 
     def __eq__(self, o):
         info = self._real_typeinfo()
         if info != o._real_typeinfo():
             return False
-        return info.value_equal(self._data, o._data)
+        left = self._data
+        right = o._data
+        left_data = __ptr__(left).as_byte() if self._is_inline() else left
+        right_data = __ptr__(right).as_byte() if o._is_inline() else right
+        return info.value_equal(left_data, right_data)
 
     def __ne__(self, o):
         return not (self == o)
@@ -30,6 +49,10 @@ class Any:
     def __new__(ti: TypeInfo, data: Ptr[byte]) -> Any:
         if ti._isinstance(Any):  # Disallow Any[Any]
             return Ptr[Any](data)[0]
+        if ti.inline_value:
+            payload = Ptr[byte]()
+            str.memcpy(__ptr__(payload).as_byte(), data, ti.size)
+            return type._force_value_cast((payload, ti), Any)
         return type._force_value_cast((data, ti), Any)
 
     def __new__(obj) -> Any:
@@ -39,6 +62,8 @@ class Any:
         T: type = type(obj)
         typeinfo = TypeInfo.cache(T)
         if isinstance(T, ByVal):
+            if typeinfo.inline_value:
+                return type._force_value_cast((Any._pack_inline(obj), typeinfo), Any)
             pointer = Ptr[T](1)
             pointer[0] = obj
             return Any(typeinfo, pointer.as_byte())
@@ -51,6 +76,9 @@ class Any:
         if not self._isinstance(T):
             raise TypeError(f"Any.unwrap failed: requested {TypeInfo.cache(T).nice_name}, but got {self._typeinfo.nice_name} instead")
         if isinstance(T, ByVal):
+            if self._is_inline():
+                payload = self._data
+                return Ptr[T](__ptr__(payload))[0]
             p = type._force_cast(self._data, Ptr[T])
             return p[0]
         else:
@@ -110,7 +138,8 @@ class Any:
         return self._typeinfo
 
     def _real_contents(self):
-        return self._real_typeinfo(), self._data
+        """Inline scalars have no fields and expose no addressable payload."""
+        return self._real_typeinfo(), Ptr[byte]() if self._is_inline() else self._data
 
     def _isinstance(self, T: type) -> bool:
         if T is Ptr[Any]:

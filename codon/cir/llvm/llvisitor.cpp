@@ -3699,9 +3699,10 @@ llvm::StructType *LLVMVisitor::getRuntimeTypeInfoType() {
   auto *pointer = B->getPtrTy();
   auto *string = llvm::StructType::get(*context, {pointer, integer});
   return llvm::StructType::get(
-      *context, {integer, integer, pointer, pointer, pointer, integer, pointer, integer,
-                 pointer, B->getInt8Ty(), string, string, string, integer, pointer,
-                 integer, B->getInt8Ty(), integer, integer});
+      *context,
+      {integer, integer, pointer,        pointer,        pointer, integer, pointer,
+       integer, pointer, B->getInt8Ty(), string,         string,  string,  integer,
+       pointer, integer, B->getInt8Ty(), B->getInt8Ty(), integer, integer});
 }
 
 llvm::StructType *LLVMVisitor::getOwnLayout(RefType *type) {
@@ -3893,18 +3894,34 @@ llvm::GlobalVariable *LLVMVisitor::getRuntimeTypeInfo(Type *type) {
     methods[position] =
         llvm::ConstantStruct::get(methodSlotType, B->getInt64(id), function);
   }
+  auto valueSize = M->getDataLayout().getTypeAllocSize(getLLVMType(type));
+  bool inlineValue =
+      M->getDataLayout().getPointerSize() == runtime::ANY_INLINE_BYTES &&
+      valueSize <= runtime::ANY_INLINE_BYTES &&
+      (cast<IntType>(type) || cast<BoolType>(type) || cast<FloatType>(type) ||
+       cast<Float32Type>(type) || cast<Float16Type>(type) || cast<BFloat16Type>(type) ||
+       info->baseName == "NoneType");
   auto *initializer = llvm::ConstantStruct::get(
-      getRuntimeTypeInfoType(),
-      {B->getInt64(info->id), B->getInt64(mro.size()),
-       array(B->getInt64Ty(), mro, ".mro"), array(B->getInt64Ty(), offsets, ".offsets"),
-       array(B->getInt64Ty(), sortedMro, ".sorted"), B->getInt64(slots.size()),
-       array(slotType, slots, ".slots"), B->getInt64(methodCount),
-       array(methodSlotType, methods, ".methods"), B->getInt8(polymorphic),
-       string(info->rawName), string(info->niceName), string(info->baseName),
-       B->getInt64(parameters.size()), array(B->getInt64Ty(), parameters, ".params"),
-       B->getInt64(M->getDataLayout().getTypeAllocSize(getLLVMType(type))),
-       B->getInt8(reference != nullptr), B->getInt64(exceptionOffset),
-       B->getInt64(systemExitOffset)});
+      getRuntimeTypeInfoType(), {B->getInt64(info->id),
+                                 B->getInt64(mro.size()),
+                                 array(B->getInt64Ty(), mro, ".mro"),
+                                 array(B->getInt64Ty(), offsets, ".offsets"),
+                                 array(B->getInt64Ty(), sortedMro, ".sorted"),
+                                 B->getInt64(slots.size()),
+                                 array(slotType, slots, ".slots"),
+                                 B->getInt64(methodCount),
+                                 array(methodSlotType, methods, ".methods"),
+                                 B->getInt8(polymorphic),
+                                 string(info->rawName),
+                                 string(info->niceName),
+                                 string(info->baseName),
+                                 B->getInt64(parameters.size()),
+                                 array(B->getInt64Ty(), parameters, ".params"),
+                                 B->getInt64(valueSize),
+                                 B->getInt8(reference != nullptr),
+                                 B->getInt8(inlineValue),
+                                 B->getInt64(exceptionOffset),
+                                 B->getInt64(systemExitOffset)});
   // Refresh an old descriptor in place when the cell initializes; do not define
   // a second global and strand existing objects on the old method table.
   if (options->jit && previouslyEmitted)

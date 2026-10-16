@@ -343,6 +343,14 @@ child = ValueChild(17)
 assert marker_base(child) == 27
 saved = box_base(child)
 number = Any(17)
+number_info = TypeInfo.cache(int)
+number_storage = Ptr[int](1)
+number_storage[0] = 17
+copied_number = Any(number_info, number_storage.as_byte())
+assert number._is_inline() and copied_number._is_inline()
+assert number_info.inline_value
+assert number._typeinfo == number_info
+assert number.__unwrap__(int) == 17
 old_info = TypeInfo.cache(ValueChild)
 hash_method_id = TypeInfo._value_method_id('_hash_value')
 equal_method_id = TypeInfo._value_method_id('_equal_values')
@@ -360,6 +368,8 @@ print('boxed')
 def hash_any(value: Any): return hash(value)
 assert hash_any(saved) == hash(child)
 assert hash_any(number) == hash(17)
+assert hash_any(copied_number) == hash_any(number)
+assert number._typeinfo.__raw__() == number_info.__raw__()
 assert TypeInfo._value_method_id('_hash_value') == hash_method_id
 hash_target = old_info._lookup_method(hash_method_id)
 assert Function[[Ptr[byte]], int](hash_target)(saved._data) == hash(child)
@@ -384,6 +394,15 @@ assert equal_any(saved, box_base(ValueChild(17)))
 assert not equal_any(saved, box_base(ValueBase(17)))
 assert equal_any(number, Any(17))
 assert not equal_any(number, Any(17.0))
+assert equal_any(number, copied_number) and equal_any(copied_number, number)
+number_storage[0] = 23
+assert equal_any(number, copied_number)
+assert copied_number.__unwrap__(int) == 17 and number.__unwrap__(int) == 17
+assert Any(number_info, number_storage.as_byte()).__unwrap__(int) == 23
+from C import GC_gcollect()
+GC_gcollect()
+assert hash_any(number) == hash(17)
+assert number._typeinfo.__raw__() == number_info.__raw__()
 try:
   equal_any(unsupported, unsupported)
   assert False
