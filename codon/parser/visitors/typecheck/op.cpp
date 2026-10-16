@@ -429,6 +429,16 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
     i = transform(i, true);
   }
   if (isTypeExpr(expr->getExpr())) {
+    // enum_test / class_static_protocols: static __getitem__ is ordinary class
+    // subscription; instance __getitem__ methods still allow generic T[...].
+    auto methods = findMethod(extractClassType(expr->getExpr()), "__getitem__");
+    if (std::ranges::any_of(methods, [](auto *method) {
+          return method->ast->hasAttribute(Attr::StaticMethod);
+        })) {
+      resultExpr = transform(
+          N<CallExpr>(N<DotExpr>(expr->getExpr(), "__getitem__"), expr->getIndex()));
+      return;
+    }
     resultExpr = transform(N<InstantiateExpr>(expr->getExpr(), items));
     return;
   }

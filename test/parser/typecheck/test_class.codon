@@ -611,3 +611,134 @@ assert Diamond.tag == 20 and Root.tag == 1 and Own.tag == 3
 Root.tag = 10
 assert Left.tag == 10 and Right.tag == 20
 print("class variable overrides ok")  #: class variable overrides ok
+
+#%% enum_extend_err
+from enum import Enum
+class Color(Enum):
+    RED = 1
+class More(Color):
+    BLUE = 2
+#! cannot extend an enumeration with members
+
+#%% enum_reassign_err
+from enum import Enum
+class Color(Enum):
+    RED = 1
+Color.RED = Color.RED
+#! cannot reassign enumeration member 'RED'
+
+#%% enum_base_construct_err
+from enum import Enum
+Enum("invalid")
+#! cannot instantiate Enum directly
+#! during the realization of __new__(value: str, __SELF__: Enum)
+
+#%% enum_mixed_values_err
+from enum import Enum
+class Mixed(Enum):
+    INTEGER = 1
+    STRING = "one"
+#! enumeration values must have the same type
+
+#%% enum_custom_constructor_err
+from enum import Enum
+class Custom(Enum):
+    MEMBER = 1
+    def __init__(self, value):
+        pass
+#! custom enumeration constructors are not supported
+
+#%% class_custom_new
+# enum_test uses this general constructor path: __new__ receives the same
+# evaluated arguments as __init__, including forwarded *args and **kwargs.
+events = List[str]()
+class Factory:
+    value: int
+    @staticmethod
+    def __new__(value: int, offset: int = 0):
+        events.append("new")
+        obj = type._ref_new(Factory)
+        obj.value = value + offset
+        return obj
+    def __init__(self, value: int, offset: int = 0):
+        events.append("init")
+        assert self.value == value + offset
+def argument():
+    events.append("arg")
+    return 10
+obj = Factory(argument(), offset=2)
+assert obj.value == 12
+assert events == ["arg", "new", "init"]
+def forward(*args, **kwargs):
+    return Factory(*args, **kwargs)
+events.clear()
+assert forward(argument(), offset=3).value == 13
+assert events == ["arg", "new", "init"]
+
+# Returning an unrelated type skips __init__, as for ordinary Python factories.
+class OtherResult:
+    @staticmethod
+    def __new__(value: int):
+        return value * 2
+    def __init__(self, value: int):
+        compile_error("must not initialize an unrelated result")
+assert OtherResult(4) == 8
+print("custom new ok")  #: custom new ok
+
+#%% class_static_protocols
+# Enum subscription and Generator conversion must also work for ordinary
+# classes with static methods, without an Enum-specific dispatch branch.
+class Values:
+    tag: ClassVar[int] = 10
+    @staticmethod
+    def __iter__():
+        yield 1
+        yield 2
+    @staticmethod
+    def __getitem__(name: str):
+        return name.upper()
+assert list(Values) == [1, 2]
+assert set(Values) == {1, 2}
+assert Values["key"] == "KEY"
+assert hasattr(Values, "tag")
+assert hasattr(Values(), "tag")
+print("static protocols ok")  #: static protocols ok
+
+#%% class_custom_new_err
+# A missing argument must fail in the custom allocator rather than selecting
+# an automatically generated zero-argument __new__ overload.
+class Factory:
+    @staticmethod
+    def __new__(value: int):
+        return type._ref_new(Factory)
+Factory()
+#! __new__() missing 1 required positional argument: 'value'
+
+#%% class_inherited_self
+# Enum shares its methods using __SELF__. The same inherited specialization
+# must work for ordinary classes, including calls through an intermediate base.
+class Base:
+    @staticmethod
+    def owner(__SELF__: type = Base):
+        return __SELF__.__name__
+    def label(self: __SELF__, __SELF__: type) -> str:
+        if hasattr(__SELF__, "value"):
+            return "value=" + str(self.value)
+        return "base"
+class First(Base):
+    value: int
+def describe(obj: Base):
+    return obj.label()
+assert Base.owner() == "Base"
+assert First.owner() == "First"
+assert describe(First(3)) == "value=3"
+class Middle(Base):
+    pass
+class Late(Middle):
+    value: str
+def describe_middle(obj: Middle):
+    return obj.label()
+assert describe(Late("late")) == "value=late"
+assert describe_middle(Late("middle")) == "value=middle"
+assert Late.owner() == "Late"
+print("inherited self ok")  #: inherited self ok

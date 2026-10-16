@@ -383,6 +383,13 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
   stmt->lhs = transform(stmt->getLhs());
 
   if (auto lhsClass = extractClassType(stmt->getLhs())) {
+    // enum_reassign_err: use the existing member globals, without a second
+    // registry of enum names in the class cache.
+    if (isEnum(lhsClass) && !startswith(stmt->getMember(), "__"))
+      if (auto var = in(getClass(lhsClass)->classVars, stmt->getMember());
+          var && ctx->forceFind(*var)->getType()->is(lhsClass->name))
+        E(Error::CUSTOM, stmt, "cannot reassign enumeration member '{}'",
+          stmt->getMember());
     auto member = findMember(lhsClass, stmt->getMember());
     if (!member) {
       // Case: property setters

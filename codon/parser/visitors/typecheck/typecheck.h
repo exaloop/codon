@@ -205,6 +205,9 @@ private:
   parseBaseClasses(std::vector<Expr *> &, std::vector<Param> &, const Stmt *,
                    const std::string &, types::ClassType *);
   bool autoDeduceMembers(ClassStmt *, std::vector<Param> &);
+  std::vector<Stmt *> prepareEnum(ClassStmt *, types::ClassType *,
+                                  std::vector<Stmt *> &);
+  bool isEnum(types::ClassType *) const;
   static std::vector<Stmt *> getClassMethods(Stmt *s);
   void transformNestedClasses(const ClassStmt *, std::vector<Stmt *> &,
                               std::vector<Stmt *> &, std::vector<Stmt *> &);

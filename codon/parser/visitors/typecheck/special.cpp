@@ -860,8 +860,10 @@ Expr *TypecheckVisitor::transformHasAttr(CallExpr *expr, bool allow_dynamic) {
     return transform(N<BoolExpr>(in(names, attr)));
   }
 
-  bool exists =
-      !findMethod(typ->getClass(), attr).empty() || findMember(typ->getClass(), attr);
+  // enum_test: __members__ is an ordinary ClassVar, so hasattr must include
+  // class variables just as attribute lookup does (also through instances).
+  bool exists = !findMethod(typ->getClass(), attr).empty() ||
+                findMember(typ->getClass(), attr) || in(getClass(typ)->classVars, attr);
   if (exists && args.size() > 1) {
     exists &= findBestMethod(typ, attr, args) != nullptr;
   }
