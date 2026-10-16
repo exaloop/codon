@@ -445,6 +445,8 @@ std::vector<Stmt *> TypecheckVisitor::prepareEnum(ClassStmt *stmt, ClassType *ty
   std::vector<std::string> names;
   std::vector<Expr *> rawValues, members;
   std::vector<Stmt *> init;
+  auto memberBuffer = getTemporaryVar("enum_members");
+  std::string autoMaximum;
   auto self = [&]() { return N<IdExpr>(typ->name); };
   auto helper = [&](const std::string &name) {
     return N<IdExpr>(getMangledFunc("std.enum", name));
@@ -468,7 +470,10 @@ std::vector<Stmt *> TypecheckVisitor::prepareEnum(ClassStmt *stmt, ClassType *ty
           extractClassType(head)->is(getMangledClass("std.enum", "auto"))) {
         if (!call->empty())
           E(Error::CUSTOM, call, "auto() does not accept arguments");
-        value = N<CallExpr>(helper("_next_value"), N<TupleExpr>(clone(rawValues)));
+        value = rawValues.empty()
+                    ? static_cast<Expr *>(N<IntExpr>(1))
+                    : N<CallExpr>(helper("_next_value"), N<IdExpr>(autoMaximum),
+                                  clone(rawValues.front()));
       }
     }
     auto raw = getTemporaryVar("enum_value");
@@ -479,12 +484,31 @@ std::vector<Stmt *> TypecheckVisitor::prepareEnum(ClassStmt *stmt, ClassType *ty
     registerGlobal(binding->canonicalName);
     ctx->add(a.getName(), binding);
     rawValues.push_back(N<IdExpr>(binding->canonicalName));
+    if (autoMaximum.empty()) {
+      autoMaximum = getTemporaryVar("enum_maximum");
+      values.push_back(transform(
+          N<AssignStmt>(N<IdExpr>(autoMaximum),
+                        N<CallExpr>(helper("_auto_maximum"), clone(rawValues.back()),
+                                    N<IntExpr>(0), N<BoolExpr>(true)))));
+      auto maximumBinding = ctx->forceFind(autoMaximum);
+      maximumBinding->baseName = "";
+      maximumBinding->blockLevel = 0;
+      registerGlobal(maximumBinding->canonicalName);
+      autoMaximum = maximumBinding->canonicalName;
+    } else {
+      values.push_back(transform(
+          N<AssignStmt>(N<IdExpr>(autoMaximum),
+                        N<CallExpr>(helper("_auto_maximum"), clone(rawValues.back()),
+                                    N<IdExpr>(autoMaximum), N<BoolExpr>(false)),
+                        nullptr, AssignStmt::Update)));
+    }
     auto member = N<IdExpr>(fmt::format("{}.{}", typ->name, a.getName()));
-    init.push_back(N<AssignStmt>(
-        clone(member),
-        N<CallExpr>(helper("_make_member"), self(), N<StringExpr>(a.getName()),
-                    clone(rawValues.back()), N<TupleExpr>(clone(members))),
-        self(), AssignStmt::Update));
+    init.push_back(
+        N<AssignStmt>(clone(member),
+                      N<CallExpr>(helper("_make_member"), self(),
+                                  N<StringExpr>(a.getName()), clone(rawValues.back()),
+                                  N<IdExpr>(memberBuffer), N<IntExpr>(members.size())),
+                      self(), AssignStmt::Update));
     names.push_back(a.getName());
     members.push_back(member);
     a.type = classVar();
@@ -508,6 +532,10 @@ std::vector<Stmt *> TypecheckVisitor::prepareEnum(ClassStmt *stmt, ClassType *ty
         N<TupleExpr>(std::vector<Expr *>{N<IdExpr>(realized->realizedName()), self()}));
     stmt->items.emplace_back("__value_index__",
                              N<IndexExpr>(N<IdExpr>("ClassVar"), indexType));
+    init.insert(init.begin(),
+                N<AssignStmt>(N<IdExpr>(memberBuffer),
+                              N<CallExpr>(N<IndexExpr>(N<IdExpr>("Ptr"), self()),
+                                          N<IntExpr>(members.size()))));
   }
   auto mappingType = N<IndexExpr>(
       N<IdExpr>(getMangledClass("std.internal.types.collections.dict", "OrderedDict")),

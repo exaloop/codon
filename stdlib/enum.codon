@@ -86,27 +86,34 @@ class auto:
     pass
 
 
-def _next_value(previous):
-    value = previous[0] if static.len(previous) else 0
-    for item in previous:
-        if not isinstance(item, int):
-            compile_error("auto() requires integer enum values")
-        value = max(value, item)
-    return value + 1
+def _auto_maximum(value, maximum: int, first: bool):
+    if isinstance(value, int):
+        return value if first else max(maximum, value)
+    else:
+        return maximum
 
 
-def _make_member(T: type, name: str, value, previous):
+def _next_value(maximum: int, first_value):
+    if not isinstance(first_value, int):
+        compile_error("auto() requires integer enum values")
+    return maximum + 1
+
+
+def _make_member(T: type, name: str, value, previous: Ptr[T], count: int):
     # Equal values are aliases of the first member, preserving `is` identity.
-    if static.len(previous):
-        for candidate in previous:
-            if candidate._value_ is value:
+    for index in range(count):
+        candidate = previous[index]
+        if candidate._value_ is value:
+            previous[count] = candidate
+            return candidate
+        if hasattr(candidate._value_, "__eq__", value):
+            if candidate._value_ == value:
+                previous[count] = candidate
                 return candidate
-            if hasattr(candidate._value_, "__eq__", value):
-                if candidate._value_ == value:
-                    return candidate
     member = type._ref_new(T)
     member._name_ = name
     member._value_ = value
+    previous[count] = member
     return member
 
 

@@ -65,6 +65,39 @@ TEST(TypeCoreTest, NewFunctionRealizationIsIncomplete) {
   EXPECT_TRUE(realization->captures.empty());
 }
 
+TEST(EnumConstructionTest, BoundsHelperRealizations) {
+  std::string source = "from enum import Enum, auto\nclass Explicit(Enum):\n";
+  for (int index = 0; index < 32; ++index)
+    source +=
+        "    MEMBER_" + std::to_string(index) + " = " + std::to_string(index) + "\n";
+  source += "class Automatic(Enum):\n";
+  for (int index = 0; index < 32; ++index)
+    source += "    MEMBER_" + std::to_string(index) + " = auto()\n";
+  source += "assert Explicit(31) is Explicit.MEMBER_31\n"
+            "assert Automatic(32) is Automatic.MEMBER_31\n";
+
+  for (bool unordered : {false, true}) {
+    auto options = codon::Options::getDefault("build/codon_test");
+    options->debug = false;
+    options->unordereddict = unordered;
+    codon::Compiler compiler(*options);
+    auto error = compiler.parseCode("enum_construction.codon", source);
+    ASSERT_FALSE(bool(error)) << llvm::toString(std::move(error));
+
+    auto countRealizations = [&](const std::string &helper) {
+      size_t count = 0;
+      auto prefix = codon::ast::getMangledFunc("std.enum", helper);
+      for (const auto &[name, function] : compiler.getCache()->functions)
+        if (name.starts_with(prefix))
+          count += function.realizations.size();
+      return count;
+    };
+    EXPECT_EQ(countRealizations("_make_member"), 2u);
+    EXPECT_EQ(countRealizations("_next_value"), 1u);
+    EXPECT_EQ(countRealizations("_auto_maximum"), 1u);
+  }
+}
+
 TEST(PassManagerTest, HonorsDisabledPassesAtRegistration) {
   auto options = codon::Options::getDefault("build/codon_test");
   options->debug = false;

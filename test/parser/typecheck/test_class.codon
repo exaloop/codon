@@ -640,6 +640,14 @@ class Mixed(Enum):
     STRING = "one"
 #! enumeration values must have the same type
 
+#%% enum_noninteger_auto_err
+from enum import Enum, auto
+class NonIntegerAuto(Enum):
+    FIRST = "one"
+    SECOND = auto()
+#! auto() requires integer enum values
+#! during the realization of _next_value(maximum: int, first_value: str)
+
 #%% enum_custom_constructor_err
 from enum import Enum
 class Custom(Enum):

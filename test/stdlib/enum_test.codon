@@ -91,6 +91,35 @@ class Negative(Enum):
     SECOND = auto()
 assert Negative.SECOND.value == -4
 
+class NonMonotonicAuto(Enum):
+    PEAK = 17
+    LOW = -9
+    ALIAS = PEAK
+    NEXT = auto()
+    LOWER = -50
+    AFTER = auto()
+
+assert NonMonotonicAuto.ALIAS is NonMonotonicAuto.PEAK
+assert NonMonotonicAuto.NEXT.value == 18
+assert NonMonotonicAuto.AFTER.value == 19
+
+class ConstructionValue:
+    value: int
+    comparisons: list[Tuple[int, int]]
+
+    def __eq__(self, other: ConstructionValue):
+        self.comparisons.append((self.value, other.value))
+        return self.value == other.value
+
+construction_comparisons = List[Tuple[int, int]]()
+class ConstructionAliases(Enum):
+    FIRST = ConstructionValue(1, construction_comparisons)
+    ALIAS = ConstructionValue(1, construction_comparisons)
+    LAST = ConstructionValue(2, construction_comparisons)
+
+assert ConstructionAliases.ALIAS is ConstructionAliases.FIRST
+assert construction_comparisons == [(1, 1), (1, 2), (1, 2)]
+
 # String-valued members, custom methods, nested types, and imported aliases.
 from enum import Enum as Enumeration
 class Owner:
