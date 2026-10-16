@@ -285,6 +285,87 @@ def test_task_exception_propagates_to_await():
     loop.run_forever()
 
 @test
+def test_task_assertion_propagates_to_await():
+    async def child():
+        await sleep_async(0)
+        assert False, 'child failure'
+
+    async def main(log):
+        for separate_task in (False, True):
+            try:
+                if separate_task:
+                    await asyncio.create_task(child())
+                else:
+                    await child()
+            except AssertionError as error:
+                assert 'child failure' in str(error)
+                log.append('child failure')
+            else:
+                raise AssertionError('child assertion was lost')
+
+        try:
+            await gather(child())
+        except AssertionError as error:
+            assert 'child failure' in str(error)
+            log.append('child failure')
+        else:
+            raise AssertionError('gather assertion was lost')
+        log.append('continued')
+        return 17
+
+    log: List[str] = []
+    assert asyncio.run(main(log)) == 17
+    assert log == ['child failure', 'child failure', 'child failure', 'continued']
+
+@test
+def test_timer_cancellation_lifecycle():
+    def cancel_and_stop(loop, handle):
+        handle.cancel()
+        handle.cancel()
+        loop.call_soon(loop.stop)
+
+    for cancelled_index in range(3):
+        loop = new_loop()
+        seen: List[int] = []
+        when = loop.time() - 1.0
+        handles = [loop.call_at(when + index * 0.01, seen.append, index)
+                   for index in range(3)]
+        handle = handles[cancelled_index]
+        loop.call_soon(cancel_and_stop, loop, handle)
+        loop.run_forever()
+        assert seen == [index for index in range(3) if index != cancelled_index]
+        for index in range(3):
+            assert handles[index].cancelled() == (index == cancelled_index)
+        loop.close()
+
+    loop = new_loop()
+    seen: List[int] = []
+    handle = loop.call_later(0.0, seen.append, 1)
+    handle.cancel()
+    handle.cancel()
+    loop.call_soon(loop.stop)
+    loop.run_forever()
+    assert handle.cancelled()
+    assert seen == []
+    loop.close()
+
+    def fired(loop, seen):
+        seen.append(1)
+        loop.stop()
+
+    loop = new_loop()
+    handle = loop.call_later(0.0, fired, loop, seen)
+    when = handle.when()
+    loop.run_forever()
+    assert seen == [1]
+    assert not handle.cancelled()
+    handle.cancel()
+    handle.cancel()
+    assert handle.cancelled()
+    assert handle.when() == when
+    loop.close()
+
+@test
 def test_cancellation_delivered_at_await_boundary_and_finally_runs():
     loop = new_loop()
     log: List[str] = []
@@ -1196,6 +1277,8 @@ test_await_done_future_no_suspend_observable()
 test_sleep_zero_yields_control()
 test_sleep_delay_approximately()
 test_task_exception_propagates_to_await()
+test_task_assertion_propagates_to_await()
+test_timer_cancellation_lifecycle()
 test_cancellation_delivered_at_await_boundary_and_finally_runs()
 test_cancel_then_await_never_completing_future_raises_immediately()
 test_cancel_idempotent_and_returns_bool()

@@ -55,6 +55,12 @@ class WorkNode:
 class Timer:
     work: WorkItem
     when: float
+    _node: Optional[WorkNode]
+
+    def __init__(self, work: WorkItem, when: float):
+        self.work = work
+        self.when = when
+        self._node = None
 
     def cancelled(self):
         return self.work.cancelled()
@@ -290,7 +296,7 @@ class EventLoop:
         while self._timers_len > 0 and self._timers[0].when <= now:
             timer = self._timers_pop()
             if not timer.cancelled():
-                self._work_enqueue(timer.work)
+                timer._node = self._work_enqueue(timer.work)
 
     def _step(self):
         work: Optional[WorkItem] = None
@@ -343,9 +349,6 @@ class EventLoop:
             except CancelledError as error:
                 exception = error
             except SystemExit as error:
-                exception = error
-                fatal = True
-            except AssertionError as error:
                 exception = error
                 fatal = True
             except BaseException as e:
@@ -512,6 +515,9 @@ class EventLoop:
         node.next = None
 
     def _cancel(self, timer: Timer):
+        if timer._node is not None:
+            self._cancel(timer._node)
+            timer._node = None
         timer.work = WorkItem()
 
     def _timers_reserve(self, new_cap: int):
