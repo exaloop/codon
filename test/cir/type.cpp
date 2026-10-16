@@ -53,3 +53,17 @@ TEST_F(CIRCoreTest, FuncTypeQuery) {
 
   ASSERT_EQ(2, type->getUsedTypes().size());
 }
+
+TEST_F(CIRCoreTest, UnionTypeIdentity) {
+  std::vector<Type *> alternatives{module->getIntType(), module->getFloatType()};
+  auto *numeric = module->unsafeGetUnionType(alternatives);
+  auto *integer = module->unsafeGetUnionType({module->getIntType()});
+
+  EXPECT_EQ(numeric->getName(), UnionType::getInstanceName(alternatives));
+  EXPECT_FALSE(integer->getName().empty());
+  EXPECT_NE(numeric->getName(), integer->getName());
+  EXPECT_EQ(numeric, module->unsafeGetUnionType(alternatives));
+  EXPECT_EQ(integer, module->unsafeGetUnionType({module->getIntType()}));
+  EXPECT_NE(module->unsafeGetPointerType(numeric),
+            module->unsafeGetPointerType(integer));
+}

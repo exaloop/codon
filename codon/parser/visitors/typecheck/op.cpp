@@ -556,7 +556,12 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
       auto t = instantiateType(generateTuple(tt.size()), tt);
       unify(typ->getUnion()->generics[0].getType(), t);
       unify(expr->getType(), instantiateTypeVar(typ.get()));
-      log("instantiated {}", typ->debugString(2));
+      if (auto realized = realize(expr->getType()); realized && !resultExpr) {
+        auto unionType = extractType(realized);
+        resultExpr = N<IdExpr>(unionType->realizedName());
+        resultExpr->setType(realized->shared_from_this());
+        resultExpr->setDone();
+      }
     }
   } else {
     for (size_t i = 0; i < expr->size(); i++) {

@@ -804,6 +804,24 @@ print(xx)  #: 0
 xx = (int|str)(0)
 print(xx)  #: 0
 
+#%% union_list_layout
+from typing import Union
+
+class FirstValue:
+    value: str
+
+class SecondValue:
+    value: str
+
+Choice = Union[FirstValue, SecondValue]
+values: list[Choice] = [Choice(FirstValue('first')), Choice(SecondValue('second'))]
+for value in values:
+    print(int(Union._get_tag(value)), isinstance(value, FirstValue), isinstance(value, SecondValue))
+#: 0 True False
+#: 1 False True
+print(values[0].value)  #: first
+assert values[1].value == 'second'
+
 #%% union_error,barebones
 a: int|str = 123
 print(123 == a)  #: True

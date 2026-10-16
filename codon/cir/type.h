@@ -583,7 +583,7 @@ public:
   /// Constructs a UnionType.
   /// @param types the alternative types (must be sorted by caller)
   explicit UnionType(std::vector<Type *> types)
-      : AcceptorExtend(), types(std::move(types)) {}
+      : AcceptorExtend(getInstanceName(types)), types(std::move(types)) {}
 
   const_iterator begin() const { return types.begin(); }
   const_iterator end() const { return types.end(); }
