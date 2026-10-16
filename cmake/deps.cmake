@@ -27,7 +27,7 @@ CPMAddPackage(
 CPMAddPackage(
     NAME semver
     GITHUB_REPOSITORY "Neargye/semver"
-    GIT_TAG v0.3.0)
+    GIT_TAG v1.0.1)
 
 CPMAddPackage(
     NAME zlibng
