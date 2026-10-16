@@ -671,10 +671,29 @@ def test_algebraic_simplification():
     assert eq(n+0, n)
     assert eq(0+n, n)
     assert eq(n-0, n)
+    divisor = 42
+    assert eq(0 // divisor, 0)
+    assert eq((0).cdiv(divisor), 0)
+    assert eq(op_count, OP_COUNT)
     assert eq(0//n, 0)
     assert eq((0).cdiv(n), 0)
-    assert eq(op_count, OP_COUNT)
+    assert eq(inc(inc(op_count)), OP_COUNT)
 test_algebraic_simplification()
+
+@test
+def test_zero_multiply_preserves_evaluation():
+    def value(counter: Ptr[int]):
+        counter[0] = inc(counter[0])
+        return 42
+
+    counter = Ptr[int](1)
+    counter[0] = 0
+    op_count = OP_COUNT
+    assert eq(0 * value(counter), 0)
+    assert eq(value(counter) * 0, 0)
+    assert eq(counter[0], 2)
+    assert eq(op_count, OP_COUNT)
+test_zero_multiply_preserves_evaluation()
 
 n = 42
 @test
