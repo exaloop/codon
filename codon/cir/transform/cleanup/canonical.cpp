@@ -315,6 +315,12 @@ void CanonicalizationPass::run(Module *m) {
 }
 
 void CanonicalizationPass::handle(CallInstr *v) {
+  // Lift sequenced operands out of calls to expose their values to folding.
+  // Writing seq(prefix, value) for FlowInstr:
+  //   func(value, seq(effect(), 0), later)
+  //     -> seq(saved = value; effect(), func(saved, 0, later)).
+  // The callee is evaluated first. Only operands through the last sequence
+  // need lifting; later operands can still be evaluated inside the call.
   size_t prefixEnd = isA<FlowInstr>(v->getCallee()) ? 1 : 0;
   size_t position = 1;
   for (auto *argument : *v) {
@@ -337,6 +343,8 @@ void CanonicalizationPass::handle(CallInstr *v) {
         flow->push_back(sequence->getFlow());
         operand = sequence->getValue();
       }
+      // Capture even variable reads before later prefixes can mutate them.
+      // Constants and direct function references need no such snapshot.
       if (index + 1 < prefixEnd && !isA<Const>(operand) && !util::getFunc(operand)) {
         auto *temporary = util::makeVar(operand, flow, parent);
         operand = module->N<VarValue>(operand->getSrcInfo(), temporary);
@@ -375,6 +383,10 @@ void CanonicalizationPass::handle(SeriesFlow *v) {
       it = v->insert(it, flowInstr->getFlow());
       // don't increment; re-traverse in case a new series flow added
     } else {
+      // Split result = seq(effect(), value) into effect(); result = value,
+      // and return seq(effect(), value) into effect(); return value.
+      // This exposes plain RHS/return values to later CIR passes while keeping
+      // the effects inside their original enclosing control-flow context.
       auto *assignment = cast<AssignInstr>(*it);
       auto *returnValue = cast<ReturnInstr>(*it);
       auto *sequence = cast<FlowInstr>(assignment    ? assignment->getRhs()
