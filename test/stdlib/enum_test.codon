@@ -1,0 +1,190 @@
+# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
+
+from enum import Enum, auto
+import enum as enums
+import copy
+
+# Native members preserve singleton identity, including aliases and value lookup.
+class Color(Enum):
+    RED = 1
+    GREEN = 2
+    BLUE = 3
+    CRIMSON = RED
+
+assert Color.RED.name == "RED"
+assert Color.RED.value == 1
+assert Color.CRIMSON is Color.RED
+assert Color.CRIMSON.name == "RED"
+assert Color(1) is Color.RED
+assert Color(Color.RED) is Color.RED
+assert Color["CRIMSON"] is Color.RED
+assert Color.__members__["CRIMSON"] is Color.RED
+assert Color.RED != Color.GREEN
+assert Color.RED != 1
+assert Color.RED == Color.CRIMSON
+assert str(Color.BLUE) == "Color.BLUE"
+assert repr(Color.BLUE) == "<Color.BLUE: 3>"
+assert isinstance(Color.RED, Enum)
+assert isinstance(Color.RED, Color)
+assert hash(Color.CRIMSON) == hash(Color.RED)
+assert {Color.RED: "red"}[Color.CRIMSON] == "red"
+assert copy.copy(Color.RED) is Color.RED
+assert copy.deepcopy(Color.RED) is Color.RED
+assert copy.copy(Color.RED).value == 1
+assert copy.deepcopy(Color.RED).value == 1
+assert [member.name for member in Color] == ["RED", "GREEN", "BLUE"]
+assert len(Color) == 3
+assert hasattr(Color, "__iter__")
+assert hasattr(Color, "__members__")
+# Enum operations use ordinary static methods and ClassVars, including instance access.
+assert hasattr(Color.RED, "__iter__")
+assert hasattr(Color.RED, "__members__")
+assert Color.RED.__members__ is Color.__members__
+assert list(Color) == [Color.RED, Color.GREEN, Color.BLUE]
+assert set(Color) == {Color.RED, Color.GREEN, Color.BLUE}
+assert [member.name for member in reversed(Color)] == ["BLUE", "GREEN", "RED"]
+assert Color.RED in Color
+assert 2 in Color
+assert 10 not in Color
+try:
+    Color(100)
+    assert False
+except ValueError:
+    pass
+try:
+    Color["MISSING"]
+    assert False
+except KeyError:
+    pass
+
+# Equal values from different enum classes never compare as enum members.
+class OtherColor(enums.Enum):
+    RED = 1
+assert Color.RED is not OtherColor.RED
+assert Color.RED != OtherColor.RED
+assert OtherColor.RED not in Color
+
+# Initializers use preceding raw values, execute once, and auto follows max(value).
+events = List[int]()
+def initial():
+    events.append(1)
+    return 4
+class Number(Enum):
+    ZERO = 0
+    FIRST = initial()
+    NEXT = FIRST + 1
+    AUTOMATIC = auto()
+    LAST = enums.auto()
+assert events == [1]
+assert Number.FIRST.value == 4
+assert Number.NEXT.value == 5
+assert Number.AUTOMATIC.value == 6
+assert Number.LAST.value == 7
+assert bool(Number.ZERO)
+class Automatic(Enum):
+    FIRST = auto()
+    SECOND = auto()
+assert Automatic.FIRST.value == 1
+assert Automatic.SECOND.value == 2
+class Negative(Enum):
+    FIRST = -5
+    SECOND = auto()
+assert Negative.SECOND.value == -4
+
+# String-valued members, custom methods, nested types, and imported aliases.
+from enum import Enum as Enumeration
+class Owner:
+    class Mode(Enumeration):
+        READ = "r"
+        WRITE = "w"
+        @staticmethod
+        def parse(value: str):
+            return Owner.Mode(value)
+        def label(self):
+            return self.name.lower()
+assert Owner.Mode.parse("r") is Owner.Mode.READ
+assert Owner.Mode.WRITE.label() == "write"
+assert Owner.Mode.READ.value == "r"
+assert str(Owner.Mode.READ) == "Mode.READ"
+assert [m.value for m in Owner.Mode] == ["r", "w"]
+
+def select(color: Color):
+    match color:
+        case Color.RED: return "red"
+        case Color.GREEN: return "green"
+        case _: return "other"
+assert select(Color.CRIMSON) == "red"
+assert select(Color.BLUE) == "other"
+
+# A memberless base can supply behavior, and concrete enums remain polymorphic.
+class Base(Enum):
+    # A typed ClassVar without a value is not an enum member and stays writable.
+    metadata: ClassVar[int]
+    def describe(self):
+        return self.name
+Base.metadata = 7
+class Derived(Base):
+    VALUE = 10
+assert Derived.VALUE.describe() == "VALUE"
+assert Derived.metadata == 7
+Derived.metadata = 8
+assert Base.metadata == 8
+def enum_name(value: Enum):
+    return value.name
+def enum_copy(value: Enum):
+    return copy.copy(value), copy.deepcopy(value)
+assert enum_name(Color.RED) == "RED"
+assert enum_name(Owner.Mode.WRITE) == "WRITE"
+copied, deepcopied = enum_copy(Color.RED)
+assert copied is Color.RED and deepcopied is Color.RED
+def enum_text(value: Enum):
+    return str(value), repr(value)
+assert enum_text(Color.RED) == ("Color.RED", "<Color.RED: 1>")
+assert enum_text(Owner.Mode.READ) == ("Mode.READ", "<Mode.READ: 'r'>")
+
+class Empty(Enum):
+    pass
+assert len(Empty) == 0
+assert list(Empty) == List[Empty]()
+try:
+    Empty(1)
+    assert False
+except ValueError:
+    pass
+
+class Described(Enum):
+    VALUE = 1
+    def __str__(self):
+        return "custom " + self.name
+assert str(Described.VALUE) == "custom VALUE"
+
+# Inherited __SELF__ methods still specialize for enums declared after the first
+# call through Enum. Repr reads the current payload rather than caching its text.
+class Late(Enum):
+    VALUE = [1]
+assert enum_text(Late.VALUE) == ("Late.VALUE", "<Late.VALUE: [1]>")
+Late.VALUE.value.append(2)
+assert enum_text(Late.VALUE) == ("Late.VALUE", "<Late.VALUE: [1, 2]>")
+assert enum_text(Described.VALUE) == ("custom VALUE", "<Described.VALUE: 1>")
+
+# User-defined methods override inherited methods through ordinary method lookup.
+class IterableMember(Enum):
+    VALUE = 42
+    def __iter__(self):
+        yield self.value
+assert list(IterableMember.VALUE) == [42]
+class CustomOrder(Enum):
+    FIRST = 1
+    LAST = 2
+    @staticmethod
+    def __iter__():
+        yield CustomOrder.LAST
+        yield CustomOrder.FIRST
+assert list(CustomOrder) == [CustomOrder.LAST, CustomOrder.FIRST]
+
+# Constructor arguments execute once, even though __new__ and __init__ both receive them.
+events.clear()
+assert Color(initial() - 3) is Color.RED
+assert events == [1]
+
+print("enum support ok")  #: enum support ok

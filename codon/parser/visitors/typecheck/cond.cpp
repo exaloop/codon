@@ -116,10 +116,20 @@ void TypecheckVisitor::visit(IfStmt *stmt) {
         std::string tmpName =
             ctx->generateCanonicalName(getUnmangledName(arg->getValue()));
         std::string condName = getTemporaryVar("cond");
+        std::unordered_map<std::string, std::string> renames;
+        if (auto aliases =
+                stmt->getIf()->getAttribute<ir::KeyValueAttribute>(Attr::LocalRenames))
+          renames = aliases->attributes;
+        // Previous aliases of an Optional-unwrapped match subject must be
+        // narrowed along with that subject before accessing subclass fields.
+        auto name = getUnmangledName(arg->getValue());
+        for (auto &[_, target] : renames)
+          if (target == name || target == arg->getValue())
+            target = tmpName;
+        renames[name] = tmpName;
         stmt->getIf()->setAttribute(
-            Attr::LocalRenames, std::make_unique<ir::KeyValueAttribute>(
-                                    std::unordered_map<std::string, std::string>{
-                                        {getUnmangledName(arg->getValue()), tmpName}}));
+            Attr::LocalRenames,
+            std::make_unique<ir::KeyValueAttribute>(std::move(renames)));
         auto s = N<SuiteStmt>(
             N<AssignStmt>(N<IdExpr>(condName), stmt->getCond()),
             N<IfStmt>(N<IdExpr>(condName),
@@ -203,7 +213,7 @@ void TypecheckVisitor::visit(MatchStmt *stmt) {
 ///                                if var >= 1: if var <= 3```
 ///   `case (1, pat)`      -> ```if isinstance(var, "Tuple"): if static.len(var) == 2:
 ///                                 if match(var[0], 1): if match(var[1], pat)```
-///   `case [1, ..., pat]` -> ```if isinstance(var, "List"): if len(var) >= 2:
+///   `case [1, *_, pat]` -> ```if isinstance(var, "List"): if len(var) >= 2:
 ///                                 if match(var[0], 1): if match(var[-1], pat)```
 ///   `case 1 or pat`      -> `if match(var, 1): if match(var, pat)`
 ///                           (note: pattern suite is cloned for each `or`)
@@ -211,27 +221,41 @@ void TypecheckVisitor::visit(MatchStmt *stmt) {
 ///   `case x`             -> `(x := var)`
 ///                           (only when `x` is not '_')
 ///   `case expr`          -> `if hasattr(typeof(var), "__match__"): if
-///   var.__match__(foo())`
+///   var.__match__(value)`
 ///                           (any expression that does not fit above patterns)
 Stmt *TypecheckVisitor::transformPattern(Expr *var, Expr *pattern, Stmt *suite) {
+  // Use stable identifiers for nested isinstance narrowing and evaluate each
+  // field/index only once.
+  if (!cast<IdExpr>(var)) {
+    auto temporary = getTemporaryVar("match");
+    return N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(temporary), var),
+                        transformPattern(N<IdExpr>(temporary), pattern, suite));
+  }
+
   // Convenience function to generate `isinstance(e, typ)` calls
   auto isinstance = [&](Expr *e, const std::string &typ) -> Expr * {
     return N<CallExpr>(N<IdExpr>("isinstance"), clone(e), N<IdExpr>(typ));
   };
-  // Convenience function to find the index of an ellipsis within a list pattern
-  auto findEllipsis = [&](const std::vector<Expr *> &items) {
+  // Keep ellipsis gaps and also accept the *_ spelling
+  auto findWildcard = [&](const std::vector<Expr *> &items) {
     size_t i = items.size();
-    for (auto it = 0; it < items.size(); it++)
-      if (cast<EllipsisExpr>(items[it])) {
+    for (size_t it = 0; it < items.size(); ++it) {
+      auto star = cast<StarExpr>(items[it]);
+      if (star && !isId(star->getExpr(), "_"))
+        E(Error::CUSTOM, star, "only *_ is supported in sequence patterns");
+      if (cast<EllipsisExpr>(items[it]) || star) {
         if (i != items.size())
-          E(Error::MATCH_MULTI_ELLIPSIS, items[it], "multiple ellipses in pattern");
+          E(Error::MATCH_MULTI_ELLIPSIS, items[it]);
         i = it;
       }
+    }
     return i;
   };
 
   // See the above examples for transformation details
-  if (cast<IntExpr>(pattern) || cast<BoolExpr>(pattern)) {
+  if (cast<NoneExpr>(pattern)) {
+    return N<IfStmt>(N<BinaryExpr>(var, "is", pattern), suite);
+  } else if (cast<IntExpr>(pattern) || cast<BoolExpr>(pattern)) {
     // Bool and int patterns
     return N<IfStmt>(
         isinstance(var, cast<BoolExpr>(pattern) ? StdlibTypes::Bool : "int"),
@@ -242,39 +266,27 @@ Stmt *TypecheckVisitor::transformPattern(Expr *var, Expr *pattern, Stmt *suite) 
         isinstance(var, "int"),
         N<IfStmt>(N<BinaryExpr>(var, ">=", er->start),
                   N<IfStmt>(N<BinaryExpr>(clone(var), "<=", er->stop), suite)));
-  } else if (auto et = cast<TupleExpr>(pattern)) {
-    // Tuple pattern
-    for (auto it = et->items.size(); it-- > 0;) {
+  } else if (cast<TupleExpr>(pattern) || cast<ListExpr>(pattern)) {
+    bool tuple = cast<TupleExpr>(pattern);
+    const auto &items =
+        tuple ? cast<TupleExpr>(pattern)->items : cast<ListExpr>(pattern)->items;
+    auto wildcard = findWildcard(items), size = items.size();
+    for (auto it = size; it-- > wildcard + 1;)
+      suite = transformPattern(
+          N<IndexExpr>(clone(var), N<IntExpr>(static_cast<int64_t>(it) -
+                                              static_cast<int64_t>(size))),
+          items[it], suite);
+    for (auto it = wildcard; it-- > 0;)
       suite =
-          transformPattern(N<IndexExpr>(clone(var), N<IntExpr>(it)), (*et)[it], suite);
-    }
+          transformPattern(N<IndexExpr>(clone(var), N<IntExpr>(it)), items[it], suite);
+    Expr *length =
+        tuple ? N<CallExpr>(N<IdExpr>(getMangledFunc("std.internal.static", "len")),
+                            clone(var))
+              : N<CallExpr>(N<IdExpr>("len"), clone(var));
+    bool gap = wildcard != size;
     return N<IfStmt>(
-        isinstance(var, StdlibTypes::Tuple),
-        N<IfStmt>(N<BinaryExpr>(
-                      N<CallExpr>(
-                          N<IdExpr>(getMangledFunc("std.internal.static", "len")), var),
-                      "==", N<IntExpr>(et->size())),
-                  suite));
-  } else if (auto el = cast<ListExpr>(pattern)) {
-    // List pattern
-    size_t ellipsis = findEllipsis(el->items), sz = el->size();
-    std::string op;
-    if (ellipsis == el->size()) {
-      op = "==";
-    } else {
-      op = ">=", sz -= 1;
-    }
-    for (auto it = el->size(); it-- > ellipsis + 1;) {
-      suite = transformPattern(N<IndexExpr>(clone(var), N<IntExpr>(it - el->size())),
-                               (*el)[it], suite);
-    }
-    for (auto it = ellipsis; it-- > 0;) {
-      suite =
-          transformPattern(N<IndexExpr>(clone(var), N<IntExpr>(it)), (*el)[it], suite);
-    }
-    return N<IfStmt>(
-        isinstance(var, "List"),
-        N<IfStmt>(N<BinaryExpr>(N<CallExpr>(N<IdExpr>("len"), var), op, N<IntExpr>(sz)),
+        isinstance(var, tuple ? StdlibTypes::Tuple : StdlibTypes::List),
+        N<IfStmt>(N<BinaryExpr>(length, gap ? ">=" : "==", N<IntExpr>(size - gap)),
                   suite));
   } else if (auto eb = cast<BinaryExpr>(pattern)) {
     // Or pattern
@@ -293,9 +305,52 @@ Stmt *TypecheckVisitor::transformPattern(Expr *var, Expr *pattern, Stmt *suite) 
     // Bound pattern
     seqassert(cast<IdExpr>(ea->getVar()),
               "only simple assignment expressions are supported");
-    return N<SuiteStmt>(N<AssignStmt>(ea->getVar(), clone(var)),
-                        transformPattern(var, ea->getExpr(), suite));
+    // Bind aliases after the subpattern succeeds, within its narrowed scope.
+    return transformPattern(
+        var, ea->getExpr(),
+        N<SuiteStmt>(N<AssignStmt>(ea->getVar(), clone(var)), suite));
+  } else if (auto call = cast<CallExpr>(pattern)) {
+    auto head = transform(clone(call->getExpr()));
+    // Never evaluate a function-call pattern.
+    if (!isTypeExpr(head))
+      E(Error::CUSTOM, call, "called match pattern must be a class");
+    // Keyword/empty class patterns inspect the existing object. Preserve the
+    // existing value-pattern behavior for positional constructor expressions.
+    bool keyword = false;
+    for (auto &arg : *call)
+      keyword |= !arg.getName().empty();
+    if (call->empty() || keyword) {
+      for (auto it = call->size(); it-- > 0;) {
+        const auto &arg = (*call)[it];
+        if (arg.getName().empty())
+          E(Error::CUSTOM, arg.getExpr(), "expected a keyword class pattern");
+        suite = N<IfStmt>(
+            N<CallExpr>(N<IdExpr>("hasattr"), clone(var), N<StringExpr>(arg.getName())),
+            transformPattern(N<DotExpr>(clone(var), arg.getName()), arg.getExpr(),
+                             suite));
+      }
+      // Param.type and other AST fields are optional.
+      // Unwrap only a non-None optional and keep Any subjects on their RTTI path.
+      auto temporary = getTemporaryVar("match");
+      auto optionalSuite = SuiteStmt::wrap(clone(suite));
+      optionalSuite->setAttribute(
+          Attr::LocalRenames,
+          std::make_unique<ir::KeyValueAttribute>(
+              std::unordered_map<std::string, std::string>{
+                  {getUnmangledName(cast<IdExpr>(var)->getValue()), temporary}}));
+      return N<IfStmt>(
+          isinstance(var, StdlibTypes::Optional),
+          N<IfStmt>(
+              N<BinaryExpr>(clone(var), "is not", N<NoneExpr>()),
+              N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(temporary),
+                                         N<CallExpr>(N<IdExpr>("unwrap"), clone(var))),
+                           N<IfStmt>(N<CallExpr>(N<IdExpr>("isinstance"),
+                                                 N<IdExpr>(temporary), clone(head)),
+                                     optionalSuite))),
+          N<IfStmt>(N<CallExpr>(N<IdExpr>("isinstance"), var, head), suite));
+    }
   }
+
   pattern = transform(pattern); // transform to check for pattern errors
   if (cast<EllipsisExpr>(pattern))
     pattern = N<CallExpr>(N<IdExpr>("ellipsis"));

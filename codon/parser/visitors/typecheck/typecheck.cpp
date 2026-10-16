@@ -635,6 +635,17 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     auto c = extractClassType(exprType);
     if (!c)
       return {false, nullptr, nullptr};
+    // Any type with a zero-argument __iter__ can satisfy a Generator parameter through
+    // normal method lookup.
+    if (expectedClass && expectedClass->is(StdlibTypes::Generator) &&
+        findBestMethod(c, "__iter__", std::vector<types::Type *>{})) {
+      auto iterator =
+          transform(N<CallExpr>(N<DotExpr>(N<IdExpr>(c->realizedName()), "__iter__")));
+      return {true, iterator->getType()->shared_from_this(),
+              [this](Expr *expr) -> Expr * {
+                return N<CallExpr>(N<DotExpr>(expr, "__iter__"));
+              }};
+    }
     if (!expectedType || !expectedType->is(StdlibTypes::Type)) {
       type = instantiateType(getStdLibType(StdlibTypes::TypeWrap),
                              std::vector<types::Type *>{c});
@@ -1156,9 +1167,16 @@ bool TypecheckVisitor::isPolymorphic(types::FuncType *t) const {
     return false;
   auto slf = extractFuncArgType(t)->getClass();
   auto cls = getClass(slf);
-  return cls && cls->hasRTTI() &&
-         static_cast<bool>(in(cls->virtuals, getUnmangledName(t->ast->getName()))) &&
-         !isDispatch(t) && !t->ast->hasAttribute(Attr::StaticMethod) &&
+  auto member = getUnmangledName(t->ast->getName());
+  bool virtualMethod = in(cls->virtuals, member);
+  // class_inherited_self: __SELF__ can bind the receiver to a subclass while
+  // the virtual method remains declared on its original base class.
+  if (!t->funcGenerics.empty() &&
+      getUnmangledName(t->funcGenerics.front().name) == "__SELF__")
+    if (auto parent = t->ast->getAttribute<ir::StringValueAttribute>(Attr::ParentClass))
+      virtualMethod |= in(getClass(parent->value)->virtuals, member) != nullptr;
+  return cls && cls->hasRTTI() && virtualMethod && !isDispatch(t) &&
+         !t->ast->hasAttribute(Attr::StaticMethod) &&
          !t->ast->hasAttribute(Attr::Property);
 }
 

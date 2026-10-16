@@ -72,3 +72,5 @@ scratch*.*
 # Generated stdlib tables live in the build tree; the pinned bundle is tracked.
 /stdlib/internal/unicode/generated/
 /stdlib/internal/numeric/generated/
+external/
+.python-version

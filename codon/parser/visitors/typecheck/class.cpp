@@ -81,6 +81,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
   std::vector<Stmt *> clsStmts; // Will be filled later!
   std::vector<Stmt *> varStmts; // Will be filled later!
   std::vector<Stmt *> fnStmts;  // Will be filled later!
+  std::vector<Stmt *> enumInit;
   std::vector<TypeContext::Item> addLater;
   try {
     // Add the class base
@@ -142,6 +143,8 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         args.emplace_back(varName, a.getType(), defType, a.status);
       }
     }
+
+    enumInit = prepareEnum(stmt, typ, varStmts);
 
     // Form class type node (e.g. `Foo`, or `Foo[T, U]` for generic classes)
     Expr *transformedTypeAst = nullptr;
@@ -256,8 +259,17 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
 
       // Codegen default magic methods
       // __new__ must be the first
+      auto methods = getClassMethods(stmt->getSuite());
+      bool customNew = std::ranges::any_of(methods, [](auto *s) {
+        auto f = cast<FunctionStmt>(s);
+        return f && f->getName() == "__new__";
+      });
       if (auto aa = stmt->getAttribute<ir::StringListAttribute>(Attr::ClassMagic))
         for (const auto &m : aa->values) {
+          // class_custom_new_err: a custom allocator must not silently fall back
+          // to the generated zero-argument allocator on an invalid call.
+          if (m == "new" && customNew && !stmt->isRecord())
+            continue;
           fnStmts.push_back(transform(codegenMagic(m, transformedTypeAst, memberArgs,
                                                    stmt->hasAttribute(Attr::Tuple))));
         }
@@ -294,7 +306,19 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     // Mark functions as virtual:
     auto banned = std::set<std::string>{"__init__", "__new__", "__raw__",
                                         "__tuplesize__", "__repr_default__"};
-    for (const auto &[method, _] : sorted_view(cls.methods)) {
+    for (const auto &[method, root] : sorted_view(cls.methods)) {
+      // class_inherited_self / enum_test: an inherited __SELF__ method needs
+      // runtime receiver specialization even when a subclass does not override it.
+      if (!stmt->isRecord() && !in(banned, method))
+        for (const auto &overload : getOverloads(root)) {
+          auto *f = getFunction(overload)->getType();
+          if (f && !f->funcGenerics.empty() && !f->ast->empty() &&
+              getUnmangledName(f->ast->front().getName()) == "self" &&
+              getUnmangledName(f->funcGenerics.front().name) == "__SELF__" &&
+              !f->ast->hasAttribute(Attr::StaticMethod) &&
+              !f->ast->hasAttribute(Attr::Property))
+            cls.virtuals.insert(method);
+        }
       for (size_t mi = 1; mi < cls.mro.size(); mi++) {
         // ... in the current class
         auto b = cls.mro[mi]->name;
@@ -376,7 +400,132 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     // Transform class variables here to allow self-references
     clsStmts.push_back(transform(a));
   }
+  // enum_test: allocate singletons only after the class layout and methods exist.
+  for (auto *s : enumInit)
+    clsStmts.push_back(transform(s));
   resultStmt = N<SuiteStmt>(clsStmts);
+}
+
+bool TypecheckVisitor::isEnum(ClassType *typ) const {
+  for (const auto &base : getClass(typ)->mro)
+    if (base->is(getMangledClass("std.enum", "Enum")))
+      return true;
+  return false;
+}
+
+/// Lower Enum declarations to ordinary reference classes and singleton globals.
+std::vector<Stmt *> TypecheckVisitor::prepareEnum(ClassStmt *stmt, ClassType *typ,
+                                                  std::vector<Stmt *> &values) {
+  if (stmt->hasAttribute(Attr::Extend))
+    return {};
+  bool enumeration = false;
+  for (auto *base : stmt->getBaseClasses()) {
+    auto t = extractClassType(transformType(clone(base), true));
+    if (!t)
+      continue;
+    if (!isEnum(t))
+      continue;
+    // enum_extend_err: members already have ordinary classVars bindings;
+    // enum_test: memberless bases may also have ordinary typed ClassVars;
+    // only bindings holding instances of the enum are enumeration members.
+    for (const auto &[name, var] : getClass(t)->classVars)
+      if (!startswith(name, "__") && ctx->forceFind(var)->getType()->is(t->name))
+        E(Error::CUSTOM, stmt, "cannot extend an enumeration with members");
+    enumeration = true;
+  }
+  if (!enumeration)
+    return {};
+  if (stmt->getBaseClasses().size() != 1 || stmt->hasAttribute(Attr::Tuple))
+    E(Error::CUSTOM, stmt, "Enum requires a single enumeration base class");
+  for (auto *s : getClassMethods(stmt->getSuite()))
+    if (auto f = cast<FunctionStmt>(s);
+        f && (f->getName() == "__init__" || f->getName() == "__new__"))
+      E(Error::CUSTOM, f, "custom enumeration constructors are not supported");
+
+  std::vector<std::string> names;
+  std::vector<Expr *> rawValues, members;
+  std::vector<Stmt *> init;
+  auto self = [&]() { return N<IdExpr>(typ->name); };
+  auto helper = [&](const std::string &name) {
+    return N<IdExpr>(getMangledFunc("std.enum", name));
+  };
+  auto classVar = [&]() { return N<IndexExpr>(N<IdExpr>("ClassVar"), self()); };
+
+  // enum_test: class-body references use raw values (B = A + 1), and each
+  // initializer runs once. Bindings are replaced by members later in visit(ClassStmt).
+  for (auto &a : *stmt) {
+    if (!a.isValue() || !ClassStmt::isClassVar(a) || !a.getDefault() ||
+        startswith(a.getName(), "__"))
+      continue;
+    if (a.getName() == "_name_" || a.getName() == "_value_" || a.getName() == "name" ||
+        a.getName() == "value")
+      E(Error::CUSTOM, a.getSrcInfo(), "reserved enumeration member name '{}'",
+        a.getName());
+    Expr *value = clone(a.getDefault());
+    if (auto call = cast<CallExpr>(value)) {
+      auto head = transform(clone(call->getExpr()));
+      if (isTypeExpr(head) &&
+          extractClassType(head)->is(getMangledClass("std.enum", "auto"))) {
+        if (!call->empty())
+          E(Error::CUSTOM, call, "auto() does not accept arguments");
+        value = N<CallExpr>(helper("_next_value"), N<TupleExpr>(clone(rawValues)));
+      }
+    }
+    auto raw = getTemporaryVar("enum_value");
+    values.push_back(transform(N<AssignStmt>(N<IdExpr>(raw), value)));
+    auto binding = ctx->forceFind(raw);
+    binding->baseName = "";
+    binding->blockLevel = 0;
+    registerGlobal(binding->canonicalName);
+    ctx->add(a.getName(), binding);
+    rawValues.push_back(N<IdExpr>(binding->canonicalName));
+    auto member = N<IdExpr>(fmt::format("{}.{}", typ->name, a.getName()));
+    init.push_back(N<AssignStmt>(
+        clone(member),
+        N<CallExpr>(helper("_make_member"), self(), N<StringExpr>(a.getName()),
+                    clone(rawValues.back()), N<TupleExpr>(clone(members))),
+        self(), AssignStmt::Update));
+    names.push_back(a.getName());
+    members.push_back(member);
+    a.type = classVar();
+    a.defaultValue = nullptr;
+  }
+  if (!rawValues.empty()) {
+    auto valueType =
+        ctx->forceFind(cast<IdExpr>(rawValues.front())->getValue())->getType();
+    for (auto *value : rawValues) {
+      auto t = ctx->forceFind(cast<IdExpr>(value)->getValue())->getType();
+      if (getUnderlyingStaticType(valueType)->unify(getUnderlyingStaticType(t),
+                                                    nullptr) < 0)
+        E(Error::CUSTOM, stmt, "enumeration values must have the same type");
+    }
+    auto realized = realize(getUnderlyingStaticType(valueType));
+    if (!realized)
+      E(Error::CUSTOM, stmt, "cannot infer enumeration value type");
+    stmt->items.emplace_back("_value_", N<IdExpr>(realized->realizedName()));
+  }
+  auto mappingType = N<IndexExpr>(
+      N<IdExpr>(StdlibTypes::Dict),
+      N<TupleExpr>(std::vector<Expr *>{N<IdExpr>(StdlibTypes::String), self()}));
+  stmt->items.emplace_back("__members__",
+                           N<IndexExpr>(N<IdExpr>("ClassVar"), clone(mappingType)));
+  std::vector<Expr *> entries;
+  for (size_t i = 0; i < names.size(); ++i)
+    entries.push_back(
+        N<TupleExpr>(std::vector<Expr *>{N<StringExpr>(names[i]), clone(members[i])}));
+  Expr *mapping = names.empty() ? static_cast<Expr *>(N<CallExpr>(mappingType))
+                                : N<DictExpr>(entries);
+  init.push_back(N<AssignStmt>(N<IdExpr>(fmt::format("{}.__members__", typ->name)),
+                               mapping, nullptr, AssignStmt::Update));
+
+  stmt->eraseAttribute(Attr::ClassDeduce);
+  // enum_test: inherit Enum's __new__ and no-op __init__; all enum behavior
+  // lives in the base class rather than compiler-generated method bodies.
+  if (auto magic = stmt->getAttribute<ir::StringListAttribute>(Attr::ClassMagic))
+    std::erase_if(magic->values, [](const auto &name) {
+      return name == "init" || name == "new";
+    });
+  return init;
 }
 
 /// Parse statically inherited classes.
