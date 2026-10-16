@@ -1,6 +1,10 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
 import internal.static as static
+from internal.types.collections.dict import DictEntry, OrderedDict
+
+_DENSE_MAX_SLOTS: Literal[int] = 4096
+_DENSE_MAX_SLOTS_PER_MEMBER: Literal[int] = 4
 
 class Enum:
     """Base class for native enumerations with named, singleton members."""
@@ -124,9 +128,129 @@ def _reversed_members(T: type):
     yield from reversed(members)
 
 
+def _indexable_fields(fields) -> Literal[bool]:
+    if static.len(fields):
+        return _indexable(type(fields[0])) and _indexable_fields(fields[1:])
+    else:
+        return True
+
+
+def _indexable(T: type) -> Literal[bool]:
+    if not isinstance(T, ByVal) or isinstance(T, (Any, Optional, Union)):
+        return False
+    elif not hasattr(T, "__hash__"):
+        return False
+    elif isinstance(T, Tuple):
+        return _indexable_fields(static.vars_types(T))
+    else:
+        return True
+
+
+def _dense_offset(value: Int[bits], minimum: Int[bits], bits: Literal[int]):
+    if bits < 64:
+        return u64(int(value)) - u64(int(minimum))
+    else:
+        return UInt[bits](value) - UInt[bits](minimum)
+
+
+@overload
+def _dense_offset(value: UInt[bits], minimum: UInt[bits], bits: Literal[int]):
+    if bits < 64:
+        return u64(value) - u64(minimum)
+    else:
+        return value - minimum
+
+
+@overload
+def _dense_offset(value: bool, minimum: bool):
+    return u64(int(value)) - u64(int(minimum))
+
+
+@tuple
+class _ValueIndex:
+    members: OrderedDict[str, T]
+    entries: Ptr[DictEntry[str, T]]
+    values: Optional[Dict[K, Tuple[T, int]]]
+    minimum: K
+    dense: Ptr[Optional[Tuple[T, int]]]
+    dense_size: int
+    K: type
+    T: type
+
+    def get(self, value: K) -> Optional[Tuple[T, int]]:
+        if isinstance(value, (Int, UInt, bool)):
+            if self.dense_size:
+                offset = _dense_offset(value, self.minimum)
+                if offset < type(offset)(self.dense_size):
+                    return self.dense[int(offset)]
+                return None
+        if self.values is not None:
+            try:
+                return unwrap(self.values).get(value)
+            except TypeError:
+                pass
+        return None
+
+
+def _make_value_index(T: type, value):
+    members = T.__members__
+    minimum = value
+    dense = Ptr[Optional[Tuple[T, int]]]()
+    dense_size = 0
+    if isinstance(value, (Int, UInt, bool)):
+        maximum = value
+        count = 0
+        for member in _iter_members(T):
+            minimum = min(minimum, member._value_)
+            maximum = max(maximum, member._value_)
+            count += 1
+        distance = _dense_offset(maximum, minimum)
+        if distance < type(distance)(_DENSE_MAX_SLOTS):
+            span = int(distance) + 1
+            if span <= count * _DENSE_MAX_SLOTS_PER_MEMBER:
+                dense_size = span
+                dense = Ptr[Optional[Tuple[T, int]]](span)
+                for offset in range(span):
+                    dense[offset] = None
+                for position in range(members._nentries):
+                    if members._is_active(position):
+                        entry = members._entries[position]
+                        if entry.value.name == entry.key:
+                            offset = int(_dense_offset(entry.value._value_, minimum))
+                            if dense[offset] is None:
+                                dense[offset] = (entry.value, position)
+    values: Optional[Dict[type(value), Tuple[T, int]]] = None
+    if _indexable(type(value)):
+        if not dense_size:
+            index = Dict[type(value), Tuple[T, int]]()
+            try:
+                for position in range(members._nentries):
+                    if members._is_active(position):
+                        entry = members._entries[position]
+                        if entry.value.name == entry.key:
+                            index.setdefault(entry.value._value_, (entry.value, position))
+            except TypeError:
+                index.clear()
+            values = index
+    return _ValueIndex(members=members, entries=members._entries, values=values,
+                       minimum=minimum, dense=dense, dense_size=dense_size)
+
+
 def _from_value(T: type, value):
     if isinstance(value, T):
         return value
+    if hasattr(T, "__value_index__"):
+        if isinstance(T.__value_index__, _ValueIndex[type(value), T]):
+            if _indexable(type(value)):
+                index = T.__value_index__
+                members = T.__members__
+                if members is index.members and members._entries == index.entries:
+                    cached = index.get(value)
+                    if cached is not None:
+                        member, position = unwrap(cached)
+                        if members._is_active(position):
+                            if members._entries[position].value is member:
+                                return member
     if hasattr(T, "_value_"):
         for member in _iter_members(T):
             if member._value_ is value:

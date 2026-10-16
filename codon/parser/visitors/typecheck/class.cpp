@@ -503,9 +503,14 @@ std::vector<Stmt *> TypecheckVisitor::prepareEnum(ClassStmt *stmt, ClassType *ty
     if (!realized)
       E(Error::CUSTOM, stmt, "cannot infer enumeration value type");
     stmt->items.emplace_back("_value_", N<IdExpr>(realized->realizedName()));
+    auto indexType = N<IndexExpr>(
+        N<IdExpr>(getMangledClass("std.enum", "_ValueIndex")),
+        N<TupleExpr>(std::vector<Expr *>{N<IdExpr>(realized->realizedName()), self()}));
+    stmt->items.emplace_back("__value_index__",
+                             N<IndexExpr>(N<IdExpr>("ClassVar"), indexType));
   }
   auto mappingType = N<IndexExpr>(
-      N<IdExpr>(StdlibTypes::Dict),
+      N<IdExpr>(getMangledClass("std.internal.types.collections.dict", "OrderedDict")),
       N<TupleExpr>(std::vector<Expr *>{N<IdExpr>(StdlibTypes::String), self()}));
   stmt->items.emplace_back("__members__",
                            N<IndexExpr>(N<IdExpr>("ClassVar"), clone(mappingType)));
@@ -513,10 +518,18 @@ std::vector<Stmt *> TypecheckVisitor::prepareEnum(ClassStmt *stmt, ClassType *ty
   for (size_t i = 0; i < names.size(); ++i)
     entries.push_back(
         N<TupleExpr>(std::vector<Expr *>{N<StringExpr>(names[i]), clone(members[i])}));
-  Expr *mapping = names.empty() ? static_cast<Expr *>(N<CallExpr>(mappingType))
-                                : N<DictExpr>(entries);
+  Expr *mapping =
+      names.empty()
+          ? static_cast<Expr *>(N<CallExpr>(mappingType))
+          : N<CallExpr>(mappingType,
+                        N<CallExpr>(N<DotExpr>(N<ListExpr>(entries), "__iter__")));
   init.push_back(N<AssignStmt>(N<IdExpr>(fmt::format("{}.__members__", typ->name)),
                                mapping, nullptr, AssignStmt::Update));
+  if (!rawValues.empty())
+    init.push_back(N<AssignStmt>(
+        N<IdExpr>(fmt::format("{}.__value_index__", typ->name)),
+        N<CallExpr>(helper("_make_value_index"), self(), clone(rawValues.front())),
+        nullptr, AssignStmt::Update));
 
   stmt->eraseAttribute(Attr::ClassDeduce);
   // enum_test: inherit Enum's __new__ and no-op __init__; all enum behavior

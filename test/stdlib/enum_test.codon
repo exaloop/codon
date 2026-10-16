@@ -187,4 +187,273 @@ events.clear()
 assert Color(initial() - 3) is Color.RED
 assert events == [1]
 
+@tuple
+class LookupValue:
+    value: int
+    comparisons: ClassVar[int] = 0
+
+    def __eq__(self, other: LookupValue):
+        LookupValue.comparisons += 1
+        return self.value == other.value
+
+    def __hash__(self):
+        return hash(self.value)
+
+class Indexed(Enum):
+    FIRST = LookupValue(0)
+    SECOND = LookupValue(1)
+    THIRD = LookupValue(2)
+    FOURTH = LookupValue(3)
+    FIFTH = LookupValue(4)
+    SIXTH = LookupValue(5)
+    SEVENTH = LookupValue(6)
+    LAST = LookupValue(7)
+    ALIAS = LAST
+
+assert Indexed(LookupValue(7)) is Indexed.LAST
+LookupValue.comparisons = 0
+assert Indexed(LookupValue(7)) is Indexed.LAST
+assert LookupValue.comparisons <= 1
+assert Indexed.ALIAS is Indexed.LAST
+assert Color(1.0) is Color.RED
+assert Color(True) is Color.RED
+assert Color(Optional[int](2)) is Color.GREEN
+assert Late([1, 2]) is Late.VALUE
+
+assert Color.__value_index__.dense_size == 3
+assert Color.__value_index__.values is None
+assert Number.__value_index__.dense_size == 8
+assert Number.__value_index__.values is None
+assert Automatic.__value_index__.dense_size == 2
+assert Indexed.__value_index__.dense_size == 0
+assert Indexed.__value_index__.values is not None
+
+class DenseOffset(Enum):
+    FIRST = -3
+    SECOND = -1
+    LAST = 2
+    ALIAS = SECOND
+
+assert DenseOffset.__value_index__.minimum == -3
+assert DenseOffset.__value_index__.dense_size == 6
+assert DenseOffset.__value_index__.values is None
+assert DenseOffset(-3) is DenseOffset.FIRST
+assert DenseOffset(-1) is DenseOffset.SECOND
+assert DenseOffset(2) is DenseOffset.LAST
+assert DenseOffset.ALIAS is DenseOffset.SECOND
+assert -4 not in DenseOffset and 3 not in DenseOffset
+assert -2 not in DenseOffset and 0 not in DenseOffset
+assert [member.value for member in DenseOffset] == [-3, -1, 2]
+
+class SparseValues(Enum):
+    FIRST = 0
+    LAST = 1000000000
+
+assert SparseValues.__value_index__.dense_size == 0
+assert SparseValues.__value_index__.values is not None
+assert SparseValues(0) is SparseValues.FIRST
+assert SparseValues(1000000000) is SparseValues.LAST
+assert 1 not in SparseValues
+
+class LowDensity(Enum):
+    FIRST = 0
+    LAST = 16
+
+assert LowDensity.__value_index__.dense_size == 0
+assert LowDensity.__value_index__.values is not None
+assert LowDensity(16) is LowDensity.LAST
+
+class SignedLimits(Enum):
+    FIRST = -9223372036854775808
+    LAST = 9223372036854775807
+
+assert SignedLimits.__value_index__.dense_size == 0
+assert SignedLimits(-9223372036854775808) is SignedLimits.FIRST
+assert SignedLimits(9223372036854775807) is SignedLimits.LAST
+assert 0 not in SignedLimits
+
+class LowDense(Enum):
+    FIRST = -9223372036854775808
+    LAST = FIRST + 2
+
+assert LowDense.__value_index__.dense_size == 3
+assert LowDense(-9223372036854775808) is LowDense.FIRST
+assert LowDense(-9223372036854775806) is LowDense.LAST
+assert -9223372036854775807 not in LowDense
+assert 9223372036854775807 not in LowDense
+
+class HighUnsigned(Enum):
+    FIRST = u64(-2)
+    LAST = u64(-1)
+
+assert HighUnsigned.__value_index__.dense_size == 2
+assert HighUnsigned(u64(-2)) is HighUnsigned.FIRST
+assert HighUnsigned(u64(-1)) is HighUnsigned.LAST
+assert u64(0) not in HighUnsigned and u64(-3) not in HighUnsigned
+
+class NarrowSigned(Enum):
+    FIRST = i8(-128)
+    LAST = i8(-126)
+
+assert NarrowSigned.__value_index__.dense_size == 3
+assert NarrowSigned(i8(-128)) is NarrowSigned.FIRST
+assert NarrowSigned(i8(-126)) is NarrowSigned.LAST
+assert i8(-127) not in NarrowSigned and i8(127) not in NarrowSigned
+
+class NarrowUnsigned(Enum):
+    FIRST = u8(254)
+    LAST = u8(255)
+
+assert NarrowUnsigned.__value_index__.dense_size == 2
+assert NarrowUnsigned(u8(255)) is NarrowUnsigned.LAST
+assert u8(0) not in NarrowUnsigned and u8(253) not in NarrowUnsigned
+
+class WideDense(Enum):
+    FIRST = Int[128](1) << 100
+    LAST = FIRST + Int[128](2)
+
+assert WideDense.__value_index__.dense_size == 3
+assert WideDense(Int[128](1) << 100) is WideDense.FIRST
+assert WideDense((Int[128](1) << 100) + Int[128](2)) is WideDense.LAST
+assert Int[128](0) not in WideDense
+assert ((Int[128](1) << 100) + Int[128](1)) not in WideDense
+
+class BooleanValues(Enum):
+    YES = True
+    NO = False
+
+assert BooleanValues.__value_index__.dense_size == 2
+assert BooleanValues.__value_index__.values is None
+assert BooleanValues(True) is BooleanValues.YES
+assert BooleanValues(False) is BooleanValues.NO
+assert list(BooleanValues) == [BooleanValues.YES, BooleanValues.NO]
+
+from internal.types.collections.dict import OrderedDict, UnorderedDict
+assert isinstance(Color.__members__, OrderedDict[str, Color])
+assert isinstance(Empty.__members__, OrderedDict[str, Empty])
+if __dict_unordered__:
+    assert isinstance(unwrap(Indexed.__value_index__.values),
+                      UnorderedDict[LookupValue, Tuple[Indexed, int]])
+else:
+    assert isinstance(unwrap(Indexed.__value_index__.values),
+                      OrderedDict[LookupValue, Tuple[Indexed, int]])
+
+def check_dense_after_gc():
+    from C import GC_gcollect()
+    GC_gcollect()
+    assert DenseOffset(-1) is DenseOffset.SECOND
+    assert HighUnsigned(u64(-1)) is HighUnsigned.LAST
+check_dense_after_gc()
+
+@tuple
+class CollisionValue:
+    value: int
+
+    def __hash__(self):
+        return 0
+
+class Collisions(Enum):
+    FIRST = CollisionValue(1)
+    SECOND = CollisionValue(2)
+    ALIAS = CollisionValue(1)
+
+assert Collisions(CollisionValue(1)) is Collisions.FIRST
+assert Collisions(CollisionValue(2)) is Collisions.SECOND
+assert Collisions.ALIAS is Collisions.FIRST
+assert CollisionValue(3) not in Collisions
+
+@tuple
+class UnhashableValue:
+    value: int
+
+    def __hash__(self) -> int:
+        raise TypeError('unhashable value')
+
+class Unhashable(Enum):
+    FIRST = UnhashableValue(1)
+    SECOND = UnhashableValue(2)
+
+assert Unhashable(UnhashableValue(2)) is Unhashable.SECOND
+assert UnhashableValue(3) not in Unhashable
+
+@tuple
+class SometimesUnhashableValue:
+    value: int
+    unhashable: bool
+
+    def __eq__(self, other: SometimesUnhashableValue):
+        return self.value == other.value
+
+    def __hash__(self) -> int:
+        if self.unhashable:
+            raise TypeError('unhashable query')
+        return hash(self.value)
+
+class SometimesUnhashable(Enum):
+    FIRST = SometimesUnhashableValue(1, False)
+
+assert SometimesUnhashable(SometimesUnhashableValue(1, True)) is SometimesUnhashable.FIRST
+
+class NestedMutable(Enum):
+    FIRST = ([1], 2)
+    SECOND = ([3], 4)
+
+NestedMutable.FIRST.value[0].append(5)
+assert NestedMutable(([1, 5], 2)) is NestedMutable.FIRST
+assert NestedMutable(([3], 4)) is NestedMutable.SECOND
+
+class MutableValue:
+    value: int
+
+    def __eq__(self, other: MutableValue):
+        return self.value == other.value
+
+    def __hash__(self):
+        return hash(self.value)
+
+class Mutable(Enum):
+    FIRST = MutableValue(1)
+
+Mutable.FIRST.value.value = 2
+assert Mutable(MutableValue(2)) is Mutable.FIRST
+assert MutableValue(1) not in Mutable
+
+class Floating(Enum):
+    ZERO = 0.0
+    NEGATIVE_ZERO = -0.0
+    ONE = 1.0
+
+assert Floating(-0.0) is Floating.ZERO
+assert Floating.NEGATIVE_ZERO is Floating.ZERO
+assert Floating(1) is Floating.ONE
+
+class MemberMapping(Enum):
+    FIRST = 1
+    SECOND = 2
+
+assert MemberMapping(2) is MemberMapping.SECOND
+del MemberMapping.__members__['SECOND']
+assert 2 not in MemberMapping
+MemberMapping.__members__['SECOND'] = MemberMapping.FIRST
+assert 2 not in MemberMapping
+MemberMapping.__members__['SECOND'] = MemberMapping.SECOND
+assert MemberMapping(2) is MemberMapping.SECOND
+replacement_members = MemberMapping.__members__.copy()
+del replacement_members['FIRST']
+MemberMapping.__members__ = replacement_members
+assert 1 not in MemberMapping
+assert MemberMapping(2) is MemberMapping.SECOND
+
+class ResizedMapping(Enum):
+    FIRST = 1
+    SECOND = 2
+
+ResizedMapping.__members__.resize(128)
+assert ResizedMapping(1) is ResizedMapping.FIRST
+assert ResizedMapping(2) is ResizedMapping.SECOND
+ResizedMapping.__members__.clear()
+assert 1 not in ResizedMapping and 2 not in ResizedMapping
+ResizedMapping.__members__['SECOND'] = ResizedMapping.SECOND
+assert ResizedMapping(2) is ResizedMapping.SECOND
+
 print("enum support ok")  #: enum support ok
