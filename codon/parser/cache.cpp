@@ -146,6 +146,8 @@ ir::Func *Cache::realizeFunction(types::FuncType *type,
   }
   ir::Func *f = nullptr;
   if (auto rtv = tv.realize(t.get())) {
+    if (!pendingRealizations.empty())
+      tv.prepareVTables();
     auto pr = pendingRealizations; // copy it as it might be modified
     for (const auto &key : pr | std::views::keys)
       TranslateVisitor(codegenCtx).translateStmts(clone(functions[key].ast));

@@ -1154,6 +1154,19 @@ def test_cross_thread_idle_wakeups():
         loop.close()
 
 
+@test
+def test_task_result_realized_by_await():
+    async def worker():
+        return ('late result', 3.5, True)
+
+    async def main():
+        task = get_running_loop().create_task(worker())
+        assert await task == ('late result', 3.5, True)
+
+    asyncio.run(main())
+
+
+test_task_result_realized_by_await()
 test_cross_thread_idle_wakeups()
 test_direct_future_completion_before_idle_wait()
 test_task_ready_queue_membership()
