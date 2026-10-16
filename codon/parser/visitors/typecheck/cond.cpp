@@ -324,10 +324,17 @@ Stmt *TypecheckVisitor::transformPattern(Expr *var, Expr *pattern, Stmt *suite) 
         const auto &arg = (*call)[it];
         if (arg.getName().empty())
           E(Error::CUSTOM, arg.getExpr(), "expected a keyword class pattern");
+        auto attribute = getTemporaryVar("match_attr");
         suite = N<IfStmt>(
             N<CallExpr>(N<IdExpr>("hasattr"), clone(var), N<StringExpr>(arg.getName())),
-            transformPattern(N<DotExpr>(clone(var), arg.getName()), arg.getExpr(),
-                             suite));
+            N<TryStmt>(N<AssignStmt>(N<IdExpr>(attribute),
+                                     N<DotExpr>(clone(var), arg.getName())),
+                       std::vector<ExceptStmt *>{N<ExceptStmt>(
+                           "",
+                           N<IdExpr>(getMangledClass("std.internal.types.error",
+                                                     "AttributeError")),
+                           N<SuiteStmt>())},
+                       transformPattern(N<IdExpr>(attribute), arg.getExpr(), suite)));
       }
       // Param.type and other AST fields are optional.
       // Unwrap only a non-None optional and keep Any subjects on their RTTI path.
