@@ -23,8 +23,7 @@ TEST_F(CIRCoreTest, ValueQueryMethodsDelegate) {
   ASSERT_EQ(1, original->getUsedValues().size());
   ASSERT_EQ(module->getIntType(), original->getType());
 
-  replacement = module->Nr<TypePropertyInstr>(module->getIntType(),
-                                              TypePropertyInstr::Property::SIZEOF);
+  replacement = module->Nr<YieldInInstr>(module->getIntType());
   original->replaceAll(replacement);
   ASSERT_EQ(0, original->getUsedVariables().size());
   ASSERT_EQ(0, original->getUsedValues().size());
@@ -46,8 +45,7 @@ TEST_F(CIRCoreTest, ValueReplaceMethodsDelegate) {
   original->replaceAll(replacement);
   ASSERT_EQ(1, original->replaceUsedValue(val, val));
 
-  replacement = module->Nr<TypePropertyInstr>(module->getIntType(),
-                                              TypePropertyInstr::Property::SIZEOF);
+  replacement = module->Nr<YieldInInstr>(module->getIntType());
   original->replaceAll(replacement);
   ASSERT_EQ(1, original->replaceUsedType(module->getIntType(), module->getFloatType()));
 

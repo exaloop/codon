@@ -1,5 +1,6 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
+@__generated__
 @no_arg_reorder
 def partial():  # internal
     pass

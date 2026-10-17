@@ -437,7 +437,8 @@ INSTANTIATE_TEST_SUITE_P(
       "parser/typecheck/test_op.codon",
       "parser/typecheck/test_parser.codon",
       "parser/typecheck/test_python.codon",
-      "parser/typecheck/test_typecheck.codon"
+      "parser/typecheck/test_typecheck.codon",
+      "parser/typecheck/test_poly.codon"
     })),
     getTypeTestNameFromParam);
 
@@ -481,6 +482,7 @@ INSTANTIATE_TEST_SUITE_P(
         "stdlib/llvm_test.codon",
         "stdlib/str_test.codon",
         "stdlib/bytearray_test.codon",
+        "stdlib/enum_test.codon",
         "stdlib/re_test.codon",
         "stdlib/math_test.codon",
         "stdlib/cmath_test.codon",

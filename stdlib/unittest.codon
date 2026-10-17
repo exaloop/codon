@@ -3,8 +3,14 @@
 # copy/pasting tests directly from CPython's test suite.
 
 class TestCase:
+    def setUp(self):
+        pass
+
+    def tearDown(self):
+        pass
+
     def fail(self, standard_message: str, special_message: str = ""):
-        print("TEST FAILED:", special_message if special_message else standard_message)
+        raise AssertionError(special_message if special_message else standard_message)
 
     def assertTrue(self, obj, msg=""):
         if not bool(obj):
@@ -131,3 +137,53 @@ class TestCase:
                 f"{first} != {second} within {places} places ({diff} difference)"
             )
         self.fail(standard_msg, msg)
+
+    def assertIsInstance(self, obj, T: type, msg=""):
+        if not isinstance(obj, T):
+            standard_msg = f"{obj} is not an instance of {T}"
+            self.fail(standard_msg, msg)
+
+    def assertNotIsInstance(self, obj, T: type, msg=""):
+        if isinstance(obj, T):
+            standard_msg = f"{obj} is an instance of {T}"
+            self.fail(standard_msg, msg)
+
+    def assertIs(self, expr1, expr2, msg=""):
+        if expr1 is not expr2:
+            standard_msg = f"{expr1} is not {expr2}"
+            self.fail(standard_msg, msg)
+
+def main():
+    import time
+
+    children = static.children(TestCase)
+    tt = time.time()
+    ti = 0
+    errors = []
+    for cls in children:
+        t = time.time()
+        i, f = 0, 0
+        print(f"Testing {cls.__name__}: ", end="")
+        for name in static.methods(cls):
+            if name[:5] == "test_":
+                try:
+                    obj = cls()
+                    obj.setUp()
+                    getattr(obj, name)()
+                    obj.tearDown()
+                    print(".", end="")
+                except AssertionError as e:
+                    print("F", end="")
+                    errors.append((f"{cls.__name__}.{name}", e))
+                    f += 1
+                i += 1
+        print(f" ({i} tests, {f} failed; {time.time() - t:.03f}s)")
+        ti += i
+    if errors:
+        for name, e in errors:
+            print("=" * 70)
+            print(f"FAIL: {name}")
+            print(e)
+
+    print("-" * 70)
+    print(f"Ran {ti} tests in {time.time() - tt:.03f}s")

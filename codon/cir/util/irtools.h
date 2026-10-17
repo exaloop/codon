@@ -36,6 +36,16 @@ bool isInt(const Type *type, unsigned len = 64, bool sign = true);
 /// @return call instruction with the given function and arguments
 CallInstr *call(Func *func, const std::vector<Value *> &args);
 
+/// Calls a virtual method through an explicit runtime lookup.
+/// Evaluates the callee and receiver once before lookup and remaining arguments.
+/// @param callee the statically resolved callee expression
+/// @param args call arguments, with the receiver first
+/// @param thunkId nonzero semantic method ID
+/// @param parent function owning the receiver temporary
+/// @return indirect call with expression-contained dispatch setup
+CallInstr *virtualCall(Value *callee, std::vector<Value *> args, size_t thunkId,
+                       BodiedFunc *parent);
+
 /// Checks if a value represents a call of a particular function.
 /// @param value the value to check
 /// @param name the function's (unmangled) name

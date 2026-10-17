@@ -127,8 +127,9 @@ public:
                makeFormatter(v->getType()));
   }
   void visit(const InternalFunc *v) override {
-    fmt::print(os, FMT_STRING("(internal_func '\"{}\" {})"), v->referenceString(),
-               makeFormatter(v->getType()));
+    fmt::print(os, FMT_STRING("(internal_func '\"{}\" {} (intrinsic {} {}))"),
+               v->referenceString(), makeFormatter(v->getType()), v->getIntrinsicName(),
+               makeFormatter(v->getIntrinsicType()));
   }
   void visit(const LLVMFunc *v) override {
     std::vector<std::string> literals;
@@ -236,11 +237,13 @@ public:
                makeFormatter(v->getRhs()));
   }
   void visit(const ExtractInstr *v) override {
-    fmt::print(os, FMT_STRING("(extract {} \"{}\")"), makeFormatter(v->getVal()),
+    fmt::print(os, FMT_STRING("(extract{} {} \"{}\")"),
+               v->isPolymorphic() ? "_poly" : "", makeFormatter(v->getVal()),
                v->getField());
   }
   void visit(const InsertInstr *v) override {
-    fmt::print(os, FMT_STRING("(insert {} \"{}\" {})"), makeFormatter(v->getLhs()),
+    fmt::print(os, FMT_STRING("(insert{} {} \"{}\" {})"),
+               v->isPolymorphic() ? "_poly" : "", makeFormatter(v->getLhs()),
                v->getField(), makeFormatter(v->getRhs()));
   }
   void visit(const CallInstr *v) override {
@@ -251,18 +254,6 @@ public:
   void visit(const StackAllocInstr *v) override {
     fmt::print(os, FMT_STRING("(stack_alloc {} {})"), makeFormatter(v->getPtrType()),
                v->getCount());
-  }
-  void visit(const TypePropertyInstr *v) override {
-    std::string property;
-    if (v->getProperty() == TypePropertyInstr::Property::IS_ATOMIC) {
-      property = "atomic";
-    } else if (v->getProperty() == TypePropertyInstr::Property::SIZEOF) {
-      property = "sizeof";
-    } else {
-      property = "unknown";
-    }
-    fmt::print(os, FMT_STRING("(property {} {})"), property,
-               makeFormatter(v->getInspectType()));
   }
   void visit(const YieldInInstr *v) override {
     fmt::print(os, FMT_STRING("(yield_in {})"), makeFormatter(v->getType()));

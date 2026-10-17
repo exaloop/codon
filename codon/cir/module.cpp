@@ -274,15 +274,15 @@ Type *Module::getBytesType() {
 Type *Module::getPointerType(Type *base) {
   if (!base)
     base = getIntType(8, /*sign=*/false);
-  return getOrRealizeType("Ptr", {base});
+  return getOrRealizeType(ast::StdlibTypes::Ptr, {base});
 }
 
 Type *Module::getGeneratorType(Type *base) {
-  return getOrRealizeType("Generator", {base});
+  return getOrRealizeType(ast::StdlibTypes::Generator, {base});
 }
 
 Type *Module::getOptionalType(Type *base) {
-  return getOrRealizeType("Optional", {base});
+  return getOrRealizeType(ast::StdlibTypes::Optional, {base});
 }
 
 Type *Module::getFuncType(Type *rType, std::vector<Type *> argTypes, bool variadic) {
@@ -305,11 +305,11 @@ Type *Module::getIntType(unsigned int len, bool sign) {
   // Check for core 'int' type
   if (len == 64 && sign)
     return unsafeGetIntType(len, sign);
-  return getOrRealizeType(sign ? "Int" : "UInt", {len});
+  return getOrRealizeType(sign ? ast::StdlibTypes::Int : ast::StdlibTypes::UInt, {len});
 }
 
 Type *Module::getVectorType(unsigned count, Type *base) {
-  return getOrRealizeType(ast::getMangledClass("std.simd", "Vec"), {base, count});
+  return getOrRealizeType(ast::StdlibTypes::Vec, {base, count});
 }
 
 Type *Module::getTupleType(std::vector<Type *> args) {
@@ -330,7 +330,7 @@ Type *Module::getUnionType(std::vector<Type *> types) {
   return cache->makeUnion(argTypes);
 }
 
-Type *Module::getNoneType() { return getOrRealizeType("NoneType"); }
+Type *Module::getNoneType() { return getOrRealizeType(ast::StdlibTypes::NoneType); }
 
 Value *Module::getInt(int64_t v) { return Nr<IntConst>(v, getIntType()); }
 
@@ -353,6 +353,42 @@ Type *Module::unsafeGetPointerType(Type *base) {
   if (auto *rVal = getType(name))
     return rVal;
   return Nr<PointerType>(base);
+}
+
+InternalFunc *Module::getIntrinsic(InternalFunc::Intrinsic kind, Type *type,
+                                   Type *signature) {
+  if (!signature) {
+    seqassertn(InternalFunc::isTypeQuery(kind),
+               "intrinsic requires an explicit signature");
+    auto *result =
+        kind == InternalFunc::Intrinsic::SIZEOF ? getIntType() : getBoolType();
+    signature = unsafeGetFuncType(".intrinsic.query." + result->getName(), result, {});
+  }
+  auto key = std::make_tuple(kind, type ? type->getName() : "", signature->getName());
+  auto found = intrinsics.find(key);
+  if (found != intrinsics.end()) {
+    auto *function = cast<InternalFunc>(getVar(found->second));
+    // A client may remove or rewrite a declaration after it was cached.
+    if (function && function->getIntrinsic() == kind &&
+        function->getIntrinsicType() == type && function->getType() == signature &&
+        function->hasValidIntrinsicSignature())
+      return function;
+  }
+  auto *functionType = cast<FuncType>(signature);
+  seqassertn(functionType, "intrinsic signature is not a function type");
+  auto *function = Nr<InternalFunc>(std::string(".intrinsic.") +
+                                    InternalFunc::getIntrinsicName(kind));
+  function->setIntrinsic(kind, type);
+  function->setGlobal();
+  std::vector<std::string> names;
+  for (size_t index = 0;
+       index < std::distance(functionType->begin(), functionType->end()); ++index)
+    names.push_back("arg" + std::to_string(index));
+  function->realize(signature, names);
+  seqassertn(function->hasValidIntrinsicSignature(), "invalid intrinsic signature: {}",
+             function->getIntrinsicName());
+  intrinsics[key] = function->getId();
+  return function;
 }
 
 Type *Module::unsafeGetGeneratorType(Type *base) {
@@ -404,10 +440,11 @@ Type *Module::unsafeGetIntType(unsigned int len, bool sign) {
 
 Type *Module::unsafeGetVectorType(unsigned int count, Type *base) {
   auto *primitive = cast<PrimitiveType>(base);
+  seqassertn(primitive, "base type must be a primitive type");
+  seqassertn(count > 0, "vector width must be positive");
   auto name = VectorType::getInstanceName(count, primitive);
   if (auto *rVal = getType(name))
     return rVal;
-  seqassertn(primitive, "base type must be a primitive type");
   return Nr<VectorType>(count, primitive);
 }
 
@@ -444,6 +481,8 @@ void Module::popArena() {
     typesMap.erase(it);
   }
   arenas.pop_back();
+  std::erase_if(intrinsics,
+                [this](const auto &entry) { return !getVar(entry.second); });
 }
 
 } // namespace ir

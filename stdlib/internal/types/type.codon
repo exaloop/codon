@@ -45,19 +45,24 @@ class type:
 
         ret ptr %obj
 
+    @__internal__
+    def _ref_alloc(T: type) -> T:
+        pass
+
+    @__internal__
+    def _ref_size(T: type) -> int:
+        pass
+
     def _ref_new(T: type) -> T:
         """
         Allocates a new reference (class) object.
         """
 
-        from internal.gc import alloc, alloc_atomic, sizeof, register_finalizer
+        from internal.gc import register_finalizer
 
-        sz = sizeof(tuple(T))
-        obj = alloc_atomic(sz) if T.__contents_atomic__ else alloc(sz)
-        register_finalizer(type._force_cast(obj, T))
-        if static.has_rtti(T):
-            obj = RTTIType._new(obj, TypeInfo(T).__raw__(), Ptr[u8])
-        return type._force_cast(obj, T)
+        obj = type._ref_alloc(T)
+        register_finalizer(obj)
+        return obj
 
     def _construct(T: type, *args, **kwargs) -> T:
         """
@@ -66,75 +71,45 @@ class type:
 
         return T(*args, **kwargs)
 
+    @pure
+    @derives
+    @inline
+    @llvm
+    def _get_element_offset(T: type, i: Literal[int]) -> int:
+        """
+        Gets offset of i-th element in a Tuple. Respects aliasing rules.
+        """
+        %1 = getelementptr {=T}, ptr null, i32 0, i32 {=i}
+        %2 = ptrtoint ptr %1 to i64
+        ret i64 %2
 
-@__internal__
-class TypeInfo:
-    id: int
-    _parent_ids: Ptr[int]
-    _n_parent_ids: int
-    raw_name: str
-    nice_name: str
-    repr: Function[[Ptr[u8]], str]
-
-    def __new__() -> TypeInfo:
-        return __magic__.new(TypeInfo)
-
-    def __raw__(self) -> Ptr[u8]:
-        return __magic__.raw(self)
-
-    def __init__(self, T: type):
-        if isinstance(T, TypeWrap):
-            self.__init__(T.T)
-            return
-
-        self.id = T.__id__
-        self.raw_name = T.__name__
-        self.nice_name = T.__name__
-
-        self.repr = Function[[Ptr[u8]], str](cobj())
-        # if hasattr(T, "__repr__") or hasattr(T, "__str__"):
-        #     fn = static.function.realized(TypeInfo.wrap(T=T, ...), Ptr[u8])
-        #     if isinstance(fn.TR, str):
-        #         self.repr = fn
-
-        mro = T.__mro__
-        num_mro: Literal[int] = static.len(mro)
-        self._n_parent_ids = num_mro
-
-        if num_mro > 0:
-            self._parent_ids = Ptr[int](num_mro + 1)
-            for i in static.range(num_mro):
-                self._parent_ids[i] = mro[i].T.__id__
-            self._parent_ids[num_mro] = 0
-        else:
-            self._parent_ids = Ptr[int]()
-
-    def is_parent(self, T: type) -> bool:
-        for i in range(self._n_parent_ids):
-            if self._parent_ids[i] == T.__id__:
-                return True
-        return False
-
-    def wrap(arg: Ptr[u8], T: type) -> str:
+    @pure
+    @derives
+    @inline
+    def _get_class_offset(T: type, i: Literal[int]) -> int:
+        """
+        Gets offset of i-th element in a class. Respects aliasing rules.
+        Returns the size of class if i is >= the number of fields.
+        """
         if isinstance(T, ByVal):
-            p = type._force_cast(arg, Ptr[T])
-            return repr(p[0])
+            TT: type = tuple(T)
+            if i >= static.len(TT):
+                return TT.__elemsize__
+            else:
+                return type._get_element_offset(TT, i)
         else:
-            obj = type._force_cast(arg, T)
-            return repr(obj)
+            info = TypeInfo.cache(T)
+            if i >= info.n_slots:
+                return type._ref_size(T)
+            return info.slots[i][2]
 
-    def __str__(self):
-        return self.nice_name
+    @inline
+    def _cls_ptr(obj):
+        return obj.__raw__()
 
-    def __repr__(self):
-        return self.__str__()
-
-    def __eq__(self, other: TypeInfo):
-        return self.id == other.id
-
-    def __ne__(self, other: TypeInfo):
-        return self.id != other.id
-
+    @inline
+    def _is(obj: T, other: U, T: type, U: type) -> bool:
+        return type._cls_ptr(obj) == type._cls_ptr(other)
 
 @extend
 class TypeWrap:

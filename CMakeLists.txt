@@ -29,6 +29,7 @@ endif()
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 include_directories(.)
 
+option(SYSTEM_BLAS "Use system-provided BLAS" OFF)
 set(APPLE_ARM OFF)
 if (APPLE AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "arm64")
   set(APPLE_ARM ON)
@@ -64,10 +65,14 @@ set(CODON_JUPYTER_FILES codon/util/jupyter.h codon/util/jupyter.cpp)
 add_library(codon_jupyter SHARED ${CODON_JUPYTER_FILES})
 
 # Codon runtime library
-set(CODONRT_FILES codon/runtime/lib.h codon/runtime/lib.cpp
-                  codon/runtime/re.cpp codon/runtime/exc.cpp
+set(CODONRT_FILES codon/runtime/lib.h
+                  codon/runtime/lib.cpp
+                  codon/runtime/rtti.h
+                  codon/runtime/re.cpp
+                  codon/runtime/exc.cpp
                   codon/runtime/numpy/sort.cpp
-                  codon/runtime/numpy/loops.cpp codon/runtime/numpy/zmath.cpp)
+                  codon/runtime/numpy/loops.cpp
+                  codon/runtime/numpy/zmath.cpp)
 add_library(codonrt SHARED ${CODONRT_FILES})
 add_dependencies(codonrt zlibstatic gc backtrace bz2 liblzma
                          re2 hwy hwy_contrib fast_float)
@@ -159,6 +164,15 @@ if(APPLE)
             -Wl,-force_load,$<TARGET_FILE:hwy_contrib>
             -Wl,-force_load,${COMPILER_RT_LIB})
   target_link_libraries(codonrt PUBLIC "-framework Accelerate")
+elseif(SYSTEM_BLAS)
+  target_link_libraries(
+    codonrt
+    PRIVATE -Wl,--whole-archive $<TARGET_FILE:zlibstatic> $<TARGET_FILE:gc>
+            $<TARGET_FILE:bz2> $<TARGET_FILE:liblzma> $<TARGET_FILE:re2>
+            $<TARGET_FILE:hwy> $<TARGET_FILE:hwy_contrib>
+            $<TARGET_FILE:codonfloat> -Wl,--no-whole-archive)
+  find_package(BLAS REQUIRED)
+  target_link_libraries(codonrt PUBLIC BLAS::BLAS)
 else()
   add_dependencies(codonrt openblas_64)
 
@@ -214,6 +228,7 @@ set(CODON_HPPFILES
   codon/parser/ast/types/static.h
   codon/parser/ast/types/traits.h
   codon/parser/cache.h
+  codon/parser/capi.h
   codon/parser/common.h
   codon/parser/ctx.h
   codon/parser/peg/peg.h
@@ -308,6 +323,7 @@ set(CODON_CPPFILES
   codon/compiler/options.cpp
   codon/dsl/plugins.cpp
   codon/parser/ast/expr.cpp
+  codon/parser/ast/codon_string.cpp
   codon/parser/ast/attr.cpp
   codon/parser/ast/stmt.cpp
   codon/parser/ast/types/type.cpp
@@ -318,6 +334,7 @@ set(CODON_CPPFILES
   codon/parser/ast/types/static.cpp
   codon/parser/ast/types/traits.cpp
   codon/parser/cache.cpp
+  codon/parser/capi.cpp
   codon/parser/match.cpp
   codon/parser/common.cpp
   codon/parser/peg/peg.cpp

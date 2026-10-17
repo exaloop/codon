@@ -34,7 +34,7 @@ Type *TypecheckVisitor::unify(Type *a, Type *b) const {
   if (!((*a) << b)) {
     types::Type::Unification undo;
     a->unify(b, &undo);
-    // log("[unify] {} {}", a->debugString(2), b->debugString(2));
+    LOG("[unify] {} {}", a->debugString(2), b->debugString(2));
     // log("[unify] {} {}", a->debugString(1), b->debugString(1));
     E(Error::TYPE_UNIFY, getSrcInfo(), a->prettyString(), b->prettyString());
     return nullptr;
@@ -85,9 +85,8 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool sweepForceRealize) {
     if (sweepForceRealize && ctx->getBase()->iteration == 1) {
       // Realize all @force_realize functions
       // Copy keys to avoid modifications during the iteration (#768)
-      std::vector<std::string> fns{std::views::keys(ctx->cache->functions).begin(),
-                                   std::views::keys(ctx->cache->functions).end()};
-      for (const auto &fn : fns) {
+      auto copied = sorted_view(ctx->cache->functions);
+      for (const auto &[fn, _] : copied) {
         auto &f = ctx->cache->functions[fn];
         auto ast = f.ast;
         if (f.type && f.realizations.empty() &&
@@ -102,19 +101,6 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool sweepForceRealize) {
     }
 
     if (result->isDone()) {
-      // Special union case: if union cannot be inferred return type is Union[NoneType]
-      if (auto tr = ctx->getBase()->returnType) {
-        if (auto tu = tr->getUnion()) {
-          if (!tu->isSealed()) {
-            if (tu->pendingTypes[0]->getLink() &&
-                tu->pendingTypes[0]->getLink()->kind == LinkType::Unbound) {
-              auto r = tu->addType(getStdLibType("NoneType"));
-              seqassert(r, "cannot add type to union {}", tu->debugString(2));
-              tu->seal();
-            }
-          }
-        }
-      }
       break;
     } else if (changedNodes) {
       continue;
@@ -123,7 +109,7 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool sweepForceRealize) {
       // default values (e.g., generics with default values). Unify those types with
       // their default values and then run another round to see if anything changed.
       bool anotherRound = false;
-      // Special case: return type might have default as well (e.g., Union)
+      // Special case: return type might have default as well
       if (auto t = ctx->getBase()->returnType) {
         ctx->getBase()->pendingDefaults[0].insert(t);
       }
@@ -133,13 +119,7 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool sweepForceRealize) {
       for (auto &unbounds : ctx->getBase()->pendingDefaults | std::views::values) {
         if (!unbounds.empty()) {
           for (const auto &unbound : unbounds) {
-            if (auto tu = unbound->getUnion()) {
-              // Seal all dynamic unions after the iteration is over
-              if (!tu->isSealed()) {
-                tu->seal();
-                anotherRound = true;
-              }
-            } else if (auto u = unbound->getLink()) {
+            if (auto u = unbound->getLink()) {
               types::Type::Unification undo;
               if (u->defaultType) {
                 if (u->defaultType->getClass()) { // type[...]
@@ -213,7 +193,8 @@ types::Type *TypecheckVisitor::realize(types::Type *typ) {
         std::string name_args;
         if (startswith(name, "%_import_")) {
           for (auto &i : ctx->cache->imports | std::views::values)
-            if (getMangledFunc("", i.importVar + "_call") == name) {
+            if (getMangledFunc("", i.importVar + "_call", 0, 0, /* noCore */ true) ==
+                name) {
               name = i.name;
               break;
             }
@@ -243,7 +224,7 @@ types::Type *TypecheckVisitor::realizeType(types::ClassType *type) {
   // (sometimes that's not the case: e.g., `class X: x: List[X]`)
 
   // generalize generics to ensure that they do not get unified later!
-  if (type->is("unrealized_type"))
+  if (type->is(StdlibTypes::UnrealizedType))
     type->generics[0].type = extractClassGeneric(type)->generalize(0);
 
   if (type->is("__NTuple__")) {
@@ -257,7 +238,7 @@ types::Type *TypecheckVisitor::realizeType(types::ClassType *type) {
         generics.push_back(t->generics[j]);
         j++;
       }
-    type->name = TYPE_TUPLE;
+    type->name = StdlibTypes::Tuple;
     type->generics = generics;
     type->_rn = "";
   }
@@ -284,7 +265,7 @@ types::Type *TypecheckVisitor::realizeType(types::ClassType *type) {
         s->getNonStaticType()->getClass(); // do not cache static but its root type!
 
   // Realize generics
-  if (!type->is("unrealized_type"))
+  if (!type->is(StdlibTypes::UnrealizedType))
     for (auto &e : realized->generics) {
       if (!realize(e.getType()))
         return nullptr;
@@ -296,7 +277,7 @@ types::Type *TypecheckVisitor::realizeType(types::ClassType *type) {
   rn = type->ClassType::realizedName();
   auto rt = std::static_pointer_cast<ClassType>(realized->generalize(0));
   auto val = std::make_shared<TypecheckItem>(rn, "", ctx->getModule(), rt);
-  if (!val->type->is(TYPE_TYPE))
+  if (!val->type->is(StdlibTypes::Type))
     val->type = instantiateTypeVar(realized);
   ctx->addAlwaysVisible(val, true);
   auto realization = getClass(realized)->realizations[rn] =
@@ -306,7 +287,9 @@ types::Type *TypecheckVisitor::realizeType(types::ClassType *type) {
 
   const auto &mros = getClass(realized)->mro;
   for (size_t i = 1; i < mros.size(); i++) {
-    auto mt = instantiateType(mros[i].get(), realized);
+    auto g = mros[i]->generalize(0); // need to generalize it first because generics are
+                                     // not yet generalized when parsing methods
+    auto mt = instantiateType(g->getClass(), realized);
     seqassert(mt->canRealize(), "cannot realize {}", mt->debugString(2));
     realization->bases.push_back(mt);
   }
@@ -338,6 +321,16 @@ types::Type *TypecheckVisitor::realizeType(types::ClassType *type) {
       ir->getContents()->setAttribute(
           std::make_unique<ir::MemberAttribute>(memberInfo));
     }
+  }
+  for (const auto &field : fields) {
+    auto *owner = lt;
+    for (auto *base : lt->getRuntimeInfo()->mro) {
+      if (base->getAstType()->getClass()->name == field.baseClass) {
+        owner = base;
+        break;
+      }
+    }
+    lt->getRuntimeInfo()->fieldOwners.push_back(owner);
   }
 
   return rt.get();
@@ -391,7 +384,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
   bool hasAst = ast->getSuite() && !ast->hasAttribute(Attr::Internal);
   // Add function arguments
   if (auto b = ast->getAttribute<BindingsAttribute>(Attr::Bindings)) {
-    for (auto &[c, t] : b->captures) {
+    for (const auto &[c, t] : sorted_view(b->captures)) {
       if (t == BindingsAttribute::CaptureType::Global) {
         auto cp = ctx->find(c);
         if (!cp)
@@ -400,7 +393,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
           E(Error::FN_GLOBAL_NOT_FOUND, getSrcInfo(), "global", c);
       }
     }
-    for (const auto [name, canonical] : b->localRenames) {
+    for (const auto &[name, canonical] : sorted_view(b->localRenames)) {
       auto val = ctx->forceFind(canonical);
       ctx->add(name, val);
     }
@@ -416,7 +409,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
 
       if (startswith(un, "$"))
         un = un.substr(1);
-      if (at->is("TypeWrap")) {
+      if (at->is(StdlibTypes::TypeWrap)) {
         ctx->addType(un, varName, instantiateTypeVar(extractClassGeneric(at.get())));
       } else {
         ctx->addVar(un, varName, std::make_shared<LinkType>(at));
@@ -426,7 +419,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
         un = un.substr(1);
         auto g = type->funcGenerics[gi];
         auto t = g.type;
-        if (!g.staticKind && !t->is(TYPE_TYPE))
+        if (!g.staticKind && !t->is(StdlibTypes::Type))
           t = instantiateTypeVar(t.get());
         auto v = ctx->addType(un, varName, t);
         v->generic = true;
@@ -444,7 +437,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
   r->type = std::static_pointer_cast<FuncType>(type->shared_from_this());
   r->ir = oldIR;
   if (auto b = ast->getAttribute<BindingsAttribute>(Attr::Bindings))
-    for (const auto &c : b->captures | std::views::keys) {
+    for (const auto &[c, _] : sorted_view(b->captures)) {
       auto h = ctx->find(c);
       r->captures.push_back(h ? h->canonicalName : "");
     }
@@ -503,9 +496,9 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
     // Use NoneType as the return type when the return type is not specified and
     // function has no return statement
     if (!ast->getReturn() && isUnbound(type->getRetType())) {
-      auto rt = getStdLibType("NoneType")->shared_from_this();
+      auto rt = getStdLibType(StdlibTypes::NoneType)->shared_from_this();
       if (ast->isAsync())
-        rt = instantiateType(getStdLibType("Coroutine"), {rt.get()});
+        rt = instantiateType(getStdLibType(StdlibTypes::Coroutine), {rt.get()});
       unify(type->getRetType(), rt.get());
     }
   }
@@ -572,8 +565,9 @@ ir::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
     realizedName = t->ClassType::realizedName();
     cls = ctx->cache->getClass(t);
   }
-  if (auto l = cls->realizations[realizedName]->ir) {
-    if (cls->rtti)
+  auto &realization = cls->realizations[realizedName];
+  if (auto l = realization->ir) {
+    if (cls->hasRTTI())
       cast<ir::RefType>(l)->setPolymorphic();
     return l;
   }
@@ -591,7 +585,7 @@ ir::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
   // Prepare generics and statics
   std::vector<ir::Type *> types;
   std::vector<types::StaticType *> statics;
-  if (t->is("unrealized_type"))
+  if (t->is(StdlibTypes::UnrealizedType))
     types.push_back(nullptr);
   else
     for (auto &m : t->generics) {
@@ -605,42 +599,43 @@ ir::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
   auto *module = ctx->cache->module;
   ir::Type *handle = nullptr;
 
-  if (t->name == "bool") {
+  if (t->name == StdlibTypes::Bool) {
     handle = module->getBoolType();
-  } else if (t->name == "float") {
+  } else if (t->name == StdlibTypes::Float) {
     handle = module->getFloatType();
   } else if (t->name == "float32") {
     handle = module->getFloat32Type();
-  } else if (t->name == "float16") {
+  } else if (t->name == StdlibTypes::Float16) {
     handle = module->getFloat16Type();
   } else if (t->name == "bfloat16") {
     handle = module->getBFloat16Type();
   } else if (t->name == "float128") {
     handle = module->getFloat128Type();
-  } else if (t->name == "str") {
+  } else if (t->name == StdlibTypes::String) {
     handle = module->getStringType();
   } else if (t->name == "bytes") {
     handle = module->getBytesType();
-  } else if (t->name == "Int" || t->name == "UInt") {
-    handle = module->unsafeGetIntType(getIntLiteral(statics[0]), t->name == "Int");
-  } else if (t->name == "Ptr") {
+  } else if (t->name == StdlibTypes::Int || t->name == StdlibTypes::UInt) {
+    handle = module->unsafeGetIntType(getIntLiteral(statics[0]),
+                                      t->name == StdlibTypes::Int);
+  } else if (t->name == StdlibTypes::Ptr) {
     seqassert(types.size() == 1, "bad generics/statics");
     handle = module->unsafeGetPointerType(types[0]);
-  } else if (t->name == "Generator" || t->name == "AsyncGenerator") {
+  } else if (t->name == StdlibTypes::Generator || t->name == "AsyncGenerator") {
     seqassert(types.size() == 1, "bad generics/statics");
     handle = module->unsafeGetGeneratorType(types[0]);
-  } else if (t->name == "Coroutine") {
+  } else if (t->name == StdlibTypes::Coroutine) {
     seqassert(types.size() == 1, "bad generics/statics");
     handle = module->unsafeGetGeneratorType(types[0]);
-  } else if (t->name == TYPE_OPTIONAL) {
+  } else if (t->name == StdlibTypes::Optional) {
     seqassert(types.size() == 1, "bad generics/statics");
     handle = module->unsafeGetOptionalType(types[0]);
-  } else if (t->name == "NoneType") {
+  } else if (t->name == StdlibTypes::NoneType) {
     seqassert(types.empty() && statics.empty(), "bad generics/statics");
     auto record = cast<ir::RecordType>(module->unsafeGetMemberedType(realizedName));
     record->realize({}, {});
     handle = record;
-  } else if (t->name == "Union") {
+  } else if (t->name == StdlibTypes::Union) {
     seqassert(!types.empty(), "bad union");
     auto unionTypes = t->getUnion()->getRealizationTypes();
     std::vector<ir::Type *> unionVec;
@@ -648,15 +643,26 @@ ir::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
     for (auto &u : unionTypes)
       unionVec.emplace_back(forceFindIRType(u));
     handle = module->unsafeGetUnionType(unionVec);
-  } else if (t->name == "Function") {
+  } else if (t->name == StdlibTypes::Function) {
     types.clear();
     for (auto &m : extractClassGeneric(t)->getClass()->generics)
       types.push_back(forceFindIRType(m.getType()));
     auto ret = forceFindIRType(extractClassGeneric(t, 1));
     handle = module->unsafeGetFuncType(realizedName, ret, types);
-  } else if (t->name == getMangledClass("std.simd", "Vec")) {
+  } else if (t->name == StdlibTypes::Vec) {
     seqassert(types.size() == 1 && !statics.empty(), "bad generics/statics");
-    handle = module->unsafeGetVectorType(getIntLiteral(statics[0]), types[0]);
+    const auto count = getIntLiteral(statics[0]);
+    constexpr auto MAX_SIMD_LANES = std::numeric_limits<unsigned int>::max();
+    if (count <= 0 || count > MAX_SIMD_LANES)
+      E(Error::CUSTOM, getSrcInfo(),
+        "SIMD vector width must be positive and fit in 32 bits");
+    auto *element = types[0];
+    if (!cast<ir::IntType>(element) && !cast<ir::FloatType>(element) &&
+        !cast<ir::Float32Type>(element) && !cast<ir::Float16Type>(element) &&
+        !cast<ir::BFloat16Type>(element) && !cast<ir::Float128Type>(element))
+      E(Error::CUSTOM, getSrcInfo(),
+        "SIMD element type must be an integer or floating-point type");
+    handle = module->unsafeGetVectorType(static_cast<unsigned int>(count), element);
   } else {
     // Type arguments will be populated afterwards to avoid infinite loop with recursive
     // reference types (e.g., `class X: x: Optional[X]`)
@@ -684,13 +690,45 @@ ir::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
           std::make_unique<ir::MemberAttribute>(std::move(memberInfo)));
     } else {
       handle = module->unsafeGetMemberedType(realizedName, !t->isRecord());
-      if (cls->rtti)
+      if (cls->hasRTTI())
         cast<ir::RefType>(handle)->setPolymorphic();
     }
   }
   handle->setSrcInfo(t->getSrcInfo());
   handle->setAstType(
       std::const_pointer_cast<codon::ast::types::Type>(t->shared_from_this()));
+
+  ir::Type::RuntimeInfo runtimeInfo;
+  runtimeInfo.id = realization->id;
+  runtimeInfo.rawName = t->realizedName();
+  runtimeInfo.niceName = t->prettyString();
+  runtimeInfo.baseName = t->name;
+  runtimeInfo.mro.push_back(handle);
+  for (const auto &base : realization->bases) {
+    auto baseType = realize(base.get())->getClass();
+    runtimeInfo.mro.push_back(makeIRType(baseType));
+  }
+  for (auto *base : runtimeInfo.mro) {
+    auto baseName = base->getAstType()->getClass()->name;
+    if (baseName == StdlibTypes::BaseException)
+      runtimeInfo.exceptionBase = base;
+    if (baseName == getMangledClass("std.internal.types.error", "SystemExit"))
+      runtimeInfo.systemExitBase = base;
+  }
+  if (!t->is(StdlibTypes::UnrealizedType)) {
+    if (t->is(StdlibTypes::Int)) { // special case for Int[N] to avoid recursion
+      runtimeInfo.parameters.push_back(handle);
+    } else {
+      for (const auto &generic : t->generics) {
+        auto *parameter = generic.getType();
+        if (auto *literal = parameter->getStatic())
+          parameter = literal->getNonStaticType();
+        runtimeInfo.parameters.push_back(makeIRType(parameter->getClass()));
+      }
+    }
+  }
+  handle->setRuntimeInfo(std::move(runtimeInfo));
+
   return cls->realizations[realizedName]->ir = handle;
 }
 
@@ -764,6 +802,32 @@ ir::Func *TypecheckVisitor::makeIRFunction(
                                        types, r->ast->hasAttribute(Attr::CVarArg));
   irType->setAstType(r->type->shared_from_this());
   fn->realize(irType, names);
+  // Identify builtins at the frontend boundary; CIR consumers use intrinsic IDs.
+  if (auto *internal = ir::cast<ir::InternalFunc>(fn)) {
+    if (r->type->getFuncName() == getMangledMethod("", "type", "_ref_alloc")) {
+      internal->setIntrinsic(ir::InternalFunc::Intrinsic::ALLOCATE,
+                             ir::cast<ir::FuncType>(irType)->getReturnType());
+    } else if (r->type->getFuncName() == getMangledMethod("", "type", "_ref_size")) {
+      internal->setIntrinsic(ir::InternalFunc::Intrinsic::ALLOCATION_SIZE,
+                             makeIRType(extractFuncGeneric(r->getType())->getClass()));
+    } else if (r->type->getFuncName() == getMangledMethod("", "TypeInfo", "_get")) {
+      internal->setIntrinsic(ir::InternalFunc::Intrinsic::TYPEINFO,
+                             makeIRType(extractFuncGeneric(r->getType())->getClass()));
+    } else if (r->type->getFuncName() == getMangledMethod("", "TypeInfo", "_lookup")) {
+      internal->setIntrinsic(ir::InternalFunc::Intrinsic::TYPEINFO_LOOKUP);
+    } else if (r->type->getFuncName() ==
+               getMangledMethod("", "TypeInfo", "_lookup_method")) {
+      internal->setIntrinsic(ir::InternalFunc::Intrinsic::TYPEINFO_METHOD_LOOKUP);
+    } else if (unmangledName == "__new__" &&
+               ir::isA<ir::RecordType>(internal->getParentType())) {
+      internal->setIntrinsic(ir::InternalFunc::Intrinsic::RECORD_NEW,
+                             ir::cast<ir::FuncType>(irType)->getReturnType());
+    } else if (r->type->getFuncName() ==
+               getMangledMethod("", "Generator", "__promise__")) {
+      internal->setIntrinsic(ir::InternalFunc::Intrinsic::GENERATOR_PROMISE,
+                             internal->getParentType());
+    }
+  }
   return fn;
 }
 

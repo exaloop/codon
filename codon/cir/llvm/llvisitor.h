@@ -144,6 +144,42 @@ private:
   std::unordered_map<id_t, llvm::Value *> vars;
   /// LLVM functions corresponding to IR functions
   std::unordered_map<id_t, llvm::Function *> funcs;
+  /// AOT resolution of an owner's segment offset, before adding a field's local
+  /// offset. Neither a constant nor a function means dynamic MRO lookup is needed.
+  struct FieldOffsetResolver {
+    /// True when all known subtypes place this owner's segment at the same offset
+    bool constant;
+    /// Common byte offset from the allocation start, valid when constant is true
+    uint64_t offset;
+    /// Shared i64(dynamic type ID) -> segment offset resolver, or nullptr
+    llvm::Function *function;
+  };
+  /// (Static receiver type ID, declaring owner type ID) -> AOT offset resolution.
+  /// LLVM function pointers belong to the current module; cleared by clearLLVMData().
+  std::map<std::pair<id_t, id_t>, FieldOffsetResolver> fieldOffsetResolvers;
+  /// LLVM VIRTUAL_LOOKUP helpers -> their static CIR receiver types. Retains the
+  /// information needed to recognize lowered dispatch at a call site; per-module.
+  std::unordered_map<llvm::Function *, const RefType *> virtualLookupTypes;
+  /// (Static receiver type ID, semantic thunk ID) -> complete AOT target set.
+  /// Empty entries retain general lookup. All LLVM pointers are per-module.
+  std::map<std::pair<int64_t, int64_t>,
+           std::vector<std::pair<int64_t, llvm::Function *>>>
+      virtualTargets;
+  /// Type IDs whose descriptors have been emitted; retained across JIT modules
+  std::unordered_set<int64_t> emittedTypeInfo;
+  /// Last emitted semantic-thunk -> CIR-function-ID map for each type. Comparing
+  /// these maps detects JIT method-table changes without retaining LLVM pointers.
+  std::unordered_map<int64_t, std::map<size_t, id_t>> emittedTypeMethods;
+  /// Pending (existing JIT descriptor, new initializer) updates. Only dispatch
+  /// fields are copied before publishing the registry; layout fields stay immutable.
+  std::vector<std::pair<llvm::GlobalVariable *, llvm::Constant *>> typeInfoUpdates;
+  /// Whether the shared registry global has been emitted; later JIT modules refer
+  /// to its existing storage rather than defining another registry
+  bool emittedTypeRegistry = false;
+  /// Unique suffix for generated descriptor/registry initializer functions
+  size_t runtimeInitializerCount = 0;
+  /// Latest initializer's symbol name; the JIT invokes it before executing the cell
+  std::string runtimeInitializerName;
   /// Coroutine data, if current function is a coroutine
   CoroData coro;
   /// Loop data stack, containing break/continue blocks
@@ -180,6 +216,58 @@ private:
 
   // Try-catch types and utilities
   llvm::StructType *getTypeInfoType();
+  /// Gets the shared runtime type descriptor layout.
+  /// Must match runtime::TypeInfo and the stdlib TypeInfo.
+  /// @return the LLVM type of a runtime type descriptor
+  llvm::StructType *getRuntimeTypeInfoType();
+  /// Gets the layout of fields declared by a class, excluding inherited fields.
+  /// @param type the reference type with runtime metadata
+  /// @return the class's own-field layout
+  llvm::StructType *getOwnLayout(RefType *type);
+  /// Gets the allocation layout of a reference type.
+  /// Plain classes contain only fields; polymorphic classes have a header and MRO
+  /// segments. All references point to the allocation start.
+  /// @param type the reference type
+  /// @return the object allocation layout
+  llvm::StructType *getObjectLayout(RefType *type);
+  /// Gets a field offset for an allocation of the given concrete type.
+  /// @param type the concrete reference type
+  /// @param index the source-visible field index, including inherited fields
+  /// @return the byte offset from the allocation start, including padding
+  uint64_t getObjectFieldOffset(RefType *type, size_t index);
+  /// Emits or references a runtime type descriptor.
+  /// AOT descriptors are constant; JIT descriptor addresses remain stable across cells.
+  /// @param type the type with runtime metadata
+  /// @return the descriptor global in the current LLVM module
+  llvm::GlobalVariable *getRuntimeTypeInfo(Type *type);
+  /// @return the shared JIT {count, table} global for type-ID lookup across cells
+  llvm::GlobalVariable *getRuntimeTypeRegistry();
+  /// Emits a JIT initializer to refresh method tables and publish the registry.
+  /// @param module the CIR module containing the current runtime type metadata
+  void prepareRuntimeTypeInfo(Module *module);
+  /// Loads a field from a runtime type descriptor.
+  /// @param info the descriptor pointer
+  /// @param field the runtime::TypeInfoField ABI index
+  /// @return the loaded field value
+  llvm::Value *loadRuntimeField(llvm::Value *info, unsigned field);
+  /// Resolves a field address using the static receiver type and runtime layout.
+  /// Chooses a proven AOT offset/resolver or a dynamic MRO search.
+  /// @param object the canonical pointer to the start of the allocation
+  /// @param type the static receiver type
+  /// @param field the field name
+  /// @return the field's address
+  llvm::Value *getFieldAddress(llvm::Value *object, RefType *type,
+                               const std::string &field);
+  /// Evaluates a type query with this module's target layout.
+  /// @param function the valid type-query intrinsic declaration
+  /// @return the query result as an LLVM constant
+  llvm::Constant *codegenTypeQuery(const InternalFunc *function);
+  /// Emits a compiler intrinsic, including its normal control-flow effects.
+  /// @param function the valid intrinsic declaration
+  /// @param args the lowered runtime arguments
+  /// @return the generated intrinsic result
+  llvm::Value *codegenIntrinsic(const InternalFunc *function,
+                                const std::vector<llvm::Value *> &args);
   llvm::StructType *getPadType();
   llvm::StructType *getExceptionType();
   llvm::GlobalVariable *getTypeIdxVar(Type *catchType);
@@ -296,6 +384,12 @@ public:
   /// @return the current module/context, replaced internally
   std::pair<std::unique_ptr<llvm::Module>, std::unique_ptr<llvm::LLVMContext>>
   takeModule(Module *module, const SrcInfo *src = nullptr);
+  /// Gets the most recently emitted runtime type initializer's symbol name.
+  /// The JIT must run this initializer before executing the corresponding cell.
+  /// @return the initializer's symbol name, or an empty string before one is emitted
+  const std::string &getRuntimeInitializerName() const {
+    return runtimeInitializerName;
+  }
 
   /// Sets current debug info based on a given node.
   /// @param node the node whose debug info to use
@@ -408,7 +502,6 @@ public:
   void visit(const InsertInstr *) override;
   void visit(const CallInstr *) override;
   void visit(const StackAllocInstr *) override;
-  void visit(const TypePropertyInstr *) override;
   void visit(const YieldInInstr *) override;
   void visit(const TernaryInstr *) override;
   void visit(const BreakInstr *) override;

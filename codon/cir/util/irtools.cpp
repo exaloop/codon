@@ -34,6 +34,30 @@ CallInstr *call(Func *func, const std::vector<Value *> &args) {
   return M->Nr<CallInstr>(M->Nr<VarValue>(func), args);
 }
 
+CallInstr *virtualCall(Value *callee, std::vector<Value *> args, size_t thunkId,
+                       BodiedFunc *parent) {
+  seqassertn(parent && thunkId && !args.empty(),
+             "virtual call requires a parent, method ID and receiver");
+  auto *module = callee->getModule();
+  auto *receiver = args.front();
+  auto *temporary =
+      module->Nr<Var>(receiver->getType(), false, false, false, "rtti.self");
+  parent->push_back(temporary);
+  auto *signature = module->unsafeGetFuncType(
+      "rtti.lookup[" + receiver->getType()->getName() + "]." +
+          callee->getType()->getName(),
+      callee->getType(), {receiver->getType(), module->getIntType()});
+  auto *lookup = module->getIntrinsic(InternalFunc::Intrinsic::VIRTUAL_LOOKUP,
+                                      receiver->getType(), signature);
+  auto *prefix = module->Nr<SeriesFlow>();
+  prefix->push_back(callee);
+  prefix->push_back(module->Nr<AssignInstr>(temporary, receiver));
+  auto *target = module->Nr<FlowInstr>(
+      prefix, call(lookup, {module->Nr<VarValue>(temporary), module->getInt(thunkId)}));
+  args.front() = module->Nr<VarValue>(temporary);
+  return module->N<CallInstr>(callee, target, std::move(args));
+}
+
 bool isCallOf(const Value *value, const std::string &name,
               const std::vector<Type *> &inputs, Type *output, bool method) {
   if (auto *call = cast<CallInstr>(value)) {

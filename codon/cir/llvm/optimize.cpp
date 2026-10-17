@@ -1371,6 +1371,52 @@ struct CoroUnrollControl : public llvm::PassInfoMixin<CoroUnrollControl> {
   }
 };
 
+// ElidesRepeatedGeneratorPulls: LLVM's cost-based inliner stops partway through
+// repeated next() calls, leaving a heap frame and resume calls. Inline bounded
+// resume bodies for local, nonescaping frames before the next O3 pipeline so
+// scalar replacement can eliminate the generator protocol. Escaping frames and
+// explicit noinline functions retain their ordinary coroutine implementation.
+struct CoroResumeInliner : public llvm::PassInfoMixin<CoroResumeInliner> {
+  llvm::PreservedAnalyses run(llvm::Module &module, llvm::ModuleAnalysisManager &) {
+    bool changed = false;
+    for (auto &function : module) {
+      llvm::SmallVector<llvm::CallBase *, 16> calls;
+      for (auto &block : function)
+        for (auto &instruction : block) {
+          auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+          auto *callee = call ? call->getCalledFunction() : nullptr;
+          if (callee && callee != &function && callee->hasLocalLinkage() &&
+              callee->hasFnAttribute("codon.generator") &&
+              callee->getName().ends_with(".resume") && call->arg_size() == 1 &&
+              !call->hasFnAttr(llvm::Attribute::NoInline) &&
+              callee->getInstructionCount() <= 128)
+            calls.push_back(call);
+        }
+      for (auto *call : calls) {
+        if (function.getInstructionCount() +
+                call->getCalledFunction()->getInstructionCount() >
+            8192)
+          break;
+        auto *frame = llvm::getUnderlyingObject(call->getArgOperand(0));
+        auto *allocation = llvm::dyn_cast<llvm::CallBase>(frame);
+        auto *allocator = allocation ? allocation->getCalledFunction() : nullptr;
+        if (!llvm::isa<llvm::AllocaInst>(frame) &&
+            (!allocator || allocator->getName() != "seq_alloc"))
+          continue;
+        // ElidesRepeatedGeneratorPulls has up to 64 references to one frame;
+        // the default capture-analysis budget gives up before proving it local.
+        if (llvm::PointerMayBeCaptured(frame, /*ReturnCaptures=*/true,
+                                       /*StoreCaptures=*/true,
+                                       /*MaxUsesToExplore=*/8192))
+          continue;
+        llvm::InlineFunctionInfo info;
+        changed |= llvm::InlineFunction(*call, info).isSuccess();
+      }
+    }
+    return changed ? llvm::PreservedAnalyses::none() : llvm::PreservedAnalyses::all();
+  }
+};
+
 struct OpenMPThreadIdOptimizer : public llvm::PassInfoMixin<OpenMPThreadIdOptimizer> {
   llvm::PreservedAnalyses run(llvm::Function &function,
                               llvm::FunctionAnalysisManager &) {
@@ -1439,6 +1485,13 @@ struct OpenMPThreadIdOptimizer : public llvm::PassInfoMixin<OpenMPThreadIdOptimi
 
 void registerCodonLLVMOptimizationPasses(llvm::PassBuilder &pb, PluginManager *plugins,
                                          Options *options) {
+  pb.registerPipelineEarlySimplificationEPCallback([](llvm::ModulePassManager &pm,
+                                                      llvm::OptimizationLevel opt,
+                                                      llvm::ThinOrFullLTOPhase) {
+    if (opt.isOptimizingForSpeed())
+      pm.addPass(CoroResumeInliner());
+  });
+
   // This extension point runs before LLVM's full-unroll pass.
   pb.registerLateLoopOptimizationsEPCallback(
       [](llvm::LoopPassManager &pm, llvm::OptimizationLevel opt) {

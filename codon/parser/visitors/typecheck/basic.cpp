@@ -14,12 +14,10 @@ using namespace types;
 
 /// Set type to `Optional[?]`
 void TypecheckVisitor::visit(NoneExpr *expr) {
-  unify(expr->getType(), instantiateType(getStdLibType(TYPE_OPTIONAL)));
+  unify(expr->getType(), instantiateType(getStdLibType(StdlibTypes::Optional)));
   if (realize(expr->getType())) {
     // Realize the appropriate `Optional.__new__` for the translation stage
-    auto f =
-        ctx->forceFind(getMangledMethod("std.internal.core", TYPE_OPTIONAL, "__new__"))
-            ->getType();
+    auto f = ctx->forceFind(getMangledMethod("", "Optional", "__new__"))->getType();
     auto t = realize(instantiateType(f, extractClassType(expr)));
     expr->setDone();
   }
@@ -57,9 +55,9 @@ void TypecheckVisitor::visit(StringExpr *expr) {
         format += "}";
         p.expr = N<CallExpr>(N<DotExpr>(N<StringExpr>(format), "format"), p.expr);
         p.expr = N<CallExpr>(N<IdExpr>("str"), p.expr);
-        if (!p.format.text.empty()) {
-          p.expr = N<CallExpr>(N<DotExpr>(N<IdExpr>("str"), "cat"),
-                               N<StringExpr>(p.format.text), p.expr);
+        if (!p.value.empty()) {
+          p.expr = N<CallExpr>(N<DotExpr>(N<IdExpr>(StdlibTypes::String), "cat"),
+                               N<StringExpr>(p.value), p.expr);
         }
         items.emplace_back(p.expr);
       } else if (tolower(p.prefix) == "b") {
@@ -67,9 +65,10 @@ void TypecheckVisitor::visit(StringExpr *expr) {
       } else if (!p.prefix.empty()) {
         /// Custom prefix strings:
         /// call `str.__prefsix_[prefix]__(str, [static length of str])`
-        items.emplace_back(N<CallExpr>(
-            N<DotExpr>(N<IdExpr>("str"), fmt::format("__prefix_{}__", p.prefix)),
-            N<StringExpr>(p.value), N<IntExpr>(p.value.size())));
+        items.emplace_back(
+            N<CallExpr>(N<DotExpr>(N<IdExpr>(StdlibTypes::String),
+                                   fmt::format("__prefix_{}__", p.prefix)),
+                        N<StringExpr>(p.value), N<IntExpr>(p.value.size())));
       } else {
         items.emplace_back(N<StringExpr>(p.value));
       }
@@ -77,7 +76,8 @@ void TypecheckVisitor::visit(StringExpr *expr) {
     if (items.size() == 1)
       resultExpr = transform(items.front());
     else
-      resultExpr = transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("str"), "cat"), items));
+      resultExpr = transform(
+          N<CallExpr>(N<DotExpr>(N<IdExpr>(StdlibTypes::String), "cat"), items));
   }
 }
 
@@ -117,15 +117,15 @@ Expr *TypecheckVisitor::transformInt(IntExpr *expr) {
     return nullptr;
   } else if (suffix == "u") {
     // Unsigned integer: call `UInt[64](value)`
-    return transform(
-        N<CallExpr>(N<IndexExpr>(N<IdExpr>("UInt"), N<IntExpr>(64)), holder));
+    return transform(N<CallExpr>(
+        N<IndexExpr>(N<IdExpr>(StdlibTypes::UInt), N<IntExpr>(64)), holder));
   } else if (suffixValue) {
     // Fixed-width numbers (with `uNNN` and `iNNN` suffixes):
     // call `UInt[NNN](value)` or `Int[NNN](value)`
-    return transform(
-        N<CallExpr>(N<IndexExpr>(N<IdExpr>(suffix[0] == 'u' ? "UInt" : "Int"),
-                                 N<IntExpr>(*suffixValue)),
-                    holder));
+    return transform(N<CallExpr>(
+        N<IndexExpr>(N<IdExpr>(suffix[0] == 'u' ? StdlibTypes::UInt : StdlibTypes::Int),
+                     N<IntExpr>(*suffixValue)),
+        holder));
   } else {
     // Custom suffix: call `int.__suffix_[suffix]__(value)`
     return transform(N<CallExpr>(

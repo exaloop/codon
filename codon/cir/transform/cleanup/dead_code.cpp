@@ -36,6 +36,12 @@ void DeadCodeCleanupPass::handle(SeriesFlow *v) {
   }
 }
 
+void DeadCodeCleanupPass::handle(FlowInstr *v) {
+  auto *flow = cast<SeriesFlow>(v->getFlow());
+  if (flow && flow->begin() == flow->end())
+    doReplacement(v, v->getValue());
+}
+
 void DeadCodeCleanupPass::handle(IfFlow *v) {
   auto *cond = boolConst(v->getCond());
   if (!cond)

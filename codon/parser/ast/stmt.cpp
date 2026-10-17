@@ -2,7 +2,9 @@
 
 #include "stmt.h"
 
+#include <algorithm>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -49,6 +51,19 @@ std::string SuiteStmt::toString(int indent) const {
   return wrapStmt(fmt::format("({}suite{})", (isDone() ? "*" : ""),
                               (s.empty() ? s : " " + pad + s)));
 }
+std::string SuiteStmt::toPythonString(bool a, int indent, int level) const {
+  std::vector<std::string> v;
+  std::function<void(const SuiteStmt *)> f = [&](const SuiteStmt *ss) {
+    for (auto &s : *ss) {
+      if (auto sp = cast<SuiteStmt>(s))
+        f(sp);
+      else if (s)
+        v.push_back(s->toPythonString(a, indent, level + indent));
+    }
+  };
+  f(this);
+  return pyList(v, indent, level + indent);
+}
 void SuiteStmt::flatten() {
   std::vector<Stmt *> ns;
   for (auto &s : items) {
@@ -77,16 +92,28 @@ SuiteStmt *SuiteStmt::wrap(Stmt *s) {
 
 BreakStmt::BreakStmt(const BreakStmt &stmt, bool clean) : AcceptorExtend(stmt, clean) {}
 std::string BreakStmt::toString(int indent) const { return wrapStmt("(break)"); }
+std::string BreakStmt::toPythonString(bool a, int indent, int level) const {
+  return pyNode("Break", {}, this, a, indent, level);
+}
 
 ContinueStmt::ContinueStmt(const ContinueStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean) {}
 std::string ContinueStmt::toString(int indent) const { return wrapStmt("(continue)"); }
+std::string ContinueStmt::toPythonString(bool a, int indent, int level) const {
+  return pyNode("Continue", {}, this, a, indent, level);
+}
 
 ExprStmt::ExprStmt(Expr *expr) : AcceptorExtend(), expr(expr) {}
 ExprStmt::ExprStmt(const ExprStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), expr(ast::clone(stmt.expr, clean)) {}
 std::string ExprStmt::toString(int indent) const {
   return wrapStmt(fmt::format("(expr {})", expr->toString(indent)));
+}
+std::string ExprStmt::toPythonString(bool a, int indent, int level) const {
+  return pyNode(
+      "Expr",
+      {"value=" + (expr ? expr->toPythonString(a, indent, level + indent) : "None")},
+      this, a, indent, level);
 }
 
 AssignStmt::AssignStmt(Expr *lhs, Expr *rhs, Expr *type, UpdateMode update)
@@ -101,12 +128,48 @@ std::string AssignStmt::toString(int indent) const {
                   lhs->toString(indent), rhs ? " " + rhs->toString(indent) : "",
                   type ? fmt::format(" #:type {}", type->toString(indent)) : ""));
 }
+std::string AssignStmt::toPythonString(bool a, int indent, int level) const {
+  // AugAssign
+  // Simple assign
+  if (auto b = cast<BinaryExpr>(rhs); b && b->isInPlace()) {
+    return pyNode(
+        "AugAssign",
+        {"target=" + (lhs ? lhs->toPythonString(a, indent, level + indent) : "None"),
+         "op=" + pyQuote(b->getOp()),
+         "value=" + b->getRhs()->toPythonString(a, indent, level + indent)},
+        this, a, indent, level);
+  } else if (!type) {
+    return pyNode(
+        "Assign",
+        {"targets=" +
+             pyList({lhs ? lhs->toPythonString(a, indent, level + indent) : "None"},
+                    indent, level + indent),
+         "value=" + (rhs ? rhs->toPythonString(a, indent, level + indent) : "None")},
+        this, a, indent, level);
+  } else {
+    return pyNode(
+        "AnnAssign",
+        {"target=" + (lhs ? lhs->toPythonString(a, indent, level + indent) : "None"),
+         "annotation=" +
+             (type ? type->toPythonString(a, indent, level + indent) : "None"),
+         "value=" + (rhs ? rhs->toPythonString(a, indent, level + indent) : "None")},
+        this, a, indent, level);
+  }
+}
 
 DelStmt::DelStmt(Expr *expr) : AcceptorExtend(), expr(expr) {}
 DelStmt::DelStmt(const DelStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), expr(ast::clone(stmt.expr, clean)) {}
 std::string DelStmt::toString(int indent) const {
   return wrapStmt(fmt::format("(del {})", expr->toString(indent)));
+}
+std::string DelStmt::toPythonString(bool a, int indent, int level) const {
+  return pyNode(
+      "Delete",
+      {"targets=" +
+       pyList({expr ? expr->toPythonString(a, indent, level + indent) : "None"}, indent,
+              level + indent)},
+      this, a, indent, level);
 }
 
 PrintStmt::PrintStmt(std::vector<Expr *> items, bool noNewline)
@@ -118,6 +181,19 @@ std::string PrintStmt::toString(int indent) const {
   return wrapStmt(
       fmt::format("(print {}{})", noNewline ? "#:inline " : "", combine(items)));
 }
+std::string PrintStmt::toPythonString(bool a, int indent, int level) const {
+  std::vector<std::string> v;
+  for (auto x : *this)
+    v.push_back(x ? x->toPythonString(a, indent, level + indent) : "None");
+  if (noNewline)
+    v.push_back("end=' '");
+  return pyNode("Expr",
+                {"value=" + pyNode("Call",
+                                   {"func=Name(id='print')",
+                                    "args=" + pyList(v, indent, level + indent)},
+                                   this, a, indent, level)},
+                this, a, indent, level);
+}
 
 ReturnStmt::ReturnStmt(Expr *expr) : AcceptorExtend(), expr(expr) {}
 ReturnStmt::ReturnStmt(const ReturnStmt &stmt, bool clean)
@@ -126,12 +202,28 @@ std::string ReturnStmt::toString(int indent) const {
   return wrapStmt(expr ? fmt::format("(return {})", expr->toString(indent))
                        : "(return)");
 }
+std::string ReturnStmt::toPythonString(bool a, int indent, int level) const {
+  return pyNode(
+      "Return",
+      {"value=" + (expr ? expr->toPythonString(a, indent, level + indent) : "None")},
+      this, a, indent, level);
+}
 
 YieldStmt::YieldStmt(Expr *expr) : AcceptorExtend(), expr(expr) {}
 YieldStmt::YieldStmt(const YieldStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), expr(ast::clone(stmt.expr, clean)) {}
 std::string YieldStmt::toString(int indent) const {
   return wrapStmt(expr ? fmt::format("(yield {})", expr->toString(indent)) : "(yield)");
+}
+std::string YieldStmt::toPythonString(bool a, int indent, int level) const {
+  return pyNode(
+      "Expr",
+      {"value=" +
+       pyNode("Yield",
+              {"value=" +
+               (expr ? expr->toPythonString(a, indent, level + indent) : "None")},
+              this, a, indent, level)},
+      this, a, indent, level);
 }
 
 AssertStmt::AssertStmt(Expr *expr, Expr *message)
@@ -142,6 +234,14 @@ AssertStmt::AssertStmt(const AssertStmt &stmt, bool clean)
 std::string AssertStmt::toString(int indent) const {
   return wrapStmt(fmt::format("(assert {}{})", expr->toString(indent),
                               message ? message->toString(indent) : ""));
+}
+std::string AssertStmt::toPythonString(bool a, int indent, int level) const {
+  return pyNode(
+      "Assert",
+      {"test=" + (expr ? expr->toPythonString(a, indent, level + indent) : "None"),
+       "msg=" +
+           (message ? message->toPythonString(a, indent, level + indent) : "None")},
+      this, a, indent, level);
 }
 
 WhileStmt::WhileStmt(Expr *cond, Stmt *suite, Stmt *elseSuite)
@@ -165,6 +265,15 @@ std::string WhileStmt::toString(int indent) const {
         fmt::format("(while {}{}{})", cond->toString(indent), pad,
                     suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1)));
   }
+}
+std::string WhileStmt::toPythonString(bool a, int indent, int level) const {
+  return pyNode(
+      "While",
+      {"test=" + (cond ? cond->toPythonString(a, indent, level + indent) : "None"),
+       "body=" + (suite ? suite->toPythonString(a, indent, level + indent) : "[]"),
+       "orelse=" +
+           (elseSuite ? elseSuite->toPythonString(a, indent, level + indent) : "[]")},
+      this, a, indent, level);
 }
 
 ForStmt::ForStmt(Expr *var, Expr *iter, Stmt *suite, Stmt *elseSuite, Expr *decorator,
@@ -201,6 +310,16 @@ std::string ForStmt::toString(int indent) const {
                     suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1)));
   }
 }
+std::string ForStmt::toPythonString(bool a, int indent, int level) const {
+  return pyNode(
+      async ? "AsyncFor" : "For",
+      {"target=" + (var ? var->toPythonString(a, indent, level + indent) : "None"),
+       "iter=" + (iter ? iter->toPythonString(a, indent, level + indent) : "None"),
+       "body=" + (suite ? suite->toPythonString(a, indent, level + indent) : "[]"),
+       "orelse=" +
+           (elseSuite ? elseSuite->toPythonString(a, indent, level + indent) : "[]")},
+      this, a, indent, level);
+}
 
 IfStmt::IfStmt(Expr *cond, Stmt *ifSuite, Stmt *elseSuite)
     : AcceptorExtend(), cond(cond), ifSuite(SuiteStmt::wrap(ifSuite)),
@@ -218,6 +337,15 @@ std::string IfStmt::toString(int indent) const {
       ifSuite->toString(indent >= 0 ? indent + INDENT_SIZE : -1),
       elseSuite ? pad + elseSuite->toString(indent >= 0 ? indent + INDENT_SIZE : -1)
                 : ""));
+}
+std::string IfStmt::toPythonString(bool a, int indent, int level) const {
+  return pyNode(
+      "If",
+      {"test=" + (cond ? cond->toPythonString(a, indent, level + indent) : "None"),
+       "body=" + (ifSuite ? ifSuite->toPythonString(a, indent, level + indent) : "[]"),
+       "orelse=" +
+           (elseSuite ? elseSuite->toPythonString(a, indent, level + indent) : "[]")},
+      this, a, indent, level);
 }
 
 MatchCase::MatchCase(Expr *pattern, Expr *guard, Stmt *suite)
@@ -246,6 +374,26 @@ std::string MatchStmt::toString(int indent) const {
   return wrapStmt(
       fmt::format("(match {}{}{})", expr->toString(indent), pad, join(s, pad)));
 }
+std::string MatchStmt::toPythonString(bool a, int indent, int level) const {
+  std::vector<std::string> v;
+  for (auto &i : items) {
+    v.push_back(pyNode(
+        "MatchCase",
+        {"pattern=" + (i.pattern
+                           ? i.pattern->toPythonString(a, indent, 2 * level + indent)
+                           : "None"),
+         "guard=" + (i.guard ? i.guard->toPythonString(a, indent, 2 * level + indent)
+                             : "None"),
+         "body=" +
+             (i.suite ? i.suite->toPythonString(a, indent, 2 * level + indent) : "[]")},
+        this, a, indent, level + indent));
+  }
+  return pyNode(
+      "Match",
+      {"subject=" + (expr ? expr->toPythonString(a, indent, level + indent) : "None"),
+       "cases=" + pyList(v, indent, level + indent)},
+      this, a, indent, level);
+}
 
 ImportStmt::ImportStmt(Expr *from, Expr *what, std::vector<Param> args, Expr *ret,
                        std::string as, size_t dots, bool isFunction)
@@ -268,6 +416,62 @@ std::string ImportStmt::toString(int indent) const {
                   va.empty() ? "" : fmt::format(" #:args ({})", join(va)),
                   ret ? fmt::format(" #:ret {}", ret->toString(indent)) : ""));
 }
+std::string ImportStmt::toPythonString(bool a, int indent, int level) const {
+  std::string name, mod;
+  std::vector<std::string> components;
+  auto fr = what;
+  for (; cast<DotExpr>(fr); fr = cast<DotExpr>(fr)->getExpr())
+    components.push_back(cast<DotExpr>(fr)->getMember());
+  components.push_back(cast<IdExpr>(fr)->getValue());
+  std::ranges::reverse(components);
+  name = combine2(components, ".");
+  if (from) {
+    components.clear();
+    for (fr = from; cast<DotExpr>(fr); fr = cast<DotExpr>(fr)->getExpr())
+      components.push_back(cast<DotExpr>(fr)->getMember());
+    components.push_back(cast<IdExpr>(fr)->getValue());
+    std::ranges::reverse(components);
+    mod = combine2(components, ".");
+  }
+
+  if (!from) {
+    return pyNode(
+        "Import",
+        {"names=" +
+         pyList(
+             {pyNode(
+                 "Alias",
+                 {
+                     "name=" + name,
+                     "asname=" + pyQuote(as),
+                     "params=" + pyArguments(args, a, indent, 4 * indent + level),
+                     "ret=" + (ret ? ret->toPythonString(a, indent, 4 * indent + level)
+                                   : "None"),
+                 },
+                 nullptr, a, indent, 3 * indent + level)},
+             indent, 2 * indent + level)},
+        what, a, indent, indent + level);
+  } else {
+    return pyNode(
+        "ImportFrom",
+        {"module=" + mod,
+         "names=" +
+             pyList({pyNode("Alias",
+                            {
+                                "name=" + name,
+                                "asname=" + pyQuote(as),
+                                "params=" +
+                                    pyArguments(args, a, indent, 4 * indent + level),
+                                "ret=" + (ret ? ret->toPythonString(a, indent,
+                                                                    4 * indent + level)
+                                              : "None"),
+                            },
+                            nullptr, a, indent, 3 * indent + level)},
+                    indent, 2 * indent + level),
+         "level=" + std::to_string(dots)},
+        what, a, indent, indent + level);
+  }
+}
 
 ExceptStmt::ExceptStmt(const std::string &var, Expr *exc, Stmt *suite)
     : var(var), exc(exc), suite(SuiteStmt::wrap(suite)) {}
@@ -281,6 +485,14 @@ std::string ExceptStmt::toString(int indent) const {
       "(catch {}{}{}{})", !var.empty() ? fmt::format("#:var '{}", var) : "",
       exc ? fmt::format(" #:exc {}", exc->toString(indent)) : "", pad + padExtra,
       suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1 * 2)));
+}
+std::string ExceptStmt::toPythonString(bool a, int indent, int level) const {
+  return pyNode(
+      "ExceptHandler",
+      {"type=" + (exc ? exc->toPythonString(a, indent, level + indent) : "None"),
+       "name=" + pyQuote(var),
+       "body=" + (suite ? suite->toPythonString(a, indent, level + indent) : "[]")},
+      this, a, indent, level);
 }
 
 TryStmt::TryStmt(Stmt *suite, std::vector<ExceptStmt *> excepts, Stmt *elseSuite,
@@ -310,6 +522,20 @@ std::string TryStmt::toString(int indent) const {
                             finally->toString(indent >= 0 ? indent + INDENT_SIZE : -1))
               : ""));
 }
+std::string TryStmt::toPythonString(bool a, int indent, int level) const {
+  std::vector<std::string> v;
+  for (auto &i : items)
+    v.push_back(i->toPythonString(a, indent, indent + level));
+  return pyNode(
+      "Try",
+      {"body=" + (suite ? suite->toPythonString(a, indent, level + indent) : "[]"),
+       "handlers=" + pyList(v, indent, level + indent),
+       "orelse=" +
+           (elseSuite ? elseSuite->toPythonString(a, indent, level + indent) : "[]"),
+       "finalbody=" +
+           (finally ? finally->toPythonString(a, indent, level + indent) : "[]")},
+      this, a, indent, level);
+}
 
 ThrowStmt::ThrowStmt(Expr *expr, Expr *from, bool transformed)
     : AcceptorExtend(), expr(expr), from(from), transformed(transformed) {}
@@ -321,6 +547,13 @@ std::string ThrowStmt::toString(int indent) const {
       fmt::format("(throw{}{})", expr ? " " + expr->toString(indent) : "",
                   from ? fmt::format(" :from {}", from->toString(indent)) : ""));
 }
+std::string ThrowStmt::toPythonString(bool a, int indent, int level) const {
+  return pyNode(
+      "Raise",
+      {"exc=" + (expr ? expr->toPythonString(a, indent, level + indent) : "None"),
+       "cause=" + (from ? from->toPythonString(a, indent, level + indent) : "None")},
+      this, a, indent, level);
+}
 
 GlobalStmt::GlobalStmt(std::string var, bool nonLocal)
     : AcceptorExtend(), var(std::move(var)), nonLocal(nonLocal) {}
@@ -328,6 +561,10 @@ GlobalStmt::GlobalStmt(const GlobalStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), var(stmt.var), nonLocal(stmt.nonLocal) {}
 std::string GlobalStmt::toString(int indent) const {
   return wrapStmt(fmt::format("({} '{})", nonLocal ? "nonlocal" : "global", var));
+}
+std::string GlobalStmt::toPythonString(bool a, int indent, int level) const {
+  return pyNode(nonLocal ? "Nonlocal" : "Global", {"names=[" + pyQuote(var) + "]"},
+                this, a, indent, level);
 }
 
 FunctionStmt::FunctionStmt(std::string name, Expr *ret, std::vector<Param> args,
@@ -358,6 +595,21 @@ std::string FunctionStmt::toString(int indent) const {
       ret ? " #:ret " + ret->toString(indent) : "",
       dec.empty() ? "" : fmt::format(" (dec {})", join(dec, " ")), pad,
       suite ? suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1) : "(suite)"));
+}
+std::string FunctionStmt::toPythonString(bool a, int indent, int level) const {
+  std::vector<std::string> dv;
+  for (auto &i : decorators) {
+    dv.push_back(i->toPythonString(a, indent, indent + level));
+  }
+  return pyNode(
+      async ? "AsyncFunctionDef" : "FunctionDef",
+      {"name=" + pyQuote(name),
+       "args=" + pyArguments(items, a, indent, level + 2 * indent),
+       "body=" + (suite ? suite->toPythonString(a, indent, level + 2 * indent) : "[]"),
+       "decorator_list=" + pyList(dv, indent, level + 2 * indent),
+       "returns=" +
+           (ret ? ret->toPythonString(a, indent, level + 2 * indent) : "None")},
+      this, a, indent, indent + level);
 }
 std::string FunctionStmt::getSignature() {
   if (signature.empty()) {
@@ -456,33 +708,20 @@ const std::unordered_set<std::string> &FunctionStmt::getNonInferrableGenerics() 
 
 ClassStmt::ClassStmt(std::string name, std::vector<Param> args, Stmt *suite,
                      std::vector<Expr *> decorators,
-                     const std::vector<Expr *> &baseClasses,
-                     std::vector<Expr *> staticBaseClasses)
+                     const std::vector<Expr *> &baseClasses)
     : AcceptorExtend(), Items(std::move(args)), name(std::move(name)),
       suite(SuiteStmt::wrap(suite)), decorators(std::move(decorators)),
-      staticBaseClasses(std::move(staticBaseClasses)) {
-  for (auto &b : baseClasses) {
-    Expr *e = nullptr;
-    if (match(b, M<IndexExpr>(M<IdExpr>("Static"), MVar<Expr>(e)))) {
-      this->staticBaseClasses.push_back(e);
-    } else {
-      this->baseClasses.push_back(b);
-    }
-  }
-}
+      baseClasses(std::move(baseClasses)) {}
 ClassStmt::ClassStmt(const ClassStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), Items(ast::clone(stmt.items, clean)),
       name(stmt.name), suite(ast::clone(stmt.suite, clean)),
       decorators(ast::clone(stmt.decorators, clean)),
-      baseClasses(ast::clone(stmt.baseClasses, clean)),
-      staticBaseClasses(ast::clone(stmt.staticBaseClasses, clean)) {}
+      baseClasses(ast::clone(stmt.baseClasses, clean)) {}
 std::string ClassStmt::toString(int indent) const {
   std::string pad = indent > 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
   std::vector<std::string> bases;
   for (auto &b : baseClasses)
     bases.push_back(b->toString(indent));
-  for (auto &b : staticBaseClasses)
-    bases.push_back(fmt::format("(static {})", b->toString(indent)));
   std::string as;
   for (int i = 0; i < items.size(); i++)
     as += (i ? pad : "") + items[i].toString(indent);
@@ -497,6 +736,22 @@ std::string ClassStmt::toString(int indent) const {
       attr.empty() ? "" : fmt::format(" (attr {})", join(attr, " ")),
       as.empty() ? as : pad + as, pad,
       suite ? suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1) : "(suite)"));
+}
+std::string ClassStmt::toPythonString(bool a, int indent, int level) const {
+  std::vector<std::string> b;
+  for (auto x : baseClasses)
+    b.push_back(x ? x->toPythonString(a, indent, level + indent) : "None");
+  std::vector<std::string> dv;
+  for (auto &i : decorators) {
+    dv.push_back(i->toPythonString(a, indent, indent + level));
+  }
+  return pyNode(
+      "ClassDef",
+      {"name=" + pyQuote(name), "bases=" + pyList(b, indent, level + indent),
+       "keywords=" + pyArguments(items, a, indent, level + indent),
+       "body=" + (suite ? suite->toPythonString(a, indent, level + indent) : "[]"),
+       "decorator_list=" + pyList(dv, indent, level + indent)},
+      this, a, indent, level);
 }
 bool ClassStmt::isRecord() const { return hasAttribute(Attr::Tuple); }
 bool ClassStmt::isClassVar(const Param &p) {
@@ -521,6 +776,16 @@ YieldFromStmt::YieldFromStmt(const YieldFromStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), expr(ast::clone(stmt.expr, clean)) {}
 std::string YieldFromStmt::toString(int indent) const {
   return wrapStmt(fmt::format("(yield-from {})", expr->toString(indent)));
+}
+std::string YieldFromStmt::toPythonString(bool a, int indent, int level) const {
+  return pyNode(
+      "Expr",
+      {"value=" +
+       pyNode("YieldFrom",
+              {"value=" +
+               (expr ? expr->toPythonString(a, indent, level + indent) : "None")},
+              this, a, indent, level)},
+      this, a, indent, level);
 }
 
 WithStmt::WithStmt(std::vector<Expr *> items, std::vector<std::string> vars,
@@ -559,6 +824,22 @@ std::string WithStmt::toString(int indent) const {
       fmt::format("(with ({}){}{})", join(as, " "), pad,
                   suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1)));
 }
+std::string WithStmt::toPythonString(bool a, int indent, int level) const {
+  std::vector<std::string> v;
+  for (int i = 0; i < items.size(); i++) {
+    v.push_back(pyNode(
+        "WithItem",
+        {"context_expr=" +
+             (items[i] ? items[i]->toPythonString(a, indent, level + indent) : "None"),
+         "optional_vars=" + pyQuote(vars[i])},
+        this, a, indent, level));
+  }
+  return pyNode(
+      async ? "AsyncWith" : "With",
+      {"items=" + pyList(v, indent, level + indent),
+       "body=" + (suite ? suite->toPythonString(a, indent, level + indent) : "[]")},
+      this, a, indent, level);
+}
 
 CustomStmt::CustomStmt(std::string keyword, Expr *expr, Stmt *suite)
     : AcceptorExtend(), keyword(std::move(keyword)), expr(expr),
@@ -573,6 +854,13 @@ std::string CustomStmt::toString(int indent) const {
       expr ? fmt::format(" #:expr {}", expr->toString(indent)) : "", pad,
       suite ? suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1) : ""));
 }
+std::string CustomStmt::toPythonString(bool a, int indent, int level) const {
+  return pyNode(
+      "Custom",
+      {"keyword=" + pyQuote(keyword),
+       "body=" + (suite ? suite->toPythonString(a, indent, level + indent) : "[]")},
+      this, a, indent, level);
+}
 
 DirectiveStmt::DirectiveStmt(std::string key, std::string value)
     : AcceptorExtend(), key(std::move(key)), value(std::move(value)) {}
@@ -581,6 +869,10 @@ DirectiveStmt::DirectiveStmt(const DirectiveStmt &stmt, bool clean)
 std::string DirectiveStmt::toString(int indent) const {
   std::string pad = indent > 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
   return wrapStmt(fmt::format("(directive {} '{}')", key, value));
+}
+std::string DirectiveStmt::toPythonString(bool a, int indent, int level) const {
+  return pyNode("Directive", {"key=" + pyQuote(key), "value=" + pyQuote(value)}, this,
+                a, indent, level);
 }
 
 AssignMemberStmt::AssignMemberStmt(Expr *lhs, std::string member, Expr *rhs, Expr *type)
@@ -593,6 +885,20 @@ std::string AssignMemberStmt::toString(int indent) const {
   return wrapStmt(fmt::format("(assign-member {} {} {})", lhs->toString(indent), member,
                               rhs->toString(indent)));
 }
+std::string AssignMemberStmt::toPythonString(bool a, int indent, int level) const {
+  return pyNode(
+      "Assign",
+      {"targets=" +
+           pyList(
+               {pyNode("Attribute",
+                       {"value=" + (lhs ? lhs->toPythonString(a, indent, level + indent)
+                                        : "None"),
+                        "attr=" + pyQuote(member)},
+                       this, a, indent, level)},
+               indent, level + indent),
+       "value=" + (rhs ? rhs->toPythonString(a, indent, level + indent) : "None")},
+      this, a, indent, level);
+}
 
 CommentStmt::CommentStmt(std::string comment)
     : AcceptorExtend(), comment(std::move(comment)) {}
@@ -600,6 +906,9 @@ CommentStmt::CommentStmt(const CommentStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), comment(stmt.comment) {}
 std::string CommentStmt::toString(int indent) const {
   return wrapStmt(fmt::format("(comment \"{}\")", comment));
+}
+std::string CommentStmt::toPythonString(bool a, int indent, int level) const {
+  return pyNode("Comment", {"value=" + pyQuote(comment)}, this, a, indent, level);
 }
 
 const char Stmt::NodeId = 0;

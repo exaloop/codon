@@ -112,11 +112,9 @@ def check_native_sort_type(T: type, lowest: T, highest: T):
         actual.sort(reverse=True)
         assert actual == expected[::-1]
         assert sorted(value for value in original) == expected
-        keyed_expected = original.copy()
-        tim_sort_inplace(keyed_expected, lambda value: 0)
         actual = original.copy()
         actual.sort(key=lambda value: 0)
-        assert actual == keyed_expected
+        assert actual == original
         actual.sort(algorithm="pdq")
         assert actual == expected
         assert original == [highest if index == 0 else lowest if index == size - 1
@@ -216,3 +214,59 @@ def test_timsort_minrun():
 
 
 test_timsort_minrun()
+
+
+@test
+def test_timsort_stability():
+    class Item:
+        key: int
+        position: int
+
+        def __lt__(self, other):
+            return self.key < other.key
+
+        def __le__(self, other):
+            return self.key <= other.key
+
+        def __gt__(self, other):
+            return self.key > other.key
+
+        def __ge__(self, other):
+            return self.key >= other.key
+
+    values = [(1, "a"), (1, "b")]
+    assert sorted(values, key=lambda value: value[0]) == values
+
+    for size in (0, 1, 2, 3, 7, 31, 32, 63, 64, 65, 127, 128, 129, 256, 1024):
+        for keys in ([0 for index in range(size)],
+                     [index // 3 for index in range(size)],
+                     [(size - index) // 3 for index in range(size)],
+                     [(index * 17) % 7 for index in range(size)],
+                     [(index // 64) % 2 for index in range(size)]):
+            original = [(key, index) for index, key in enumerate(keys)]
+            expected = [(key, index) for key in sorted(set(keys))
+                        for index in range(size) if keys[index] == key]
+            actual = original.copy()
+            tim_sort_inplace(actual, lambda value: value[0])
+            assert actual == expected, f"timsort stability, size {size}"
+            assert sorted(original, key=lambda value: value[0]) == expected
+            actual = original.copy()
+            actual.sort(key=lambda value: value[0])
+            assert actual == expected
+            descending = [(key, index) for key in sorted(set(keys), reverse=True)
+                          for index in range(size) if keys[index] == key]
+            assert sorted(original, key=lambda value: value[0], reverse=True) == descending
+            actual = original.copy()
+            actual.sort(key=lambda value: value[0], reverse=True)
+            assert actual == descending
+            assert sorted(original, key=lambda value: value[0], reverse=True,
+                          algorithm="tim") == descending
+            objects = [Item(key, index) for key, index in original]
+            assert [(item.key, item.position) for item in sorted(objects)] == expected
+            assert [(item.key, item.position) for item in sorted(objects, reverse=True)] == descending
+            objects.sort(reverse=True, algorithm="tim")
+            assert [(item.key, item.position) for item in objects] == descending
+            assert original == [(key, index) for index, key in enumerate(keys)]
+
+
+test_timsort_stability()

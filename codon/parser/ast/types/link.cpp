@@ -190,6 +190,7 @@ std::string LinkType::debugString(char mode) const {
       return trait->debugString(mode);
     }
     return (genericName.empty() ? (mode ? "?" : "<unknown type>") : genericName);
+    // (mode ? genericName : cache->rev(genericName)));
   }
   return type->debugString(mode);
 }

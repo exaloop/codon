@@ -20,6 +20,10 @@ namespace codon::ast {
   using AcceptorExtend::accept;                                                        \
   ASTNode *clone(bool c) const override;                                               \
   void accept(VISITOR &visitor) override;                                              \
+  std::string toPythonString(bool attributes = false, int indent = -1, int level = 0)  \
+      const override;                                                                  \
+  detail::CodonString formatCodonString(bool attributes, int indent, int level)        \
+      const override;                                                                  \
   std::string toString(int) const override;                                            \
   friend class TypecheckVisitor;                                                       \
   template <typename TE, typename TS> friend struct CallbackASTVisitor;                \
@@ -49,6 +53,8 @@ struct Stmt : public AcceptorExtend<Stmt, ASTNode> {
   virtual Stmt *firstInBlock() { return this; }
 
   static const char NodeId;
+  virtual std::string toPythonString(bool attributes = false, int indent = -1,
+                                     int level = 0) const = 0;
   SERIALIZE(Stmt, BASE(ASTNode), done);
 
   virtual std::string wrapStmt(const std::string &) const;
@@ -541,8 +547,7 @@ private:
 struct ClassStmt : public AcceptorExtend<ClassStmt, Stmt>, Items<Param> {
   ClassStmt(std::string name = "", std::vector<Param> args = {}, Stmt *suite = nullptr,
             std::vector<Expr *> decorators = {},
-            const std::vector<Expr *> &baseClasses = {},
-            std::vector<Expr *> staticBaseClasses = {});
+            const std::vector<Expr *> &baseClasses = {});
   ClassStmt(const ClassStmt &, bool);
 
   std::string getName() const { return name; }
@@ -550,7 +555,6 @@ struct ClassStmt : public AcceptorExtend<ClassStmt, Stmt>, Items<Param> {
   const std::vector<Expr *> &getDecorators() const { return decorators; }
   void setDecorators(const std::vector<Expr *> &d) { decorators = d; }
   const std::vector<Expr *> &getBaseClasses() const { return baseClasses; }
-  const std::vector<Expr *> &getStaticBaseClasses() const { return staticBaseClasses; }
 
   /// @return true if a class is a tuple-like record (e.g. has a "@tuple" attribute)
   bool isRecord() const;
@@ -558,15 +562,13 @@ struct ClassStmt : public AcceptorExtend<ClassStmt, Stmt>, Items<Param> {
 
   static bool isClassVar(const Param &p);
 
-  ACCEPT(ClassStmt, ASTVisitor, name, suite, items, decorators, baseClasses,
-         staticBaseClasses);
+  ACCEPT(ClassStmt, ASTVisitor, name, suite, items, decorators, baseClasses);
 
 private:
   std::string name;
   SuiteStmt *suite;
   std::vector<Expr *> decorators;
   std::vector<Expr *> baseClasses;
-  std::vector<Expr *> staticBaseClasses;
 };
 
 /// Yield-from statement (yield from expr).

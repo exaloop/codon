@@ -34,10 +34,8 @@ void compilationMessage(const std::string &header, const std::string &msg,
   }
 
   fmt::print(out, "\033[1m");
-  if (!file.empty()) {
-    auto f = file.substr(file.rfind('/') + 1);
-    fmt::print(out, "{}", f == "-" ? "<stdin>" : f);
-  }
+  if (!file.empty())
+    fmt::print(out, "{}", file == "-" ? "<stdin>" : file);
   if (line > 0)
     fmt::print(out, ":{}", line);
   if (col > 0) {

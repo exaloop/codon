@@ -62,7 +62,6 @@ public:
   void visit(const InsertInstr *v) override;
   void visit(const CallInstr *v) override;
   void visit(const StackAllocInstr *v) override;
-  void visit(const TypePropertyInstr *v) override;
   void visit(const YieldInInstr *v) override;
   void visit(const TernaryInstr *v) override;
   void visit(const BreakInstr *v) override;

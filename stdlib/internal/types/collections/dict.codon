@@ -67,8 +67,8 @@ class OrderedDict:
     _active: Ptr[u8]
     _log2_size: u8
     _log2_index_bytes: u8
-    K: type
-    V: type
+    K: type = NoneType
+    V: type = NoneType
 
     @property
     def _log_size(self):
@@ -470,11 +470,11 @@ class OrderedDict:
 
     def __or__(self, other):
         new = self.__copy__()
-        new.update(other)
+        OrderedDict.update(new, other)
         return new
 
     def __ior__(self, other):
-        self.update(other)
+        OrderedDict.update(self, other)
         return self
 
     def __repr__(self):
@@ -677,11 +677,11 @@ class UnorderedDict:
 
     def __or__(self, other):
         new = self.__copy__()
-        new.update(other)
+        UnorderedDict.update(new, other)
         return new
 
     def __ior__(self, other):
-        self.update(other)
+        UnorderedDict.update(self, other)
         return self
 
     def __copy__(self):

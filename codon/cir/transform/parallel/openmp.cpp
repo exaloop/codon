@@ -1096,8 +1096,8 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
 
   Value *makeTaskRedInput(Reduction *reduction, Value *shar, Value *orig) {
     auto *M = shar->getModule();
-    auto *size = M->Nr<TypePropertyInstr>(reduction->getType(),
-                                          TypePropertyInstr::Property::SIZEOF);
+    auto *size = util::call(
+        M->getIntrinsic(InternalFunc::Intrinsic::SIZEOF, reduction->getType()), {});
     auto *init = ptrFromFunc(makeTaskRedInitFunc(reduction));
     auto *comb = ptrFromFunc(makeTaskRedCombFunc(reduction));
 

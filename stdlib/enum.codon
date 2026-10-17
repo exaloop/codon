@@ -1,0 +1,276 @@
+# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
+
+import internal.static as static
+from internal.types.collections.dict import DictEntry, OrderedDict
+
+_DENSE_MAX_SLOTS: Literal[int] = 4096
+_DENSE_MAX_SLOTS_PER_MEMBER: Literal[int] = 4
+
+class Enum:
+    """Base class for native enumerations with named, singleton members."""
+
+    _name_: str
+
+    @staticmethod
+    def __new__(value, __SELF__: type = Enum):
+        # enum_test: inherited methods bind __SELF__ to the concrete enum type.
+        if __SELF__ is Enum:
+            compile_error("cannot instantiate Enum directly")
+        return _from_value(__SELF__, value)
+
+    @staticmethod
+    def __iter__(__SELF__: type = Enum):
+        return _iter_members(__SELF__)
+
+    @staticmethod
+    def __len__(__SELF__: type = Enum):
+        return _member_count(__SELF__)
+
+    @staticmethod
+    def __reversed__(__SELF__: type = Enum):
+        return _reversed_members(__SELF__)
+
+    @staticmethod
+    def __getitem__(name: str, __SELF__: type = Enum):
+        return __SELF__.__members__[name]
+
+    @staticmethod
+    def __contains__(value, __SELF__: type = Enum):
+        return _contains(__SELF__, value)
+
+    def __init__(self, value):
+        # Lookup in __new__ returns an existing member, so initialization is a no-op.
+        pass
+
+    @property
+    def name(self):
+        return self._name_
+
+    @property
+    def value(self: __SELF__, __SELF__: type):
+        return self._value_
+
+    def __eq__(self, other):
+        if isinstance(other, Enum):
+            return self is other
+        return False
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def __hash__(self):
+        return hash(self._name_)
+
+    def __bool__(self):
+        return True
+
+    def __str__(self):
+        name = RTTIType._typeinfo(self).nice_name.rsplit(".", 1)[-1]
+        return name + "." + self._name_
+
+    def __repr__(self: __SELF__, __SELF__: type):
+        if hasattr(__SELF__, "_value_"):
+            name = RTTIType._typeinfo(self).nice_name.rsplit(".", 1)[-1]
+            return "<" + name + "." + self.name + ": " + repr(self._value_) + ">"
+        return self.__str__()
+
+    def __copy__(self: __SELF__, __SELF__: type) -> __SELF__:
+        return self
+
+    def __deepcopy__(self: __SELF__, __SELF__: type) -> __SELF__:
+        return self
+
+
+class auto:
+    """Generate the next integer value inside an Enum declaration."""
+    pass
+
+
+def _auto_maximum(value, maximum: int, first: bool):
+    if isinstance(value, int):
+        return value if first else max(maximum, value)
+    else:
+        return maximum
+
+
+def _next_value(maximum: int, first_value):
+    if not isinstance(first_value, int):
+        compile_error("auto() requires integer enum values")
+    return maximum + 1
+
+
+def _make_member(T: type, name: str, value, previous: Ptr[T], count: int):
+    # Equal values are aliases of the first member, preserving `is` identity.
+    for index in range(count):
+        candidate = previous[index]
+        if candidate._value_ is value:
+            previous[count] = candidate
+            return candidate
+        if hasattr(candidate._value_, "__eq__", value):
+            if candidate._value_ == value:
+                previous[count] = candidate
+                return candidate
+    member = type._ref_new(T)
+    member._name_ = name
+    member._value_ = value
+    previous[count] = member
+    return member
+
+
+def _iter_members(T: type):
+    for name, member in T.__members__.items():
+        if member.name == name:
+            yield member
+
+
+def _member_count(T: type):
+    count = 0
+    for member in _iter_members(T):
+        count += 1
+    return count
+
+
+def _reversed_members(T: type):
+    members = [member for member in _iter_members(T)]
+    yield from reversed(members)
+
+
+def _indexable_fields(fields) -> Literal[bool]:
+    if static.len(fields):
+        return _indexable(type(fields[0])) and _indexable_fields(fields[1:])
+    else:
+        return True
+
+
+def _indexable(T: type) -> Literal[bool]:
+    if not isinstance(T, ByVal) or isinstance(T, (Any, Optional, Union)):
+        return False
+    elif not hasattr(T, "__hash__"):
+        return False
+    elif isinstance(T, Tuple):
+        return _indexable_fields(static.vars_types(T))
+    else:
+        return True
+
+
+def _dense_offset(value: Int[bits], minimum: Int[bits], bits: Literal[int]):
+    if bits < 64:
+        return u64(int(value)) - u64(int(minimum))
+    else:
+        return UInt[bits](value) - UInt[bits](minimum)
+
+
+@overload
+def _dense_offset(value: UInt[bits], minimum: UInt[bits], bits: Literal[int]):
+    if bits < 64:
+        return u64(value) - u64(minimum)
+    else:
+        return value - minimum
+
+
+@overload
+def _dense_offset(value: bool, minimum: bool):
+    return u64(int(value)) - u64(int(minimum))
+
+
+@tuple
+class _ValueIndex:
+    members: OrderedDict[str, T]
+    entries: Ptr[DictEntry[str, T]]
+    values: Optional[Dict[K, Tuple[T, int]]]
+    minimum: K
+    dense: Ptr[Optional[Tuple[T, int]]]
+    dense_size: int
+    K: type
+    T: type
+
+    def get(self, value: K) -> Optional[Tuple[T, int]]:
+        if isinstance(value, (Int, UInt, bool)):
+            if self.dense_size:
+                offset = _dense_offset(value, self.minimum)
+                if offset < type(offset)(self.dense_size):
+                    return self.dense[int(offset)]
+                return None
+        if self.values is not None:
+            try:
+                return unwrap(self.values).get(value)
+            except TypeError:
+                pass
+        return None
+
+
+def _make_value_index(T: type, value):
+    members = T.__members__
+    minimum = value
+    dense = Ptr[Optional[Tuple[T, int]]]()
+    dense_size = 0
+    if isinstance(value, (Int, UInt, bool)):
+        maximum = value
+        count = 0
+        for member in _iter_members(T):
+            minimum = min(minimum, member._value_)
+            maximum = max(maximum, member._value_)
+            count += 1
+        distance = _dense_offset(maximum, minimum)
+        if distance < type(distance)(_DENSE_MAX_SLOTS):
+            span = int(distance) + 1
+            if span <= count * _DENSE_MAX_SLOTS_PER_MEMBER:
+                dense_size = span
+                dense = Ptr[Optional[Tuple[T, int]]](span)
+                for offset in range(span):
+                    dense[offset] = None
+                for position in range(members._nentries):
+                    if members._is_active(position):
+                        entry = members._entries[position]
+                        if entry.value.name == entry.key:
+                            offset = int(_dense_offset(entry.value._value_, minimum))
+                            if dense[offset] is None:
+                                dense[offset] = (entry.value, position)
+    values: Optional[Dict[type(value), Tuple[T, int]]] = None
+    if _indexable(type(value)):
+        if not dense_size:
+            index = Dict[type(value), Tuple[T, int]]()
+            try:
+                for position in range(members._nentries):
+                    if members._is_active(position):
+                        entry = members._entries[position]
+                        if entry.value.name == entry.key:
+                            index.setdefault(entry.value._value_, (entry.value, position))
+            except TypeError:
+                index.clear()
+            values = index
+    return _ValueIndex(members=members, entries=members._entries, values=values,
+                       minimum=minimum, dense=dense, dense_size=dense_size)
+
+
+def _from_value(T: type, value):
+    if isinstance(value, T):
+        return value
+    if hasattr(T, "__value_index__"):
+        if isinstance(T.__value_index__, _ValueIndex[type(value), T]):
+            if _indexable(type(value)):
+                index = T.__value_index__
+                members = T.__members__
+                if members is index.members and members._entries == index.entries:
+                    cached = index.get(value)
+                    if cached is not None:
+                        member, position = unwrap(cached)
+                        if members._is_active(position):
+                            if members._entries[position].value is member:
+                                return member
+    if hasattr(T, "_value_"):
+        for member in _iter_members(T):
+            if member._value_ is value:
+                return member
+            if hasattr(member._value_, "__eq__", value):
+                if member._value_ == value:
+                    return member
+    raise ValueError("invalid value for " + T.__name__ + ": " + repr(value))
+
+
+def _contains(T: type, value):
+    try:
+        _from_value(T, value)
+        return True
+    except ValueError:
+        return False
