@@ -102,18 +102,17 @@ llvm::Expected<Plugin *> PluginManager::load(const std::string &path) {
       compilerLib ? std::make_optional(libraryPath(*compilerLib)) : std::nullopt,
       runtimeLib ? std::make_optional(libraryPath(*runtimeLib)) : std::nullopt};
 
-  bool versionOk = false;
-  try {
-    versionOk = semver::range::satisfies(
-        semver::version(CODON_VERSION_MAJOR, CODON_VERSION_MINOR, CODON_VERSION_PATCH),
-        info.supported);
-  } catch (const std::invalid_argument &e) {
-    return pluginError(fmt::format("[semver::range::satisfies(..., \"{}\")] {}",
-                                   info.supported, e.what()));
+  // empty or missing range means any version is supported
+  if (!info.supported.empty()) {
+    auto supported = semver::try_parse_range(info.supported);
+    if (!supported)
+      return pluginError(fmt::format("[semver::try_parse_range(\"{}\")] invalid range",
+                                     info.supported));
+    if (!supported->contains(semver::version<>(CODON_VERSION_MAJOR, CODON_VERSION_MINOR,
+                                               CODON_VERSION_PATCH)))
+      return pluginError(fmt::format("unsupported version {} (supported: {})",
+                                     CODON_VERSION, info.supported));
   }
-  if (!versionOk)
-    return pluginError(fmt::format("unsupported version {} (supported: {})",
-                                   CODON_VERSION, info.supported));
 
   const auto &dylibPath = info.getCompilerDylibPath();
   if (!dylibPath.empty()) {
