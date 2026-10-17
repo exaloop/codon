@@ -370,7 +370,7 @@ class Vec[T, N: Literal[int]]:
         return self._insert_dynamic(Vec[T, N]._checked_index(index, check), value)
 
     def _shuffle_vector(self, indices: Vec[int, WIDTH], other: Vec[T, N], WIDTH: Literal[int], check: Literal[bool] = True) -> Vec[T, WIDTH]:
-        if check and ((indices < 0) | (indices >= 2 * N)).any():
+        if check and indices.cast(u64).max() >= u64(2 * N):
             raise IndexError("SIMD shuffle index out of range")
         result = Vec[T, WIDTH](T(0))
         for lane in static.range(WIDTH):
@@ -380,7 +380,7 @@ class Vec[T, N: Literal[int]]:
         return result
 
     def _shuffle_vector(self, indices: Vec[int, WIDTH], WIDTH: Literal[int], check: Literal[bool] = True) -> Vec[T, WIDTH]:
-        if check and ((indices < 0) | (indices >= N)).any():
+        if check and indices.cast(u64).max() >= u64(N):
             raise IndexError("SIMD shuffle index out of range")
         result = Vec[T, WIDTH](T(0))
         for lane in static.range(WIDTH):

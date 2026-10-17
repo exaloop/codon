@@ -450,6 +450,63 @@ def api_aligned_store(data: Ptr[int], value: Vec[int, 4]):
       testing::ExitedWithCode(EXIT_SUCCESS), "");
 }
 
+TEST(SIMDCodegenTest, EmitsSingleLaneShufflesWithAVX512) {
+  ASSERT_EXIT(
+      {
+        for (bool debug : {false, true}) {
+          for (auto cpu : {"skylake-avx512", "znver4"}) {
+            auto options = Options::getDefault("build/codon_test");
+            options->debug = debug;
+            options->native = false;
+            options->standalone = true;
+            options->march = "x86-64";
+            options->mcpu = cpu;
+            options->mattrs.clear();
+            Compiler compiler(*options);
+            llvm::cantFail(compiler.parseCode("simd_avx512_shuffle.codon", R"(
+from simd import Vec
+
+@export
+def shuffle_single(value: Vec[int, 4], indices: Vec[int, 1]):
+    return value.shuffle(indices)
+
+@export
+def shuffle_pair(left: Vec[int, 4], right: Vec[int, 4], indices: Vec[int, 1]):
+    return left.shuffle(indices, right)
+
+@export
+def shuffle_tuple(value: Vec[int, 4]):
+    return value.shuffle((2,))
+
+@export
+def shuffle_pair_tuple(left: Vec[int, 4], right: Vec[int, 4]):
+    return left.shuffle((7,), right)
+)"));
+            llvm::cantFail(compiler.compile());
+            llvm::SmallString<128> objectPath;
+            auto error = llvm::sys::fs::createTemporaryFile("codon-simd-avx512", "o",
+                                                            objectPath);
+            if (error) {
+              llvm::errs() << error.message() << '\n';
+              std::_Exit(EXIT_FAILURE);
+            }
+            llvm::FileRemover objectRemover(objectPath);
+            compiler.getLLVMVisitor()->writeToObjectFile(objectPath.str().str());
+            uint64_t size = 0;
+            error = llvm::sys::fs::file_size(objectPath, size);
+            if (error || size == 0) {
+              llvm::errs() << cpu << " debug=" << debug
+                           << " did not produce an object file: " << error.message()
+                           << '\n';
+              std::_Exit(EXIT_FAILURE);
+            }
+          }
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
 TEST(SIMDCodegenTest, ElidesOptedOutRuntimeChecks) {
   ASSERT_EXIT(
       {

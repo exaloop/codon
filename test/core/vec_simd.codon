@@ -363,22 +363,38 @@ def test_shuffles():
     assert first.shuffle((0, 7, 2, 5, 3, 4), second).scatter() == [10, 23, 12, 21, 13, 20]
     assert first.shuffle((2,)).scatter() == [12]
     assert first.shuffle((2,), other=None).scatter() == [12]
+    assert first.shuffle((7,), second).scatter() == [23]
     assert first.interleave(second).scatter() == [10, 20, 11, 21, 12, 22, 13, 23]
     for index in range(4):
+        assert first.shuffle(Vec[int, 1](index)).scatter() == [10 + index]
+        assert first.shuffle(Vec[int, 1](index + 4), second).scatter() == [20 + index]
         selectors = Vec[int, 2]([index, 3 - index])
         assert first.shuffle(selectors).scatter() == [10 + index, 13 - index]
         assert first.shuffle(selectors + 4, second).scatter() == [20 + index, 23 - index]
     failures = 0
-    for index in [-1, 4]:
+    for index in [-1, 4, -(1 << 63), (1 << 63) - 1]:
         try:
             print(first.shuffle(Vec[int, 2]([0, index])))
+        except IndexError:
+            failures += 1
+        try:
+            print(first.shuffle(Vec[int, 1](index)))
+        except IndexError:
+            failures += 1
+    for index in [-1, 8, -(1 << 63), (1 << 63) - 1]:
+        try:
+            print(first.shuffle(Vec[int, 2]([0, index]), second))
+        except IndexError:
+            failures += 1
+        try:
+            print(first.shuffle(Vec[int, 1](index), second))
         except IndexError:
             failures += 1
     try:
         print(first.shuffle((0, 8), second))
     except IndexError:
         failures += 1
-    assert failures == 3
+    assert failures == 17
 
 @test
 def test_explicit_memory():
