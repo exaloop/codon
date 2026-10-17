@@ -261,6 +261,271 @@ TEST(IntrinsicCodegenTest, TypeQueriesAreConstantsBeforeOptimization) {
       testing::ExitedWithCode(EXIT_SUCCESS), "");
 }
 
+TEST(SIMDCodegenTest, PreservesUnalignedVectorMemoryAccess) {
+  ASSERT_EXIT(
+      {
+        for (auto architecture : {"", "x86"}) {
+          auto options = Options::getDefault("build/codon_test");
+          options->debug = false;
+          options->standalone = true;
+          options->march = architecture;
+          options->mcpu = "generic";
+          Compiler compiler(*options);
+          llvm::cantFail(compiler.parseCode("simd_alignment.codon", R"(
+from simd import Vec
+
+@export
+def simd_load(data: Ptr[u8]) -> Vec[u8, 16]:
+    return Vec[u8, 16](data + 1)
+
+@export
+def simd_pointer_load(data: Ptr[u8]) -> Vec[u8, 16]:
+    return Ptr[Vec[u8, 16]](data + 1)[0]
+
+@export
+def simd_store(data: Ptr[u8], value: Vec[u8, 16]):
+    Ptr[Vec[u8, 16]](data + 1)[0] = value
+
+@export
+def simd_list_load(data: List[int], offset: int) -> Vec[int, 4]:
+    return Vec[int, 4](data, offset)
+
+@export
+def scalar_pointer_load(data: Ptr[int]) -> int:
+    return data[0]
+
+@export
+def scalar_pointer_store(data: Ptr[int], value: int):
+    data[0] = value
+
+@llvm
+def scalar_load_control(data: Ptr[int]) -> int:
+  %result = load i64, ptr %data
+  ret i64 %result
+
+@export
+def scalar_alignment_control(data: Ptr[int]) -> int:
+  return scalar_load_control(data)
+)"));
+          llvm::cantFail(compiler.compile());
+          auto *module = compiler.getLLVMVisitor()->getModule();
+          ir::optimize(module, options.get());
+          EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+          llvm::Align scalarAlignment(1);
+          auto *control = module->getFunction("scalar_alignment_control");
+          EXPECT_NE(control, nullptr);
+          if (control)
+            for (auto &block : *control)
+              for (auto &instruction : block)
+                if (auto *load = llvm::dyn_cast<llvm::LoadInst>(&instruction))
+                  scalarAlignment = load->getAlign();
+          EXPECT_GT(scalarAlignment.value(), 1u);
+          for (auto name :
+               {"simd_load", "simd_pointer_load", "simd_list_load", "simd_store",
+                "scalar_pointer_load", "scalar_pointer_store"}) {
+            auto *function = module->getFunction(name);
+            EXPECT_NE(function, nullptr);
+            if (!function)
+              continue;
+            const bool vectorAccess = llvm::StringRef(name).starts_with("simd_");
+            unsigned accesses = 0;
+            for (auto &block : *function) {
+              for (auto &instruction : block) {
+                if (auto *load = llvm::dyn_cast<llvm::LoadInst>(&instruction)) {
+                  if (load->getType()->isVectorTy() != vectorAccess)
+                    continue;
+                  auto expected = vectorAccess ? llvm::Align(1) : scalarAlignment;
+                  EXPECT_EQ(load->getAlign(), expected) << name;
+                  if (load->getAlign() != expected)
+                    llvm::errs()
+                        << name << " load alignment " << load->getAlign().value()
+                        << ", expected " << expected.value() << '\n';
+                  ++accesses;
+                } else if (auto *store =
+                               llvm::dyn_cast<llvm::StoreInst>(&instruction)) {
+                  auto *type = store->getValueOperand()->getType();
+                  if (type->isVectorTy() != vectorAccess)
+                    continue;
+                  auto expected = vectorAccess ? llvm::Align(1) : scalarAlignment;
+                  EXPECT_EQ(store->getAlign(), expected) << name;
+                  if (store->getAlign() != expected)
+                    llvm::errs()
+                        << name << " store alignment " << store->getAlign().value()
+                        << ", expected " << expected.value() << '\n';
+                  ++accesses;
+                }
+              }
+            }
+            EXPECT_EQ(accesses, 1u) << name;
+            if (accesses != 1)
+              llvm::errs() << name << " memory access count " << accesses << '\n';
+          }
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(SIMDCodegenTest, LowersExtendedAPIsToVectorInstructions) {
+  ASSERT_EXIT(
+      {
+        auto compiler = compileAndOptimize(R"(
+from simd import Vec
+
+@export
+def api_fma(left: Vec[float32, 4], right: Vec[float32, 4], addend: Vec[float32, 4]):
+    return left.fma(right, addend)
+@export
+def api_product(value: Vec[int, 4]):
+    return value.prod()
+@export
+def api_shuffle(value: Vec[int, 4]):
+    return value.shuffle((3, 0, 2, 1))
+@export
+def api_load(data: Ptr[int], mask: Vec[u1, 4]):
+    return Vec[int, 4].load(data, mask=mask)
+@export
+def api_store(data: Ptr[int], value: Vec[int, 4], mask: Vec[u1, 4]):
+    value.store(data, mask=mask)
+@export
+def api_gather(data: Ptr[int], indices: Vec[int, 4], mask: Vec[u1, 4]):
+    return Vec[int, 4].gather(data, indices, mask=mask)
+@export
+def api_scatter(data: Ptr[int], indices: Vec[int, 4], value: Vec[int, 4], mask: Vec[u1, 4]):
+    value.scatter(data, indices, mask=mask)
+@export
+def api_aligned_load(data: Ptr[int]):
+    return Vec[int, 4].load(data, alignment=16)
+@export
+def api_aligned_store(data: Ptr[int], value: Vec[int, 4]):
+    value.store(data, alignment=16)
+)");
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        auto checkIntrinsic = [&](llvm::StringRef name, llvm::StringRef prefix) {
+          auto *function = module->getFunction(name);
+          EXPECT_NE(function, nullptr);
+          bool found = false;
+          if (function)
+            for (auto &block : *function)
+              for (auto &instruction : block)
+                if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction))
+                  if (auto *callee = call->getCalledFunction())
+                    found |= callee->getName().starts_with(prefix);
+          EXPECT_TRUE(found) << name.str();
+          if (!found)
+            llvm::errs() << name << " missing intrinsic " << prefix << '\n';
+        };
+        checkIntrinsic("api_fma", "llvm.fma.");
+        checkIntrinsic("api_product", "llvm.vector.reduce.mul.");
+        checkIntrinsic("api_load", "llvm.masked.load.");
+        checkIntrinsic("api_store", "llvm.masked.store.");
+        checkIntrinsic("api_gather", "llvm.masked.gather.");
+        checkIntrinsic("api_scatter", "llvm.masked.scatter.");
+        for (auto name : {"api_shuffle", "api_aligned_load", "api_aligned_store"}) {
+          auto *function = module->getFunction(name);
+          EXPECT_NE(function, nullptr);
+          bool found = false;
+          if (function)
+            for (auto &block : *function)
+              for (auto &instruction : block) {
+                EXPECT_FALSE(llvm::isa<llvm::CallBase>(instruction));
+                if (auto *load = llvm::dyn_cast<llvm::LoadInst>(&instruction)) {
+                  EXPECT_EQ(load->getAlign().value(), 16u);
+                  found = load->getType()->isVectorTy();
+                } else if (auto *store =
+                               llvm::dyn_cast<llvm::StoreInst>(&instruction)) {
+                  EXPECT_EQ(store->getAlign().value(), 16u);
+                  found = store->getValueOperand()->getType()->isVectorTy();
+                } else if (llvm::isa<llvm::ShuffleVectorInst>(&instruction)) {
+                  found = true;
+                }
+              }
+          EXPECT_TRUE(found) << name;
+          if (!found)
+            llvm::errs() << name << " missing vector instruction\n";
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(SIMDCodegenTest, ElidesOptedOutRuntimeChecks) {
+  ASSERT_EXIT(
+      {
+        auto compiler = compileAndOptimize(R"(
+from simd import Vec
+
+@export
+def unchecked_load(data: List[int], offset: int):
+    return Vec[int, 4](data, offset, check=False)
+@export
+def unchecked_bytes(data: bytes, offset: int):
+    return Vec[u8, 16](data, offset, check=False)
+@export
+def unchecked_extract(value: Vec[int, 4], index: int):
+    return value.extract(index, check=False)
+@export
+def unchecked_insert(value: Vec[int, 4], index: int, replacement: int):
+    return value.insert(index, replacement, check=False)
+@export
+def unchecked_shuffle(value: Vec[int, 4], indices: Vec[int, 4]):
+    return value.shuffle(indices, check=False)
+@export
+def unchecked_lshift(value: Vec[u32, 4], counts: Vec[u32, 4]):
+    return value.lshift(counts, check=False)
+@export
+def unchecked_rshift(value: Vec[u32, 4], count: int):
+    return value.rshift(count, check=False)
+@export
+def unchecked_floordiv(value: Vec[u32, 4], divisors: Vec[u32, 4]):
+    return value.floordiv(divisors, check=False)
+@export
+def unchecked_mod(value: Vec[u32, 4], divisors: Vec[u32, 4]):
+    return value.mod(divisors, check=False)
+@export
+def checked_load(data: List[int], offset: int):
+    return Vec[int, 4](data, offset)
+@export
+def checked_extract(value: Vec[int, 4], index: int):
+    return value.extract(index)
+)");
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        for (auto name : {"unchecked_load", "unchecked_bytes", "unchecked_extract",
+                          "unchecked_insert", "unchecked_shuffle", "unchecked_lshift",
+                          "unchecked_rshift", "unchecked_floordiv", "unchecked_mod"}) {
+          auto *function = module->getFunction(name);
+          EXPECT_NE(function, nullptr);
+          if (!function)
+            continue;
+          for (auto &block : *function)
+            for (auto &instruction : block) {
+              const bool runtimeCheck = llvm::isa<llvm::CallBase>(instruction) ||
+                                        llvm::isa<llvm::BranchInst>(instruction);
+              EXPECT_FALSE(runtimeCheck) << name;
+              if (runtimeCheck)
+                llvm::errs() << name << " retained " << instruction << '\n';
+            }
+        }
+        for (auto name : {"checked_load", "checked_extract"}) {
+          auto *function = module->getFunction(name);
+          EXPECT_NE(function, nullptr);
+          bool checked = false;
+          if (function)
+            for (auto &block : *function)
+              for (auto &instruction : block)
+                if (auto *branch = llvm::dyn_cast<llvm::BranchInst>(&instruction))
+                  checked |= branch->isConditional();
+          EXPECT_TRUE(checked) << name;
+          if (!checked)
+            llvm::errs() << name << " lost its default runtime check\n";
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
 TEST(IntrinsicCodegenTest, MaterializesSharedAddressTakenQuery) {
   ASSERT_EXIT(
       {

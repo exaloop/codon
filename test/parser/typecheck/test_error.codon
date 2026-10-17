@@ -214,3 +214,202 @@ print(formatter(error))  #: can't translate character '\x61' in position 0: miss
 base: BaseException = error
 assert str(base) == error.message
 
+#%% simd_element_type
+from simd import Vec
+print(Vec[str, 4]("ABCD"))
+#! SIMD element type must be an integer or floating-point type
+#! during the realization of Vec
+#! during the realization of type
+
+#%% simd_zero_width
+from simd import Vec
+print(Vec[int, 0](1))
+#! SIMD vector width must be positive and fit in 32 bits
+#! during the realization of Vec
+#! during the realization of type
+
+#%% simd_negative_width
+from simd import Vec
+print(Vec[int, -1](1))
+#! SIMD vector width must be positive and fit in 32 bits
+#! during the realization of Vec
+#! during the realization of type
+
+#%% simd_large_width
+from simd import Vec
+print(Vec[int, 4294967296](1))
+#! SIMD vector width must be positive and fit in 32 bits
+#! during the realization of Vec
+#! during the realization of type
+
+#%% simd_list_type
+from simd import Vec
+print(Vec[int, 4]([1.0, 2.0, 3.0, 4.0]))
+#! SIMD list element type must match vector element type
+#! during the realization of __new__
+
+#%% simd_index_high
+from simd import Vec
+print(Vec[int, 4](1)[4])
+#! SIMD lane index out of range
+#! during the realization of __getitem__
+
+#%% simd_index_low
+from simd import Vec
+print(Vec[int, 4](1)[-5])
+#! SIMD lane index out of range
+#! during the realization of __getitem__
+
+#%% simd_lane_shift_high
+from simd import Vec
+print(Vec[int, 4](1).lsh(5))
+#! SIMD lane shift out of range
+#! during the realization of lsh
+
+#%% simd_lane_shift_low
+from simd import Vec
+print(Vec[int, 4](1).rsh(-1))
+#! SIMD lane shift out of range
+#! during the realization of rsh
+
+#%% simd_api_alignment
+from simd import Vec
+Vec[int, 4].load(Ptr[int](), alignment=3)
+#! SIMD alignment must be a power of two between 1 and 2**31
+#! during the realization of _check_alignment
+#! during the realization of load
+
+#%% simd_api_alignment_zero
+from simd import Vec
+Vec[int, 4](1).store(Ptr[int](), alignment=0)
+#! SIMD alignment must be a power of two between 1 and 2**31
+#! during the realization of _check_alignment
+#! during the realization of store
+
+#%% simd_api_mask_type
+from simd import Vec
+Vec[int, 4].load(Ptr[int](), mask=Vec[u8, 4](1u8))
+#! SIMD memory mask must have matching width and u1 elements
+#! during the realization of _memory_mask
+#! during the realization of load
+
+#%% simd_api_mask_width
+from simd import Vec
+Vec[int, 4].load(Ptr[int](), mask=Vec[u1, 2](1u1))
+#! SIMD memory mask must have matching width and u1 elements
+#! during the realization of _memory_mask
+#! during the realization of load
+
+#%% simd_api_empty_shuffle
+from simd import Vec
+Vec[int, 4](1).shuffle(())
+#! SIMD shuffle requires at least one index
+#! during the realization of shuffle
+
+#%% simd_api_shuffle_type
+from simd import Vec
+Vec[int, 4](1).shuffle((0, 1.5))
+#! SIMD shuffle tuple indices must be integers
+#! during the realization of shuffle
+
+#%% simd_api_fma_integer
+from simd import Vec
+Vec[int, 4](1).fma(2, 3)
+#! fma requires a floating-point type
+#! during the realization of fma
+
+#%% simd_api_exp_integer
+from simd import Vec
+Vec[int, 4](1).exp()
+#! vector type must be a float
+#! during the realization of _math_unary
+#! during the realization of exp
+
+#%% simd_api_from_bits_type
+from simd import Vec
+Vec[int, 4].from_bits(UInt[4](3))
+#! from_bits requires u1 elements
+#! during the realization of from_bits
+
+#%% simd_api_fma_float128
+from simd import Vec
+Vec[float128, 4](float128(1)).fma(float128(2), float128(3))
+#! SIMD fma does not support float128
+#! during the realization of fma
+
+#%% simd_api_math_float128
+from simd import Vec
+Vec[float128, 4](float128(1)).round()
+#! SIMD math intrinsics do not support float128
+#! during the realization of _math_unary
+#! during the realization of round
+
+#%% simd_api_min_float128
+from simd import Vec
+Vec[float128, 4](float128(1)).min()
+#! SIMD min/max do not support float128
+#! during the realization of min
+
+#%% simd_api_max_float128
+from simd import Vec
+Vec[float128, 4](float128(1)).max(Vec[float128, 4](float128(2)))
+#! SIMD min/max do not support float128
+#! during the realization of max
+
+#%% simd_api_alignment_large
+from simd import Vec
+Vec[int, 4].load(Ptr[int](), alignment=1 << 32, mask=Vec[u1, 4](0u1))
+#! SIMD alignment must be a power of two between 1 and 2**31
+#! during the realization of _check_alignment
+#! during the realization of load
+
+#%% simd_unchecked_list_type
+from simd import Vec
+Vec[int, 4]([1.0, 2.0, 3.0, 4.0], check=False)
+#! SIMD list element type must match vector element type
+#! during the realization of __new__
+
+#%% simd_unchecked_shift_type
+from simd import Vec
+Vec[float, 4](1.0).lshift(1, check=False)
+#! bit shifts require an integer type
+#! during the realization of lshift
+
+#%% simd_unchecked_division_type
+from simd import Vec
+Vec[float, 4](1.0).floordiv(2.0, check=False)
+#! integer division requires an integer type
+#! during the realization of _check_divisor
+#! during the realization of floordiv
+#! during the realization of floordiv
+
+#%% simd_unchecked_shuffle_type
+from simd import Vec
+Vec[int, 4](1).shuffle((0, 1.5), check=False)
+#! SIMD shuffle tuple indices must be integers
+#! during the realization of shuffle
+
+#%% simd_check_runtime_constructor
+from simd import Vec
+@export
+def runtime_check_constructor(data: List[int], check: bool):
+    return Vec[int, 4](data, check=check)
+#! no function 'Vec.__new__'
+#! during the realization of runtime_check_constructor
+
+#%% simd_check_runtime_lane
+from simd import Vec
+@export
+def runtime_check_lane(value: Vec[int, 4], index: int, check: bool):
+    return value.extract(index, check=check)
+#! expected static expression
+#! during the realization of runtime_check_lane
+
+#%% simd_check_runtime_shift
+from simd import Vec
+@export
+def runtime_check_shift(value: Vec[int, 4], count: int, check: bool):
+    return value.lshift(count, check=check)
+#! no function 'Vec.lshift'
+#! during the realization of runtime_check_shift
+

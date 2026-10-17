@@ -651,7 +651,18 @@ ir::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
     handle = module->unsafeGetFuncType(realizedName, ret, types);
   } else if (t->name == StdlibTypes::Vec) {
     seqassert(types.size() == 1 && !statics.empty(), "bad generics/statics");
-    handle = module->unsafeGetVectorType(getIntLiteral(statics[0]), types[0]);
+    const auto count = getIntLiteral(statics[0]);
+    constexpr auto MAX_SIMD_LANES = std::numeric_limits<unsigned int>::max();
+    if (count <= 0 || count > MAX_SIMD_LANES)
+      E(Error::CUSTOM, getSrcInfo(),
+        "SIMD vector width must be positive and fit in 32 bits");
+    auto *element = types[0];
+    if (!cast<ir::IntType>(element) && !cast<ir::FloatType>(element) &&
+        !cast<ir::Float32Type>(element) && !cast<ir::Float16Type>(element) &&
+        !cast<ir::BFloat16Type>(element) && !cast<ir::Float128Type>(element))
+      E(Error::CUSTOM, getSrcInfo(),
+        "SIMD element type must be an integer or floating-point type");
+    handle = module->unsafeGetVectorType(static_cast<unsigned int>(count), element);
   } else {
     // Type arguments will be populated afterwards to avoid infinite loop with recursive
     // reference types (e.g., `class X: x: Optional[X]`)

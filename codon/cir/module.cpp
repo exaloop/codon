@@ -440,10 +440,11 @@ Type *Module::unsafeGetIntType(unsigned int len, bool sign) {
 
 Type *Module::unsafeGetVectorType(unsigned int count, Type *base) {
   auto *primitive = cast<PrimitiveType>(base);
+  seqassertn(primitive, "base type must be a primitive type");
+  seqassertn(count > 0, "vector width must be positive");
   auto name = VectorType::getInstanceName(count, primitive);
   if (auto *rVal = getType(name))
     return rVal;
-  seqassertn(primitive, "base type must be a primitive type");
   return Nr<VectorType>(count, primitive);
 }
 

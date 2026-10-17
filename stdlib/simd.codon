@@ -50,10 +50,139 @@ class Vec[T, N: Literal[int]]:
         %1 = shufflevector <{=N} x {=T}> %0, <{=N} x {=T}> undef, <{=N} x i32> zeroinitializer
         ret <{=N} x {=T}> %1
 
-    def _load(data) -> Vec[T, N]:
-        return Ptr[Vec[T, N]](data)[0]
+    @pure
+    @llvm
+    def _load_packed(data: cobj, ALIGNMENT: Literal[int] = 1) -> Vec[T, N]:
+        %result = load <{=N} x {=T}>, ptr %data, align {=ALIGNMENT}
+        ret <{=N} x {=T}> %result
 
-    def __new__(x) -> Vec[T, N]:
+    @pure
+    @llvm
+    def _load_lane(data: Ptr[T], index: int) -> T:
+        %address = getelementptr {=T}, ptr %data, i64 %index
+        %result = load {=T}, ptr %address, align 1
+        ret {=T} %result
+
+    @pure
+    @llvm
+    def _insert(self, index: Literal[int], value: T) -> Vec[T, N]:
+        %result = insertelement <{=N} x {=T}> %self, {=T} %value, i32 {=index}
+        ret <{=N} x {=T}> %result
+
+    def _packed_layout() -> Literal[bool]:
+        return Vec._sizeof(T) >= 8 and (Vec._sizeof(T) & (Vec._sizeof(T) - 1)) == 0
+
+    def _load(data) -> Vec[T, N]:
+        if Vec[T, N]._packed_layout():
+            return Vec[T, N]._load_packed(cobj(data))
+        result = Vec[T, N](T(0))
+        for index in static.range(N):
+            result = result._insert(index, Vec[T, N]._load_lane(Ptr[T](data), index))
+        return result
+
+    def _check_bounds(size: int, offset: int):
+        if offset < 0 or offset > size or N > size - offset:
+            raise IndexError("SIMD load out of range")
+
+    def _check_alignment(ALIGNMENT: Literal[int]):
+        MAX_ALIGNMENT: Literal[int] = 1 << 31
+        if ALIGNMENT <= 0 or ALIGNMENT > MAX_ALIGNMENT or (ALIGNMENT & (ALIGNMENT - 1)) != 0:
+            compile_error("SIMD alignment must be a power of two between 1 and 2**31")
+
+    def _memory_mask(mask) -> Vec[u1, N]:
+        if mask is None:
+            return Vec[u1, N](1u1)
+        if not isinstance(mask, Vec[u1, N]):
+            compile_error("SIMD memory mask must have matching width and u1 elements")
+        return mask
+
+    @pure
+    @llvm
+    def _masked_load(data: Ptr[T], mask: Vec[u1, N], passthrough: Vec[T, N], ALIGNMENT: Literal[int]) -> Vec[T, N]:
+        declare <{=N} x {=T}> @llvm.masked.load.v{=N}{=T}.p0(ptr, i32, <{=N} x i1>, <{=N} x {=T}>)
+        %result = call <{=N} x {=T}> @llvm.masked.load.v{=N}{=T}.p0(ptr %data, i32 {=ALIGNMENT}, <{=N} x i1> %mask, <{=N} x {=T}> %passthrough)
+        ret <{=N} x {=T}> %result
+
+    def load(data: Ptr[T], offset: int = 0, alignment: Literal[int] = 1, mask=NoneType(), passthrough=NoneType()) -> Vec[T, N]:
+        Vec[T, N]._check_alignment(alignment)
+        active = Vec[T, N]._memory_mask(mask)
+        result = Vec[T, N](T(0)) if passthrough is None else Vec[T, N](passthrough)
+        if Vec[T, N]._packed_layout():
+            if mask is None:
+                return Vec[T, N]._load_packed(cobj(data + offset), alignment)
+            return Vec[T, N]._masked_load(data + offset, active, result, alignment)
+        for lane in static.range(N):
+            if active._extract(lane) != 0u1:
+                result = result._insert(lane, Vec[T, N]._load_lane(data + offset, lane))
+        return result
+
+    @llvm
+    def _store_lane(data: Ptr[T], index: int, value: T) -> None:
+        %address = getelementptr {=T}, ptr %data, i64 %index
+        store {=T} %value, ptr %address, align 1
+        ret {} zeroinitializer
+
+    @llvm
+    def _store_packed(self, data: Ptr[T], ALIGNMENT: Literal[int]) -> None:
+        store <{=N} x {=T}> %self, ptr %data, align {=ALIGNMENT}
+        ret {} zeroinitializer
+
+    @llvm
+    def _masked_store(self, data: Ptr[T], mask: Vec[u1, N], ALIGNMENT: Literal[int]) -> None:
+        declare void @llvm.masked.store.v{=N}{=T}.p0(<{=N} x {=T}>, ptr, i32, <{=N} x i1>)
+        call void @llvm.masked.store.v{=N}{=T}.p0(<{=N} x {=T}> %self, ptr %data, i32 {=ALIGNMENT}, <{=N} x i1> %mask)
+        ret {} zeroinitializer
+
+    def store(self, data: Ptr[T], offset: int = 0, alignment: Literal[int] = 1, mask=NoneType()):
+        Vec[T, N]._check_alignment(alignment)
+        active = Vec[T, N]._memory_mask(mask)
+        if Vec[T, N]._packed_layout():
+            if mask is None:
+                self._store_packed(data + offset, alignment)
+            else:
+                self._masked_store(data + offset, active, alignment)
+        else:
+            for lane in static.range(N):
+                if active._extract(lane) != 0u1:
+                    Vec[T, N]._store_lane(data + offset, lane, self._extract(lane))
+
+    @pure
+    @llvm
+    def _gather(data: Ptr[T], indices: Vec[int, N], mask: Vec[u1, N], passthrough: Vec[T, N], ALIGNMENT: Literal[int]) -> Vec[T, N]:
+        declare <{=N} x {=T}> @llvm.masked.gather.v{=N}{=T}.v{=N}p0(<{=N} x ptr>, i32, <{=N} x i1>, <{=N} x {=T}>)
+        %addresses = getelementptr {=T}, ptr %data, <{=N} x i64> %indices
+        %result = call <{=N} x {=T}> @llvm.masked.gather.v{=N}{=T}.v{=N}p0(<{=N} x ptr> %addresses, i32 {=ALIGNMENT}, <{=N} x i1> %mask, <{=N} x {=T}> %passthrough)
+        ret <{=N} x {=T}> %result
+
+    def gather(data: Ptr[T], indices: Vec[int, N], alignment: Literal[int] = 1, mask=NoneType(), passthrough=NoneType()) -> Vec[T, N]:
+        Vec[T, N]._check_alignment(alignment)
+        active = Vec[T, N]._memory_mask(mask)
+        result = Vec[T, N](T(0)) if passthrough is None else Vec[T, N](passthrough)
+        if Vec[T, N]._packed_layout():
+            return Vec[T, N]._gather(data, indices, active, result, alignment)
+        for lane in static.range(N):
+            if active._extract(lane) != 0u1:
+                result = result._insert(lane, Vec[T, N]._load_lane(data, indices._extract(lane)))
+        return result
+
+    @llvm
+    def _scatter(self, data: Ptr[T], indices: Vec[int, N], mask: Vec[u1, N], ALIGNMENT: Literal[int]) -> None:
+        declare void @llvm.masked.scatter.v{=N}{=T}.v{=N}p0(<{=N} x {=T}>, <{=N} x ptr>, i32, <{=N} x i1>)
+        %addresses = getelementptr {=T}, ptr %data, <{=N} x i64> %indices
+        call void @llvm.masked.scatter.v{=N}{=T}.v{=N}p0(<{=N} x {=T}> %self, <{=N} x ptr> %addresses, i32 {=ALIGNMENT}, <{=N} x i1> %mask)
+        ret {} zeroinitializer
+
+    def scatter(self, data: Ptr[T], indices: Vec[int, N], alignment: Literal[int] = 1, mask=NoneType()):
+        Vec[T, N]._check_alignment(alignment)
+        active = Vec[T, N]._memory_mask(mask)
+        if Vec[T, N]._packed_layout():
+            self._scatter(data, indices, active, alignment)
+        else:
+            for lane in static.range(N):
+                if active._extract(lane) != 0u1:
+                    Vec[T, N]._store_lane(data, indices._extract(lane), self._extract(lane))
+
+    def __new__(x, check: Literal[bool] = True) -> Vec[T, N]:
         if Vec._is_valid(x):
             return Vec[T, N]._set(x)
         if isinstance(x, Ptr) and Vec._is_valid(x.T):
@@ -61,25 +190,43 @@ class Vec[T, N: Literal[int]]:
         if isinstance(x, str) and (
             isinstance(T, i8) or isinstance(T, u8)
         ):
-            return Vec[T, N]._load(x._ptr)
+            return Vec[T, N](x, 0, check=check)
         if isinstance(x, bytes) and (
             isinstance(T, i8) or isinstance(T, u8)
         ):
+            if check:
+                Vec[T, N]._check_bounds(len(x), 0)
             return Vec[T, N]._load(x._ptr)
         if isinstance(x, List) and Vec._is_valid(x.T):
+            if not isinstance(x.T, T):
+                compile_error("SIMD list element type must match vector element type")
+            if check:
+                Vec[T, N]._check_bounds(len(x), 0)
             return Vec[T, N]._load(x._ptr)
         if isinstance(x, Vec) and N == x.N:
             return x.cast(T)
         compile_error("invalid SIMD vector constructor")
 
-    def __new__(x: str, offset: int = 0) -> Vec[u8, N]:
-        return Vec[u8, N](x._ptr + offset)
+    def __new__(x: str, offset: int = 0, check: Literal[bool] = True) -> Vec[T, N]:
+        if not (isinstance(T, i8) or isinstance(T, u8)):
+            compile_error("SIMD string loads require i8 or u8 elements")
+        if x._is_ascii():
+            if check:
+                Vec[T, N]._check_bounds(len(x), offset)
+            return Vec[T, N]._load(x._ptr + offset)
+        return Vec[T, N](x.encode(), offset, check=check)
 
-    def __new__(x: bytes, offset: int = 0) -> Vec[u8, N]:
-        return Vec[u8, N](x._ptr + offset)
+    def __new__(x: bytes, offset: int = 0, check: Literal[bool] = True) -> Vec[T, N]:
+        if not (isinstance(T, i8) or isinstance(T, u8)):
+            compile_error("SIMD byte loads require i8 or u8 elements")
+        if check:
+            Vec[T, N]._check_bounds(len(x), offset)
+        return Vec[T, N]._load(x._ptr + offset)
 
-    def __new__(x: List[T], offset: int = 0) -> Vec[T, N]:
-        return Vec[T, N](x._ptr + offset)
+    def __new__(x: List[T], offset: int = 0, check: Literal[bool] = True) -> Vec[T, N]:
+        if check:
+            Vec[T, N]._check_bounds(len(x), offset)
+        return Vec[T, N]._load(x._ptr + offset)
 
     @pure
     @llvm
@@ -160,6 +307,8 @@ class Vec[T, N: Literal[int]]:
             if Vec._sizeof(T) != Vec._sizeof(T2):
                 return self.cast(Int[Vec._sizeof(T2)])._bitcast(T2)
             return self._bitcast(T2)
+        if Vec._is_float(T) and Vec._is_float(T2) and Vec._sizeof(T) == Vec._sizeof(T2):
+            return self.cast(float32).cast(T2)
         if Vec._is_float(T) and Vec._is_float(T2):
             return self._fpext(T2) if Vec._sizeof(T) < Vec._sizeof(T2) \
               else self._fptrunc(T2)
@@ -177,14 +326,99 @@ class Vec[T, N: Literal[int]]:
     def __copy__(self) -> Vec[T, N]:
         return self
 
+    def __len__(self) -> int:
+        return N
+
+    @pure
+    @llvm
+    def _fneg(self: Vec[T, N]) -> Vec[T, N]:
+        %result = fneg <{=N} x {=T}> %self
+        ret <{=N} x {=T}> %result
+
     def __neg__(self) -> Vec[T, N]:
+        if Vec._is_float(T):
+            return self._fneg()
         return Vec[T, N](T(0)) - self
 
     @pure
     @llvm
-    def __getitem__(self, n: Literal[int]) -> T:
+    def _extract(self, n: Literal[int]) -> T:
         %0 = extractelement <{=N} x {=T}> %self, i32 {=n}
         ret {=T} %0
+
+    @pure
+    @llvm
+    def _extract_dynamic(self, index: int) -> T:
+        %result = extractelement <{=N} x {=T}> %self, i64 %index
+        ret {=T} %result
+
+    @pure
+    @llvm
+    def _insert_dynamic(self, index: int, value: T) -> Vec[T, N]:
+        %result = insertelement <{=N} x {=T}> %self, {=T} %value, i64 %index
+        ret <{=N} x {=T}> %result
+
+    def _checked_index(index: int, check: Literal[bool] = True) -> int:
+        if check and (index < -N or index >= N):
+            raise IndexError("SIMD lane index out of range")
+        return index + N if index < 0 else index
+
+    def extract(self, index: int, check: Literal[bool] = True) -> T:
+        return self._extract_dynamic(Vec[T, N]._checked_index(index, check))
+
+    def insert(self, index: int, value: T, check: Literal[bool] = True) -> Vec[T, N]:
+        return self._insert_dynamic(Vec[T, N]._checked_index(index, check), value)
+
+    def _shuffle_vector(self, indices: Vec[int, WIDTH], other: Vec[T, N], WIDTH: Literal[int], check: Literal[bool] = True) -> Vec[T, WIDTH]:
+        if check and ((indices < 0) | (indices >= 2 * N)).any():
+            raise IndexError("SIMD shuffle index out of range")
+        result = Vec[T, WIDTH](T(0))
+        for lane in static.range(WIDTH):
+            index = indices._extract(lane)
+            value = self._extract_dynamic(index) if index < N else other._extract_dynamic(index - N)
+            result = result._insert(lane, value)
+        return result
+
+    def _shuffle_vector(self, indices: Vec[int, WIDTH], WIDTH: Literal[int], check: Literal[bool] = True) -> Vec[T, WIDTH]:
+        if check and ((indices < 0) | (indices >= N)).any():
+            raise IndexError("SIMD shuffle index out of range")
+        result = Vec[T, WIDTH](T(0))
+        for lane in static.range(WIDTH):
+            result = result._insert(lane, self._extract_dynamic(indices._extract(lane)))
+        return result
+
+    def shuffle(self, indices, other=NoneType(), check: Literal[bool] = True):
+        if isinstance(indices, Vec):
+            if other is None:
+                return self._shuffle_vector(indices, check=check)
+            return self._shuffle_vector(indices, other, check=check)
+        if not isinstance(indices, Tuple):
+            compile_error("SIMD shuffle requires tuple or integer-vector indices")
+        if static.len(indices) == 0:
+            compile_error("SIMD shuffle requires at least one index")
+        selectors = Vec[int, static.len(indices)](0)
+        for lane in static.range(static.len(indices)):
+            if not isinstance(indices[lane], int):
+                compile_error("SIMD shuffle tuple indices must be integers")
+            selectors = selectors._insert(lane, indices[lane])
+        if other is None:
+            return self._shuffle_vector(selectors, check=check)
+        return self._shuffle_vector(selectors, other, check=check)
+
+    def interleave(self, other: Vec[T, N]) -> Vec[T, 2 * N]:
+        result = Vec[T, 2 * N](T(0))
+        for lane in static.range(N):
+            result = result._insert(2 * lane, self._extract(lane))
+            result = result._insert(2 * lane + 1, other._extract(lane))
+        return result
+
+    def __getitem__(self, index: int) -> T:
+        return self.extract(index)
+
+    def __getitem__(self, n: Literal[int]) -> T:
+        if n < -N or n >= N:
+            compile_error("SIMD lane index out of range")
+        return self._extract(n + N if n < 0 else n)
 
     def __repr__(self):
         return f"<{','.join(repr(i) for i in self.scatter())}>"
@@ -195,7 +429,15 @@ class Vec[T, N: Literal[int]]:
         %0 = icmp eq <{=N} x {=T}> %self, %other
         ret <{=N} x i1> %0
 
+    @pure
+    @llvm
+    def _feq(self: Vec[T, N], other: Vec[T, N]) -> Vec[u1, N]:
+        %result = fcmp oeq <{=N} x {=T}> %self, %other
+        ret <{=N} x i1> %result
+
     def __eq__(self, other: Vec[T, N]) -> Vec[u1, N]:
+        if Vec._is_float(T):
+            return self._feq(other)
         return self._eq(other)
 
     def __eq__(self, other: T) -> Vec[u1, N]:
@@ -215,7 +457,7 @@ class Vec[T, N: Literal[int]]:
 
     def __and__(self, other: Vec[T, N]) -> Vec[T, N]:
         if Vec._is_float(T):
-            return Vec[T, N](self._as_int()._and(other._as_int()))
+            return self._as_int()._and(other._as_int())._bitcast(T)
         return self._and(other)
 
     @pure
@@ -226,7 +468,7 @@ class Vec[T, N: Literal[int]]:
 
     def __or__(self, other: Vec[T, N]) -> Vec[T, N]:
         if Vec._is_float(T):
-            return Vec[T, N](self._as_int()._or(other._as_int()))
+            return self._as_int()._or(other._as_int())._bitcast(T)
         return self._or(other)
 
     @pure
@@ -237,8 +479,32 @@ class Vec[T, N: Literal[int]]:
 
     def __xor__(self, other: Vec[T, N]) -> Vec[T, N]:
         if Vec._is_float(T):
-            return Vec[T, N](self._as_int()._xor(other._as_int()))
+            return self._as_int()._xor(other._as_int())._bitcast(T)
         return self._xor(other)
+
+    def _as_int(self):
+        return self._bitcast(UInt[Vec._sizeof(T)])
+
+    def __and__(self, other: T) -> Vec[T, N]:
+        return self & Vec[T, N](other)
+
+    def __rand__(self, other: T) -> Vec[T, N]:
+        return self & other
+
+    def __or__(self, other: T) -> Vec[T, N]:
+        return self | Vec[T, N](other)
+
+    def __ror__(self, other: T) -> Vec[T, N]:
+        return self | other
+
+    def __xor__(self, other: T) -> Vec[T, N]:
+        return self ^ Vec[T, N](other)
+
+    def __rxor__(self, other: T) -> Vec[T, N]:
+        return self ^ other
+
+    def __invert__(self) -> Vec[T, N]:
+        return self.bitflip()
 
     @pure
     @llvm
@@ -254,18 +520,45 @@ class Vec[T, N: Literal[int]]:
                            {=static.loop_string(N, N + I, "i32 %%", ", ")} >
         ret <{=N} x {=T}> %0
 
-    def __lshift__(self, other: Vec[T, N]) -> Vec[T, N]:
+    def lshift(self, other: Vec[T, N], check: Literal[bool] = True) -> Vec[T, N]:
+        self._check_shift(other, check)
         return self._lsh(other)
 
+    def lshift(self, other: T, check: Literal[bool] = True) -> Vec[T, N]:
+        return self.lshift(Vec[T, N](other), check=check)
+
+    def lshift(self, other: int, check: Literal[bool] = True) -> Vec[T, N]:
+        if not Vec._is_int(T):
+            compile_error("bit shifts require an integer type")
+        if check and __py_numerics__ and (other < 0 or other >= Vec._sizeof(T)):
+            raise ValueError("SIMD bit shift count out of range")
+        return self._lsh(Vec[T, N](T(other)))
+
+    def __lshift__(self, other: Vec[T, N]) -> Vec[T, N]:
+        return self.lshift(other)
+
+    def __lshift__(self, other: T) -> Vec[T, N]:
+        return self.lshift(other)
+
+    def __lshift__(self, other: int) -> Vec[T, N]:
+        return self.lshift(other)
+
+    def __rlshift__(self, other: T) -> Vec[T, N]:
+        return Vec[T, N](other) << self
+
     def lsh(self, other: Literal[int]) -> Vec[T, N]:
-        if N == 0:
+        if other < 0 or other > N:
+            compile_error("SIMD lane shift out of range")
+        if other == 0:
             return self
+        if other == N:
+            return Vec[T, N](T(0))
         return self._lshuffle(other)
 
     @pure
     @llvm
-    def _rsh(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
-        %0 = lshr <{=N} x {=T}> %self, %other
+    def _rsh(self: Vec[T, N], other: Vec[T, N], OP: Literal[str]) -> Vec[T, N]:
+        %0 = {=OP} <{=N} x {=T}> %self, %other
         ret <{=N} x {=T}> %0
 
     @pure
@@ -276,12 +569,39 @@ class Vec[T, N: Literal[int]]:
                            {=static.loop_string(0, N - I, "i32 %%", ", ")} >
         ret <{=N} x {=T}> %0
 
+    def rshift(self, other: Vec[T, N], check: Literal[bool] = True) -> Vec[T, N]:
+        self._check_shift(other, check)
+        return self._rsh(other, 'ashr' if Vec._is_sint(T) else 'lshr')
+
+    def rshift(self, other: T, check: Literal[bool] = True) -> Vec[T, N]:
+        return self.rshift(Vec[T, N](other), check=check)
+
+    def rshift(self, other: int, check: Literal[bool] = True) -> Vec[T, N]:
+        if not Vec._is_int(T):
+            compile_error("bit shifts require an integer type")
+        if check and __py_numerics__ and (other < 0 or other >= Vec._sizeof(T)):
+            raise ValueError("SIMD bit shift count out of range")
+        return self._rsh(Vec[T, N](T(other)), 'ashr' if Vec._is_sint(T) else 'lshr')
+
     def __rshift__(self, other: Vec[T, N]) -> Vec[T, N]:
-        return self._rsh(other)
+        return self.rshift(other)
+
+    def __rshift__(self, other: T) -> Vec[T, N]:
+        return self.rshift(other)
+
+    def __rshift__(self, other: int) -> Vec[T, N]:
+        return self.rshift(other)
+
+    def __rrshift__(self, other: T) -> Vec[T, N]:
+        return Vec[T, N](other) >> self
 
     def rsh(self, other: Literal[int]) -> Vec[T, N]:
-        if N == 0:
+        if other < 0 or other > N:
+            compile_error("SIMD lane shift out of range")
+        if other == 0:
             return self
+        if other == N:
+            return Vec[T, N](T(0))
         return self._rshuffle(other)
 
     @pure
@@ -304,6 +624,9 @@ class Vec[T, N: Literal[int]]:
     def __add__(self, other: T) -> Vec[T, N]:
         return self + Vec[T, N](other)
 
+    def __radd__(self, other: T) -> Vec[T, N]:
+        return self + other
+
     @pure
     @llvm
     def _sub(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
@@ -324,6 +647,9 @@ class Vec[T, N: Literal[int]]:
     def __sub__(self, other: T) -> Vec[T, N]:
         return self - Vec[T, N](other)
 
+    def __rsub__(self, other: T) -> Vec[T, N]:
+        return Vec[T, N](other) - self
+
     @pure
     @llvm
     def _mul(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
@@ -342,7 +668,10 @@ class Vec[T, N: Literal[int]]:
         return self._mul(other)
 
     def __mul__(self, other: T) -> Vec[T, N]:
-        return self - Vec[T, N](other)
+        return self * Vec[T, N](other)
+
+    def __rmul__(self, other: T) -> Vec[T, N]:
+        return self * other
 
     @pure
     @llvm
@@ -370,32 +699,112 @@ class Vec[T, N: Literal[int]]:
     def __truediv__(self, other: T) -> Vec[T, N]:
         return self / Vec[T, N](other)
 
-    def __floordiv__(self, other: Vec[T, N]) -> Vec[T, N]:
+    def __rtruediv__(self, other: T) -> Vec[T, N]:
+        return Vec[T, N](other) / self
+
+    @pure
+    @llvm
+    def _any(self: Vec[u1, N]) -> bool:
+        declare i1 @llvm.vector.reduce.or.v{=N}i1(<{=N} x i1>)
+        %result = call i1 @llvm.vector.reduce.or.v{=N}i1(<{=N} x i1> %self)
+        %extended = zext i1 %result to i8
+        ret i8 %extended
+
+    def any(self) -> bool:
+        return (self != T(0))._any()
+
+    def all(self) -> bool:
+        return not (self == T(0))._any()
+
+    def count(self) -> int:
+        return (self != T(0)).cast(int).sum()
+
+    def to_bits(self) -> UInt[N]:
+        mask = self != T(0)
+        bits = UInt[N](0)
+        for index in static.range(N):
+            bits |= UInt[N](mask._extract(index)) << index
+        return bits
+
+    def from_bits(bits: UInt[N]) -> Vec[T, N]:
+        if not isinstance(T, u1):
+            compile_error("from_bits requires u1 elements")
+        result = Vec[T, N](T(0))
+        for index in static.range(N):
+            result = result._insert(index, T(bits >> index))
+        return result
+
+    def _check_shift(self, other: Vec[T, N], check: Literal[bool] = True):
+        if not Vec._is_int(T):
+            compile_error("bit shifts require an integer type")
+        if check and __py_numerics__:
+            if other._ge(Vec[T, N](T(Vec._sizeof(T))), 'u')._any():
+                raise ValueError("SIMD bit shift count out of range")
+
+    def _check_divisor(self, other: Vec[T, N], check: Literal[bool] = True):
         if not Vec._is_int(T):
             compile_error("integer division requires an integer type")
+        if check and __py_numerics__:
+            if (other == T(0))._any():
+                raise ZeroDivisionError("integer division or modulo by zero")
+            if Vec._is_sint(T):
+                minimum = T(1) << (Vec._sizeof(T) - 1)
+                if ((self == minimum) & (other == T(-1)))._any():
+                    raise OverflowError("SIMD integer division overflow")
+
+    def floordiv(self, other: Vec[T, N], check: Literal[bool] = True) -> Vec[T, N]:
+        self._check_divisor(other, check)
         if Vec._is_uint(T):
             return self._udiv(other)
-        return self._sdiv(other)
+        quotient = self._sdiv(other)
+        if __py_numerics__:
+            remainder = self._mod(other, 's')
+            adjust = (remainder != T(0)) & ((self ^ other) < T(0))
+            return quotient - adjust.cast(T)
+        return quotient
+
+    def floordiv(self, other: T, check: Literal[bool] = True) -> Vec[T, N]:
+        return self.floordiv(Vec[T, N](other), check=check)
+
+    def __floordiv__(self, other: Vec[T, N]) -> Vec[T, N]:
+        return self.floordiv(other)
 
     def __floordiv__(self, other: T) -> Vec[T, N]:
-        return self // Vec[T, N](other)
+        return self.floordiv(other)
+
+    def __rfloordiv__(self, other: T) -> Vec[T, N]:
+        return Vec[T, N](other) // self
 
     @pure
     @llvm
-    def _mod(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
-        %0 = urem <{=N} x {=T}> %self, %other
+    def _mod(self: Vec[T, N], other: Vec[T, N], PREFIX: Literal[str]) -> Vec[T, N]:
+        %0 = {=PREFIX}rem <{=N} x {=T}> %self, %other
         ret <{=N} x {=T}> %0
 
+    def mod(self, other: Vec[T, N], check: Literal[bool] = True) -> Vec[T, N]:
+        self._check_divisor(other, check)
+        remainder = self._mod(other, Vec._int_prefix(T))
+        if Vec._is_sint(T) and __py_numerics__:
+            adjust = (remainder != T(0)) & ((self ^ other) < T(0))
+            return remainder + other.mask(Vec[T, N](T(0)), adjust)
+        return remainder
+
+    def mod(self, other: T, check: Literal[bool] = True) -> Vec[T, N]:
+        return self.mod(Vec[T, N](other), check=check)
+
     def __mod__(self, other: Vec[T, N]) -> Vec[T, N]:
-        return self._mod(other)
+        return self.mod(other)
 
     def __mod__(self, other: T) -> Vec[T, N]:
-        return self._mod(Vec[T, N](other))
+        return self.mod(other)
+
+    def __rmod__(self, other: T) -> Vec[T, N]:
+        return Vec[T, N](other) % self
 
     @pure
     @llvm
-    def _lt(self: Vec[T, N], other: Vec[T, N]) -> Vec[u1, N]:
-        %0 = icmp ult <{=N} x {=T}> %self, %other
+    def _lt(self: Vec[T, N], other: Vec[T, N], PREFIX: Literal[str]) -> Vec[u1, N]:
+        %0 = icmp {=PREFIX}lt <{=N} x {=T}> %self, %other
         ret <{=N} x i1> %0
 
     @pure
@@ -407,15 +816,15 @@ class Vec[T, N: Literal[int]]:
     def __lt__(self, other: Vec[T, N]) -> Vec[u1, N]:
         if Vec._is_float(T):
             return self._flt(other)
-        return self._lt(other)
+        return self._lt(other, Vec._int_prefix(T))
 
     def __lt__(self, other: T) -> Vec[u1, N]:
         return self < Vec[T, N](other)
 
     @pure
     @llvm
-    def _le(self: Vec[T, N], other: Vec[T, N]) -> Vec[u1, N]:
-        %0 = icmp ule <{=N} x {=T}> %self, %other
+    def _le(self: Vec[T, N], other: Vec[T, N], PREFIX: Literal[str]) -> Vec[u1, N]:
+        %0 = icmp {=PREFIX}le <{=N} x {=T}> %self, %other
         ret <{=N} x i1> %0
 
     @pure
@@ -427,15 +836,15 @@ class Vec[T, N: Literal[int]]:
     def __le__(self, other: Vec[T, N]) -> Vec[u1, N]:
         if Vec._is_float(T):
             return self._fle(other)
-        return self._le(other)
+        return self._le(other, Vec._int_prefix(T))
 
     def __le__(self, other: T) -> Vec[u1, N]:
         return self <= Vec[T, N](other)
 
     @pure
     @llvm
-    def _gt(self: Vec[T, N], other: Vec[T, N]) -> Vec[u1, N]:
-        %0 = icmp ugt <{=N} x {=T}> %self, %other
+    def _gt(self: Vec[T, N], other: Vec[T, N], PREFIX: Literal[str]) -> Vec[u1, N]:
+        %0 = icmp {=PREFIX}gt <{=N} x {=T}> %self, %other
         ret <{=N} x i1> %0
 
     @pure
@@ -447,15 +856,15 @@ class Vec[T, N: Literal[int]]:
     def __gt__(self, other: Vec[T, N]) -> Vec[u1, N]:
         if Vec._is_float(T):
             return self._fgt(other)
-        return self._gt(other)
+        return self._gt(other, Vec._int_prefix(T))
 
     def __gt__(self, other: T) -> Vec[u1, N]:
         return self > Vec[T, N](other)
 
     @pure
     @llvm
-    def _ge(self: Vec[T, N], other: Vec[T, N]) -> Vec[u1, N]:
-        %0 = icmp uge <{=N} x {=T}> %self, %other
+    def _ge(self: Vec[T, N], other: Vec[T, N], PREFIX: Literal[str]) -> Vec[u1, N]:
+        %0 = icmp {=PREFIX}ge <{=N} x {=T}> %self, %other
         ret <{=N} x i1> %0
 
     @llvm
@@ -466,7 +875,7 @@ class Vec[T, N: Literal[int]]:
     def __ge__(self, other: Vec[T, N]) -> Vec[u1, N]:
         if Vec._is_float(T):
             return self._fge(other)
-        return self._ge(other)
+        return self._ge(other, Vec._int_prefix(T))
 
     def __ge__(self, other: T) -> Vec[u1, N]:
         return self >= Vec[T, N](other)
@@ -536,31 +945,64 @@ class Vec[T, N: Literal[int]]:
     def __abs__(self):
         if Vec._is_float(T):
             return self._fabs()
+        if Vec._is_uint(T):
+            return self
         return self._abs()
 
     @pure
     @llvm
-    def _min(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
-        declare <{=N} x {=T}> @llvm.smin.v{=N}{=T}(<{=N} x {=T}>, <{=N} x {=T}>)
-        %0 = call <{=N} x {=T}> @llvm.smin.v{=N}{=T}(<{=N} x {=T}> %self, <{=N} x {=T}> %other)
+    def _min(self: Vec[T, N], other: Vec[T, N], PREFIX: Literal[str]) -> Vec[T, N]:
+        declare <{=N} x {=T}> @llvm.{=PREFIX}min.v{=N}{=T}(<{=N} x {=T}>, <{=N} x {=T}>)
+        %0 = call <{=N} x {=T}> @llvm.{=PREFIX}min.v{=N}{=T}(<{=N} x {=T}> %self, <{=N} x {=T}> %other)
         ret <{=N} x {=T}> %0
 
     def min(self, other: Vec[T, N]) -> Vec[T, N]:
         if Vec._is_int(T):
-            return self._min(other)
-        compile_error("vector type must be an integer")
+            return self._min(other, Vec._int_prefix(T))
+        if isinstance(T, float128):
+            compile_error("SIMD min/max do not support float128")
+        return self._float_minmax(other, 'minimum')
+
+    def min(self, other: T) -> Vec[T, N]:
+        return self.min(Vec[T, N](other))
+
+    def min(self) -> T:
+        if Vec._is_int(T):
+            return self._reduce(Vec._int_prefix(T) + 'min')
+        if isinstance(T, float128):
+            compile_error("SIMD min/max do not support float128")
+        return self._reduce('fminimum')
 
     @pure
     @llvm
-    def _max(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
-        declare <{=N} x {=T}> @llvm.smax.v{=N}{=T}(<{=N} x {=T}>, <{=N} x {=T}>)
-        %0 = call <{=N} x {=T}> @llvm.smax.v{=N}{=T}(<{=N} x {=T}> %self, <{=N} x {=T}> %other)
+    def _max(self: Vec[T, N], other: Vec[T, N], PREFIX: Literal[str]) -> Vec[T, N]:
+        declare <{=N} x {=T}> @llvm.{=PREFIX}max.v{=N}{=T}(<{=N} x {=T}>, <{=N} x {=T}>)
+        %0 = call <{=N} x {=T}> @llvm.{=PREFIX}max.v{=N}{=T}(<{=N} x {=T}> %self, <{=N} x {=T}> %other)
         ret <{=N} x {=T}> %0
 
     def max(self, other: Vec[T, N]) -> Vec[T, N]:
         if Vec._is_int(T):
-            return self._max(other)
-        compile_error("vector type must be an integer")
+            return self._max(other, Vec._int_prefix(T))
+        if isinstance(T, float128):
+            compile_error("SIMD min/max do not support float128")
+        return self._float_minmax(other, 'maximum')
+
+    def max(self, other: T) -> Vec[T, N]:
+        return self.max(Vec[T, N](other))
+
+    def max(self) -> T:
+        if Vec._is_int(T):
+            return self._reduce(Vec._int_prefix(T) + 'max')
+        if isinstance(T, float128):
+            compile_error("SIMD min/max do not support float128")
+        return self._reduce('fmaximum')
+
+    @pure
+    @llvm
+    def _float_minmax(self, other: Vec[T, N], OP: Literal[str]) -> Vec[T, N]:
+        declare <{=N} x {=T}> @llvm.{=OP}.v{=N}{=T}(<{=N} x {=T}>, <{=N} x {=T}>)
+        %result = call <{=N} x {=T}> @llvm.{=OP}.v{=N}{=T}(<{=N} x {=T}> %self, <{=N} x {=T}> %other)
+        ret <{=N} x {=T}> %result
 
     @pure
     @llvm
@@ -573,27 +1015,31 @@ class Vec[T, N: Literal[int]]:
 
     @pure
     @llvm
-    def _add_overflow(self: Vec[T, N], other: Vec[T, N]) -> Tuple[Vec[T, N], Vec[u1, N]]:
-        declare {<{=N} x {=T}>, <{=N} x i1>} @llvm.uadd.with.overflow.v{=N}{=T}(<{=N} x {=T}>, <{=N} x {=T}>)
-        %0 = call {<{=N} x {=T}>, <{=N} x i1>} @llvm.uadd.with.overflow.v{=N}{=T}(<{=N} x {=T}> %self, <{=N} x {=T}> %other)
+    def _add_overflow(self: Vec[T, N], other: Vec[T, N], PREFIX: Literal[str]) -> Tuple[Vec[T, N], Vec[u1, N]]:
+        declare {<{=N} x {=T}>, <{=N} x i1>} @llvm.{=PREFIX}add.with.overflow.v{=N}{=T}(<{=N} x {=T}>, <{=N} x {=T}>)
+        %0 = call {<{=N} x {=T}>, <{=N} x i1>} @llvm.{=PREFIX}add.with.overflow.v{=N}{=T}(<{=N} x {=T}> %self, <{=N} x {=T}> %other)
         ret {<{=N} x {=T}>, <{=N} x i1>} %0
 
     def add(self, other: Vec[T, N], overflow: Literal[bool] = False):
         if overflow:
-            return self._add_overflow(other)
+            if not Vec._is_int(T):
+                compile_error("overflow reporting requires an integer type")
+            return self._add_overflow(other, Vec._int_prefix(T))
         else:
             return self + other
 
     @pure
     @llvm
-    def _sub_overflow(self: Vec[T, N], other: Vec[T, N]) -> Tuple[Vec[T, N], Vec[u1, N]]:
-        declare {<{=N} x {=T}>, <{=N} x i1>} @llvm.usub.with.overflow.v{=N}{=T}(<{=N} x {=T}>, <{=N} x {=T}>)
-        %0 = call {<{=N} x {=T}>, <{=N} x i1>} @llvm.usub.with.overflow.v{=N}{=T}(<{=N} x {=T}> %self, <{=N} x {=T}> %other)
+    def _sub_overflow(self: Vec[T, N], other: Vec[T, N], PREFIX: Literal[str]) -> Tuple[Vec[T, N], Vec[u1, N]]:
+        declare {<{=N} x {=T}>, <{=N} x i1>} @llvm.{=PREFIX}sub.with.overflow.v{=N}{=T}(<{=N} x {=T}>, <{=N} x {=T}>)
+        %0 = call {<{=N} x {=T}>, <{=N} x i1>} @llvm.{=PREFIX}sub.with.overflow.v{=N}{=T}(<{=N} x {=T}> %self, <{=N} x {=T}> %other)
         ret {<{=N} x {=T}>, <{=N} x i1>} %0
 
     def sub(self, other: Vec[T, N], overflow: Literal[bool] = False):
         if overflow:
-            return self._sub_overflow(other)
+            if not Vec._is_int(T):
+                compile_error("overflow reporting requires an integer type")
+            return self._sub_overflow(other, Vec._int_prefix(T))
         else:
             return self - other
 
@@ -606,15 +1052,117 @@ class Vec[T, N: Literal[int]]:
 
     @pure
     @llvm
-    def _fsum(self: Vec[T, N], S: Literal[int]) -> T:
+    def _fsum(self: Vec[T, N], initial: T, S: Literal[int]) -> T:
         declare {=T} @llvm.vector.reduce.fadd.v{=N}f{=S}({=T}, <{=N} x {=T}>)
-        %0 = call {=T} @llvm.vector.reduce.fadd.v{=N}f{=S}({=T} 0.0, <{=N} x {=T}> %self)
+        %0 = call {=T} @llvm.vector.reduce.fadd.v{=N}f{=S}({=T} %initial, <{=N} x {=T}> %self)
         ret {=T} %0
 
     def sum(self) -> T:
         if Vec._is_float(T):
-            return self._fsum(S=Vec._sizeof(T))
+            return self._fsum(T(0), S=Vec._sizeof(T))
         return self._sum()
+
+    @pure
+    @llvm
+    def _reduce(self, OP: Literal[str]) -> T:
+        declare {=T} @llvm.vector.reduce.{=OP}.v{=N}{=T}(<{=N} x {=T}>)
+        %result = call {=T} @llvm.vector.reduce.{=OP}.v{=N}{=T}(<{=N} x {=T}> %self)
+        ret {=T} %result
+
+    @pure
+    @llvm
+    def _fprod(self, initial: T) -> T:
+        declare {=T} @llvm.vector.reduce.fmul.v{=N}{=T}({=T}, <{=N} x {=T}>)
+        %result = call {=T} @llvm.vector.reduce.fmul.v{=N}{=T}({=T} %initial, <{=N} x {=T}> %self)
+        ret {=T} %result
+
+    def prod(self) -> T:
+        if Vec._is_float(T):
+            return self._fprod(T(1))
+        return self._reduce('mul')
+
+    @pure
+    @llvm
+    def _fma(self, other: Vec[T, N], addend: Vec[T, N]) -> Vec[T, N]:
+        declare <{=N} x {=T}> @llvm.fma.v{=N}{=T}(<{=N} x {=T}>, <{=N} x {=T}>, <{=N} x {=T}>)
+        %result = call <{=N} x {=T}> @llvm.fma.v{=N}{=T}(<{=N} x {=T}> %self, <{=N} x {=T}> %other, <{=N} x {=T}> %addend)
+        ret <{=N} x {=T}> %result
+
+    def fma(self, other, addend) -> Vec[T, N]:
+        if not Vec._is_float(T):
+            compile_error("fma requires a floating-point type")
+        if isinstance(T, float128):
+            compile_error("SIMD fma does not support float128")
+        return self._fma(Vec[T, N](other), Vec[T, N](addend))
+
+    @pure
+    @llvm
+    def _float_unary(self, OP: Literal[str]) -> Vec[T, N]:
+        declare <{=N} x {=T}> @llvm.{=OP}.v{=N}{=T}(<{=N} x {=T}>)
+        %result = call <{=N} x {=T}> @llvm.{=OP}.v{=N}{=T}(<{=N} x {=T}> %self)
+        ret <{=N} x {=T}> %result
+
+    def _math_unary(self, OP: Literal[str]) -> Vec[T, N]:
+        if not Vec._is_float(T):
+            compile_error("vector type must be a float")
+        if isinstance(T, float128):
+            compile_error("SIMD math intrinsics do not support float128")
+        if isinstance(T, float16) or isinstance(T, bfloat16):
+            return self.cast(float32)._float_unary(OP).cast(T)
+        return self._float_unary(OP)
+
+    def exp(self) -> Vec[T, N]:
+        return self._math_unary('exp')
+
+    def exp2(self) -> Vec[T, N]:
+        return self._math_unary('exp2')
+
+    def log2(self) -> Vec[T, N]:
+        return self._math_unary('log2')
+
+    def log10(self) -> Vec[T, N]:
+        return self._math_unary('log10')
+
+    def floor(self) -> Vec[T, N]:
+        return self._math_unary('floor')
+
+    def ceil(self) -> Vec[T, N]:
+        return self._math_unary('ceil')
+
+    def trunc(self) -> Vec[T, N]:
+        return self._math_unary('trunc')
+
+    def round(self) -> Vec[T, N]:
+        return self._math_unary('roundeven')
+
+    @pure
+    @llvm
+    def _fpclass(self, MASK: Literal[int]) -> Vec[u1, N]:
+        declare <{=N} x i1> @llvm.is.fpclass.v{=N}{=T}(<{=N} x {=T}>, i32)
+        %result = call <{=N} x i1> @llvm.is.fpclass.v{=N}{=T}(<{=N} x {=T}> %self, i32 {=MASK})
+        ret <{=N} x i1> %result
+
+    def _classify(self, MASK: Literal[int]) -> Vec[u1, N]:
+        if not Vec._is_float(T):
+            compile_error("classification requires a floating-point type")
+        return self._fpclass(MASK)
+
+    def isnan(self) -> Vec[u1, N]:
+        NAN_CLASSES: Literal[int] = 3
+        return self._classify(NAN_CLASSES)
+
+    def isinf(self) -> Vec[u1, N]:
+        INFINITY_CLASSES: Literal[int] = 516
+        return self._classify(INFINITY_CLASSES)
+
+    def isfinite(self) -> Vec[u1, N]:
+        NONFINITE_CLASSES: Literal[int] = 519
+        return ~self._classify(NONFINITE_CLASSES)
+
+    def signbit(self) -> Vec[u1, N]:
+        if not Vec._is_float(T):
+            compile_error("classification requires a floating-point type")
+        return (self._as_int() >> (Vec._sizeof(T) - 1)).cast(u1)
 
     # Utilities
     def scatter(self: Vec[T, N]) -> List[T]:
@@ -624,3 +1172,21 @@ class Vec[T, N: Literal[int]]:
         if Vec._is_int(T):
             return self ^ Vec[T, N](T(-1))
         compile_error("vector type must be an integer")
+
+
+@extend
+class Ptr:
+    @pure
+    @derives
+    @llvm
+    def __getitem__(self: Ptr[Vec[S, M]], index: int, S: type, M: Literal[int]) -> Vec[S, M]:
+        %address = getelementptr <{=M} x {=S}>, ptr %self, i64 %index
+        %result = load <{=M} x {=S}>, ptr %address, align 1
+        ret <{=M} x {=S}> %result
+
+    @self_captures
+    @llvm
+    def __setitem__(self: Ptr[Vec[S, M]], index: int, what: Vec[S, M], S: type, M: Literal[int]) -> None:
+        %address = getelementptr <{=M} x {=S}>, ptr %self, i64 %index
+        store <{=M} x {=S}> %what, ptr %address, align 1
+        ret {} zeroinitializer
