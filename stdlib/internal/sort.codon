@@ -88,9 +88,13 @@ def _is_pdq_compatible(x):
         return False
 
 def _sort_list(
-    self: List[T], key: CallableTrait[[T], S], algorithm: Literal[str], T: type, S: type
+    self: List[T], key: CallableTrait[[T], S], algorithm: Literal[str],
+    reverse: bool = False, T: type, S: type
 ):
+    """Sort ascending, pre-reversing TimSort inputs for the caller's final reversal."""
     if algorithm == "tim" or algorithm == "auto":
+        if reverse:
+            self.reverse()
         tim_sort_inplace(self, key)
     elif algorithm == "pdq":
         pdq_sort_inplace(self, key)
@@ -119,10 +123,10 @@ class List:
                     elif _is_pdq_compatible(self[0]):
                         pdq_sort_inplace(self, lambda x: x)
                     else:
-                        tim_sort_inplace(self, lambda x: x)
+                        _sort_list(self, lambda x: x, "tim", reverse)
             else:
-                _sort_list(self, lambda x: x, algorithm)
+                _sort_list(self, lambda x: x, algorithm, reverse)
         else:
-            _sort_list(self, key, algorithm)
+            _sort_list(self, key, algorithm, reverse)
         if reverse:
             self.reverse()

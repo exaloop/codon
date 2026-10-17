@@ -1,0 +1,488 @@
+# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
+
+from enum import Enum, auto
+import enum as enums
+import copy
+
+# Native members preserve singleton identity, including aliases and value lookup.
+class Color(Enum):
+    RED = 1
+    GREEN = 2
+    BLUE = 3
+    CRIMSON = RED
+
+assert Color.RED.name == "RED"
+assert Color.RED.value == 1
+assert Color.CRIMSON is Color.RED
+assert Color.CRIMSON.name == "RED"
+assert Color(1) is Color.RED
+assert Color(Color.RED) is Color.RED
+assert Color["CRIMSON"] is Color.RED
+assert Color.__members__["CRIMSON"] is Color.RED
+assert Color.RED != Color.GREEN
+assert Color.RED != 1
+assert Color.RED == Color.CRIMSON
+assert str(Color.BLUE) == "Color.BLUE"
+assert repr(Color.BLUE) == "<Color.BLUE: 3>"
+assert isinstance(Color.RED, Enum)
+assert isinstance(Color.RED, Color)
+assert hash(Color.CRIMSON) == hash(Color.RED)
+assert {Color.RED: "red"}[Color.CRIMSON] == "red"
+assert copy.copy(Color.RED) is Color.RED
+assert copy.deepcopy(Color.RED) is Color.RED
+assert copy.copy(Color.RED).value == 1
+assert copy.deepcopy(Color.RED).value == 1
+assert [member.name for member in Color] == ["RED", "GREEN", "BLUE"]
+assert len(Color) == 3
+assert hasattr(Color, "__iter__")
+assert hasattr(Color, "__members__")
+# Enum operations use ordinary static methods and ClassVars, including instance access.
+assert hasattr(Color.RED, "__iter__")
+assert hasattr(Color.RED, "__members__")
+assert Color.RED.__members__ is Color.__members__
+assert list(Color) == [Color.RED, Color.GREEN, Color.BLUE]
+assert set(Color) == {Color.RED, Color.GREEN, Color.BLUE}
+assert [member.name for member in reversed(Color)] == ["BLUE", "GREEN", "RED"]
+assert Color.RED in Color
+assert 2 in Color
+assert 10 not in Color
+try:
+    Color(100)
+    assert False
+except ValueError:
+    pass
+try:
+    Color["MISSING"]
+    assert False
+except KeyError:
+    pass
+
+# Equal values from different enum classes never compare as enum members.
+class OtherColor(enums.Enum):
+    RED = 1
+assert Color.RED is not OtherColor.RED
+assert Color.RED != OtherColor.RED
+assert OtherColor.RED not in Color
+
+# Initializers use preceding raw values, execute once, and auto follows max(value).
+events = List[int]()
+def initial():
+    events.append(1)
+    return 4
+class Number(Enum):
+    ZERO = 0
+    FIRST = initial()
+    NEXT = FIRST + 1
+    AUTOMATIC = auto()
+    LAST = enums.auto()
+assert events == [1]
+assert Number.FIRST.value == 4
+assert Number.NEXT.value == 5
+assert Number.AUTOMATIC.value == 6
+assert Number.LAST.value == 7
+assert bool(Number.ZERO)
+class Automatic(Enum):
+    FIRST = auto()
+    SECOND = auto()
+assert Automatic.FIRST.value == 1
+assert Automatic.SECOND.value == 2
+class Negative(Enum):
+    FIRST = -5
+    SECOND = auto()
+assert Negative.SECOND.value == -4
+
+class NonMonotonicAuto(Enum):
+    PEAK = 17
+    LOW = -9
+    ALIAS = PEAK
+    NEXT = auto()
+    LOWER = -50
+    AFTER = auto()
+
+assert NonMonotonicAuto.ALIAS is NonMonotonicAuto.PEAK
+assert NonMonotonicAuto.NEXT.value == 18
+assert NonMonotonicAuto.AFTER.value == 19
+
+class ConstructionValue:
+    value: int
+    comparisons: list[Tuple[int, int]]
+
+    def __eq__(self, other: ConstructionValue):
+        self.comparisons.append((self.value, other.value))
+        return self.value == other.value
+
+construction_comparisons = List[Tuple[int, int]]()
+class ConstructionAliases(Enum):
+    FIRST = ConstructionValue(1, construction_comparisons)
+    ALIAS = ConstructionValue(1, construction_comparisons)
+    LAST = ConstructionValue(2, construction_comparisons)
+
+assert ConstructionAliases.ALIAS is ConstructionAliases.FIRST
+assert construction_comparisons == [(1, 1), (1, 2), (1, 2)]
+
+# String-valued members, custom methods, nested types, and imported aliases.
+from enum import Enum as Enumeration
+class Owner:
+    class Mode(Enumeration):
+        READ = "r"
+        WRITE = "w"
+        @staticmethod
+        def parse(value: str):
+            return Owner.Mode(value)
+        def label(self):
+            return self.name.lower()
+assert Owner.Mode.parse("r") is Owner.Mode.READ
+assert Owner.Mode.WRITE.label() == "write"
+assert Owner.Mode.READ.value == "r"
+assert str(Owner.Mode.READ) == "Mode.READ"
+assert [m.value for m in Owner.Mode] == ["r", "w"]
+
+def select(color: Color):
+    match color:
+        case Color.RED: return "red"
+        case Color.GREEN: return "green"
+        case _: return "other"
+assert select(Color.CRIMSON) == "red"
+assert select(Color.BLUE) == "other"
+
+# A memberless base can supply behavior, and concrete enums remain polymorphic.
+class Base(Enum):
+    # A typed ClassVar without a value is not an enum member and stays writable.
+    metadata: ClassVar[int]
+    def describe(self):
+        return self.name
+Base.metadata = 7
+class Derived(Base):
+    VALUE = 10
+assert Derived.VALUE.describe() == "VALUE"
+assert Derived.metadata == 7
+Derived.metadata = 8
+assert Base.metadata == 8
+def enum_name(value: Enum):
+    return value.name
+def enum_copy(value: Enum):
+    return copy.copy(value), copy.deepcopy(value)
+assert enum_name(Color.RED) == "RED"
+assert enum_name(Owner.Mode.WRITE) == "WRITE"
+copied, deepcopied = enum_copy(Color.RED)
+assert copied is Color.RED and deepcopied is Color.RED
+def enum_text(value: Enum):
+    return str(value), repr(value)
+assert enum_text(Color.RED) == ("Color.RED", "<Color.RED: 1>")
+assert enum_text(Owner.Mode.READ) == ("Mode.READ", "<Mode.READ: 'r'>")
+
+class Empty(Enum):
+    pass
+assert len(Empty) == 0
+assert list(Empty) == List[Empty]()
+try:
+    Empty(1)
+    assert False
+except ValueError:
+    pass
+
+class Described(Enum):
+    VALUE = 1
+    def __str__(self):
+        return "custom " + self.name
+assert str(Described.VALUE) == "custom VALUE"
+
+# Inherited __SELF__ methods still specialize for enums declared after the first
+# call through Enum. Repr reads the current payload rather than caching its text.
+class Late(Enum):
+    VALUE = [1]
+assert enum_text(Late.VALUE) == ("Late.VALUE", "<Late.VALUE: [1]>")
+Late.VALUE.value.append(2)
+assert enum_text(Late.VALUE) == ("Late.VALUE", "<Late.VALUE: [1, 2]>")
+assert enum_text(Described.VALUE) == ("custom VALUE", "<Described.VALUE: 1>")
+
+# User-defined methods override inherited methods through ordinary method lookup.
+class IterableMember(Enum):
+    VALUE = 42
+    def __iter__(self):
+        yield self.value
+assert list(IterableMember.VALUE) == [42]
+class CustomOrder(Enum):
+    FIRST = 1
+    LAST = 2
+    @staticmethod
+    def __iter__():
+        yield CustomOrder.LAST
+        yield CustomOrder.FIRST
+assert list(CustomOrder) == [CustomOrder.LAST, CustomOrder.FIRST]
+
+# Constructor arguments execute once, even though __new__ and __init__ both receive them.
+events.clear()
+assert Color(initial() - 3) is Color.RED
+assert events == [1]
+
+@tuple
+class LookupValue:
+    value: int
+    comparisons: ClassVar[int] = 0
+
+    def __eq__(self, other: LookupValue):
+        LookupValue.comparisons += 1
+        return self.value == other.value
+
+    def __hash__(self):
+        return hash(self.value)
+
+class Indexed(Enum):
+    FIRST = LookupValue(0)
+    SECOND = LookupValue(1)
+    THIRD = LookupValue(2)
+    FOURTH = LookupValue(3)
+    FIFTH = LookupValue(4)
+    SIXTH = LookupValue(5)
+    SEVENTH = LookupValue(6)
+    LAST = LookupValue(7)
+    ALIAS = LAST
+
+assert Indexed(LookupValue(7)) is Indexed.LAST
+LookupValue.comparisons = 0
+assert Indexed(LookupValue(7)) is Indexed.LAST
+assert LookupValue.comparisons <= 1
+assert Indexed.ALIAS is Indexed.LAST
+assert Color(1.0) is Color.RED
+assert Color(True) is Color.RED
+assert Color(Optional[int](2)) is Color.GREEN
+assert Late([1, 2]) is Late.VALUE
+
+assert Color.__value_index__.dense_size == 3
+assert Color.__value_index__.values is None
+assert Number.__value_index__.dense_size == 8
+assert Number.__value_index__.values is None
+assert Automatic.__value_index__.dense_size == 2
+assert Indexed.__value_index__.dense_size == 0
+assert Indexed.__value_index__.values is not None
+
+class DenseOffset(Enum):
+    FIRST = -3
+    SECOND = -1
+    LAST = 2
+    ALIAS = SECOND
+
+assert DenseOffset.__value_index__.minimum == -3
+assert DenseOffset.__value_index__.dense_size == 6
+assert DenseOffset.__value_index__.values is None
+assert DenseOffset(-3) is DenseOffset.FIRST
+assert DenseOffset(-1) is DenseOffset.SECOND
+assert DenseOffset(2) is DenseOffset.LAST
+assert DenseOffset.ALIAS is DenseOffset.SECOND
+assert -4 not in DenseOffset and 3 not in DenseOffset
+assert -2 not in DenseOffset and 0 not in DenseOffset
+assert [member.value for member in DenseOffset] == [-3, -1, 2]
+
+class SparseValues(Enum):
+    FIRST = 0
+    LAST = 1000000000
+
+assert SparseValues.__value_index__.dense_size == 0
+assert SparseValues.__value_index__.values is not None
+assert SparseValues(0) is SparseValues.FIRST
+assert SparseValues(1000000000) is SparseValues.LAST
+assert 1 not in SparseValues
+
+class LowDensity(Enum):
+    FIRST = 0
+    LAST = 16
+
+assert LowDensity.__value_index__.dense_size == 0
+assert LowDensity.__value_index__.values is not None
+assert LowDensity(16) is LowDensity.LAST
+
+class SignedLimits(Enum):
+    FIRST = -9223372036854775808
+    LAST = 9223372036854775807
+
+assert SignedLimits.__value_index__.dense_size == 0
+assert SignedLimits(-9223372036854775808) is SignedLimits.FIRST
+assert SignedLimits(9223372036854775807) is SignedLimits.LAST
+assert 0 not in SignedLimits
+
+class LowDense(Enum):
+    FIRST = -9223372036854775808
+    LAST = FIRST + 2
+
+assert LowDense.__value_index__.dense_size == 3
+assert LowDense(-9223372036854775808) is LowDense.FIRST
+assert LowDense(-9223372036854775806) is LowDense.LAST
+assert -9223372036854775807 not in LowDense
+assert 9223372036854775807 not in LowDense
+
+class HighUnsigned(Enum):
+    FIRST = u64(-2)
+    LAST = u64(-1)
+
+assert HighUnsigned.__value_index__.dense_size == 2
+assert HighUnsigned(u64(-2)) is HighUnsigned.FIRST
+assert HighUnsigned(u64(-1)) is HighUnsigned.LAST
+assert u64(0) not in HighUnsigned and u64(-3) not in HighUnsigned
+
+class NarrowSigned(Enum):
+    FIRST = i8(-128)
+    LAST = i8(-126)
+
+assert NarrowSigned.__value_index__.dense_size == 3
+assert NarrowSigned(i8(-128)) is NarrowSigned.FIRST
+assert NarrowSigned(i8(-126)) is NarrowSigned.LAST
+assert i8(-127) not in NarrowSigned and i8(127) not in NarrowSigned
+
+class NarrowUnsigned(Enum):
+    FIRST = u8(254)
+    LAST = u8(255)
+
+assert NarrowUnsigned.__value_index__.dense_size == 2
+assert NarrowUnsigned(u8(255)) is NarrowUnsigned.LAST
+assert u8(0) not in NarrowUnsigned and u8(253) not in NarrowUnsigned
+
+class WideDense(Enum):
+    FIRST = Int[128](1) << 100
+    LAST = FIRST + Int[128](2)
+
+assert WideDense.__value_index__.dense_size == 3
+assert WideDense(Int[128](1) << 100) is WideDense.FIRST
+assert WideDense((Int[128](1) << 100) + Int[128](2)) is WideDense.LAST
+assert Int[128](0) not in WideDense
+assert ((Int[128](1) << 100) + Int[128](1)) not in WideDense
+
+class BooleanValues(Enum):
+    YES = True
+    NO = False
+
+assert BooleanValues.__value_index__.dense_size == 2
+assert BooleanValues.__value_index__.values is None
+assert BooleanValues(True) is BooleanValues.YES
+assert BooleanValues(False) is BooleanValues.NO
+assert list(BooleanValues) == [BooleanValues.YES, BooleanValues.NO]
+
+from internal.types.collections.dict import OrderedDict, UnorderedDict
+assert isinstance(Color.__members__, OrderedDict[str, Color])
+assert isinstance(Empty.__members__, OrderedDict[str, Empty])
+if __dict_unordered__:
+    assert isinstance(unwrap(Indexed.__value_index__.values),
+                      UnorderedDict[LookupValue, Tuple[Indexed, int]])
+else:
+    assert isinstance(unwrap(Indexed.__value_index__.values),
+                      OrderedDict[LookupValue, Tuple[Indexed, int]])
+
+def check_dense_after_gc():
+    from C import GC_gcollect()
+    GC_gcollect()
+    assert DenseOffset(-1) is DenseOffset.SECOND
+    assert HighUnsigned(u64(-1)) is HighUnsigned.LAST
+check_dense_after_gc()
+
+@tuple
+class CollisionValue:
+    value: int
+
+    def __hash__(self):
+        return 0
+
+class Collisions(Enum):
+    FIRST = CollisionValue(1)
+    SECOND = CollisionValue(2)
+    ALIAS = CollisionValue(1)
+
+assert Collisions(CollisionValue(1)) is Collisions.FIRST
+assert Collisions(CollisionValue(2)) is Collisions.SECOND
+assert Collisions.ALIAS is Collisions.FIRST
+assert CollisionValue(3) not in Collisions
+
+@tuple
+class UnhashableValue:
+    value: int
+
+    def __hash__(self) -> int:
+        raise TypeError('unhashable value')
+
+class Unhashable(Enum):
+    FIRST = UnhashableValue(1)
+    SECOND = UnhashableValue(2)
+
+assert Unhashable(UnhashableValue(2)) is Unhashable.SECOND
+assert UnhashableValue(3) not in Unhashable
+
+@tuple
+class SometimesUnhashableValue:
+    value: int
+    unhashable: bool
+
+    def __eq__(self, other: SometimesUnhashableValue):
+        return self.value == other.value
+
+    def __hash__(self) -> int:
+        if self.unhashable:
+            raise TypeError('unhashable query')
+        return hash(self.value)
+
+class SometimesUnhashable(Enum):
+    FIRST = SometimesUnhashableValue(1, False)
+
+assert SometimesUnhashable(SometimesUnhashableValue(1, True)) is SometimesUnhashable.FIRST
+
+class NestedMutable(Enum):
+    FIRST = ([1], 2)
+    SECOND = ([3], 4)
+
+NestedMutable.FIRST.value[0].append(5)
+assert NestedMutable(([1, 5], 2)) is NestedMutable.FIRST
+assert NestedMutable(([3], 4)) is NestedMutable.SECOND
+
+class MutableValue:
+    value: int
+
+    def __eq__(self, other: MutableValue):
+        return self.value == other.value
+
+    def __hash__(self):
+        return hash(self.value)
+
+class Mutable(Enum):
+    FIRST = MutableValue(1)
+
+Mutable.FIRST.value.value = 2
+assert Mutable(MutableValue(2)) is Mutable.FIRST
+assert MutableValue(1) not in Mutable
+
+class Floating(Enum):
+    ZERO = 0.0
+    NEGATIVE_ZERO = -0.0
+    ONE = 1.0
+
+assert Floating(-0.0) is Floating.ZERO
+assert Floating.NEGATIVE_ZERO is Floating.ZERO
+assert Floating(1) is Floating.ONE
+
+class MemberMapping(Enum):
+    FIRST = 1
+    SECOND = 2
+
+assert MemberMapping(2) is MemberMapping.SECOND
+del MemberMapping.__members__['SECOND']
+assert 2 not in MemberMapping
+MemberMapping.__members__['SECOND'] = MemberMapping.FIRST
+assert 2 not in MemberMapping
+MemberMapping.__members__['SECOND'] = MemberMapping.SECOND
+assert MemberMapping(2) is MemberMapping.SECOND
+replacement_members = MemberMapping.__members__.copy()
+del replacement_members['FIRST']
+MemberMapping.__members__ = replacement_members
+assert 1 not in MemberMapping
+assert MemberMapping(2) is MemberMapping.SECOND
+
+class ResizedMapping(Enum):
+    FIRST = 1
+    SECOND = 2
+
+ResizedMapping.__members__.resize(128)
+assert ResizedMapping(1) is ResizedMapping.FIRST
+assert ResizedMapping(2) is ResizedMapping.SECOND
+ResizedMapping.__members__.clear()
+assert 1 not in ResizedMapping and 2 not in ResizedMapping
+ResizedMapping.__members__['SECOND'] = ResizedMapping.SECOND
+assert ResizedMapping(2) is ResizedMapping.SECOND
+
+print("enum support ok")  #: enum support ok

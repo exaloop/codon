@@ -55,7 +55,7 @@ def _count_run(
     arr: Ptr[T], begin: int, end: int, keyf: CallableTrait[[T], S], T: type, S: type
 ) -> Tuple[int, int]:
     """
-    Returns the # of elements in the next run and if the run is "inorder" or "reversed"
+    Returns the length and direction of a nondecreasing or strictly decreasing run.
     """
     inorder = 1
 
@@ -64,11 +64,11 @@ def _count_run(
 
     n = 2
     i = begin + 1
-    if keyf(arr[i - 1]) >= keyf(arr[i]):
+    if keyf(arr[i]) < keyf(arr[i - 1]):
         inorder = 0
         i += 1
         while i < end:
-            if keyf(arr[i - 1]) < keyf(arr[i]):
+            if not keyf(arr[i]) < keyf(arr[i - 1]):
                 break
             i += 1
             n += 1
@@ -76,7 +76,7 @@ def _count_run(
     else:
         i += 1
         while i < end:
-            if keyf(arr[i - 1]) >= keyf(arr[i]):
+            if keyf(arr[i]) < keyf(arr[i - 1]):
                 break
             i += 1
             n += 1

@@ -512,7 +512,6 @@ public:
   void visit(const InsertInstr *v) override;
   void visit(const CallInstr *v) override;
   DEFAULT_VISIT(StackAllocInstr);
-  DEFAULT_VISIT(TypePropertyInstr);
   DEFAULT_VISIT(YieldInInstr);
 
   void visit(const TernaryInstr *v) override;

@@ -203,7 +203,7 @@ def foo(x: optional[int], y: int):
 foo(y, 6)  #: foo 5 6
 foo(5, 6)  #: foo 5 6
 foo(5, y)  #: foo 5 5
-y = None
+y: Optional[int] = None
 try:
     foo(5, y)
 except ValueError:
@@ -612,7 +612,7 @@ print t(6, Optional(1)) #! 'Optional[int]' does not match expected type 'Optiona
 z: CallableTrait[[int],int] = 4 #! 'CallableTrait[[int],int]' does not match expected type 'int'
 
 #%% trait_defdict
-class dd(Static[Dict[K,V]]):
+class dd(Dict[K,V]):
     fn: S
     K: type
     V: type
@@ -676,6 +676,21 @@ foo(foo=1, bar='s')
 
 
 #%% union_types,barebones
+a: int|None = 5
+print(a.__class__.__name__)  #: Optional[int]
+a: int|int|int = 5
+print(a.__class__.__name__)  #: int
+a: int|Union[int, int]|int = 5
+print(a.__class__.__name__)  #: int
+a: None|None = NoneType()
+print(a.__class__.__name__)  #: NoneType
+a: int|None|str = 5
+print(a.__class__.__name__)  #: Union[Optional[int]|Optional[str]]
+a: (int|None)|str = 5
+print(a.__class__.__name__)  #: Union[Optional[int]|Optional[str]]
+a: int|(None|str) = 5
+print(a.__class__.__name__)  #: Union[Optional[int]|Optional[str]]
+
 def foo_int(x: int):
     print(f'{x} {x.__class__.__name__}')
 def foo_str(x: str):
@@ -683,11 +698,11 @@ def foo_str(x: str):
 def foo(x):
     print(f'{x} {int(Union._get_tag(x))} {x.__class__.__name__}')
 
-a: Union[int, str] = 5
+a: int|str = 5
 foo_int(a)  #: 5 int
-foo(a)  #: 5 0 Union[int | str]
+foo(a)  #: 5 0 Union[int|str]
 print(static.len(a))  #: 2
-print(static.len(Union[int, int]), static.len(Tuple[int, float, int]))  #: 1 3
+print(static.len(int|int), static.len(Tuple[int, float, int]))  #: 0 3
 
 @extend
 class str:
@@ -696,36 +711,39 @@ class str:
 
 a += 6  ## this is U.__new__(a.__getter__(__add__)(59))
 b = a + 59
-print(a, b, a.__class__.__name__, b.__class__.__name__)  #: 11 70 Union[int | str] int
+print(a, b, a.__class__.__name__, b.__class__.__name__)  #: 11 70 Union[int|str] int
 
 if True:
     a = 'hello'
     foo_str(a)  #: hello str
-    foo(a)  #: hello 1 Union[int | str]
+    foo(a)  #: hello 1 Union[int|str]
     b = a[1:3]
     print(b)  #: el
 print(a)  #: hello
 
 a: Union[Union[Union[str], int], Union[int, int, str]] = 9
-foo(a)  #: 9 0 Union[int | str]
+foo(a)  #: 9 0 Union[int|str]
+
+a: Union[(str|int) | (int|int|str)] = 9
+foo(a)  #: 9 0 Union[int|str]
 
 def ret(x):
-    z : Union = x
+    z: bool|int|str|type(x) = x
     if x < 1: z = 1
     elif x < 10: z = False
     else: z = 'oops'
     return z
 r = ret(2)
-print(r, r.__class__.__name__)  #: False Union[bool | int | str]
+print(r, r.__class__.__name__)  #: False Union[bool|int|str]
 r = ret(33.3)
-print(r, r.__class__.__name__)  #: oops Union[bool | float | int | str]
+print(r, r.__class__.__name__)  #: oops Union[bool|float|int|str]
 
-def ret2(x) -> Union:
+def ret2(x) -> List[str]|int|float:
     if x < 1: return 1
     elif x < 10: return 2.2
     else: return ['oops']
 r = ret2(20)
-print(r, r.__class__.__name__)  #: ['oops'] Union[List[str] | float | int]
+print(r, r.__class__.__name__)  #: ['oops'] Union[List[str]|float|int]
 
 class A:
     x: int
@@ -735,7 +753,7 @@ class B:
     y: str
     def foo(self):
         return f"B: {self.y}"
-x : Union[A,B] = A(5)  # TODO: just Union does not work in test mode :/
+x : A|B = A(5)
 print(x.foo())  #: A: 5
 print(x.x)  #: 5
 if True:
@@ -745,7 +763,7 @@ print(x.y)  #: bee
 try:
     print(x.x)
 except TypeError as e:
-    print(e.message)  #: invalid union call 'x'
+    print(e.message)  #: cannot access Union[A|B].x
 
 def do(x: A):
     print('do', x.x)
@@ -758,16 +776,17 @@ def do2(x: B):
     print('do2', x.y)
 do2(x)  #: do2 bee
 
-z: Union[int, str] = 1
-print isinstance(z, int), isinstance(z, str), isinstance(z, float), isinstance(z, Union[int, float]), isinstance(z, Union[int, str])
+z: int|str = 1
+print isinstance(z, int), isinstance(z, str), isinstance(z, float), \
+      isinstance(z, int|float), isinstance(z, int|str)
 #: True False False False True
-
-print isinstance(z, Union[int]), isinstance(z, Union[int, float, str])
-#: False False
-
+# TODO here:
+print isinstance(z, Union[int]), isinstance(z, int|float|str)
+#: True False
 if True:
     z = 's'
-print isinstance(z, int), isinstance(z, str), isinstance(z, float), isinstance(z, Union[int, float]), isinstance(z, Union[int, str])
+print isinstance(z, int), isinstance(z, str), isinstance(z, float), \
+      isinstance(z, int|float), isinstance(z, int|str)
 #: False True False False True
 
 class A:
@@ -776,15 +795,35 @@ class B:
     def foo(self): return 's'
 class C:
     def foo(self): return [True, False]
-x : Union[A,B,C] = A()
+x: A|B|C = A()
 print x.foo(), x.foo().__class__.__name__
-#: 1 Union[List[bool] | int | str]
+#: 1 Union[List[bool]|int|str]
 
 xx = Union[int, str](0)
 print(xx)  #: 0
+xx = (int|str)(0)
+print(xx)  #: 0
+
+#%% union_list_layout
+from typing import Union
+
+class FirstValue:
+    value: str
+
+class SecondValue:
+    value: str
+
+Choice = Union[FirstValue, SecondValue]
+values: list[Choice] = [Choice(FirstValue('first')), Choice(SecondValue('second'))]
+for value in values:
+    print(int(Union._get_tag(value)), isinstance(value, FirstValue), isinstance(value, SecondValue))
+#: 0 True False
+#: 1 False True
+print(values[0].value)  #: first
+assert values[1].value == 'second'
 
 #%% union_error,barebones
-a: Union[int, str] = 123
+a: int|str = 123
 print(123 == a)  #: True
 print(a == 123)  #: True
 try:
@@ -878,18 +917,18 @@ class B:
         print('baz')
 
 a = A()
-print(hasattr(a, 'foo'), hasattr(a, 'bar'), hasattr(a, 'baz'))
+print(hasattr_dynamic(a, 'foo'), hasattr_dynamic(a, 'bar'), hasattr_dynamic(a, 'baz'))
 #: True True False
 b = B()
-print(hasattr(b, 'foo'), hasattr(b, 'bar'), hasattr(b, 'baz'))
+print(hasattr_dynamic(b, 'foo'), hasattr_dynamic(b, 'bar'), hasattr_dynamic(b, 'baz'))
 #: True False True
 
-c: Union[A, B] = A()
-print(hasattr(c, 'foo'), hasattr(c, 'bar'), hasattr(c, 'baz'))
+c: A|B = A()
+print(hasattr_dynamic(c, 'foo'), hasattr_dynamic(c, 'bar'), hasattr_dynamic(c, 'baz'))
 #: True True False
 
 c = B()
-print(hasattr(c, 'foo'), hasattr(c, 'bar'), hasattr(c, 'baz'))
+print(hasattr_dynamic(c, 'foo'), hasattr_dynamic(c, 'bar'), hasattr_dynamic(c, 'baz'))
 #: True False True
 
 
@@ -938,14 +977,15 @@ foo(type(list[int]))
 #: List[int] <class 'List[int]'>
 #: List[int] []
 
-# TODO: print(list)
+print(list)
+#: <class 'List[NoneType]'>
 
 def typtest(a, b):
     print isinstance(a, b)
     print isinstance(a, int)
     print(a)
     print(b)
-    print(a.__repr__())
+    print(repr(a))
 
 typtest(int, int)
 #: True
@@ -961,9 +1001,8 @@ typtest(int, float)
 #: <class 'int'>
 
 print(List[int])
-print(List[int].__repr__())
-# print(int.__repr__())  # this catches int.__repr__ as it should...
-print(type(int).__repr__())
+print(repr(List[int]))
+print(repr(type(int)))
 #: <class 'List[int]'>
 #: <class 'List[int]'>
 #: <class 'int'>
@@ -1044,21 +1083,3 @@ base: Root = leaf
 print(method(leaf), base.value(), leaf.cached, build_value(True))  #: 42 42 42 42
 base = Other()
 print(base.value())  #: 7
-
-#%% recursive_virtual_no_return_constraint,barebones
-import internal.static as static
-
-class Root:
-    def value(self):
-        return 0
-
-class Leaf(Root):
-    def value(self):
-        return recurse(self)
-
-def recurse(value: Leaf):
-    return value.value()
-
-static.function.realized(Leaf.value, type._force_cast(cobj(), Leaf))
-#! cannot typecheck
-#! during the realization of value

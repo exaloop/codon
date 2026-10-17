@@ -4,6 +4,7 @@
 
 #include "codon/cir/flow.h"
 #include "codon/cir/util/iterators.h"
+#include "codon/cir/util/side_effect.h"
 #include "codon/cir/var.h"
 
 namespace codon {
@@ -175,9 +176,97 @@ public:
 /// Internal, LLVM-only function.
 class InternalFunc : public AcceptorExtend<InternalFunc, Func> {
 public:
+  /// Backend-defined operations implemented by internal functions.
+  enum class Intrinsic {
+    /// No intrinsic operation has been assigned.
+    NONE,
+    /// Allocates an instance of a reference type.
+    ALLOCATE,
+    /// Queries the allocation size of a reference type in bytes.
+    ALLOCATION_SIZE,
+    /// Gets the runtime type descriptor for a type.
+    TYPEINFO,
+    /// Looks up a runtime type descriptor by type ID.
+    TYPEINFO_LOOKUP,
+    /// Looks up a method ID in a TypeInfo descriptor and returns its function pointer.
+    TYPEINFO_METHOD_LOOKUP,
+    /// Looks up a virtual method by receiver and thunk ID.
+    VIRTUAL_LOOKUP,
+    /// Constructs a record from its field values.
+    RECORD_NEW,
+    /// Gets a pointer to a generator's yielded value.
+    GENERATOR_PROMISE,
+    /// Queries a type's value size in bytes, not its allocation size.
+    SIZEOF,
+    /// Queries whether a type is atomic.
+    IS_ATOMIC,
+    /// Queries whether a type's contents are atomic.
+    IS_CONTENT_ATOMIC
+  };
+
+private:
+  /// the intrinsic operation implemented by the function
+  Intrinsic intrinsic = Intrinsic::NONE;
+  /// the intrinsic's type operand, or null if unused
+  Type *intrinsicType = nullptr;
+
+public:
   static const char NodeId;
 
   using AcceptorExtend::AcceptorExtend;
+
+  /// @return the function's intrinsic operation
+  Intrinsic getIntrinsic() const { return intrinsic; }
+  /// @return the intrinsic's type operand, or null if unused
+  Type *getIntrinsicType() const { return intrinsicType; }
+  /// Sets the intrinsic operation and its type operand.
+  /// Does not realize or validate the function signature.
+  /// @param kind the intrinsic operation
+  /// @param type the intrinsic's type operand, or null if unused
+  void setIntrinsic(Intrinsic kind, Type *type = nullptr) {
+    intrinsic = kind;
+    intrinsicType = type;
+  }
+
+  /// Gets the diagnostic name of an intrinsic operation.
+  /// @param kind the intrinsic operation
+  /// @return the intrinsic's name, or "invalid" for an unknown kind
+  static const char *getIntrinsicName(Intrinsic kind);
+  /// @return the diagnostic name of the function's intrinsic operation
+  const char *getIntrinsicName() const { return getIntrinsicName(intrinsic); }
+  /// Checks whether an intrinsic is SIZEOF, IS_ATOMIC or IS_CONTENT_ATOMIC.
+  /// @param kind the intrinsic operation
+  /// @return true if the intrinsic is a zero-argument type query
+  static bool isTypeQuery(Intrinsic kind);
+  /// @return true if the function's intrinsic is a zero-argument type query
+  bool isTypeQuery() const { return isTypeQuery(intrinsic); }
+  /// Checks the function signature and type operand against the intrinsic.
+  /// @return true if the declaration is valid for its intrinsic operation
+  bool hasValidIntrinsicSignature() const;
+  /// Classifies the intrinsic's side effects.
+  /// Allocations are not interchangeable; runtime lookups may trap or observe JIT
+  /// updates.
+  /// @return the effect status used by side-effect analysis
+  util::SideEffectStatus getIntrinsicSideEffectStatus() const;
+  /// @return true if capture analysis must propagate argument dependencies to the
+  /// result
+  bool intrinsicDerivesFromArguments() const;
+
+protected:
+  std::vector<Type *> doGetUsedTypes() const override {
+    auto types = Func::doGetUsedTypes();
+    if (intrinsicType)
+      types.push_back(intrinsicType);
+    return types;
+  }
+  int doReplaceUsedType(const std::string &name, Type *type) override {
+    auto count = Func::doReplaceUsedType(name, type);
+    if (intrinsicType && intrinsicType->getName() == name) {
+      intrinsicType = type;
+      ++count;
+    }
+    return count;
+  }
 };
 
 /// LLVM function defined in Seq source.

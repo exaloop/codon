@@ -73,7 +73,6 @@ class ExtractInstr;
 class InsertInstr;
 class CallInstr;
 class StackAllocInstr;
-class TypePropertyInstr;
 class YieldInInstr;
 class TernaryInstr;
 class BreakInstr;
@@ -134,7 +133,6 @@ public:
   VISIT(InsertInstr);
   VISIT(CallInstr);
   VISIT(StackAllocInstr);
-  VISIT(TypePropertyInstr);
   VISIT(YieldInInstr);
   VISIT(TernaryInstr);
   VISIT(BreakInstr);
@@ -213,7 +211,6 @@ public:
   CONST_VISIT(InsertInstr);
   CONST_VISIT(CallInstr);
   CONST_VISIT(StackAllocInstr);
-  CONST_VISIT(TypePropertyInstr);
   CONST_VISIT(YieldInInstr);
   CONST_VISIT(TernaryInstr);
   CONST_VISIT(BreakInstr);

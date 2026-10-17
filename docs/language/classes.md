@@ -86,6 +86,11 @@ p.foo('abc')  # str-foo called! abc
 Method resolution occurs *bottom-up*, meaning if multiple methods are applicable
 for a given set of arguments, the latest one will be used.
 
+Reference classes can define a static `__new__` method to control allocation or
+return an existing instance. Constructor arguments are evaluated once and passed
+to both the custom `__new__` and `__init__`. If `__new__` returns an unrelated type,
+`__init__` is skipped.
+
 !!! note
 
     Non-method functions can also be overloaded in Codon by adding the `@overload`
@@ -283,3 +288,40 @@ print(foo.x, bar.x)  # 1 2
 foo.hello()          # Foo
 bar.hello()          # Bar
 ```
+
+## Enumerations
+
+Use `Enum` to define named singleton values:
+
+```python
+from enum import Enum, auto
+
+class Color(Enum):
+    RED = auto()
+    GREEN = auto()
+    BLUE = auto()
+    CRIMSON = RED
+
+assert Color.RED.name == 'RED'
+assert Color.RED.value == 1
+assert Color(1) is Color.RED
+assert Color['CRIMSON'] is Color.RED
+assert list(Color) == [Color.RED, Color.GREEN, Color.BLUE]
+```
+
+Equal values become aliases of the first member. Iteration skips aliases and
+preserves declaration order; `Color.__members__` includes all declared names.
+Members support identity comparisons, equality, hashing, and use as dictionary
+keys. `Enum` subclasses may define methods and be nested inside other classes.
+Class iteration, subscription, length, and containment use ordinary static
+methods inherited from `Enum`, and `__members__` is a normal `ClassVar`. These
+follow Codon's usual attribute lookup and override rules.
+Calling an enum with an unknown value raises `ValueError`; an unknown member name
+raises `KeyError`. Existing members cannot be reassigned, and an enum with members
+cannot be subclassed to add more members.
+
+Codon supports class-based `Enum` declarations with one native value type per
+enumeration, including integer and string values. `auto()` generates integer
+values starting at 1, or one above the largest preceding value. Custom
+`__init__`/`__new__` constructors, enum mixins, the functional `Enum(...)` factory,
+`IntEnum`, and flag types are not currently supported.

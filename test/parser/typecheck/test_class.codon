@@ -289,18 +289,16 @@ p = Ptr[u8]()
 Foo(1).__to_py__(p) #! 'Foo' object has no attribute '__to_py__'
 
 #%% inherit_class_4,barebones
-class defdict[K,V](Static[Dict[K,V]]):
+class defdict[K,V](Dict[K,V]):
     fx: Function[[],V]
     def __init__(self, d: Dict[K,V], fx: Function[[], V]):
-        self.__init__()
+        super().__init__()
         for k,v in d.items(): self[k] = v
         self.fx = fx
     def __getitem__(self, key: K) -> V:
-        if key in self:
-            return self.values[self.keys.index(key)]
-        else:
+        if key not in self:
             self[key] = self.fx()
-            return self[key]
+        return super().__getitem__(key)
 z = defdict({'ha':1}, lambda: -1)
 print z
 print z['he']
@@ -317,55 +315,41 @@ class Bar[T]:
     y: Optional[T] = None
     def bar(self):
         return f'bar {self.y}/{self.y.__class__.__name__}'
-class FooBarBaz[T](Static[Foo], Static[Bar[T]]):
+class FooBarBaz[T](Foo, Bar[T]):
     def baz(self):
         return f'baz! {self.foo()} {self.bar()}'
+# warning: cannot realize superclass Bar[T] of Foo; ignoring its super
 print FooBarBaz[str]().foo() #: foo 0
 print FooBarBaz[float]().bar() #: bar None/Optional[float]
 print FooBarBaz[str]().baz() #: baz! foo 0 bar None/Optional[str]
 
 #%% inherit_class_err_5,barebones
-class defdict(Static[Dict[str,float]]):
+class defdict(Dict[str,float]):
     def __init__(self, d: Dict[str, float]):
-        self.__init__(d.items())
+        pass
 z = defdict()
 z[1.1] #! 'float' does not match expected type 'str'
 
-#%% inherit_tuple,barebones
-class Foo:
-    a: int
-    b: str
-    def __init__(self, a: int):
-        self.a, self.b = a, 'yoo'
-@tuple
-class FooTup(Static[Foo]): pass
-
-f = Foo(5)
-print f.a, f.b #: 5 yoo
-fp = FooTup(6, 's')
-print fp #: (a: 6, b: 's')
-
 #%% inherit_class_err_1,barebones
-class defdict(Static[str]):
+class defdict(DictEntry[int, int]):
     pass #! reference classes cannot inherit tuple classes
 
 #%% inherit_class_err_2,barebones
-@tuple
-class defdict(Static[int]):
+class defdict(TypeInfo):
     pass #! internal classes cannot inherit other classes
 
 #%% inherit_class_err_3,barebones
-class defdict(Static[Dict[int, float, float]]):
-    pass #! Dict takes 2 generics (3 given)
+class defdict(OrderedDict[int, float, float]):
+    pass #! OrderedDict takes 2 generics (3 given)
 
 #%% inherit_class_err_4,barebones
 class Foo:
     x: int
 class Bar:
     x: float
-class FooBar(Static[Foo], Static[Bar]):
+class FooBar(Foo, Bar):
     pass
-# right now works as we rename other fields
+#! field 'x' already defined
 
 
 #%% class_deduce,barebones
@@ -605,3 +589,164 @@ B.apple["d"] = 4
 print(C.apple)
 #: {'a': 1, 'b': 2, 'c': 3, 'd': 4}
 
+
+#%% class_var_override,barebones
+# python_pybridge_codon: exception subclasses need independent _pytype slots;
+# inherited class variables must still share storage and follow the C3 MRO.
+class Root:
+    tag: ClassVar[int] = 1
+class Left(Root):
+    pass
+class Right(Root):
+    tag: ClassVar[int] = 2
+class Diamond(Left, Right):
+    pass
+class Own(Diamond):
+    tag: ClassVar[int] = 3
+
+assert Root.tag == 1 and Left.tag == 1
+assert Right.tag == 2 and Diamond.tag == 2 and Own.tag == 3
+Right.tag = 20
+assert Diamond.tag == 20 and Root.tag == 1 and Own.tag == 3
+Root.tag = 10
+assert Left.tag == 10 and Right.tag == 20
+print("class variable overrides ok")  #: class variable overrides ok
+
+#%% enum_extend_err
+from enum import Enum
+class Color(Enum):
+    RED = 1
+class More(Color):
+    BLUE = 2
+#! cannot extend an enumeration with members
+
+#%% enum_reassign_err
+from enum import Enum
+class Color(Enum):
+    RED = 1
+Color.RED = Color.RED
+#! cannot reassign enumeration member 'RED'
+
+#%% enum_base_construct_err
+from enum import Enum
+Enum("invalid")
+#! cannot instantiate Enum directly
+#! during the realization of __new__(value: str, __SELF__: Enum)
+
+#%% enum_mixed_values_err
+from enum import Enum
+class Mixed(Enum):
+    INTEGER = 1
+    STRING = "one"
+#! enumeration values must have the same type
+
+#%% enum_noninteger_auto_err
+from enum import Enum, auto
+class NonIntegerAuto(Enum):
+    FIRST = "one"
+    SECOND = auto()
+#! auto() requires integer enum values
+#! during the realization of _next_value(maximum: int, first_value: str)
+
+#%% enum_custom_constructor_err
+from enum import Enum
+class Custom(Enum):
+    MEMBER = 1
+    def __init__(self, value):
+        pass
+#! custom enumeration constructors are not supported
+
+#%% class_custom_new
+# enum_test uses this general constructor path: __new__ receives the same
+# evaluated arguments as __init__, including forwarded *args and **kwargs.
+events = List[str]()
+class Factory:
+    value: int
+    @staticmethod
+    def __new__(value: int, offset: int = 0):
+        events.append("new")
+        obj = type._ref_new(Factory)
+        obj.value = value + offset
+        return obj
+    def __init__(self, value: int, offset: int = 0):
+        events.append("init")
+        assert self.value == value + offset
+def argument():
+    events.append("arg")
+    return 10
+obj = Factory(argument(), offset=2)
+assert obj.value == 12
+assert events == ["arg", "new", "init"]
+def forward(*args, **kwargs):
+    return Factory(*args, **kwargs)
+events.clear()
+assert forward(argument(), offset=3).value == 13
+assert events == ["arg", "new", "init"]
+
+# Returning an unrelated type skips __init__, as for ordinary Python factories.
+class OtherResult:
+    @staticmethod
+    def __new__(value: int):
+        return value * 2
+    def __init__(self, value: int):
+        compile_error("must not initialize an unrelated result")
+assert OtherResult(4) == 8
+print("custom new ok")  #: custom new ok
+
+#%% class_static_protocols
+# Enum subscription and Generator conversion must also work for ordinary
+# classes with static methods, without an Enum-specific dispatch branch.
+class Values:
+    tag: ClassVar[int] = 10
+    @staticmethod
+    def __iter__():
+        yield 1
+        yield 2
+    @staticmethod
+    def __getitem__(name: str):
+        return name.upper()
+assert list(Values) == [1, 2]
+assert set(Values) == {1, 2}
+assert Values["key"] == "KEY"
+assert hasattr(Values, "tag")
+assert hasattr(Values(), "tag")
+print("static protocols ok")  #: static protocols ok
+
+#%% class_custom_new_err
+# A missing argument must fail in the custom allocator rather than selecting
+# an automatically generated zero-argument __new__ overload.
+class Factory:
+    @staticmethod
+    def __new__(value: int):
+        return type._ref_new(Factory)
+Factory()
+#! __new__() missing 1 required positional argument: 'value'
+
+#%% class_inherited_self
+# Enum shares its methods using __SELF__. The same inherited specialization
+# must work for ordinary classes, including calls through an intermediate base.
+class Base:
+    @staticmethod
+    def owner(__SELF__: type = Base):
+        return __SELF__.__name__
+    def label(self: __SELF__, __SELF__: type) -> str:
+        if hasattr(__SELF__, "value"):
+            return "value=" + str(self.value)
+        return "base"
+class First(Base):
+    value: int
+def describe(obj: Base):
+    return obj.label()
+assert Base.owner() == "Base"
+assert First.owner() == "First"
+assert describe(First(3)) == "value=3"
+class Middle(Base):
+    pass
+class Late(Middle):
+    value: str
+def describe_middle(obj: Middle):
+    return obj.label()
+assert describe(Late("late")) == "value=late"
+assert describe_middle(Late("middle")) == "value=middle"
+assert Late.owner() == "Late"
+print("inherited self ok")  #: inherited self ok

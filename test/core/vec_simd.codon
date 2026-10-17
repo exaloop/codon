@@ -80,6 +80,8 @@ def test_op():
     assert (a - b).scatter() == [u8(100 + i) - u8(i) for i in range(T.N)]
     assert (b - a).scatter() == [u8(i) - u8(100 + i) for i in range(T.N)]
     assert (a * b).scatter() == [u8(100 + i) * u8(i) for i in range(T.N)]
+    assert (b * 3u8).scatter() == [u8(i) * 3u8 for i in range(T.N)]
+    assert close((af * float32(3.0)).scatter(), [float32(100 + i) * float32(3.0) for i in range(4)])
     assert close((af / bf).scatter(), [float32(100 + i) / float32(i + 1) for i in range(4)])
     assert (a // b1).scatter() == [u8((100 + i) // (i + 1)) for i in range(T.N)]
     assert close((af / float32(2.0)).scatter(), [float32(100 + i) / float32(2) for i in range(4)])
@@ -105,8 +107,6 @@ def test_op():
     assert a.max(b).scatter() == a.scatter()
 
 def test_utils():
-    # TODO: add.overflow / sub.overflow
-
     a = Vec[u8, 8]([u8(100 + i) for i in range(8)])
     b = Vec[u8, 8]([u8(i) for i in range(8)])
     af = Vec[float32, 4]([float32(100 + i) for i in range(4)])
@@ -118,8 +118,423 @@ def test_utils():
     assert a.sum() == u8(sum(100 + i for i in range(8)))
     assert close(af.sum(), float32(sum(100 + i for i in range(4))))
 
+@test
+def test_signedness_and_float_edges():
+    signed = Vec[int, 4]([-9, -1, 0, 9])
+    zero = Vec[int, 4](0)
+    assert (signed < zero).scatter() == [1u1, 1u1, 0u1, 0u1]
+    assert (signed <= zero).scatter() == [1u1, 1u1, 1u1, 0u1]
+    assert (signed > zero).scatter() == [0u1, 0u1, 0u1, 1u1]
+    assert (signed >= zero).scatter() == [0u1, 0u1, 1u1, 1u1]
+    assert (signed >> Vec[int, 4](1)).scatter() == [-5, -1, 0, 4]
+    assert len(signed) == 4
+    assert signed[-1] == 9 and signed[-4] == -9
+    assert signed.lsh(0).scatter() == signed.scatter()
+    assert signed.rsh(0).scatter() == signed.scatter()
+    assert signed.lsh(4).scatter() == zero.scatter()
+    assert signed.rsh(4).scatter() == zero.scatter()
+
+    unsigned = Vec[u8, 4]([200u8, 250u8, 128u8, 0u8])
+    other = Vec[u8, 4]([100u8, 20u8, 127u8, 255u8])
+    assert unsigned.min(other).scatter() == [100u8, 20u8, 127u8, 0u8]
+    assert unsigned.max(other).scatter() == [200u8, 250u8, 128u8, 255u8]
+    assert abs(unsigned).scatter() == unsigned.scatter()
+    assert (unsigned > other).scatter() == [1u1, 1u1, 1u1, 0u1]
+
+    added, overflow = Vec[i8, 4]([-1i8, 127i8, -128i8, 20i8]).add(
+        Vec[i8, 4]([1i8, 1i8, -1i8, 20i8]), overflow=True)
+    assert added.scatter() == [0i8, -128i8, 127i8, 40i8]
+    assert overflow.scatter() == [0u1, 1u1, 1u1, 0u1]
+    subtracted, overflow = Vec[i8, 4]([-128i8, 127i8, 1i8, -1i8]).sub(
+        Vec[i8, 4]([1i8, -1i8, 1i8, 1i8]), overflow=True)
+    assert subtracted.scatter() == [127i8, -128i8, 0i8, -2i8]
+    assert overflow.scatter() == [1u1, 1u1, 0u1, 0u1]
+    added, overflow = unsigned.add(other, overflow=True)
+    assert added.scatter() == [44u8, 14u8, 255u8, 255u8]
+    assert overflow.scatter() == [1u1, 1u1, 0u1, 0u1]
+
+    floats = Vec[float, 4]([0.0, -0.0, float('nan'), 2.0])
+    assert (floats == floats).scatter() == [1u1, 1u1, 0u1, 1u1]
+    assert (floats != floats).scatter() == [0u1, 0u1, 1u1, 0u1]
+    assert (floats == 0.0).scatter() == [1u1, 1u1, 0u1, 0u1]
+    assert math.copysign(1.0, (-floats)[0]) == -1.0
+    assert math.copysign(1.0, (-floats)[1]) == 1.0
+    single = Vec[float32, 4](1.5f32)
+    assert (single & single).scatter() == single.scatter()
+    assert (single | single).scatter() == single.scatter()
+    assert (single ^ single).scatter() == [0.0f32] * 4
+    assert (single == single).scatter() == [1u1] * 4
+    half = Vec[float16, 4](float16(1.5))
+    assert half.cast(bfloat16).scatter() == [bfloat16(1.5)] * 4
+    assert half.cast(bfloat16).cast(float16).scatter() == half.scatter()
+
+@test
+def test_integer_division_and_shifts():
+    numerators = [-7, 7, -7, 7]
+    divisors = [3, -3, -3, 3]
+    dividend = Vec[int, 4](numerators)
+    divisor = Vec[int, 4](divisors)
+    assert (dividend // divisor).scatter() == [numerators[index] // divisors[index] for index in range(4)]
+    assert (dividend % divisor).scatter() == [numerators[index] % divisors[index] for index in range(4)]
+    assert (dividend // 3).scatter() == [value // 3 for value in numerators]
+    assert (dividend % 3).scatter() == [value % 3 for value in numerators]
+    assert ((dividend // divisor) * divisor + dividend % divisor).scatter() == numerators
+    assert (Vec[u8, 4](200u8) // 3u8).scatter() == [66u8] * 4
+    assert (Vec[u8, 4](200u8) % 3u8).scatter() == [2u8] * 4
+    if __py_numerics__:
+        failures = 0
+        try:
+            print(dividend // Vec[int, 4]([1, 1, 0, 1]))
+        except ZeroDivisionError:
+            failures += 1
+        try:
+            print(dividend % 0)
+        except ZeroDivisionError:
+            failures += 1
+        try:
+            print(Vec[i8, 4](-128i8) // -1i8)
+        except OverflowError:
+            failures += 1
+        try:
+            print(Vec[i8, 4](-128i8) % -1i8)
+        except OverflowError:
+            failures += 1
+        try:
+            print(dividend << Vec[int, 4]([1, 1, -1, 1]))
+        except ValueError:
+            failures += 1
+        try:
+            print(dividend >> Vec[int, 4](64))
+        except ValueError:
+            failures += 1
+        assert failures == 6
+
+@test
+def test_memory_layout():
+    mask = [1u1, 1u1, 0u1, 1u1, 0u1]
+    assert Vec[u1, 4](mask).scatter() == mask[:4]
+    assert Vec[u1, 4](mask, 1).scatter() == mask[1:]
+    assert Vec[u1, 4](mask._ptr).scatter() == mask[:4]
+    packed = [UInt[24](value) for value in [1, 0xabcdef, 0x123456, 0xffffff, 0]]
+    assert Vec[UInt[24], 4](packed).scatter() == packed[:4]
+    assert Vec[UInt[24], 4](packed, 1).scatter() == packed[1:]
+    assert Vec[UInt[24], 4](packed._ptr).scatter() == packed[:4]
+    assert isinstance(Vec[i8, 4]("ABCD"), Vec[i8, 4])
+    assert isinstance(Vec[i8, 4](b"ABCD"), Vec[i8, 4])
+    assert Vec[i8, 4](b"\xff\x80\x00\x7f").scatter() == [-1i8, -128i8, 0i8, 127i8]
+    assert Vec[u8, 4]("\u00e9\u20ac", 1).scatter() == [u8(value) for value in [0xa9, 0xe2, 0x82, 0xac]]
+    data = [u8(index) for index in range(40)]
+    vectors = Ptr[Vec[u8, 16]](data._ptr + 1)
+    assert vectors[0].scatter() == data[1:17]
+    vectors[1] = vectors[0]
+    assert data[17:33] == data[1:17]
+    assert data[0] == 0u8 and data[33] == 33u8
+    integers = [index for index in range(8)]
+    assert Vec[int, 4](integers, 1).scatter() == integers[1:5]
+
+    failures = 0
+    short = [11, 22, 33, 44]
+    short.pop()
+    short.pop()
+    try:
+        print(Vec[int, 4](short))
+    except IndexError:
+        failures += 1
+    try:
+        print(Vec[u8, 4](data, -1))
+    except IndexError:
+        failures += 1
+    try:
+        print(Vec[u8, 4](data, 0x7fffffffffffffff))
+    except IndexError:
+        failures += 1
+    backing = "abcdefghijklmnop"
+    try:
+        print(Vec[u8, 8](backing[:4]))
+    except IndexError:
+        failures += 1
+    try:
+        print(Vec[u8, 4](b"abcd", 1))
+    except IndexError:
+        failures += 1
+    assert failures == 5
+
+@test
+def test_masks_scalars_and_lanes():
+    values = Vec[int, 4]([0, 2, -3, 4])
+    mask = values != 0
+    assert mask.any() and not mask.all() and mask.count() == 3
+    assert values.count() == 3 and values.any() and not values.all()
+    assert not Vec[u1, 4](0u1).any()
+    assert Vec[u1, 4](1u1).all()
+    assert mask.to_bits() == UInt[4](14)
+    assert Vec[u1, 4].from_bits(UInt[4](14)).scatter() == mask.scatter()
+    assert Vec[u1, 65](1u1).to_bits() == UInt[65](-1)
+    assert Vec[u1, 65].from_bits(UInt[65](1) << 64).count() == 1
+    assert Vec[u1, 65].from_bits(UInt[65](1) << 64)[64] == 1u1
+    assert Vec[float, 2]([0.0, float('nan')]).to_bits() == UInt[2](2)
+    assert (2 + values).scatter() == [2, 4, -1, 6]
+    assert (2 - values).scatter() == [2, 0, 5, -2]
+    assert (2 * values).scatter() == [0, 4, -6, 8]
+    divisors = Vec[int, 4]([1, 2, -3, 4])
+    assert (7 // divisors).scatter() == [7 // value for value in divisors.scatter()]
+    assert (7 % divisors).scatter() == [7 % value for value in divisors.scatter()]
+    assert (6.0 / Vec[float, 2]([2.0, 3.0])).scatter() == [3.0, 2.0]
+    assert (values & 3).scatter() == (3 & values).scatter() == [0, 2, 1, 0]
+    assert (values | 3).scatter() == (3 | values).scatter() == [3, 3, -1, 7]
+    assert (values ^ 3).scatter() == (3 ^ values).scatter() == [3, 1, -2, 7]
+    assert (~values).scatter() == [-1, -3, 2, -5]
+    assert (values << 1).scatter() == [0, 4, -6, 8]
+    assert (values >> 1).scatter() == [0, 1, -2, 2]
+    assert (1 << Vec[int, 4]([0, 1, 2, 3])).scatter() == [1, 2, 4, 8]
+    assert (8 >> Vec[int, 4]([0, 1, 2, 3])).scatter() == [8, 4, 2, 1]
+    assert (Vec[u8, 4](2u8) << 1).scatter() == [4u8] * 4
+    assert (Vec[u8, 4](2u8) << 1u8).scatter() == [4u8] * 4
+    for index in range(-4, 4):
+        assert values[index] == values.scatter()[index]
+        assert values.extract(index) == values.scatter()[index]
+        replaced = values.insert(index, 99)
+        assert replaced[index] == 99 and values[index] != 99
+    failures = 0
+    for index in [-5, 4]:
+        try:
+            print(values.extract(index))
+        except IndexError:
+            failures += 1
+        try:
+            print(values.insert(index, 0))
+        except IndexError:
+            failures += 1
+    assert failures == 4
+    if __py_numerics__:
+        try:
+            print(Vec[u8, 4](1u8) << 256)
+            assert False
+        except ValueError:
+            pass
+
+@test
+def test_reductions_and_math():
+    signed = Vec[int, 4]([-3, 4, 2, -1])
+    assert signed.prod() == 24 and signed.min() == -3 and signed.max() == 4
+    unsigned = Vec[u8, 4]([250u8, 2u8, 3u8, 4u8])
+    assert unsigned.min() == 2u8 and unsigned.max() == 250u8
+    assert unsigned.prod() == u8(250 * 2 * 3 * 4)
+    assert Vec[int, 1](9).prod() == 9
+    assert signed.min(0).scatter() == [-3, 0, 0, -1]
+    floats = Vec[float, 4]([-3.0, 4.0, 2.0, -1.0])
+    assert floats.prod() == 24.0 and floats.min() == -3.0 and floats.max() == 4.0
+    assert floats.min(0.0).scatter() == [-3.0, 0.0, 0.0, -1.0]
+    assert floats.max(0.0).scatter() == [0.0, 4.0, 2.0, 0.0]
+    special = Vec[float, 4]([float('nan'), float('inf'), -float('inf'), -0.0])
+    assert special.isnan().scatter() == [1u1, 0u1, 0u1, 0u1]
+    assert special.isinf().scatter() == [0u1, 1u1, 1u1, 0u1]
+    assert special.isfinite().scatter() == [0u1, 0u1, 0u1, 1u1]
+    assert special.signbit()[2] == 1u1 and special.signbit()[3] == 1u1
+    assert special.min(0.0).isnan()[0] == 1u1
+    assert special.max(0.0).isnan()[0] == 1u1
+    assert math.isnan(special.min()) and math.isnan(special.max())
+    zeros = Vec[float, 2]([0.0, -0.0])
+    assert math.copysign(1.0, zeros.min()) == -1.0
+    assert math.copysign(1.0, zeros.max()) == 1.0
+    assert zeros.min(0.0).signbit()[1] == 1u1
+    assert zeros.max(-0.0).signbit()[0] == 0u1
+    rounded = Vec[float, 4]([-2.5, -1.2, 1.5, 2.5])
+    assert rounded.floor().scatter() == [-3.0, -2.0, 1.0, 2.0]
+    assert rounded.ceil().scatter() == [-2.0, -1.0, 2.0, 3.0]
+    assert rounded.trunc().scatter() == [-2.0, -1.0, 1.0, 2.0]
+    assert rounded.round().scatter() == [-2.0, -1.0, 2.0, 2.0]
+    powers = Vec[float32, 4]([0.0f32, 1.0f32, 2.0f32, 3.0f32])
+    assert close(powers.exp().scatter(), [float32(math.exp(value)) for value in range(4)])
+    assert powers.exp2().scatter() == [1.0f32, 2.0f32, 4.0f32, 8.0f32]
+    assert powers.exp2().log2().scatter() == powers.scatter()
+    assert close(Vec[float, 4]([1.0, 10.0, 100.0, 1000.0]).log10().scatter(), [0.0, 1.0, 2.0, 3.0])
+    assert Vec[float16, 4](float16(0)).exp().scatter() == [float16(1)] * 4
+    assert Vec[bfloat16, 4](bfloat16(0)).exp().scatter() == [bfloat16(1)] * 4
+    assert powers.fma(2.0f32, 1.0f32).scatter() == [1.0f32, 3.0f32, 5.0f32, 7.0f32]
+    factor = Vec[float, 2](1.0 + 2.0 ** -27)
+    assert factor.fma(Vec[float, 2](1.0 - 2.0 ** -27), -1.0).scatter() == [-2.0 ** -54] * 2
+
+@test
+def test_shuffles():
+    first = Vec[int, 4]([10, 11, 12, 13])
+    second = Vec[int, 4]([20, 21, 22, 23])
+    assert first.shuffle((3, 0, 3, 1)).scatter() == [13, 10, 13, 11]
+    assert first.shuffle((0, 7, 2, 5, 3, 4), second).scatter() == [10, 23, 12, 21, 13, 20]
+    assert first.shuffle((2,)).scatter() == [12]
+    assert first.shuffle((2,), other=None).scatter() == [12]
+    assert first.shuffle((7,), second).scatter() == [23]
+    assert first.interleave(second).scatter() == [10, 20, 11, 21, 12, 22, 13, 23]
+    for index in range(4):
+        assert first.shuffle(Vec[int, 1](index)).scatter() == [10 + index]
+        assert first.shuffle(Vec[int, 1](index + 4), second).scatter() == [20 + index]
+        selectors = Vec[int, 2]([index, 3 - index])
+        assert first.shuffle(selectors).scatter() == [10 + index, 13 - index]
+        assert first.shuffle(selectors + 4, second).scatter() == [20 + index, 23 - index]
+    failures = 0
+    for index in [-1, 4, -(1 << 63), (1 << 63) - 1]:
+        try:
+            print(first.shuffle(Vec[int, 2]([0, index])))
+        except IndexError:
+            failures += 1
+        try:
+            print(first.shuffle(Vec[int, 1](index)))
+        except IndexError:
+            failures += 1
+    for index in [-1, 8, -(1 << 63), (1 << 63) - 1]:
+        try:
+            print(first.shuffle(Vec[int, 2]([0, index]), second))
+        except IndexError:
+            failures += 1
+        try:
+            print(first.shuffle(Vec[int, 1](index), second))
+        except IndexError:
+            failures += 1
+    try:
+        print(first.shuffle((0, 8), second))
+    except IndexError:
+        failures += 1
+    assert failures == 17
+
+@test
+def test_explicit_memory():
+    data = [index for index in range(12)]
+    values = Vec[int, 4].load(data._ptr, offset=1)
+    assert values.scatter() == [1, 2, 3, 4]
+    assert Vec[int, 4].load(data._ptr, mask=None, passthrough=None).scatter() == [0, 1, 2, 3]
+    values.store(data._ptr, offset=5, alignment=8)
+    assert data == [0, 1, 2, 3, 4, 1, 2, 3, 4, 9, 10, 11]
+    mask = Vec[u1, 4]([1u1, 0u1, 1u1, 0u1])
+    assert Vec[int, 4].load(data._ptr, mask=mask, passthrough=-1).scatter() == [0, -1, 2, -1]
+    Vec[int, 4](99).store(data._ptr, mask=mask)
+    assert data[:4] == [99, 1, 99, 3]
+    indices = Vec[int, 4]([3, 1, 10, 8])
+    assert Vec[int, 4].gather(data._ptr, indices).scatter() == [3, 1, 10, 4]
+    values.scatter(data._ptr, indices, mask=mask)
+    assert data[3] == 1 and data[1] == 1 and data[10] == 3 and data[8] == 4
+    inactive = Vec[u1, 4](0u1)
+    null = Ptr[int]()
+    assert Vec[int, 4].load(null, mask=inactive, passthrough=7).scatter() == [7] * 4
+    values.store(null, mask=inactive)
+    assert Vec[int, 4].gather(null, indices, mask=inactive, passthrough=8).scatter() == [8] * 4
+    values.scatter(null, indices, mask=inactive)
+    tail = [42]
+    only_first = Vec[u1, 4]([1u1, 0u1, 0u1, 0u1])
+    assert Vec[int, 4].load(tail._ptr, mask=only_first).scatter() == [42, 0, 0, 0]
+    invalid_indices = Vec[int, 4]([0, 0x7fffffffffffffff, -9999, 9999])
+    assert Vec[int, 4].gather(tail._ptr, invalid_indices, mask=only_first).scatter() == [42, 0, 0, 0]
+    values.scatter(tail._ptr, invalid_indices, mask=only_first)
+    assert tail == [1]
+    bits = [0u1] * 6
+    bit_values = Vec[u1, 4]([1u1, 0u1, 1u1, 1u1])
+    bit_values.store(bits._ptr, offset=1)
+    assert bits == [0u1, 1u1, 0u1, 1u1, 1u1, 0u1]
+    assert Vec[u1, 4].load(bits._ptr, offset=1).scatter() == bit_values.scatter()
+    packed = [UInt[24](index) for index in range(8)]
+    packed_values = Vec[UInt[24], 4].load(packed._ptr, offset=2)
+    packed_values.store(packed._ptr, offset=1, mask=mask)
+    assert packed == [UInt[24](value) for value in [0, 2, 2, 4, 4, 5, 6, 7]]
+    small_indices = Vec[int, 4]([7, 3, 1, 5])
+    assert Vec[UInt[24], 4].gather(packed._ptr, small_indices).scatter() == [UInt[24](value) for value in [7, 4, 2, 5]]
+    packed_values.scatter(packed._ptr, small_indices, mask=mask)
+    assert packed[7] == UInt[24](2) and packed[1] == UInt[24](4)
+    assert Vec[UInt[24], 4].load(Ptr[UInt[24]](), mask=inactive).scatter() == [UInt[24](0)] * 4
+    packed_values.store(Ptr[UInt[24]](), mask=inactive)
+    bytes_data = [u8(index) for index in range(40)]
+    Vec[u8, 16].load(bytes_data._ptr, offset=1).store(bytes_data._ptr, offset=17)
+    assert bytes_data[1:17] == bytes_data[17:33]
+
+def test_float_api_types(numeric_type: type):
+    values = Vec[numeric_type, 4]([numeric_type(value) for value in [-2.0, -0.0, 1.5, 2.0]])
+    assert values.sum() == numeric_type(1.5)
+    assert values.isfinite().all()
+    assert values.signbit().scatter() == [1u1, 1u1, 0u1, 0u1]
+    if not isinstance(numeric_type, float128):
+        assert values.min() == numeric_type(-2.0) and values.max() == numeric_type(2.0)
+        assert values.fma(numeric_type(2), numeric_type(1)).scatter() == [numeric_type(value) for value in [-3, 1, 4, 5]]
+        assert values.round().scatter() == [numeric_type(value) for value in [-2, 0, 2, 2]]
+    assert Vec[numeric_type, 4](numeric_type(2)).prod() == numeric_type(16)
+
+@test
+def test_check_control():
+    integers = [1, 2, 3, 4, 5]
+    assert Vec[int, 4](integers, check=False).scatter() == integers[:4]
+    assert Vec[int, 4](integers, 1, check=False).scatter() == integers[1:]
+    assert Vec[int, 4](integers, 1, check=True).scatter() == integers[1:]
+    assert Vec[u1, 4]([1u1, 0u1, 1u1, 0u1], check=False).count() == 2
+    assert Vec[u8, 4](b"abcde", 1, check=False).scatter() == [98u8, 99u8, 100u8, 101u8]
+    assert Vec[i8, 4](b"\xff\x80\x00\x7f", check=False).scatter() == [-1i8, -128i8, 0i8, 127i8]
+    assert Vec[u8, 4]("abcde", 1, check=False).scatter() == [98u8, 99u8, 100u8, 101u8]
+    assert Vec[u8, 4]("\u00e9\u20ac", 1, check=False).scatter() == [0xa9u8, 0xe2u8, 0x82u8, 0xacu8]
+    values = Vec[int, 4]([-7, 7, -7, 7])
+    for index in range(-4, 4):
+        assert values.extract(index, check=False) == values[index]
+        assert values.insert(index, 9, check=False).scatter() == values.insert(index, 9).scatter()
+    assert values.shuffle((3, 1), check=False).scatter() == [7, 7]
+    assert values.shuffle(Vec[int, 2]([2, 0]), check=False).scatter() == [-7, -7]
+    other = Vec[int, 4]([10, 20, 30, 40])
+    assert values.shuffle((7, 0), other, check=False).scatter() == [40, -7]
+    assert values.shuffle(Vec[int, 2]([5, 2]), other, check=False).scatter() == [20, -7]
+    counts = Vec[int, 4]([0, 1, 2, 3])
+    divisors = Vec[int, 4]([3, -3, -3, 3])
+    assert values.lshift(counts, check=False).scatter() == (values << counts).scatter()
+    assert values.rshift(counts, check=False).scatter() == (values >> counts).scatter()
+    assert values.lshift(2, check=False).scatter() == (values << 2).scatter()
+    assert values.rshift(2, check=False).scatter() == (values >> 2).scatter()
+    assert values.floordiv(divisors, check=False).scatter() == (values // divisors).scatter()
+    assert values.mod(divisors, check=False).scatter() == (values % divisors).scatter()
+    assert values.floordiv(-3, check=False).scatter() == (values // -3).scatter()
+    assert values.mod(-3, check=False).scatter() == (values % -3).scatter()
+    narrow = Vec[i8, 4](-8i8)
+    assert narrow.rshift(1, check=False).scatter() == [-4i8] * 4
+    assert narrow.rshift(1i8, check=False).scatter() == [-4i8] * 4
+    assert narrow.lshift(1, check=False).scatter() == [-16i8] * 4
+    assert narrow.lshift(1i8, check=False).scatter() == [-16i8] * 4
+    assert Vec[u8, 4](200u8).floordiv(3u8, check=False).scatter() == [66u8] * 4
+    assert Vec[u8, 4](200u8).mod(3u8, check=False).scatter() == [2u8] * 4
+    if __py_numerics__:
+        failures = 0
+        try:
+            print(values.floordiv(0))
+        except ZeroDivisionError:
+            failures += 1
+        try:
+            print(values.mod(0, check=True))
+        except ZeroDivisionError:
+            failures += 1
+        try:
+            print(Vec[i8, 4](-128i8).floordiv(-1i8, check=True))
+        except OverflowError:
+            failures += 1
+        try:
+            print(Vec[i8, 4](-128i8).mod(-1i8))
+        except OverflowError:
+            failures += 1
+        try:
+            print(narrow.lshift(256))
+        except ValueError:
+            failures += 1
+        try:
+            print(narrow.rshift(-1, check=True))
+        except ValueError:
+            failures += 1
+        assert failures == 6
+
 test_new()
 test_cast()
 test_op()
 test_utils()
+test_signedness_and_float_edges()
+test_integer_division_and_shifts()
+test_memory_layout()
+test_masks_scalars_and_lanes()
+test_reductions_and_math()
+test_shuffles()
+test_explicit_memory()
+test_float_api_types(float16)
+test_float_api_types(bfloat16)
+test_float_api_types(float32)
+test_float_api_types(float)
+test_float_api_types(float128)
+test_check_control()
 

@@ -28,7 +28,8 @@ namespace codon::ast {
 
 llvm::Error
 ScopingVisitor::apply(Cache *cache, Stmt *s,
-                      std::unordered_map<std::string, size_t> *globalShadows) {
+                      std::unordered_map<std::string, size_t> *globalShadows,
+                      bool dominateAll) {
   auto c = std::make_shared<ScopingVisitor::Context>();
   c->cache = cache;
   c->functionScope = nullptr;
@@ -42,6 +43,12 @@ ScopingVisitor::apply(Cache *cache, Stmt *s,
     return llvm::make_error<ParserErrorInfo>(v.errors);
   v.processChildCaptures();
 
+  if (dominateAll) {
+    for (auto &[u, _] : c->map) {
+      v.findDominatingBinding(u);
+    }
+  }
+
   /// Count number of shadowed names to know which names change or not later on
   if (globalShadows) {
     for (auto &[u, v] : c->map) {
@@ -49,8 +56,9 @@ ScopingVisitor::apply(Cache *cache, Stmt *s,
       for (auto &ii : v)
         if (!ii.ignore)
           i++;
-      if (i > 1)
+      if (i > 1) {
         (*globalShadows)[u] = i;
+      }
     }
   }
 
@@ -106,31 +114,8 @@ bool ScopingVisitor::transformScope(Stmt *s) {
   return true;
 }
 
-bool ScopingVisitor::transformAdding(Expr *e, ASTNode *root) {
-  if (cast<IndexExpr>(e)) {
-    return transform(e);
-  } else if (auto de = cast<DotExpr>(e)) {
-    if (!transform(e))
-      return false;
-    if (!ctx->classDeduce.first.empty() &&
-        match(de->getExpr(), M<IdExpr>(ctx->classDeduce.first)))
-      ctx->classDeduce.second.insert(de->getMember());
-    return true;
-  } else if (cast<ListExpr>(e) || cast<TupleExpr>(e) || cast<IdExpr>(e)) {
-    SetInScope s1(&(ctx->adding), true);
-    SetInScope s2(&(ctx->root), root);
-    return transform(e);
-  } else {
-    seqassert(e, "bad call to transformAdding");
-    addError(Error::ASSIGN_INVALID, e);
-    return false;
-  }
-}
-
 void ScopingVisitor::visit(IdExpr *expr) {
-  if (ctx->adding)
-    ctx->root = expr;
-  if (ctx->adding && ctx->tempScope)
+  if (ctx->root && ctx->tempScope)
     ctx->renames.back()[expr->getValue()] =
         ctx->cache->getTemporaryVar(expr->getValue());
   for (size_t i = ctx->renames.size(); i-- > 0;)
@@ -138,17 +123,22 @@ void ScopingVisitor::visit(IdExpr *expr) {
       expr->setValue(*v);
       break;
     }
-  if (visitName(expr->getValue(), ctx->adding, ctx->root, expr->getSrcInfo()))
-    expr->setAttribute(Attr::ExprDominatedUndefCheck);
+  if (ctx->root) {
+    expr->setAttribute(Attr::ExprNoUndefCheck);
+  }
+  visitName(expr->getValue(), ctx->root != nullptr, expr, expr->getSrcInfo());
 }
 
 void ScopingVisitor::visit(DotExpr *expr) {
-  SetInScope s(&(ctx->adding), false); // to handle a.x, y = b
+  SetInScope s(&(ctx->root), (ASTNode *)nullptr); // to handle a.x, y = b
   CallbackASTVisitor<bool, bool>::visit(expr);
+  if (!ctx->classDeduce.first.empty() &&
+      match(expr->getExpr(), M<IdExpr>(ctx->classDeduce.first)))
+    ctx->classDeduce.second.insert(expr->getMember());
 }
 
 void ScopingVisitor::visit(IndexExpr *expr) {
-  SetInScope s(&(ctx->adding), false); // to handle a[x], y = b
+  SetInScope s(&(ctx->root), (ASTNode *)nullptr); // to handle a[x], y = b
   CallbackASTVisitor<bool, bool>::visit(expr);
 }
 
@@ -226,11 +216,13 @@ ScopingVisitor::unpackFString(const std::string &value) {
           addError(val.takeError());
         } else {
           items.back().expr = val->first;
+          items.back().value = val->second.text;
+          val->second.text = "";
           if (!transform(items.back().expr))
             return items;
           items.back().format = val->second;
 
-          auto &debugText = items.back().format.text;
+          auto &debugText = items.back().value;
           if (!debugText.empty()) {
             int leadingWhitespace = 0;
             while (leadingWhitespace < code.size() &&
@@ -339,7 +331,9 @@ void ScopingVisitor::visit(AssignExpr *expr) {
 
   SetInScope s(&(ctx->tempScope), false);
   CHECK(transform(expr->getExpr()));
-  CHECK(transformAdding(expr->getVar(), expr));
+
+  SetInScope s2(&(ctx->root), (ASTNode *)expr);
+  CHECK(transform(expr->getVar()));
 }
 
 void ScopingVisitor::visit(LambdaExpr *expr) {
@@ -381,7 +375,8 @@ void ScopingVisitor::visit(LambdaExpr *expr) {
 void ScopingVisitor::visit(AssignStmt *stmt) {
   CHECK(transform(stmt->getRhs()));
   CHECK(transform(stmt->getTypeExpr()));
-  CHECK(transformAdding(stmt->getLhs(), stmt));
+  SetInScope s(&(ctx->root), (ASTNode *)stmt);
+  CHECK(transform(stmt->getLhs()));
 }
 
 void ScopingVisitor::visit(IfStmt *stmt) {
@@ -393,10 +388,47 @@ void ScopingVisitor::visit(IfStmt *stmt) {
 void ScopingVisitor::visit(MatchStmt *stmt) {
   CHECK(transform(stmt->getExpr()));
   for (auto &m : *stmt) {
-    CHECK(transform(m.getPattern()));
+    // match_capture_scope: captures define names for both the guard and body.
+    ConditionalBlock block(ctx.get(), m.getSuite());
+    CHECK(transformPattern(m.getPattern()));
     CHECK(transform(m.getGuard()));
-    CHECK(transformScope(m.getSuite()));
+    CHECK(transform(m.getSuite()));
   }
+}
+
+bool ScopingVisitor::transformPattern(Expr *pattern) {
+  if (auto id = cast<IdExpr>(pattern)) {
+    if (id->getValue() == "_")
+      return true;
+    SetInScope binding(&(ctx->root), (ASTNode *)id);
+    return transform(id);
+  } else if (auto tuple = cast<TupleExpr>(pattern)) {
+    for (auto *item : *tuple)
+      if (!transformPattern(item))
+        return false;
+    return true;
+  } else if (auto list = cast<ListExpr>(pattern)) {
+    for (auto *item : *list)
+      if (!transformPattern(item))
+        return false;
+    return true;
+  } else if (auto binary = cast<BinaryExpr>(pattern);
+             binary && (binary->getOp() == "|" || binary->getOp() == "||")) {
+    return transformPattern(binary->getLhs()) && transformPattern(binary->getRhs());
+  } else if (auto assign = cast<AssignExpr>(pattern)) {
+    return transformPattern(assign->getExpr()) && transformPattern(assign->getVar());
+  } else if (auto call = cast<CallExpr>(pattern)) {
+    if (!transform(call->getExpr()))
+      return false;
+    for (auto &arg : *call)
+      if (!(arg.getName().empty() ? transform(arg.getExpr())
+                                  : transformPattern(arg.getExpr())))
+        return false;
+    return true;
+  } else if (auto star = cast<StarExpr>(pattern)) {
+    return transformPattern(star->getExpr());
+  }
+  return transform(pattern);
 }
 
 void ScopingVisitor::visit(WhileStmt *stmt) {
@@ -405,12 +437,18 @@ void ScopingVisitor::visit(WhileStmt *stmt) {
     ConditionalBlock c(ctx.get(), stmt->getSuite());
     ctx->scope.back().seenVars = std::make_unique<std::unordered_set<std::string>>();
     CHECK(transform(stmt->getCond()));
-    CHECK(transform(stmt->getSuite()));
-    seen = *(ctx->scope.back().seenVars);
+    seen.insert(ctx->scope.back().seenVars->begin(), ctx->scope.back().seenVars->end());
   }
-  for (auto &var : seen) {
+  for (auto &var : seen)
     findDominatingBinding(var);
+  {
+    ConditionalBlock c(ctx.get(), stmt->getSuite());
+    ctx->scope.back().seenVars = std::make_unique<std::unordered_set<std::string>>();
+    CHECK(transform(stmt->getSuite()));
+    seen.insert(ctx->scope.back().seenVars->begin(), ctx->scope.back().seenVars->end());
   }
+  for (auto &var : seen)
+    findDominatingBinding(var);
 
   CHECK(transformScope(stmt->getElse()));
 }
@@ -426,7 +464,10 @@ void ScopingVisitor::visit(ForStmt *stmt) {
     ConditionalBlock c(ctx.get(), stmt->getSuite());
 
     ctx->scope.back().seenVars = std::make_unique<std::unordered_set<std::string>>();
-    CHECK(transformAdding(stmt->getVar(), stmt));
+    {
+      SetInScope s(&(ctx->root), (ASTNode *)stmt);
+      CHECK(transform(stmt->getVar()));
+    }
     seenDef = *(ctx->scope.back().seenVars);
 
     ctx->scope.back().seenVars = std::make_unique<std::unordered_set<std::string>>();
@@ -468,10 +509,13 @@ void ScopingVisitor::visit(ImportStmt *stmt) {
 
   if (stmt->getAs().empty()) {
     if (stmt->getWhat()) {
-      if (!match(stmt->getWhat(), M<IdExpr>("*")))
-        CHECK(transformAdding(stmt->getWhat(), stmt));
+      if (!match(stmt->getWhat(), M<IdExpr>("*"))) {
+        SetInScope s(&(ctx->root), (ASTNode *)stmt);
+        CHECK(transform(stmt->getWhat()));
+      }
     } else {
-      CHECK(transformAdding(stmt->getFrom(), stmt));
+      SetInScope s(&(ctx->root), (ASTNode *)stmt);
+      CHECK(transform(stmt->getFrom()));
     }
   } else {
     visitName(stmt->getAs(), true, stmt, stmt->getSrcInfo());
@@ -766,8 +810,7 @@ void ScopingVisitor::visit(ClassStmt *stmt) {
     }
   }
   if (!stmt->hasAttribute(Attr::Tuple) && !stmt->hasAttribute(Attr::Internal) &&
-      !stmt->hasAttribute(Attr::Dataclass) && stmt->getStaticBaseClasses().empty() &&
-      stmt->size() == 0) {
+      !stmt->hasAttribute(Attr::Dataclass) && stmt->size() == 0) {
     stmt->setAttribute(Attr::ClassDeduce);
   }
   if (!stmt->hasAttribute(Attr::Tuple)) {
@@ -793,12 +836,8 @@ void ScopingVisitor::visit(ClassStmt *stmt) {
   std::unordered_set<std::string> seen;
   if (stmt->hasAttribute(Attr::Extend) && !stmt->empty())
     STOP_ERROR(Error::CLASS_EXTENSION, stmt->front().getSrcInfo());
-  if (stmt->hasAttribute(Attr::Extend) &&
-      !(stmt->getBaseClasses().empty() && stmt->getStaticBaseClasses().empty())) {
-    STOP_ERROR(Error::CLASS_EXTENSION, stmt->getBaseClasses().empty()
-                                           ? stmt->getStaticBaseClasses().front()
-                                           : stmt->getBaseClasses().front());
-  }
+  if (stmt->hasAttribute(Attr::Extend) && !stmt->getBaseClasses().empty())
+    STOP_ERROR(Error::CLASS_EXTENSION, stmt->getBaseClasses().front());
   for (auto &a : *stmt) {
     if (!a.getType() && !a.getDefault())
       STOP_ERROR(Error::CLASS_MISSING_TYPE, a.getSrcInfo(), a.getName());
@@ -831,8 +870,6 @@ void ScopingVisitor::visit(ClassStmt *stmt) {
     return;
 
   for (auto &d : stmt->getBaseClasses())
-    CHECK(transform(d));
-  for (auto &d : stmt->getStaticBaseClasses())
     CHECK(transform(d));
 }
 

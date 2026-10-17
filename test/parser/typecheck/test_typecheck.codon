@@ -170,3 +170,9 @@ print f.bar(bar()(2))
 #: side effect!
 #: Foo! 2
 #: 1-2
+
+#%% withclassgenerics_nested,barebones
+def foo() -> Optional:
+    return "hi"
+if (axi := foo(),):
+    print(axi)  #: hi

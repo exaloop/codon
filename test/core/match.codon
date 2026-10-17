@@ -471,3 +471,137 @@ def test_list_match():
             assert False
     assert b
 test_list_match()
+
+@test
+def test_class_pattern_attributes():
+    class Subject:
+        failure: int
+        reads: list[str]
+
+        @property
+        def value(self) -> int:
+            self.reads.append('value')
+            if self.failure == 1:
+                raise AttributeError('missing')
+            if self.failure == 2:
+                raise ValueError('getter')
+            return 7
+
+        @property
+        def later(self) -> int:
+            self.reads.append('later')
+            return 9
+
+    def guard(reads: list[str]) -> bool:
+        reads.append('guard')
+        return True
+
+    def select(subject, reads: list[str]):
+        match subject:
+            case Subject(value=number, later=9) if guard(reads):
+                return number
+            case _:
+                return 42
+
+    for failure in [0, 1]:
+        reads = []
+        subject = Subject(failure, reads)
+        expected = 7 if failure == 0 else 42
+        expected_reads = ['value', 'later', 'guard'] if failure == 0 else ['value']
+        assert select(subject, reads) == expected
+        assert reads == expected_reads
+        reads.clear()
+        assert select(Any(subject), reads) == expected
+        assert reads == expected_reads
+        reads.clear()
+        assert select(Optional[Subject](subject), reads) == expected
+        assert reads == expected_reads
+    assert select(Optional[Subject](), []) == 42
+
+    reads = []
+    try:
+        select(Subject(2, reads), reads)
+        assert False
+    except ValueError as error:
+        assert str(error) == 'getter'
+    assert reads == ['value']
+
+    reads.clear()
+    match Subject(1, reads):
+        case Subject(value=_):
+            assert False
+        case Subject(later=number):
+            assert number == 9
+        case _:
+            assert False
+    assert reads == ['value', 'later']
+
+    class Holder:
+        subject: Subject
+
+    reads.clear()
+    matched = False
+    match Holder(Subject(1, reads)):
+        case Holder(subject=Subject(value=number)):
+            assert False
+        case _:
+            matched = True
+    assert matched and reads == ['value']
+
+    def raising_guard(number: int) -> bool:
+        raise AttributeError('guard')
+
+    reads.clear()
+    subject = Subject(0, reads)
+    try:
+        match subject:
+            case Subject(value=number) if raising_guard(number):
+                assert False
+            case _:
+                assert False
+        assert False
+    except AttributeError as error:
+        assert str(error) == 'guard'
+    assert reads == ['value']
+
+    reads.clear()
+    try:
+        match subject:
+            case Subject(value=number):
+                raise AttributeError('body')
+            case _:
+                assert False
+        assert False
+    except AttributeError as error:
+        assert str(error) == 'body'
+    assert reads == ['value']
+
+    class PatternValue:
+        @property
+        def value(self) -> int:
+            raise AttributeError('subpattern')
+
+    pattern = PatternValue()
+    reads.clear()
+    try:
+        match subject:
+            case Subject(value=pattern.value):
+                assert False
+            case _:
+                assert False
+        assert False
+    except AttributeError as error:
+        assert str(error) == 'subpattern'
+    assert reads == ['value']
+
+    def select_shadow(subject: Subject, AttributeError: int):
+        match subject:
+            case Subject(value=number):
+                return number
+            case _:
+                return AttributeError
+
+    reads.clear()
+    assert select_shadow(Subject(1, reads), 42) == 42
+    assert reads == ['value']
+test_class_pattern_attributes()

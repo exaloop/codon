@@ -82,7 +82,10 @@ private: // Node typechecking rules
   void checkCapture(const TypeContext::Item &) const;
   void visit(DotExpr *) override;
   std::pair<size_t, TypeContext::Item> getImport(const std::vector<std::string> &);
-  Expr *getClassMember(DotExpr *);
+  std::pair<Expr *, bool> getAttr(Expr *, const std::string &, types::Type * = nullptr,
+                                  CallExpr * = nullptr);
+  std::pair<Expr *, bool> getClassMember(Expr *, const std::string &,
+                                         types::Type * = nullptr);
   types::FuncType *getDispatch(const std::string &);
 
   /* Collection and comprehension expressions (collections.cpp) */
@@ -141,8 +144,7 @@ private: // Node typechecking rules
   bool typecheckCallArgs(types::FuncType *, std::vector<CallArg> &,
                          const PartialCallData &);
   std::pair<bool, Expr *> transformSpecialCall(CallExpr *);
-  std::vector<types::TypePtr> getStaticSuperTypes(types::ClassType *);
-  std::vector<types::TypePtr> getRTTISuperTypes(types::ClassType *);
+  std::vector<types::TypePtr> getMRO(types::ClassType *);
 
   /* Assignments (assign.cpp) */
   void visit(AssignExpr *) override;
@@ -199,11 +201,13 @@ private: // Node typechecking rules
 private:
   /* Classes (class.cpp) */
   void visit(ClassStmt *) override;
-  std::vector<types::TypePtr> parseBaseClasses(std::vector<Expr *> &,
-                                               std::vector<Param> &, const Stmt *,
-                                               const std::string &, const Expr *,
-                                               types::ClassType *);
+  std::vector<std::shared_ptr<types::ClassType>>
+  parseBaseClasses(std::vector<Expr *> &, std::vector<Param> &, const Stmt *,
+                   const std::string &, types::ClassType *);
   bool autoDeduceMembers(ClassStmt *, std::vector<Param> &);
+  std::vector<Stmt *> prepareEnum(ClassStmt *, types::ClassType *,
+                                  std::vector<Stmt *> &);
+  bool isEnum(types::ClassType *) const;
   static std::vector<Stmt *> getClassMethods(Stmt *s);
   void transformNestedClasses(const ClassStmt *, std::vector<Stmt *> &,
                               std::vector<Stmt *> &, std::vector<Stmt *> &);
@@ -254,13 +258,12 @@ private:
   std::vector<types::FuncType *> findMatchingMethods(
       types::ClassType *typ, const std::vector<types::FuncType *> &methods,
       const std::vector<CallArg> &args, types::ClassType *part = nullptr);
-  Expr *castToSuperClass(Expr *expr, types::ClassType *superTyp, bool = false);
-  void prepareVTables();
   std::vector<std::pair<std::string, Expr *>> extractNamedTuple(Expr *);
   std::vector<types::TypePtr> getClassFieldTypes(types::ClassType *);
   static std::vector<std::pair<size_t, Expr *>> findEllipsis(Expr *);
 
 public:
+  void prepareVTables();
   bool wrapExpr(Expr **expr, types::Type *expectedType,
                 types::FuncType *callee = nullptr, bool allowUnwrap = true);
   std::tuple<bool, types::TypePtr, std::function<Expr *(Expr *)>>
@@ -271,6 +274,7 @@ public:
   std::shared_ptr<TypeContext> getCtx() const { return ctx; }
   Expr *generatePartialCall(const std::string &, types::FuncType *, Expr * = nullptr,
                             Expr * = nullptr);
+  std::string vTableSignature(types::FuncType *ft) const;
 
   friend struct Cache;
   friend struct TypeContext;
@@ -278,6 +282,11 @@ public:
   friend class types::UnionType;
 
 private: // Helpers
+  /// Returns a stable value-adapter ID from the shared virtual-method ID registry.
+  /// @param method the adapter name, kept in a separate internal key namespace
+  /// @return the existing or newly allocated nonzero method ID
+  size_t valueMethodId(const std::string &method);
+
   std::shared_ptr<std::vector<std::pair<std::string, types::Type *>>>
   unpackTupleTypes(const Expr *);
   std::tuple<bool, bool, Stmt *, std::vector<ASTNode *>>
@@ -331,20 +340,32 @@ public:
   Cache::Class::ClassRealization *getClassRealization(types::Type *t) const;
   std::string getRootName(const types::FuncType *t) const;
   static bool isTypeExpr(const Expr *e);
+  static bool isFunctionExpr(const Expr *e, const std::string & = "");
   Cache::Module *getImport(const std::string &s) const;
   static bool isDispatch(const std::string &s);
   static bool isDispatch(const FunctionStmt *ast);
   static bool isDispatch(types::Type *f);
+  bool isPolymorphic(types::FuncType *) const;
   bool isHeterogenous(types::Type *);
-  void addClassGenerics(types::ClassType *typ, bool func = false,
-                        bool onlyMangled = false, bool instantiate = false);
+  std::unordered_set<std::string> addClassGenerics(types::ClassType *typ,
+                                                   bool func = false,
+                                                   bool onlyMangled = false,
+                                                   bool instantiate = false);
   template <typename F>
   auto withClassGenerics(types::ClassType *typ, F fn, bool func = false,
                          bool onlyMangled = false, bool instantiate = false) {
     ctx->addBlock();
-    addClassGenerics(typ, func, onlyMangled, instantiate);
+    auto added = addClassGenerics(typ, func, onlyMangled, instantiate);
     auto t = fn();
+    // do not remove stuff that was added in the meantime, potentially by AssignExpr
+    std::vector<std::pair<std::string, std::shared_ptr<TypecheckItem>>> addLater;
+    for (auto &i : ctx->getBlock())
+      if (!in(added, i)) {
+        addLater.emplace_back(i, ctx->forceFind(i));
+      }
     ctx->popBlock();
+    for (auto &[n, v] : addLater)
+      ctx->add(n, v);
     return t;
   }
   types::TypePtr instantiateTypeVar(types::Type *t);
@@ -374,7 +395,7 @@ public:
   Expr *transformArray(CallExpr *);
   Expr *transformIsInstance(CallExpr *);
   Expr *transformStaticLen(CallExpr *);
-  Expr *transformHasAttr(CallExpr *);
+  Expr *transformHasAttr(CallExpr *, bool = false);
   Expr *transformGetAttr(CallExpr *);
   Expr *transformSetAttr(CallExpr *);
   Expr *transformCompileError(CallExpr *) const;
@@ -391,21 +412,20 @@ public:
   Expr *transformStaticFnGetDefault(CallExpr *);
   Expr *transformStaticFnWrapCallArgs(CallExpr *);
   Expr *transformStaticVars(CallExpr *);
+  Expr *transformStaticChildren(CallExpr *);
   Expr *transformStaticTupleType(const CallExpr *);
   Expr *transformStaticFormat(CallExpr *);
   Expr *transformStaticIntToStr(CallExpr *);
   Expr *transformStaticPlatform(CallExpr *);
   Expr *transformStaticContains(CallExpr *);
-  SuiteStmt *generateClassPopulateVTablesAST();
-  SuiteStmt *generateBaseDerivedDistAST(types::FuncType *);
-  FunctionStmt *generateThunkAST(const types::FuncType *fp, types::ClassType *base,
-                                 const types::ClassType *derived);
-  SuiteStmt *generateGetThunkIDAst(types::FuncType *);
   SuiteStmt *generateFunctionCallInternalAST(types::FuncType *);
   SuiteStmt *generateUnionNewAST(const types::FuncType *);
   SuiteStmt *generateUnionTagAST(types::FuncType *);
+  SuiteStmt *generateUnionDispatchAST(types::FuncType *);
   SuiteStmt *generateNamedKeysAST(types::FuncType *);
   SuiteStmt *generateTupleMulAST(types::FuncType *);
+  SuiteStmt *generateTypeInfoInitAST(types::FuncType *);
+  SuiteStmt *generateSuperDispatchAST(types::FuncType *);
   std::vector<Stmt *> populateStaticTupleLoop(Expr *, const std::vector<std::string> &);
   std::vector<Stmt *> populateSimpleStaticRangeLoop(Expr *,
                                                     const std::vector<std::string> &);
@@ -415,6 +435,8 @@ public:
   std::vector<Stmt *> populateStaticEnumerateLoop(Expr *,
                                                   const std::vector<std::string> &);
   std::vector<Stmt *> populateStaticVarsLoop(Expr *, const std::vector<std::string> &);
+  std::vector<Stmt *> populateStaticMethodsLoop(Expr *,
+                                                const std::vector<std::string> &);
   std::vector<Stmt *> populateStaticVarTypesLoop(Expr *,
                                                  const std::vector<std::string> &);
   std::vector<Stmt *>
@@ -464,6 +486,8 @@ public:
   /// Returns the generic type of typeName.member, if it exists (nullptr otherwise).
   /// Special cases: __elemsize__ and __atomic__.
   Cache::Class::ClassField *findMember(types::ClassType *, const std::string &) const;
+  /// Return list of instantiated base classes for a given type.
+  std::vector<types::TypePtr> getBaseClasses(types::ClassType *type);
 
   using ReorderDoneFn =
       std::function<int(int, int, const std::vector<std::vector<int>> &, bool)>;
@@ -488,6 +512,13 @@ public:
   ir::Func *realizeIRFunc(types::FuncType *fn,
                           const std::vector<types::TypePtr> &generics = {});
   // types::Type *getType(const std::string &);
+
+public:
+  template <class... TA>
+  void W(codon::error::Error e, const codon::SrcInfo &o = codon::SrcInfo(),
+         const TA &...args) {
+    codon::compilationWarning(codon::error::Emsg(e, args...), o.file, o.line, o.col);
+  }
 };
 
 } // namespace codon::ast

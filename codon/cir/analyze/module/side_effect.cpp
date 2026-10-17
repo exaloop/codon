@@ -162,7 +162,9 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
     set(v, getFunctionStatusFromAttributes(v));
   }
 
-  void visit(const InternalFunc *v) override { set(v, Status::PURE); }
+  void visit(const InternalFunc *v) override {
+    set(v, v->getIntrinsicSideEffectStatus());
+  }
 
   void visit(const LLVMFunc *v) override { set(v, getFunctionStatusFromAttributes(v)); }
 
@@ -312,8 +314,6 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
   }
 
   void visit(const StackAllocInstr *v) override { set(v, Status::PURE); }
-
-  void visit(const TypePropertyInstr *v) override { set(v, Status::PURE); }
 
   void visit(const YieldInInstr *v) override { set(v, Status::NO_CAPTURE); }
 

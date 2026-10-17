@@ -236,12 +236,8 @@ void FoldingPass::registerStandardRules(Module *m) {
   registerRule(
       "int-floor-div-by-one",
       intSingleRule(m, 1, id_val(m), Module::FLOOR_DIV_MAGIC_NAME, Kind::RIGHT));
-  registerRule("int-zero-floor-div",
-               intSingleRule(m, 0, 0, Module::FLOOR_DIV_MAGIC_NAME, Kind::LEFT));
   registerRule("int-floor-cdiv-by-one",
                intSingleRule(m, 1, id_val(m), CDIV_METHOD_NAME, Kind::RIGHT));
-  registerRule("int-zero-floor-cdiv",
-               intSingleRule(m, 0, 0, CDIV_METHOD_NAME, Kind::LEFT));
   registerRule("int-pos", intNoOp(m, Module::POS_MAGIC_NAME));
   registerRule("int-double-neg", intDoubleApplyNoOp(m, Module::NEG_MAGIC_NAME));
   registerRule("int-double-inv", intDoubleApplyNoOp(m, Module::INVERT_MAGIC_NAME));

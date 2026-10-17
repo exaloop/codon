@@ -1,0 +1,82 @@
+// Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
+
+#pragma once
+
+#include "codon/runtime/lib.h"
+
+namespace codon {
+namespace runtime {
+
+enum TypeInfoField : unsigned {
+  TYPE_ID,
+  MRO_COUNT,
+  MRO_IDS,
+  MRO_OFFSETS,
+  SORTED_MRO_IDS,
+  SLOT_COUNT,
+  SLOTS,
+  METHOD_COUNT,
+  METHODS,
+  POLYMORPHIC,
+  RAW_NAME,
+  NICE_NAME,
+  BASE_NAME,
+  PARAMETER_COUNT,
+  PARAMETERS,
+  VALUE_SIZE,
+  REFERENCE,
+  INLINE_VALUE,
+  EXCEPTION_OFFSET,
+  SYSTEM_EXIT_OFFSET
+};
+
+struct TypeSlot {
+  seq_str_t name;
+  seq_int_t type;
+  seq_int_t offset;
+};
+
+constexpr uint64_t METHOD_HASH_MULTIPLIER = 0x9e3779b97f4a7c15ULL;
+constexpr unsigned METHOD_HASH_SHIFT = 32;
+constexpr seq_int_t MAX_LINEAR_MRO = 8;
+constexpr unsigned ANY_INLINE_BYTES = 8;
+
+constexpr uint64_t methodHash(uint64_t id) {
+  auto mixed = id * METHOD_HASH_MULTIPLIER;
+  return mixed ^ (mixed >> METHOD_HASH_SHIFT);
+}
+
+struct MethodSlot {
+  seq_int_t id;
+  void *target;
+};
+
+struct TypeInfo {
+  seq_int_t id;
+  seq_int_t n_mro;
+  const seq_int_t *mro;
+  // The first n_mro entries are segment offsets in MRO order. For RTTI objects,
+  // an immutable keyed index follows: mask, then mask+1 {owner ID, offset} pairs.
+  // It uses methodHash and linear probing, with offset zero marking an empty slot.
+  // The prefix remains suitable for reflection and exception base adjustment.
+  const seq_int_t *offsets;
+  const seq_int_t *sorted_mro;
+  seq_int_t n_slots;
+  const TypeSlot *slots;
+  seq_int_t n_methods;
+  const MethodSlot *methods;
+  bool rtti;
+  seq_str_t raw_name;
+  seq_str_t nice_name;
+  seq_str_t base_name;
+  seq_int_t n_params;
+  const seq_int_t *params;
+  seq_int_t size;
+  bool reference;
+  bool inline_value;
+  seq_int_t exception_offset;
+  seq_int_t system_exit_offset;
+};
+
+} // namespace runtime
+} // namespace codon

@@ -52,7 +52,7 @@ ClassType::ClassType(const ClassType *base)
 
 int ClassType::unify(Type *typ, Unification *us) {
   if (auto tc = typ->getClass()) {
-    if (name == "unrealized_type" && tc->name == name) {
+    if (name == StdlibTypes::UnrealizedType && tc->name == name) {
       // instantiate + unify!
       std::unordered_map<int, types::TypePtr> genericCache;
       auto l = generics[0].type->instantiate(0, &(cache->unboundCount), &genericCache);
@@ -82,7 +82,7 @@ int ClassType::unify(Type *typ, Unification *us) {
       }
     } else if (tc->name == "__NTuple__") {
       return tc->unify(this, us);
-    } else if (name == "__NTuple__" && tc->name == TYPE_TUPLE) {
+    } else if (name == "__NTuple__" && tc->name == StdlibTypes::Tuple) {
       auto n1 = generics[0].getType()->getIntStatic();
       if (!n1) {
         auto n = tc->generics.size();
@@ -181,7 +181,7 @@ TypePtr ClassType::instantiate(int atLevel, int *unboundCount,
 }
 
 bool ClassType::hasUnbounds(bool includeGenerics) const {
-  if (name == "unrealized_type")
+  if (name == StdlibTypes::UnrealizedType)
     return false;
   auto pred = [includeGenerics](const auto &t) {
     return t.type && t.type->hasUnbounds(includeGenerics);
@@ -192,7 +192,7 @@ bool ClassType::hasUnbounds(bool includeGenerics) const {
 
 std::vector<Type *> ClassType::getUnbounds(bool includeGenerics) const {
   std::vector<Type *> u;
-  if (name == "unrealized_type")
+  if (name == StdlibTypes::UnrealizedType)
     return u;
   for (auto &t : generics)
     if (t.type) {
@@ -208,11 +208,11 @@ std::vector<Type *> ClassType::getUnbounds(bool includeGenerics) const {
 }
 
 bool ClassType::canRealize() const {
-  if (name == "type") {
+  if (name == StdlibTypes::Type) {
     if (!hasUnbounds(false))
       return true; // always true!
   }
-  if (name == "unrealized_type")
+  if (name == StdlibTypes::UnrealizedType)
     return generics[0].type->getClass() != nullptr;
   auto pred = [](auto &t) { return !t.type || t.type->canRealize(); };
   return std::ranges::all_of(generics.begin(), generics.end(), pred) &&
@@ -220,7 +220,7 @@ bool ClassType::canRealize() const {
 }
 
 bool ClassType::isInstantiated() const {
-  if (name == "unrealized_type")
+  if (name == StdlibTypes::UnrealizedType)
     return generics[0].type->getClass() != nullptr;
   auto pred = [](auto &t) { return !t.type || t.type->isInstantiated(); };
   return std::ranges::all_of(generics.begin(), generics.end(), pred) &&
@@ -228,7 +228,7 @@ bool ClassType::isInstantiated() const {
 }
 
 std::string ClassType::debugString(char mode) const {
-  if (name == "NamedTuple") {
+  if (name == StdlibTypes::NamedTuple) {
     if (auto ids = generics[0].type->getIntStatic()) {
       auto id = ids->value;
       seqassert(id >= 0 && id < cache->generatedTupleNames.size(), "bad id: {}", id);
@@ -270,9 +270,9 @@ std::string ClassType::debugString(char mode) const {
         gi++;
       }
     }
-    if (!args.empty()) {
-      if (args.back() != "Tuple") // unused *args (by default always 0 in mask)
-        as.push_back(args.back());
+    if (!args.empty() && args.back() != StdlibTypes::Tuple) {
+      // unused *args (by default always 0 in mask)
+      as.push_back(args.back());
     }
     auto ks = generics[2].type->debugString(mode);
     if (ks.size() > 10) {                 // if **kwargs is used
@@ -314,11 +314,11 @@ std::string ClassType::realizedName() const {
     s = debugString(1);
   } else {
     std::vector<std::string> gs;
-    if (name == "Union" && generics[0].type->getClass()) {
+    if (name == StdlibTypes::Union && generics[0].type->getClass()) {
       std::set<std::string> gss;
       for (auto &a : generics[0].type->getClass()->generics)
         gss.insert(a.realizedName());
-      gs = {join(gss, " | ")};
+      gs = {join(gss, "|")};
     } else {
       for (auto &a : generics)
         if (!a.name.empty())
@@ -343,7 +343,12 @@ FuncType *ClassType::getPartialFunc() const {
 std::string ClassType::getPartialMask() const {
   seqassert(name == "Partial", "not a partial");
   auto n = generics[0].type->getStrStatic()->value;
-  return n;
+  return isPartialVirtual() ? n.substr(1) : n;
+}
+
+bool ClassType::isPartialVirtual() const {
+  seqassert(name == "Partial", "not a partial");
+  return generics[0].type->getStrStatic()->value.starts_with("v");
 }
 
 bool ClassType::isPartialEmpty() const {

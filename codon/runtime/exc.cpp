@@ -1,7 +1,9 @@
 // Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
 #include "codon/runtime/lib.h"
+#include "codon/runtime/rtti.h"
 #include "llvm/BinaryFormat/Dwarf.h"
+#include <algorithm>
 #include <backtrace.h>
 #include <cassert>
 #include <cstdint>
@@ -133,20 +135,6 @@ template <typename Type_> static uintptr_t ReadType(const uint8_t *&p) {
 }
 } // namespace
 
-// Note: this should match Codon definition
-struct TypeInfo {
-  seq_int_t id;
-  seq_int_t *parent_ids;
-  seq_int_t n_parent_ids;
-  seq_str_t raw_name;
-  // other fields do not need to be included
-};
-
-struct RTTIObject {
-  void *data;
-  TypeInfo *type;
-};
-
 struct CodonBaseExceptionType {
   int type;
 };
@@ -239,11 +227,15 @@ static std::function<void(const codon::runtime::JITError &)> jitErrorCallback;
 SEQ_FUNC void seq_terminate(void *exc) {
   auto *base = (CodonBaseException *)((char *)exc + seq_exc_offset());
   void *obj = base->obj;
-  auto *hdr = *(CodonExceptionHeader **)obj;
-  auto tname = ((RTTIObject *)obj)->type->raw_name;
+  auto *info = *static_cast<codon::runtime::TypeInfo **>(obj);
+  assert(info->exception_offset >= 0);
+  auto *hdr = reinterpret_cast<CodonExceptionHeader *>(static_cast<char *>(obj) +
+                                                       info->exception_offset);
+  auto tname = info->nice_name;
 
-  if (tname == "SystemExit") {
-    auto *data = (CodonSystemExitData *)(hdr + 1);
+  if (info->system_exit_offset >= 0) {
+    auto *data = reinterpret_cast<CodonSystemExitData *>(static_cast<char *>(obj) +
+                                                         info->system_exit_offset);
     if (data->messageExit) {
       auto message = hdr->msg.encode();
       fwrite(message.data(), 1, message.size(), stderr);
@@ -457,17 +449,12 @@ static uintptr_t readEncodedPointer(const uint8_t **data, uint8_t encoding) {
 }
 
 static bool isinstance(void *obj, seq_int_t type) {
-  auto *info = ((RTTIObject *)obj)->type;
-  if (info->id == type)
-    return true;
-  if (info->parent_ids) {
-    auto *p = info->parent_ids;
-    while (*p) {
-      if (*p++ == type) {
-        return true;
-      }
-    }
-  }
+  auto *info = *static_cast<codon::runtime::TypeInfo **>(obj);
+  if (info->n_mro > codon::runtime::MAX_LINEAR_MRO)
+    return std::binary_search(info->sorted_mro, info->sorted_mro + info->n_mro, type);
+  for (seq_int_t index = 0; index < info->n_mro; ++index)
+    if (info->mro[index] == type)
+      return true;
   return false;
 }
 

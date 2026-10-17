@@ -2,7 +2,7 @@
 
 # Warning(!): This type must be consistent with the exception
 # header type defined in runtime/exc.cpp.
-class BaseException:
+class BaseException(object):
     _pytype: ClassVar[cobj] = cobj()
     message: str
     func: str
@@ -29,8 +29,7 @@ class BaseException:
 
     @property
     def typename(self):
-        p = Ptr[Tuple[cobj, TypeInfo]](self.__raw__())
-        return p[0][1].nice_name
+        return get_typeinfo(self).nice_name
 
     @property
     def __cause__(self):
@@ -46,7 +45,8 @@ class BaseException:
         e.line = line
         e.col = col
         if cause is not None:
-            e.cause = cause
+            c: BaseException = cause
+            e.cause = c
         return e
 
 
