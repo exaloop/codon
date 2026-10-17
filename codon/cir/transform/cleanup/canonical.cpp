@@ -310,56 +310,10 @@ const std::string CanonicalizationPass::KEY = "core-cleanup-canon";
 void CanonicalizationPass::run(Module *m) {
   registerStandardRules(m);
   Rewriter::reset();
-  flowReplacements = 0;
   OperatorPass::run(m);
 }
 
 void CanonicalizationPass::handle(CallInstr *v) {
-  // Lift sequenced operands out of calls to expose their values to folding.
-  // Writing seq(prefix, value) for FlowInstr:
-  //   func(value, seq(effect(), 0), later)
-  //     -> seq(saved = value; effect(), func(saved, 0, later)).
-  // The callee is evaluated first. Only operands through the last sequence
-  // need lifting; later operands can still be evaluated inside the call.
-  size_t prefixEnd = isA<FlowInstr>(v->getCallee()) ? 1 : 0;
-  size_t position = 1;
-  for (auto *argument : *v) {
-    if (isA<FlowInstr>(argument))
-      prefixEnd = position + 1;
-    ++position;
-  }
-
-  if (prefixEnd) {
-    auto *parent = cast<BodiedFunc>(getParentFunc());
-    if (!parent)
-      return;
-    std::vector<Value *> operands{v->getCallee()};
-    operands.insert(operands.end(), v->begin(), v->end());
-    auto *module = v->getModule();
-    auto *flow = module->N<SeriesFlow>(v->getSrcInfo());
-    for (size_t index = 0; index < prefixEnd; ++index) {
-      auto *operand = operands[index];
-      while (auto *sequence = cast<FlowInstr>(operand)) {
-        flow->push_back(sequence->getFlow());
-        operand = sequence->getValue();
-      }
-      // Capture even variable reads before later prefixes can mutate them.
-      // Constants and direct function references need no such snapshot.
-      if (index + 1 < prefixEnd && !isA<Const>(operand) && !util::getFunc(operand)) {
-        auto *temporary = util::makeVar(operand, flow, parent);
-        operand = module->N<VarValue>(operand->getSrcInfo(), temporary);
-      }
-      operands[index] = operand;
-    }
-    auto *call = module->N<CallInstr>(
-        v->getSrcInfo(), operands.front(),
-        std::vector<Value *>(operands.begin() + 1, operands.end()), v->getName());
-    call->cloneAttributesFrom(v);
-    v->replaceAll(module->N<FlowInstr>(v->getSrcInfo(), flow, call));
-    ++flowReplacements;
-    return;
-  }
-
   auto *r = getAnalysisResult<analyze::module::SideEffectResult>(sideEffectsKey);
   if (!r->hasSideEffect(v))
     rewrite(v);
@@ -370,38 +324,18 @@ void CanonicalizationPass::handle(SeriesFlow *v) {
   while (it != v->end()) {
     if (auto *series = cast<SeriesFlow>(*it)) {
       it = v->erase(it);
-      ++flowReplacements;
       for (auto *x : *series) {
         it = v->insert(it, x);
         ++it;
       }
     } else if (auto *flowInstr = cast<FlowInstr>(*it)) {
       it = v->erase(it);
-      ++flowReplacements;
       // inserting in reverse order causes [flow, value] to be added
       it = v->insert(it, flowInstr->getValue());
       it = v->insert(it, flowInstr->getFlow());
       // don't increment; re-traverse in case a new series flow added
     } else {
-      // Split result = seq(effect(), value) into effect(); result = value,
-      // and return seq(effect(), value) into effect(); return value.
-      // This exposes plain RHS/return values to later CIR passes while keeping
-      // the effects inside their original enclosing control-flow context.
-      auto *assignment = cast<AssignInstr>(*it);
-      auto *returnValue = cast<ReturnInstr>(*it);
-      auto *sequence = cast<FlowInstr>(assignment    ? assignment->getRhs()
-                                       : returnValue ? returnValue->getValue()
-                                                     : nullptr);
-      if (sequence) {
-        if (assignment)
-          assignment->setRhs(sequence->getValue());
-        else
-          returnValue->setValue(sequence->getValue());
-        it = v->insert(it, sequence->getFlow());
-        ++flowReplacements;
-      } else {
-        ++it;
-      }
+      ++it;
     }
   }
 }

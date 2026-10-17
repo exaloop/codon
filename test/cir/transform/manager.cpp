@@ -84,15 +84,40 @@ TEST_F(CIRCoreTest, PassManagerInvalidations) {
   ASSERT_EQ(3, DummyPass::runCounter);
 }
 
-TEST(CIRFoldingTest, ExposesSequencedConstantsBeforeLLVM) {
+TEST(CIRFoldingTest, FoldsSideEffectFreeSequencesBeforeLLVM) {
   auto options = codon::Options::getDefault("build/codon_test");
   options->debug = false;
   options->native = false;
   codon::Compiler compiler(*options);
-  llvm::cantFail(compiler.parseCode("folding_sequence.codon", R"(
+  llvm::cantFail(compiler.parseCode("folding_pure_sequence.codon", R"(
 @export
-def fold_pure(value: int) -> int:
+def fold_variable(value: int) -> int:
     return 1 + (0 * value) + 2
+
+@export
+def fold_right_variable(value: int) -> int:
+    return 1 + (value * 0) + 2
+
+def pure(value: int) -> int:
+    return value + 1
+
+@export
+def fold_call(value: int) -> int:
+    return 1 + (0 * pure(value)) + 2
+
+def consume(value: int) -> int:
+    print(value)
+    return value
+
+@export
+def fold_argument(value: int) -> int:
+    return consume(1 + (0 * value) + 2)
+
+@export
+def fold_assignment(value: int) -> int:
+    result = 1 + (0 * value) + 2
+    consume(result)
+    return result
 
 def record(counter: Ptr[int]) -> int:
     counter[0] += 1
@@ -101,20 +126,6 @@ def record(counter: Ptr[int]) -> int:
 @export
 def fold_effect(counter: Ptr[int]) -> int:
     return 1 + (0 * record(counter)) + 2
-
-def consume(value: int) -> int:
-    print(value)
-    return value
-
-@export
-def fold_argument(counter: Ptr[int]) -> int:
-    return consume(1 + (0 * record(counter)) + 2)
-
-@export
-def fold_assignment(counter: Ptr[int]) -> int:
-    result = 1 + (0 * record(counter)) + 2
-    consume(result)
-    return result
 )"));
   compiler.getPassManager()->run(compiler.getModule());
 
@@ -125,7 +136,8 @@ def fold_assignment(counter: Ptr[int]) -> int:
 
     void handle(ReturnInstr *instruction) override {
       auto name = getParentFunc()->getUnmangledName();
-      if (name != "fold_pure" && name != "fold_effect" && name != "fold_assignment")
+      if (name != "fold_variable" && name != "fold_right_variable" &&
+          name != "fold_call" && name != "fold_assignment")
         return;
       ++returns;
       SCOPED_TRACE(name);
@@ -147,7 +159,7 @@ def fold_assignment(counter: Ptr[int]) -> int:
     }
   } inspector;
   inspector.process(compiler.getModule());
-  EXPECT_EQ(inspector.returns, 3);
+  EXPECT_EQ(inspector.returns, 4);
   EXPECT_EQ(inspector.arguments, 2);
-  EXPECT_EQ(inspector.effects, 3);
+  EXPECT_EQ(inspector.effects, 1);
 }

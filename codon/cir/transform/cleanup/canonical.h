@@ -15,7 +15,6 @@ namespace cleanup {
 class CanonicalizationPass : public OperatorPass, public Rewriter {
 private:
   std::string sideEffectsKey;
-  int flowReplacements = 0;
 
 public:
   /// Constructs a canonicalization pass
@@ -29,10 +28,6 @@ public:
   void run(Module *m) override;
   void handle(CallInstr *) override;
   void handle(SeriesFlow *) override;
-
-  int getNumReplacements() const {
-    return Rewriter::getNumReplacements() + flowReplacements;
-  }
 
 private:
   void registerStandardRules(Module *m);
