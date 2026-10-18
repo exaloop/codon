@@ -15,6 +15,7 @@
 *.dylib
 *.pyc
 build*/
+!/.github/build-linux/
 install*/
 extra/python/src/jit.cpp
 extra/jupyter/build/

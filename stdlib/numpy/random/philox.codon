@@ -94,6 +94,7 @@ def philox4x64_R(R: int,
 
     return ctr
 
+@dataclass(check_init=False)
 class Philox:
     ctr: Tuple[u64, u64, u64, u64]
     key: Tuple[u64, u64]

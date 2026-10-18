@@ -25,6 +25,7 @@ PCG64_INITIALIZER = PCG_STATE_SETSEQ_128_INITIALIZER
 def rotr64(value: u64, rot: int):
     return (value >> u64(rot)) | (value << u64((-rot) & 63))
 
+@dataclass(check_init=False)
 class PCG64:
     state: u128
     inc: u128
@@ -125,6 +126,7 @@ class PCG64:
         i = (u128(inc[0]) << u128(64)) | u128(inc[1])
         self.srandom_r(s, i)
 
+@dataclass(check_init=False)
 class PCG64DXSM:
     state: u128
     inc: u128

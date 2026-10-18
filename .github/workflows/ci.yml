@@ -86,6 +86,14 @@ jobs:
           brew install gcc
           bash .github/build-linux/entrypoint.sh ${{ github.workspace }} ${{ matrix.arch }} yes
 
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-${{ matrix.arch }}
+          path: build-${{ matrix.arch }}/test-results
+          if-no-files-found: ignore
+
       - name: Upload Artifacts
         uses: actions/upload-artifact@v7
         with:

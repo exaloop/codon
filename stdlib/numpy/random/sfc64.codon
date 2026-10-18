@@ -5,6 +5,7 @@ from .seed import SeedSequence
 def rotl(value: u64, rot: int):
     return (value << u64(rot)) | (value >> u64((-rot) & 63))
 
+@dataclass(check_init=False)
 class SFC64:
     s0: u64
     s1: u64

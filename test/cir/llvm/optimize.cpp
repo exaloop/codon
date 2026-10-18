@@ -14,6 +14,7 @@
 #include <cstdlib>
 
 #include <llvm/AsmParser/Parser.h>
+#include <llvm/IR/CFG.h>
 #include <llvm/IR/Verifier.h>
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/FileUtilities.h>
@@ -2160,6 +2161,96 @@ def replace_large(data: Ptr[float], count: int):
         },
         testing::ExitedWithCode(EXIT_SUCCESS), "");
   }
+}
+
+TEST(LLVMOptimizationTest, UnpackingDoesNotAllocateTemporaryContainers) {
+  ASSERT_EXIT(
+      {
+        auto compiler = compileAndOptimize(R"(
+@export
+def unpack_pair(values: Tuple[int, int]):
+    left, right = values
+    return left + right
+
+@export
+def unpack_list(values: list[int]):
+    if len(values) != 2:
+        return 0
+    left, right = values
+    return left + right
+
+def pair_values(left: int, right: int):
+    yield left
+    yield right
+
+@export
+def unpack_generator(left: int, right: int):
+    first, second = pair_values(left, right)
+    return first + second
+
+@export
+def unpack_star(values: list[int]):
+    if len(values) < 2:
+        return values
+    first, *middle, last = values
+    return middle
+
+@export
+def unpack_generated_star(first: int, second: int):
+  head, *middle, tail = (value for value in (first, second, first, second))
+  return middle
+
+@export
+def slice_middle(values: list[int]):
+    if len(values) < 2:
+        return values
+    return values[1:-1]
+)");
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        auto allocations = [&](const char *name) {
+          auto *function = module->getFunction(name);
+          EXPECT_NE(nullptr, function);
+          unsigned count = 0;
+          std::unordered_set<llvm::Function *> visited;
+          std::function<void(llvm::Function *)> inspect = [&](llvm::Function *callee) {
+            if (!callee || !visited.insert(callee).second)
+              return;
+            std::unordered_set<llvm::BasicBlock *> returning;
+            std::vector<llvm::BasicBlock *> pending;
+            for (auto &block : *callee)
+              if (llvm::isa<llvm::ReturnInst>(block.getTerminator()))
+                pending.push_back(&block);
+            while (!pending.empty()) {
+              auto *block = pending.back();
+              pending.pop_back();
+              if (returning.insert(block).second)
+                for (auto *predecessor : llvm::predecessors(block))
+                  pending.push_back(predecessor);
+            }
+            for (auto &block : *callee) {
+              if (!returning.count(&block))
+                continue;
+              for (auto &instruction : block)
+                if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction)) {
+                  auto *target = call->getCalledFunction();
+                  if (target && target->getName().starts_with("seq_alloc"))
+                    ++count;
+                  else
+                    inspect(target);
+                }
+            }
+          };
+          inspect(function);
+          return count;
+        };
+        EXPECT_EQ(0u, allocations("unpack_pair"));
+        EXPECT_EQ(0u, allocations("unpack_list"));
+        EXPECT_EQ(0u, allocations("unpack_generator"));
+        EXPECT_EQ(allocations("slice_middle"), allocations("unpack_star"));
+        EXPECT_EQ(allocations("slice_middle"), allocations("unpack_generated_star"));
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
 }
 
 TEST(LLVMOptimizationTest, PacksAndReleasesReversedDotOperands) {

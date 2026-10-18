@@ -152,6 +152,22 @@ Stmt *TypecheckVisitor::unpackAssignment(Expr *lhs, Expr *rhs, bool isLoopTarget
     rhs = newRhs;
   }
 
+  auto assignments = N<SuiteStmt>();
+  Stmt *starredSnapshot = nullptr;
+  auto addAssignment = [&](Expr *target, Expr *value, bool starred = false) {
+    if (hasStar) {
+      auto snapshot = N<IdExpr>(getTemporaryVar("unpack"));
+      auto extract = N<AssignStmt>(snapshot, value);
+      if (starred)
+        starredSnapshot = extract;
+      else
+        block->addStmt(extract);
+      assignments->addStmt(unpackAssignment(target, snapshot));
+    } else {
+      block->addStmt(unpackAssignment(target, value));
+    }
+  };
+
   // Process assignments until the fist StarExpr (if any)
   size_t st = 0;
   for (; st < leftSide.size(); st++) {
@@ -160,8 +176,7 @@ Stmt *TypecheckVisitor::unpackAssignment(Expr *lhs, Expr *rhs, bool isLoopTarget
     // Transformation: `leftSide_st = rhs[st]` where `st` is static integer
     auto rightSide = N<IndexExpr>(ast::clone(rhs), N<IntExpr>(st));
     // Recursively process the assignment because of cases like `(a, (b, c)) = d)`
-    auto ns = unpackAssignment(leftSide[st], rightSide);
-    block->addStmt(ns);
+    addAssignment(leftSide[st], rightSide);
   }
   // Process StarExpr (if any) and the assignments that follow it
   if (st < leftSide.size() && cast<StarExpr>(leftSide[st])) {
@@ -178,8 +193,7 @@ Stmt *TypecheckVisitor::unpackAssignment(Expr *lhs, Expr *rhs, bool isLoopTarget
                              ? nullptr
                              : N<IntExpr>(-leftSide.size() + st + 1),
                          nullptr)));
-    auto ns = unpackAssignment(cast<StarExpr>(leftSide[st])->getExpr(), rightSide);
-    block->addStmt(ns);
+    addAssignment(cast<StarExpr>(leftSide[st])->getExpr(), rightSide, true);
     st += 1;
     // Process remaining assignments. They will use negative indices (-1, -2 etc.)
     // because we do not know how big is StarExpr
@@ -188,9 +202,12 @@ Stmt *TypecheckVisitor::unpackAssignment(Expr *lhs, Expr *rhs, bool isLoopTarget
         E(Error::ASSIGN_MULTI_STAR, leftSide[st]->getSrcInfo());
       rightSide = N<IndexExpr>(ast::clone(rhs),
                                N<IntExpr>(-static_cast<int>(leftSide.size() - st)));
-      auto next = unpackAssignment(leftSide[st], rightSide);
-      block->addStmt(next);
+      addAssignment(leftSide[st], rightSide);
     }
+  }
+  if (hasStar) {
+    block->addStmt(starredSnapshot);
+    block->addStmt(assignments);
   }
   setSrcInfo(oldSrcInfo);
   return block;

@@ -1,8 +1,23 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
 import internal.gc as gc
+import internal.static as static
 
 _DEFAULT_LIST_CAPACITY: Literal[int] = 10
+
+@tuple
+class _UnpackBuffer[T]:
+    """Owned iterable snapshot whose starred slice becomes the result list."""
+    values: T
+
+    def __getitem__(self, index: int):
+        return self.values[index]
+
+    def __getitem__(self, part: Slice):
+        start, stop, step, length = part.adjust_indices(len(self.values))
+        del self.values[stop:]
+        del self.values[:start]
+        return self.values
 
 @dataclass(init=False)
 class List:
@@ -21,15 +36,45 @@ class List:
             return List(x)
 
     @staticmethod
+    def _unpack_next(iterator):
+        """Read one required value without allocating an intermediate container."""
+        if not iterator._advance():
+            raise ValueError("not enough values to unpack")
+        return iterator._get()
+
+    @staticmethod
     def _unpack(source, count: Literal[int], has_star: Literal[bool]):
-        # Preserve heterogeneous records, but snapshot mutable indexed containers.
-        if isinstance(source, Tuple) or (hasattr(type(source), '__tuplesize__') and
-                        not hasattr(type(source), '__setitem__')):
+        """Check arity and snapshot mutable sources before assignment targets run."""
+        if isinstance(source, Tuple):
+            if static.len(source) < count:
+                compile_error("not enough values to unpack")
+            if not has_star and static.len(source) > count:
+                compile_error("too many values to unpack")
+            return source
+        elif hasattr(type(source), '__tuplesize__') and not hasattr(type(source), '__setitem__'):
             if len(source) < count:
                 raise ValueError("not enough values to unpack")
             if not has_star and len(source) > count:
                 raise ValueError("too many values to unpack")
             return source
+        elif isinstance(source, List):
+            if has_star:
+                if len(source) < count:
+                    raise ValueError("not enough values to unpack")
+                return source
+            else:
+                if len(source) != count:
+                    if len(source) < count:
+                        raise ValueError("not enough values to unpack")
+                    else:
+                        raise ValueError("too many values to unpack")
+                return tuple(source._get(index) for index in static.range(count))
+        elif not has_star:
+            iterator = (value for value in source)
+            values = tuple(List._unpack_next(iterator) for index in static.range(count))
+            if iterator._advance():
+                raise ValueError("too many values to unpack")
+            return values
         else:
             values = []
             for value in source:
@@ -38,7 +83,7 @@ class List:
                     raise ValueError("too many values to unpack")
             if len(values) < count:
                 raise ValueError("not enough values to unpack")
-            return values
+            return _UnpackBuffer(values)
 
     def __init__(self):
         self._ptr = Ptr[T](_DEFAULT_LIST_CAPACITY)

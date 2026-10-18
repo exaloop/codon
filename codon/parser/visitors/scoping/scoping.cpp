@@ -773,7 +773,7 @@ void ScopingVisitor::visit(ClassStmt *stmt) {
         char val = static_cast<char>(b->getValue());
         if (a.getName() == "init") {
           tupleMagics["new"] = val;
-        } else if (a.getName() == "check_init") {
+        } else if (a.getName() == "check_init" && !isId(c->getExpr(), "tuple")) {
           // Control field diagnostics independently of constructor generation.
           if (!val)
             stmt->setAttribute(Attr::ClassNoInitCheck);

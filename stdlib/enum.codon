@@ -6,8 +6,9 @@ from internal.types.collections.dict import DictEntry, OrderedDict
 _DENSE_MAX_SLOTS: Literal[int] = 4096
 _DENSE_MAX_SLOTS_PER_MEMBER: Literal[int] = 4
 
+@dataclass(check_init=False)
 class Enum:
-    """Base class for native enumerations with named, singleton members."""
+    """Native singleton members, initialized by _make_member before lookup."""
 
     _name_: str
 

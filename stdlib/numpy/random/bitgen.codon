@@ -10,6 +10,7 @@ from .ziggurat import *
 
 u128 = UInt[128]
 
+@dataclass(check_init=False)
 class Binomial:
     psave: float
     nsave: int

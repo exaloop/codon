@@ -109,16 +109,18 @@ class Unchecked:
   def __init__(self):
     pass
 
-@tuple(check_init=False)
+@tuple
 class Value:
   number: int
+  def __init__(self):
+    pass
 
 Missing()
 ThroughHelpers()
 Conditional(False)
 Inherits()
 Unchecked()
-Value(1)
+Value(1).__init__()
 )");
   auto warnings = testing::internal::GetCapturedStderr();
   ASSERT_FALSE(bool(error)) << llvm::toString(std::move(error));
@@ -131,9 +133,24 @@ Value(1)
   EXPECT_EQ(warnings.find("field 'ThroughHelpers.values'"), std::string::npos)
       << warnings;
   EXPECT_EQ(warnings.find("field 'Unchecked.values'"), std::string::npos) << warnings;
+  EXPECT_EQ(warnings.find("field 'Value.number'"), std::string::npos) << warnings;
   EXPECT_EQ(warnings.find("field 'Inherits.value'"), std::string::npos) << warnings;
   EXPECT_EQ(warnings.find("field 'Exception."), std::string::npos) << warnings;
   EXPECT_EQ(warnings.find("field 'ValueError."), std::string::npos) << warnings;
+}
+
+TEST(FieldInitializationTest, RejectsTupleInitOption) {
+  auto options = codon::Options::getDefault("build/codon_test");
+  codon::Compiler compiler(*options);
+  auto error = compiler.parseCode("tuple_init_option.codon", R"(
+@tuple(check_init=False)
+class Value:
+  number: int
+)");
+  ASSERT_TRUE(bool(error));
+  EXPECT_NE(
+      llvm::toString(std::move(error)).find("class decorator got unexpected argument"),
+      std::string::npos);
 }
 
 TEST(EnumConstructionTest, BoundsHelperRealizations) {

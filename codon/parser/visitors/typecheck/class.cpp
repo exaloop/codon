@@ -262,13 +262,15 @@ public:
 } // namespace
 
 /// Warn about fields not proven initialized at a realized __init__'s normal exits.
-/// Internal classes and classes decorated with check_init=False are exempt.
+/// Tuple classes, internal classes, and check_init=False classes are exempt.
 void TypecheckVisitor::checkFieldInitialization(types::FuncType *type,
                                                 FunctionStmt *function) {
   if (!type->getParentType() || getUnmangledName(type->getFuncName()) != "__init__" ||
       function->size() == 0)
     return;
   auto parent = type->getParentType()->getClass();
+  if (parent->isTuple)
+    return;
   auto cls = getClass(parent);
   if (!cls || !cls->ast || cls->ast->hasAttribute(Attr::ClassNoInitCheck) ||
       cls->ast->hasAttribute(Attr::Internal))

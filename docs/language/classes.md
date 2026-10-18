@@ -78,8 +78,9 @@ class Buffer:
 The analysis is conservative: assignments on only one branch do not guarantee
 initialization. For classes whose initialization cannot be verified statically,
 use `@dataclass(check_init=False)` to disable these warnings for the class.
-The same option is accepted by `@tuple(check_init=False)`. The default is
-`check_init=True`.
+The default for regular classes is `check_init=True`. Tuple classes are exempt:
+their `__new__` methods return complete tuple values rather than initializing
+fields through `__init__`.
 
 Disabling the check does not initialize storage or add runtime checks. Every
 field must still be initialized before it is read.
