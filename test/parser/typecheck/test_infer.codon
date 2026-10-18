@@ -199,6 +199,7 @@ empty: Optional[None] = None
 assert type(value) is Optional[int]
 assert type(empty) is NoneType
 assert type(None) is NoneType
+assert NoneType is not Optional
 assert Optional[Optional[Optional[int]]] is Optional[int]
 assert Optional[NoneType] is NoneType
 assert Optional[Optional[NoneType]] is NoneType
@@ -434,10 +435,8 @@ class A[T]:
     def foo(self, y): self.y = y
 a = A()
 a.foo(1)
-# canonical None does not determine this constructor's generic payload.
-#! cannot typecheck the expression
-#! cannot typecheck the expression
-#! cannot typecheck the expression
+#! 'int' does not match expected type 'NoneType'
+#! during the realization of foo(self: A[NoneType], y: int)
 
 #%% return_deduction,barebones
 def fun[T, R](x, y: T) -> R:

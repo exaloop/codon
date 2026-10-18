@@ -65,7 +65,6 @@ struct Attr {
     TryPyVar,
     LocalRenames,
     ChainStatic,
-    NullableBinding,
   };
 };
 } // namespace codon::ast

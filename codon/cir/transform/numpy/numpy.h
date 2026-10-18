@@ -78,7 +78,6 @@ public:
 
 struct NumPyPrimitiveTypes {
   Type *none;
-  Type *optnone;
   Type *bool_;
   Type *i8;
   Type *u8;

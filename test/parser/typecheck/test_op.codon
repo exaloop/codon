@@ -365,8 +365,8 @@ try:
     None |> foo2
 except ValueError:
     print 'exception'
-#! 'NoneType' does not match expected type 'int'
-# None is rejected directly for a non-nullable pipeline argument.
+#! 'int' does not match expected type 'NoneType'
+#! during the realization
 
 #%% instantiate_err,barebones
 def foo[N]():

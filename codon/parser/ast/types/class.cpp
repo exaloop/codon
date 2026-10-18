@@ -346,11 +346,12 @@ std::string ClassType::realizedName() const {
 }
 
 ClassType *ClassType::canonicalOptional() const {
-  // Normalize optional layers even when a generic is bound later.
+  // Preserve provisional payloads until inference resolves or defaults them.
   if (name == StdlibTypes::Optional && generics.size() == 1 && generics[0].type) {
     auto member = generics[0].type->getClass();
-    if (member && (member->name == StdlibTypes::Optional ||
-                   member->name == StdlibTypes::NoneType))
+    if (member && member->canRealize() &&
+        (member->name == StdlibTypes::Optional ||
+         member->name == StdlibTypes::NoneType))
       return member;
   }
   return nullptr;

@@ -90,13 +90,15 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool sweepForceRealize) {
             first = returned->shared_from_this();
           if (returned->is(StdlibTypes::NoneType))
             hasNone = true;
-          else if (!payload)
+          else if (!payload || returned->is(StdlibTypes::Optional))
             payload = returned->shared_from_this();
         }
       }
       if (payload || (first && !hasUnknown)) {
         // Case 6: join reached returns before any branch fixes the function's type.
         auto inferred = first;
+        if (payload && payload->is(StdlibTypes::Optional) && !hasBareReturn)
+          inferred = payload;
         if (hasNone && payload && !hasBareReturn)
           inferred = payload->is(StdlibTypes::Optional)
                          ? payload

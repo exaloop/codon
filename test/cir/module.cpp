@@ -1,8 +1,29 @@
 #include "test.h"
 
 #include "codon/cir/util/matching.h"
+#include "codon/compiler/compiler.h"
 
 using namespace codon::ir;
+
+TEST(CIRModuleTest, CanonicalizesCheckedOptionalTypes) {
+  auto options = codon::Options::getDefault("build/codon_test");
+  codon::Compiler compiler(*options);
+  auto error = compiler.parseCode("optional_types.codon", "pass\n");
+  ASSERT_FALSE(bool(error)) << llvm::toString(std::move(error));
+
+  auto *module = compiler.getModule();
+  auto *none = module->getNoneType();
+  ASSERT_NE(none, nullptr);
+  EXPECT_EQ(module->getOptionalType(none), none);
+  EXPECT_TRUE(isA<RecordType>(none));
+
+  auto *integer = module->getIntType();
+  auto *optional = module->getOptionalType(integer);
+  ASSERT_NE(optional, nullptr);
+  ASSERT_TRUE(isA<OptionalType>(optional));
+  EXPECT_EQ(cast<OptionalType>(optional)->getBase(), integer);
+  EXPECT_EQ(module->getOptionalType(optional), optional);
+}
 
 TEST_F(CIRCoreTest, ModuleNodeBuildingRemovalAndIterators) {
   {

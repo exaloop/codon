@@ -162,6 +162,8 @@ void TypecheckVisitor::visit(DotExpr *expr) {
 std::pair<Expr *, bool> TypecheckVisitor::getAttr(Expr *expr, const std::string &member,
                                                   types::Type *type,
                                                   CallExpr *parentCall) {
+  if (expr->getType()->is(StdlibTypes::Optional) && expr->getType()->hasUnbounds(false))
+    return {nullptr, true};
   bool hasSide = hasSideEffect(expr);
   auto wrapSide = [&](Expr *e) -> Expr * {
     if (hasSide) {

@@ -123,12 +123,20 @@ Stmt *TypecheckVisitor::unpackAssignment(Expr *lhs, Expr *rhs) {
   bool hasStar = std::ranges::any_of(
       leftSide, [](Expr *item) { return cast<StarExpr>(item) != nullptr; });
   auto newRhs = N<IdExpr>(getTemporaryVar("assign"));
-  block->addStmt(N<AssignStmt>(
-      newRhs,
-      N<CallExpr>(N<IdExpr>(getMangledMethod("std.internal.types.collections.list",
-                                             "List", "_unpack")),
-                  ast::clone(rhs), N<IntExpr>(leftSide.size() - hasStar),
-                  N<BoolExpr>(hasStar))));
+  auto tuple = cast<TupleExpr>(rhs);
+  bool knownShape =
+      tuple &&
+      std::ranges::none_of(
+          *tuple, [](Expr *item) { return cast<StarExpr>(item) != nullptr; }) &&
+      (hasStar ? tuple->size() >= leftSide.size() - 1
+               : tuple->size() == leftSide.size());
+  Expr *source = ast::clone(rhs);
+  if (!knownShape)
+    source = N<CallExpr>(N<IdExpr>(getMangledMethod(
+                             "std.internal.types.collections.list", "List", "_unpack")),
+                         source, N<IntExpr>(leftSide.size() - hasStar),
+                         N<BoolExpr>(hasStar));
+  block->addStmt(N<AssignStmt>(newRhs, source));
   rhs = newRhs;
 
   // Process assignments until the fist StarExpr (if any)
@@ -268,11 +276,6 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
       stmt->getRhs()->setExpectedType(expected);
   }
   stmt->rhs = transform(stmt->getRhs(), true);
-  // Include None initializers produced by tuple unpacking or calls.
-  if (!typeExpr && e->hasAttribute(Attr::NullableBinding) && stmt->getRhs() &&
-      stmt->getRhs()->getType()->is(StdlibTypes::NoneType))
-    stmt->rhs = transform(N<StmtExpr>(N<ExprStmt>(stmt->getRhs()),
-                                      N<CallExpr>(N<IdExpr>(StdlibTypes::Optional))));
   stmt->type = typeExpr;
 
   // Generate new canonical variable name for this assignment and add it to the context
@@ -371,12 +374,6 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
 /// See @c transformInplaceUpdate and @c wrapExpr for details.
 Stmt *TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
   stmt->lhs = transform(stmt->getLhs());
-
-  // A hoisted nullable binding still infers its later payload type.
-  if (!stmt->getTypeExpr() && cast<NoneExpr>(stmt->getRhs()) &&
-      stmt->getLhs()->getType()->getUnbound())
-    unify(stmt->getLhs()->getType(),
-          instantiateType(getStdLibType(StdlibTypes::Optional)));
 
   // Check inplace updates
   auto [inPlace, inPlaceStmt] = transformInplaceUpdate(stmt);

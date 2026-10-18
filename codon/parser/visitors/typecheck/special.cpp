@@ -1111,7 +1111,10 @@ Expr *TypecheckVisitor::transformTupleFn(CallExpr *expr) {
 /// Transform type function to a type IdExpr identifier.
 Expr *TypecheckVisitor::transformTypeFn(CallExpr *expr) {
   expr->begin()->value = transform(expr->begin()->getExpr());
-  unify(expr->getType(), instantiateTypeVar(expr->begin()->getExpr()->getType()));
+  auto valueType = expr->begin()->getExpr()->getType();
+  if (valueType->is(StdlibTypes::Optional) && valueType->hasUnbounds(false))
+    return nullptr;
+  unify(expr->getType(), instantiateTypeVar(valueType));
   // Generic type expressions have no runtime constructor to realize.
   if (!realize(expr->getType()) && !isTypeExpr(expr->begin()->getExpr()))
     return nullptr;

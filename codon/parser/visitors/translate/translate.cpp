@@ -173,8 +173,10 @@ void TranslateVisitor::defaultVisit(Expr *n) {
 }
 
 void TranslateVisitor::visit(NoneExpr *expr) {
-  // Bare None has the canonical zero-sized NoneType representation.
-  auto f = getMangledMethod("", "NoneType", "__new__");
+  auto f = expr->getType()->is(StdlibTypes::Optional)
+               ? expr->getType()->realizedName() + ":" +
+                     getMangledMethod("", "Optional", "__new__")
+               : getMangledMethod("", "NoneType", "__new__");
   auto val = ctx->find(f);
   seqassert(val, "cannot find '{}'", f);
   result = make<ir::CallInstr>(expr, make<ir::VarValue>(expr, val->getFunc()),

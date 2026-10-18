@@ -118,6 +118,7 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
     if (!stmt->expr)
       stmt->expr = N<CallExpr>(N<IdExpr>(StdlibTypes::NoneType));
     stmt->expr = transform(stmt->getExpr());
+    bool returnWasRealizable = stmt->getExpr()->getType()->canRealize();
 
     // Wrap expression to match the return type
     if (!ctx->getBase()->inferReturnType && !ctx->getBase()->returnType->getUnbound())
@@ -154,6 +155,8 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
     } else {
       unify(ctx->getBase()->returnType.get(), stmt->getExpr()->getType());
     }
+    if (!returnWasRealizable && stmt->getExpr()->getType()->canRealize())
+      ctx->changedNodes++;
   }
 
   // If we are not within conditional block, ignore later statements in this function.

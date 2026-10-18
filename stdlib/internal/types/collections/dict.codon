@@ -377,7 +377,7 @@ class OrderedDict:
 
         if not r.found:
             if missing is None:
-                return Optional[V]()
+                return None
             elif isinstance(missing, Optional[V]):
                 return missing
             elif isinstance(missing, V):
@@ -795,7 +795,7 @@ class UnorderedDict:
         x = self._kh_get(key)
         if x == self._kh_end():
             if missing is None:
-                return Optional[V]()
+                return None
             elif isinstance(missing, Optional[V]):
                 return missing
             elif isinstance(missing, V):
