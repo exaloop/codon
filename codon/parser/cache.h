@@ -265,6 +265,9 @@ struct Cache {
       ir::Func *ir;
       /// Resolved captures
       std::vector<std::string> captures;
+      /// Reuse the deferred annotated-return slot for cached and recursive calls;
+      /// the original annotation may have been promoted to Optional on fallthrough.
+      bool inferredFallthrough = false;
 
       types::FuncType *getType() const { return type.get(); }
     };

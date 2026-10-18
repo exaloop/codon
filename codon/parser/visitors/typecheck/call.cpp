@@ -634,11 +634,11 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
               // Case: no arguments provided.
               if (!part.known.empty() &&
                   part.known[si] == ClassType::PartialFlag::Included) {
-                // Argument captured by partial
+                // Case 1: Argument captured by partial
                 args.emplace_back(realName, getPartialArg(pi));
                 pi++;
               } else if (startswith(realName, "$")) {
-                // Local name capture
+                // Case 3: Local name capture
                 bool added = false;
                 if (partial) {
                   if (auto val = ctx->find(realName.substr(1))) {
@@ -656,12 +656,12 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
                 if (!added)
                   args.emplace_back(realName, transform(N<IdExpr>(realName.substr(1))));
               } else if ((*calleeFn->ast)[si].getDefault()) {
-                // Default is present
+                // Case 4: Default is present
                 if (auto ai = cast<IdExpr>((*calleeFn->ast)[si].getDefault())) {
                   // Non-values (Ids / .default names)
                   if (!part.known.empty() &&
                       part.known[si] == ClassType::PartialFlag::Default) {
-                    // Default already captured by partial.
+                    // Case 4a/1: Default already captured by partial.
                     args.emplace_back(realName, getPartialArg(pi));
                     pi++;
                   } else {
@@ -673,7 +673,7 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
                   if (partial)
                     newMask[si] = ClassType::PartialFlag::Default;
                 } else if (!partial) {
-                  // Values / non-Id defaults (None, etc.)
+                  // Case 4b: Values / non-Id defaults (None, etc.)
                   if (cast<NoneExpr>((*calleeFn->ast)[si].getDefault()) &&
                       !(*calleeFn->ast)[si].type) {
                     args.emplace_back(realName,
@@ -691,7 +691,7 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
                   newMask[si] = ClassType::PartialFlag::Missing;
                 }
               } else if (partial) {
-                // This is partial call. Just add ... for missing arguments
+                // Case 5: This is partial call. Just add ... for missing arguments
                 args.emplace_back(realName,
                                   transform(N<EllipsisExpr>(EllipsisExpr::PARTIAL)));
                 newMask[si] = ClassType::PartialFlag::Missing;

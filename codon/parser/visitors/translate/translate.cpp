@@ -526,9 +526,12 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
       if ((v = val->getVar())) {
         if (!v->getType()) {
           v->setSrcInfo(stmt->getSrcInfo());
-          v->setType(getType(stmt->getRhs()->getType()));
+          // A hoisted annotation establishes storage type without storing a value.
+          v->setType(
+              getType((stmt->getRhs() ? stmt->getRhs() : stmt->getLhs())->getType()));
         }
-        result = make<ir::AssignInstr>(stmt, v, transform(stmt->getRhs()));
+        if (stmt->getRhs())
+          result = make<ir::AssignInstr>(stmt, v, transform(stmt->getRhs()));
       }
     }
     return;

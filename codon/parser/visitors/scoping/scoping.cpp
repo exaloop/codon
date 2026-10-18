@@ -376,7 +376,14 @@ void ScopingVisitor::visit(AssignStmt *stmt) {
   CHECK(transform(stmt->getRhs()));
   CHECK(transform(stmt->getTypeExpr()));
   SetInScope s(&(ctx->root), (ASTNode *)stmt);
-  CHECK(transform(stmt->getLhs()));
+  if (!stmt->getRhs() && stmt->getTypeExpr() && !ctx->inClass) {
+    // Reuse conditional-binding used flags so annotation-only locals and globals
+    // raise NameError when read before assignment. Class fields are checked later.
+    ConditionalBlock block(ctx.get(), nullptr);
+    CHECK(transform(stmt->getLhs()));
+  } else {
+    CHECK(transform(stmt->getLhs()));
+  }
 }
 
 void ScopingVisitor::visit(IfStmt *stmt) {
@@ -766,6 +773,12 @@ void ScopingVisitor::visit(ClassStmt *stmt) {
         char val = static_cast<char>(b->getValue());
         if (a.getName() == "init") {
           tupleMagics["new"] = val;
+        } else if (a.getName() == "check_init") {
+          // Control field diagnostics independently of constructor generation.
+          if (!val)
+            stmt->setAttribute(Attr::ClassNoInitCheck);
+          else
+            stmt->eraseAttribute(Attr::ClassNoInitCheck);
         } else if (a.getName() == "repr") {
           tupleMagics["repr"] = val;
         } else if (a.getName() == "eq") {

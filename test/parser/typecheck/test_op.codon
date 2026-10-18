@@ -14,6 +14,42 @@ print c is c, c is not c #: True False
 z: Optional[int] = None
 print z is None, None is z, None is not z, None is None #: True True False True
 
+#%% union_equality
+# Dispatch both active dtype alternatives and preserve elementwise array results.
+import numpy as np
+
+Array = Union[np.ndarray[int, 1], np.ndarray[complex, 1],
+              np.ndarray[np.int8, 1], np.ndarray[np.int32, 1]]
+Key = Union[int, complex, np.int8, np.int32]
+
+def compare_array(array):
+    values: Array = array
+    for key in (2, complex(2), np.int8(2), np.int32(2)):
+        value: Key = key
+        equal = values == value
+        assert type(equal) is np.ndarray[bool, 1]
+        assert equal.tolist() == [False, True, False, False]
+        assert (values != value).tolist() == [True, False, True, True]
+        assert (value == values).tolist() == [False, True, False, False]
+        assert (values == key).tolist() == [False, True, False, False]
+        assert (key == values).tolist() == [False, True, False, False]
+
+compare_array(np.array([1, 2, 3, 4]))
+compare_array(np.array([1, 2, 3, 4], dtype=complex))
+compare_array(np.array([1, 2, 3, 4], dtype=np.int8))
+compare_array(np.array([1, 2, 3, 4], dtype=np.int32))
+
+# Dispatch must evaluate the left and right operands once, in source order.
+events = []
+def operand(value: int):
+    events.append(value)
+    result: Union[int, float] = value
+    return result
+
+assert operand(1) != operand(2)
+assert events == [1, 2]
+assert operand(2) == 2.0 and 2 == operand(2)
+
 #%% binary_and_or,barebones
 s = 'hehe'
 a = 'hehe' or 5.2

@@ -8,6 +8,36 @@ b: float = 6.16
 c: Optional[str] = None
 print(a, b, c)  #: 5 6.16 None
 
+#%% annotated_uninitialized_reads
+# An annotation does not initialize a binding; reads use the same NameError guard
+# as assignments that may be skipped by conditional control flow.
+values: list[int]
+try:
+    print(values)
+except NameError:
+    print('uninitialized global')  #: uninitialized global
+values = [1]
+assert values == [1]
+
+def initialized_later(flag: bool):
+    items: list[int]
+    if flag:
+        items = [2]
+    try:
+        return items
+    except NameError:
+        return [3]
+
+assert initialized_later(True) == [2]
+assert initialized_later(False) == [3]
+
+def initialized_directly():
+    items: list[int]
+    items = [4]
+    return items
+
+assert initialized_directly() == [4]
+
 #%% walrus,barebones
 def foo(x):
     return x * x

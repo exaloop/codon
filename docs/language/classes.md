@@ -57,6 +57,33 @@ q = Point(5, 6, p)
 print(q)  # (5, 6) -> (3, 4)
 ```
 
+## Field initialization
+
+Codon warns when a field may be uninitialized when `__init__` returns normally.
+The check follows calls to known helper functions and methods, including base
+constructors called through `super()`. Initialization can therefore be split
+across helpers:
+
+``` python
+class Buffer:
+    values: list[int]
+
+    def __init__(self):
+        self.initialize()
+
+    def initialize(self):
+        self.values = []
+```
+
+The analysis is conservative: assignments on only one branch do not guarantee
+initialization. For classes whose initialization cannot be verified statically,
+use `@dataclass(check_init=False)` to disable these warnings for the class.
+The same option is accepted by `@tuple(check_init=False)`. The default is
+`check_init=True`.
+
+Disabling the check does not initialize storage or add runtime checks. Every
+field must still be initialized before it is read.
+
 ## Overloading methods
 
 In Python, class methods can be defined to take arguments of arbitrary types,

@@ -870,6 +870,25 @@ class Box:
 assert str(type(Box)) == str(type(Box[NoneType]))
 print('generic types ok')  #: generic types ok
 
+#%% union_iterables
+# Join iterator element types, not generator objects, for heterogeneous alternatives.
+def collect(values: Union[list[int], list[str]]):
+    return [value for value in values]
+
+assert type(collect([1, 2])) is list[Union[int, str]]
+assert ','.join(str(value) for value in collect([1, 2])) == '1,2'
+assert ','.join(str(value) for value in collect(['a', 'b'])) == 'a,b'
+assert len(collect(list[int]())) == 0
+assert len(collect(list[str]())) == 0
+
+# Different container types alone must not introduce a union element type.
+def same_elements(values: Union[list[int], set[int]]):
+    return [value for value in values]
+
+assert type(same_elements([1])) is list[int]
+assert same_elements([1, 2]) == [1, 2]
+assert same_elements({3}) == [3]
+
 #%% union_nullable
 Choice = Union[int, str, NoneType]
 assert not isinstance(Choice, int)

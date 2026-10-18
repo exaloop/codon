@@ -599,6 +599,103 @@ from C import seq_print(str)
 x = seq_print("not ")
 print x  #: not None
 
+#%% non_atomic_fallthrough_returns
+# Implicit None promotes pointer-containing results, including annotated returns.
+def list_payload(flag: bool):
+    if flag:
+        return [1]
+
+def tuple_payload(flag: bool):
+    if flag:
+        return ('data', 7)
+
+def annotated_payload(flag: bool) -> list[int]:
+    if flag:
+        return [2]
+
+# Atomic return layouts keep their existing non-optional types.
+def atomic_payload(flag: bool):
+    if flag:
+        return 3
+
+def atomic_tuple(flag: bool):
+    if flag:
+        return (3, 4)
+
+# Returning or throwing on every path must not introduce Optional.
+def exhaustive_payload(flag: bool):
+    if flag:
+        return [4]
+    return [5]
+
+def raising_payload(flag: bool):
+    if flag:
+        raise ValueError('no result')
+    return [6]
+
+# A break can reach an implicit return; an unbroken infinite loop cannot.
+def loop_payload(flag: bool):
+    while True:
+        if flag:
+            return [7]
+        break
+
+def exhaustive_loop(flag: bool):
+    while True:
+        if flag:
+            return [8]
+        flag = True
+
+# A finally return overrides pending exits, including fallthrough.
+def final_payload(flag: bool):
+    try:
+        if flag:
+            return [9]
+    finally:
+        return [10]
+
+# Preserve source-level exhaustiveness when loop-else is lowered into branches.
+def loop_else_payload(values: list[int]):
+    for value in values:
+        if value:
+            return [value]
+    else:
+        return [11]
+
+# Recursive calls must share the promoted annotation instead of restoring list[int].
+def recursive_payload(depth: int) -> list[int]:
+    if depth == 0:
+        return [12]
+    if depth > 0:
+        return recursive_payload(depth - 1)
+
+# An annotated body with no explicit returns still needs optional promotion.
+def no_payload() -> list[int]:
+    pass
+
+assert list_payload(False) is None and list_payload(True) == [1]
+assert type(list_payload(True)) is Optional[list[int]]
+assert tuple_payload(False) is None and tuple_payload(True) == ('data', 7)
+assert type(tuple_payload(True)) is Optional[Tuple[str, int]]
+assert annotated_payload(False) is None and annotated_payload(True) == [2]
+assert type(annotated_payload(True)) is Optional[list[int]]
+assert type(atomic_payload(True)) is int and atomic_payload(True) == 3
+assert type(atomic_tuple(True)) is Tuple[int, int]
+assert type(exhaustive_payload(True)) is list[int]
+assert exhaustive_payload(False) == [5]
+assert type(raising_payload(False)) is list[int]
+assert loop_payload(False) is None and loop_payload(True) == [7]
+assert type(exhaustive_loop(False)) is list[int]
+assert exhaustive_loop(False) == [8]
+assert type(final_payload(False)) is list[int]
+assert final_payload(False) == [10]
+assert type(loop_else_payload([])) is list[int]
+assert loop_else_payload([]) == [11]
+assert loop_else_payload([2]) == [2]
+assert type(recursive_payload(2)) is Optional[list[int]]
+assert recursive_payload(-1) is None and recursive_payload(2) == [12]
+assert no_payload() is None
+
 #%% nullable_return_inference
 # None/value returns infer one optional payload regardless of branch order.
 def none_first(flag: bool):

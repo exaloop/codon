@@ -65,6 +65,77 @@ TEST(TypeCoreTest, NewFunctionRealizationIsIncomplete) {
   EXPECT_TRUE(realization->captures.empty());
 }
 
+// Missing or conditional writes warn, while initialization through aliases, generic
+// helpers, and super() is recognized. Decorator opt-outs suppress field diagnostics.
+TEST(FieldInitializationTest, TracksHelpersAndSupportsOptOut) {
+  auto options = codon::Options::getDefault("build/codon_test");
+  codon::Compiler compiler(*options);
+  testing::internal::CaptureStderr();
+  auto error = compiler.parseCode("field_initialization.codon", R"(
+class Missing:
+  values: list[int]
+  def __init__(self):
+    pass
+
+def initialize_values(Element: type, instance):
+  target = instance
+  target.values = [Element(1)]
+
+class ThroughHelpers:
+  values: list[int]
+  def __init__(self):
+    self.initialize()
+  def initialize(self):
+    initialize_values(int, self)
+
+class Conditional:
+  values: list[int]
+  def __init__(self, flag: bool):
+    if flag:
+      self.values = [1]
+
+class Parent:
+  value: int
+  def __init__(self):
+    self.value = 1
+
+class Inherits(Parent):
+  def __init__(self):
+    super().__init__()
+
+@dataclass(check_init=False)
+class Unchecked:
+  values: list[int]
+  def __init__(self):
+    pass
+
+@tuple(check_init=False)
+class Value:
+  number: int
+
+Missing()
+ThroughHelpers()
+Conditional(False)
+Inherits()
+Unchecked()
+Value(1)
+)");
+  auto warnings = testing::internal::GetCapturedStderr();
+  ASSERT_FALSE(bool(error)) << llvm::toString(std::move(error));
+  EXPECT_NE(warnings.find("field 'Missing.values' may be uninitialized"),
+            std::string::npos)
+      << warnings;
+  EXPECT_NE(warnings.find("field 'Conditional.values' may be uninitialized"),
+            std::string::npos)
+      << warnings;
+  EXPECT_EQ(warnings.find("field 'ThroughHelpers.values'"), std::string::npos)
+      << warnings;
+  EXPECT_EQ(warnings.find("field 'Unchecked.values'"), std::string::npos) << warnings;
+  EXPECT_EQ(warnings.find("field 'Inherits.value'"), std::string::npos) << warnings;
+  EXPECT_EQ(warnings.find("field 'Exception."), std::string::npos) << warnings;
+  EXPECT_EQ(warnings.find("field 'ValueError."), std::string::npos) << warnings;
+}
+
 TEST(EnumConstructionTest, BoundsHelperRealizations) {
   std::string source = "from enum import Enum, auto\nclass Explicit(Enum):\n";
   for (int index = 0; index < 32; ++index)

@@ -23,6 +23,77 @@ namespace codon::ast {
 
 using namespace types;
 
+namespace {
+/// Possible statement exits, combined as a bitmask when control-flow paths diverge.
+enum ReturnFlow : unsigned {
+  FallsThrough = 1,
+  Returns = 2,
+  Throws = 4,
+  Breaks = 8,
+  Continues = 16
+};
+
+/// Determine whether a function body can reach an implicit return.
+/// Track abrupt exits separately so loops consume break/continue and finally can
+/// override a pending exit. Nested function bodies are not executed by declarations.
+unsigned returnFlow(Stmt *statement) {
+  if (!statement)
+    return FallsThrough;
+  if (auto suite = cast<SuiteStmt>(statement)) {
+    unsigned flow = FallsThrough;
+    for (auto child : *suite) {
+      if (!(flow & FallsThrough))
+        break;
+      flow = (flow & ~FallsThrough) | returnFlow(child);
+    }
+    return flow;
+  }
+  if (cast<ReturnStmt>(statement))
+    return Returns;
+  if (cast<ThrowStmt>(statement))
+    return Throws;
+  if (cast<BreakStmt>(statement))
+    return Breaks;
+  if (cast<ContinueStmt>(statement))
+    return Continues;
+  if (auto branch = cast<IfStmt>(statement)) {
+    if (auto condition = cast<BoolExpr>(branch->getCond()))
+      return returnFlow(condition->getValue() ? branch->getIf() : branch->getElse());
+    return returnFlow(branch->getIf()) | returnFlow(branch->getElse());
+  }
+  if (auto loop = cast<WhileStmt>(statement)) {
+    auto condition = cast<BoolExpr>(loop->getCond());
+    if (condition && !condition->getValue())
+      return returnFlow(loop->getElse());
+    auto body = returnFlow(loop->getSuite());
+    unsigned flow = body & (Returns | Throws);
+    if (body & Breaks)
+      flow |= FallsThrough;
+    if (!condition)
+      flow |= returnFlow(loop->getElse());
+    return flow;
+  }
+  if (auto loop = cast<ForStmt>(statement)) {
+    auto body = returnFlow(loop->getSuite());
+    return (body & (Returns | Throws)) | returnFlow(loop->getElse()) |
+           ((body & Breaks) ? FallsThrough : 0);
+  }
+  if (auto guarded = cast<TryStmt>(statement)) {
+    auto flow = returnFlow(guarded->getSuite());
+    if (flow & FallsThrough)
+      flow = (flow & ~FallsThrough) | returnFlow(guarded->getElse());
+    for (auto handler : *guarded)
+      flow |= returnFlow(handler->getSuite());
+    if (flow && guarded->getFinally()) {
+      auto cleanup = returnFlow(guarded->getFinally());
+      flow = (cleanup & ~FallsThrough) | ((cleanup & FallsThrough) ? flow : 0);
+    }
+    return flow;
+  }
+  return FallsThrough;
+}
+} // namespace
+
 /// Unify types a (passed by reference) and b.
 /// Destructive operation as it modifies both a and b. If types cannot be unified, raise
 /// an error.
@@ -77,7 +148,10 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool sweepForceRealize) {
     // }
     result = tv.transform(result);
     auto base = ctx->getBase();
-    if (base->inferReturnType && !base->returnStatements.empty()) {
+    // Join reached returns before wrapping them; early unification with NoneType
+    // would prevent later value returns from establishing an optional payload.
+    if (base->inferReturnType &&
+        (!base->returnStatements.empty() || base->declaredReturnType)) {
       TypePtr first, payload;
       bool hasNone = false, hasBareReturn = false, hasUnknown = false;
       for (const auto &[statement, bare] : base->returnStatements) {
@@ -94,8 +168,7 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool sweepForceRealize) {
             payload = returned->shared_from_this();
         }
       }
-      if (payload || (first && !hasUnknown)) {
-        // Case 6: join reached returns before any branch fixes the function's type.
+      if (payload || (first && !hasUnknown) || base->declaredReturnType) {
         auto inferred = first;
         if (payload && payload->is(StdlibTypes::Optional) && !hasBareReturn)
           inferred = payload;
@@ -104,10 +177,33 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool sweepForceRealize) {
                          ? payload
                          : instantiateType(getStdLibType(StdlibTypes::Optional),
                                            std::vector<Type *>{payload.get()});
-        unify(base->returnType.get(), inferred.get());
-        base->inferReturnType = false;
-        base->returnStatements.clear();
-        ctx->changedNodes++;
+        if (base->declaredReturnType)
+          inferred = base->declaredReturnType;
+        // Typing can eliminate paths, but loop-else lowering can also obscure an
+        // exhaustive source-level return. Require fallthrough in both views.
+        bool fallsThrough =
+            base->returnCanFallThrough && (returnFlow(result) & FallsThrough);
+        bool ready = !fallsThrough || inferred->is(StdlibTypes::Optional) ||
+                     realize(inferred.get());
+        if (ready) {
+          // Use the realized IR layout to promote only pointer-containing results;
+          // atomic results retain their existing fallthrough behavior.
+          bool optional =
+              fallsThrough && (inferred->is(StdlibTypes::Optional) ||
+                               !makeIRType(inferred->getClass())->isAtomic());
+          if (optional && !inferred->is(StdlibTypes::Optional))
+            inferred = instantiateType(getStdLibType(StdlibTypes::Optional),
+                                       std::vector<Type *>{inferred.get()});
+          unify(base->returnType.get(), inferred.get());
+          if (optional) {
+            // Type the implicit None on the next pass like an explicit return.
+            result = N<SuiteStmt>(result, N<ReturnStmt>(N<NoneExpr>()));
+            base->suite = result;
+          }
+          base->inferReturnType = false;
+          base->returnStatements.clear();
+          ctx->changedNodes++;
+        }
       }
     }
     std::swap(ctx->changedNodes, changedNodes);
@@ -374,6 +470,10 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
   auto imp = getImport(module);
   if (auto r = in(realizations, type->realizedName())) {
     if (!force) {
+      // Cached and recursive callers must share the possibly promoted return slot,
+      // not reintroduce the original non-optional annotation.
+      if ((*r)->inferredFallthrough)
+        type->generics[1].type = (*r)->type->generics[1].type;
       if (!(*r)->ast && !(*r)->getType()->getRetType()->canRealize())
         ctx->getBase()->recursiveDependencies.insert((*r)->type);
       return (*r)->getType();
@@ -411,12 +511,27 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
     ast->suite = s;
   addClassGenerics(type, true);
   ctx->getBase()->func = ast;
+  // Preserve source-level exhaustiveness before typing lowers loop-else constructs.
+  ctx->getBase()->returnCanFallThrough = returnFlow(ast->getSuite()) & FallsThrough;
   ctx->getBase()->inferReturnType = !ast->getReturn() &&
                                     isUnbound(type->getRetType()) && !ast->isAsync() &&
                                     !ast->hasAttribute(Attr::IsGenerator);
 
   // Internal functions have no AST that can be realized
   bool hasAst = ast->getSuite() && !ast->hasAttribute(Attr::Internal);
+  // Defer eligible annotations until the body and return layout determine whether
+  // Optional is needed. Imports share the global base without a return slot;
+  // foreign, static-result, async, and generator functions keep their own contracts.
+  if (!isImport && hasAst && ast->getReturn() && !ast->isAsync() &&
+      !type->getRetType()->getStaticKind() && !ast->hasAttribute(Attr::LLVM) &&
+      !ast->hasAttribute(Attr::C) && !ast->hasAttribute(Attr::IsGenerator) &&
+      ctx->getBase()->returnCanFallThrough) {
+    auto base = ctx->getBase();
+    base->declaredReturnType = base->returnType;
+    base->returnType = instantiateUnbound();
+    type->generics[1].type = base->returnType;
+    base->inferReturnType = true;
+  }
   // Add function arguments
   if (auto b = ast->getAttribute<BindingsAttribute>(Attr::Bindings)) {
     for (const auto &[c, t] : sorted_view(b->captures)) {
@@ -471,6 +586,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
   auto r = realizations[key] = std::make_shared<Cache::Function::FunctionRealization>();
   r->type = std::static_pointer_cast<FuncType>(type->shared_from_this());
   r->ir = oldIR;
+  r->inferredFallthrough = bool(ctx->getBase()->declaredReturnType);
   if (auto b = ast->getAttribute<BindingsAttribute>(Attr::Bindings))
     for (const auto &[c, _] : sorted_view(b->captures)) {
       auto h = ctx->find(c);
@@ -561,6 +677,8 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
                       std::vector<Expr *>{}, ast->isAsync());
   r->ast->setSrcInfo(ast->getSrcInfo());
   r->ast->cloneAttributesFrom(ast);
+  // Resolved helper bodies and receiver wrappers are available only after typing.
+  checkFieldInitialization(type, r->ast);
 
   auto newType = std::static_pointer_cast<types::FuncType>(type->generalize(0));
   auto newKey = newType->realizedName();

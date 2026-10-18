@@ -474,6 +474,133 @@ SuiteStmt *TypecheckVisitor::generateUnionTagAST(FuncType *type) {
   return suite;
 }
 
+/// Generate one iterator over the active union alternative.
+/// Join yielded element types rather than returning a union of generator objects,
+/// so ordinary loops can consume heterogeneous iterable alternatives.
+SuiteStmt *TypecheckVisitor::generateUnionIteratorAST(FuncType *type) {
+  auto alternatives = extractFuncArgType(type)->getUnion()->getRealizationTypes();
+  std::map<std::string, Type *> elements;
+  for (const auto &alternative : alternatives) {
+    ctx->addBlock();
+    auto name = getTemporaryVar("iterable");
+    ctx->addVar(name, name, alternative->shared_from_this());
+    auto iterator = transform(N<CallExpr>(N<DotExpr>(N<IdExpr>(name), "__iter__")));
+    auto iteratorType = iterator->getType();
+    if (!iteratorType->is(StdlibTypes::Generator))
+      E(Error::EXPECTED_TYPE, getSrcInfo(), "iterable");
+    auto element = extractClassGeneric(iteratorType);
+    elements[element->realizedName()] = element;
+    ctx->popBlock();
+  }
+  Expr *elementType = nullptr;
+  // Distinct containers with the same element type need no per-element union box.
+  if (elements.size() > 1) {
+    std::vector<Expr *> members;
+    for (const auto &name : elements | std::views::keys)
+      members.push_back(N<IdExpr>(name));
+    elementType = N<InstantiateExpr>(N<IdExpr>(StdlibTypes::Union), members);
+  }
+  auto suite = N<SuiteStmt>();
+  for (size_t tag = 0; tag < alternatives.size(); ++tag) {
+    auto name = getTemporaryVar("element");
+    Expr *value = N<IdExpr>(name);
+    if (elementType)
+      value = N<CallExpr>(N<IdExpr>(getMangledMethod("", "Union", "_new")), value,
+                          clone(elementType));
+    auto iterable =
+        N<CallExpr>(N<IdExpr>(getMangledMethod("", "Union", "_get_data")),
+                    N<IdExpr>("union"), N<IdExpr>(alternatives[tag]->realizedName()));
+    suite->addStmt(N<IfStmt>(
+        N<BinaryExpr>(N<CallExpr>(N<IdExpr>(getMangledMethod("", "Union", "_get_tag")),
+                                  N<IdExpr>("union")),
+                      "==", N<IntExpr>(tag)),
+        N<SuiteStmt>(N<ForStmt>(N<IdExpr>(name), iterable, N<YieldStmt>(value)),
+                     N<ReturnStmt>(nullptr))));
+  }
+  return suite;
+}
+
+/// Generate equality/inequality dispatch for the active pair of operand types.
+/// Either operand may be concrete or a union; retain native results such as boolean
+/// ndarrays, joining result types only when supported pairs return different types.
+SuiteStmt *TypecheckVisitor::generateUnionCompareAST(FuncType *type) {
+  auto operation = extractFuncGeneric(type)->getStrStatic();
+  if (!operation)
+    return nullptr;
+  auto left = extractFuncArgType(type, 0);
+  auto right = extractFuncArgType(type, 1);
+  auto leftTypes = left->getUnion() ? left->getUnion()->getRealizationTypes()
+                                    : std::vector<Type *>{left};
+  auto rightTypes = right->getUnion() ? right->getUnion()->getRealizationTypes()
+                                      : std::vector<Type *>{right};
+  std::vector<std::pair<Expr *, Expr *>> candidates;
+  std::map<std::string, Type *> results;
+  for (size_t leftTag = 0; leftTag < leftTypes.size(); ++leftTag) {
+    for (size_t rightTag = 0; rightTag < rightTypes.size(); ++rightTag) {
+      ctx->addBlock();
+      auto leftName = getTemporaryVar("left");
+      auto rightName = getTemporaryVar("right");
+      ctx->addVar(leftName, leftName, leftTypes[leftTag]->shared_from_this());
+      ctx->addVar(rightName, rightName, rightTypes[rightTag]->shared_from_this());
+      // Probe magic-method availability without rejecting the whole union when a
+      // pair is unsupported. Such pairs use the runtime TypeError fallback below.
+      auto compared = transformBinaryMagic(
+          N<BinaryExpr>(transform(N<IdExpr>(leftName)), operation->value,
+                        transform(N<IdExpr>(rightName))));
+      if (!compared) {
+        ctx->popBlock();
+        continue;
+      }
+      auto result = compared->getType();
+      seqassert(result->canRealize(), "cannot realize {}", result->debugString(2));
+      results[result->realizedName()] = result;
+      ctx->popBlock();
+
+      Expr *leftValue = N<IdExpr>("left");
+      Expr *rightValue = N<IdExpr>("right");
+      Expr *condition = nullptr;
+      if (left->getUnion()) {
+        leftValue =
+            N<CallExpr>(N<IdExpr>(getMangledMethod("", "Union", "_get_data")),
+                        leftValue, N<IdExpr>(leftTypes[leftTag]->realizedName()));
+        condition = N<BinaryExpr>(
+            N<CallExpr>(N<IdExpr>(getMangledMethod("", "Union", "_get_tag")),
+                        N<IdExpr>("left")),
+            "==", N<IntExpr>(leftTag));
+      }
+      if (right->getUnion()) {
+        rightValue =
+            N<CallExpr>(N<IdExpr>(getMangledMethod("", "Union", "_get_data")),
+                        rightValue, N<IdExpr>(rightTypes[rightTag]->realizedName()));
+        Expr *selected = N<BinaryExpr>(
+            N<CallExpr>(N<IdExpr>(getMangledMethod("", "Union", "_get_tag")),
+                        N<IdExpr>("right")),
+            "==", N<IntExpr>(rightTag));
+        condition = condition ? N<BinaryExpr>(condition, "&&", selected) : selected;
+      }
+      candidates.emplace_back(condition,
+                              N<BinaryExpr>(leftValue, operation->value, rightValue));
+    }
+  }
+  Expr *resultType = nullptr;
+  if (results.size() > 1) {
+    std::vector<Expr *> members;
+    for (const auto &name : results | std::views::keys)
+      members.push_back(N<IdExpr>(name));
+    resultType = N<InstantiateExpr>(N<IdExpr>(StdlibTypes::Union), members);
+  }
+  auto suite = N<SuiteStmt>();
+  for (auto &[condition, value] : candidates) {
+    if (resultType)
+      value = N<CallExpr>(N<IdExpr>(getMangledMethod("", "Union", "_new")), value,
+                          clone(resultType));
+    suite->addStmt(N<IfStmt>(condition, N<ReturnStmt>(value)));
+  }
+  // The original generated-method stub reports unsupported active operand pairs.
+  suite->addStmt(clone(type->ast->getSuite()));
+  return suite;
+}
+
 SuiteStmt *TypecheckVisitor::generateUnionDispatchAST(FuncType *type) {
   auto attr = extractFuncGeneric(type)->getStrStatic();
   if (!attr)
@@ -625,6 +752,10 @@ SuiteStmt *TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     return generateUnionTagAST(type);
   } else if (startswith(ast->name, getMangledMethod("", "Union", "_dispatch"))) {
     return generateUnionDispatchAST(type);
+  } else if (startswith(ast->name, getMangledMethod("", "Union", "__iter__"))) {
+    return generateUnionIteratorAST(type);
+  } else if (startswith(ast->name, getMangledMethod("", "Union", "_compare"))) {
+    return generateUnionCompareAST(type);
   } else if (startswith(ast->name, getMangledMethod("", "NamedTuple", "_namedkeys"))) {
     return generateNamedKeysAST(type);
   } else if (startswith(ast->name, getMangledMethod("", "__magic__", "mul"))) {

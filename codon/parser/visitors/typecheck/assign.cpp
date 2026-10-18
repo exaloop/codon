@@ -54,11 +54,13 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
     stmt->getLhs()->eraseAttribute(Attr::ExprDominatedUsed);
     auto e = cast<IdExpr>(stmt->getLhs());
     seqassert(e, "dominated bad assignment");
-    resultStmt = transform(N<SuiteStmt>(
-        resultStmt,
-        N<AssignStmt>(N<IdExpr>(fmt::format("{}{}", getUnmangledName(e->getValue()),
-                                            VAR_USED_SUFFIX)),
-                      N<BoolExpr>(true), nullptr, AssignStmt::UpdateMode::Update)));
+    // A type declaration alone must not mark a hoisted binding initialized.
+    if (stmt->getRhs())
+      resultStmt = transform(N<SuiteStmt>(
+          resultStmt,
+          N<AssignStmt>(N<IdExpr>(fmt::format("{}{}", getUnmangledName(e->getValue()),
+                                              VAR_USED_SUFFIX)),
+                        N<BoolExpr>(true), nullptr, AssignStmt::UpdateMode::Update)));
   }
 }
 
@@ -386,6 +388,13 @@ Stmt *TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
   if (stmt->getTypeExpr()) {
     unify(stmt->getLhs()->getType(), instantiateType(stmt->getTypeExpr()->getSrcInfo(),
                                                      extractType(stmt->getTypeExpr())));
+  }
+
+  // Annotation-only updates refine the hoisted variable's type, not its value.
+  if (!stmt->getRhs()) {
+    if (realize(stmt->getLhs()->getType()))
+      stmt->setDone();
+    return nullptr;
   }
 
   // Case: wrap expressions if needed (e.g. floats or optionals)

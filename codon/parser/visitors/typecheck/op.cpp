@@ -1036,6 +1036,14 @@ Expr *TypecheckVisitor::transformBinaryMagic(const BinaryExpr *expr) {
   auto lt = expr->getLhs()->getType();
   auto rt = expr->getRhs()->getType();
 
+  // Resolve both active alternatives before calling concrete comparison methods.
+  // A helper evaluates operands once and preserves non-bool results such as ndarrays.
+  if ((lt->getUnion() || rt->getUnion()) &&
+      (expr->getOp() == "==" || expr->getOp() == "!="))
+    return transform(N<CallExpr>(N<IdExpr>(getMangledMethod("", "Union", "_compare")),
+                                 expr->getLhs(), expr->getRhs(),
+                                 N<StringExpr>(expr->getOp())));
+
   if (!lt->is("pyobj") && rt->is("pyobj")) {
     // Special case: `obj op pyobj` -> `rhs.__rmagic__(lhs)` on lhs
     // Assumes that pyobj implements all left and right magics

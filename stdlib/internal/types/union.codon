@@ -96,6 +96,24 @@ class Union:
     def __call__(self, *args, **kwargs):
         return Union._dispatch(self, "", args, kwargs)
 
+    @__generated__
+    def __iter__(union):
+        """Iterate the active alternative using one compiler-generated iterator.
+
+        Yield the shared element type, or a union of element types when they differ,
+        so heterogeneous iterable alternatives remain usable in ordinary loops.
+        """
+        yield
+
+    @__generated__
+    def _compare(left, right, operation: Literal[str]):
+        """Compare the active operand types through compiler-generated dispatch.
+
+        Preserve native comparison results, including elementwise boolean arrays.
+        Unsupported active pairs reach this fallback and raise TypeError.
+        """
+        raise TypeError("invalid union comparison")
+
     def _str(union):
         for tag, T in static.vars_types(union, with_index=True):
             if hasattr(T, '__str__'):
