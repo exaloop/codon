@@ -23,7 +23,13 @@ void TypecheckVisitor::visit(TupleExpr *expr) {
 /// See @c transformComprehension
 void TypecheckVisitor::visit(ListExpr *expr) {
   expr->setType(instantiateUnbound());
-  if ((resultExpr = transformComprehension(StdlibTypes::List, "append", expr->items))) {
+  auto expected = expr->getExpectedType();
+  auto elementType = expected && expected->is(StdlibTypes::List)
+                         ? extractClassGeneric(expected)
+                         : nullptr;
+  if ((resultExpr = transformComprehension(
+           StdlibTypes::List, "append", expr->items,
+           elementType && elementType->getUnion() ? elementType : nullptr))) {
     resultExpr->setAttribute(Attr::ExprList);
   }
 }
@@ -170,7 +176,8 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
 ///                       for i in b.items(): cont.__setitem__((i[0], i[i]))```
 Expr *TypecheckVisitor::transformComprehension(const std::string &type,
                                                const std::string &fn,
-                                               std::vector<Expr *> &items) {
+                                               std::vector<Expr *> &items,
+                                               types::Type *elementType) {
   // Deduce the lowest common type of the collection--- in other words, the lowest
   // common ancestor of all types in the collection. For example, `type([1, 1.2]) ==
   // type([1.2, 1]) == float` because float is an "ancestor" of int.
@@ -210,7 +217,8 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
     return nullptr;
   };
 
-  TypePtr collectionTyp = instantiateUnbound();
+  TypePtr collectionTyp =
+      elementType ? elementType->shared_from_this() : instantiateUnbound();
   bool done = true;
   bool isDict = type == StdlibTypes::Dict;
   for (auto &i : items) {
@@ -233,6 +241,8 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
       done = false;
       continue;
     }
+    if (elementType)
+      continue;
     if (!collectionTyp->getClass()) {
       unify(collectionTyp.get(), typ);
     } else if (!isDict) {

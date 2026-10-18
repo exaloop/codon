@@ -822,6 +822,112 @@ for value in values:
 print(values[0].value)  #: first
 assert values[1].value == 'second'
 
+#%% union_nullable
+Choice = Union[int, str, NoneType]
+assert not isinstance(Choice, int)
+assert not isinstance(Choice, NoneType)
+assert Choice is not None
+assert not (Choice is None)
+
+def add_one(value: int):
+    return value + 1
+
+def suffix(value: str):
+    return value + '!'
+
+def null_value(value: NoneType):
+    return 7
+
+def record(events, value: Choice) -> Choice:
+    events.append(1)
+    return value
+
+values: list[Choice] = [None, 42, 'hello', NoneType(), Optional[int](0),
+                        Optional[str](''), Optional[int](), Optional[str]()]
+for index in [0, 3, 6, 7]:
+    assert values[index] is None
+    assert not (values[index] is not None)
+    assert isinstance(values[index], NoneType)
+    assert not isinstance(values[index], int)
+    assert not isinstance(values[index], str)
+    assert null_value(values[index]) == 7
+for index in [1, 4]:
+    assert values[index] is not None
+    assert isinstance(values[index], int)
+    assert not isinstance(values[index], str)
+    assert not isinstance(values[index], NoneType)
+for index in [2, 5]:
+    assert values[index] is not None
+    assert isinstance(values[index], str)
+    assert not isinstance(values[index], int)
+    assert not isinstance(values[index], NoneType)
+assert add_one(values[1]) == 43
+assert add_one(values[4]) == 1
+assert suffix(values[2]) == 'hello!'
+assert suffix(values[5]) == '!'
+
+results: list[str] = []
+for value in values:
+    if value is None:
+        results.append('null')
+    elif isinstance(value, int):
+        results.append(str(add_one(value)))
+    elif isinstance(value, str):
+        results.append(suffix(value))
+assert results == ['null', '43', 'hello!', 'null', '1', '!', 'null', 'null']
+
+failures = 0
+for index in [0, 2]:
+    try:
+        print(add_one(values[index]))
+    except TypeError:
+        failures += 1
+try:
+    print(suffix(values[1]))
+except TypeError:
+    failures += 1
+try:
+    print(null_value(values[1]))
+except TypeError:
+    failures += 1
+assert failures == 4
+
+events: list[int] = []
+assert record(events, None) is None
+assert record(events, 0) is not None
+assert isinstance(record(events, ''), str)
+assert not isinstance(record(events, None), int)
+assert events == [1, 1, 1, 1]
+plain: list[int | str] = [1, 'two']
+assert isinstance(plain[0], int) and isinstance(plain[1], str)
+print('nullable unions ok')  #: nullable unions ok
+
+#%% union_storage
+from simd import Vec
+
+@noinline
+def keep(value: Union[Tuple[bool, int], int]):
+    return value
+
+for original in [42, 256, 0x1122334455667788, -1]:
+    assert Union._get(keep(original), int) == original
+
+@llvm
+def payload_offset(U: type) -> int:
+    %payload = getelementptr {=U}, ptr null, i64 0, i32 1
+    %offset = ptrtoint ptr %payload to i64
+    ret i64 %offset
+
+@llvm
+def member_alignment(T: type) -> int:
+    %member = getelementptr {i8, {=T}}, ptr null, i64 0, i32 1
+    %offset = ptrtoint ptr %member to i64
+    ret i64 %offset
+
+Buffer = Tuple[u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8]
+assert payload_offset(Union[Buffer, Vec[int, 2]]) == member_alignment(Vec[int, 2])
+print('union storage ok')  #: union storage ok
+
 #%% union_error,barebones
 a: int|str = 123
 print(123 == a)  #: True

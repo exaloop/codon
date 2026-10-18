@@ -131,6 +131,9 @@ from a.b.c import hai.hey #! expected identifier
 #%% import_err_4_x,barebones
 import whatever #! no module named 'whatever'
 
+#%% import_self,barebones
+import test_import #! cannot import main module
+
 #%% import_err_5,barebones
 import a.b
 print a.b.x #! cannot import name 'x' from 'a.b.__init__'
@@ -144,3 +147,12 @@ import a as xa  #: a
 xa.foo()  #: a.foo
 #: a.sub
 xa.sub.foo()  #: a.sub.foo
+
+#%% import_relative,barebones
+from a.b.relative import result, run
+#: a
+#: a.sub
+print(result)  #: (42, 42, 5)
+run()
+#: a.sub.foo
+#: a.sub.foo

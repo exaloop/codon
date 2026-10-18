@@ -35,15 +35,17 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
   // Fetch the import
   auto components = getImportPath(stmt->getFrom(), stmt->getDots());
   auto path = combine2(components, "/");
-  if (stmt->getDots() == 1 && path.empty()) { // from "." case
-    auto w = cast<IdExpr>(stmt->getWhat());
-    seqassert(w, "not an identifier: {}", FormatVisitor::apply(stmt->getWhat()));
-    resultStmt = transform(
-        N<ImportStmt>(stmt->getWhat(), nullptr, std::vector<Param>{}, nullptr, "", 1));
-    return;
-  }
+  const bool relativeFrom = stmt->getDots() > 0 && !stmt->getFrom();
   auto file = getImportFile(ctx->cache, path, ctx->getFilename());
   if (!file) {
+    if (relativeFrom) {
+      resultStmt = transform(N<ImportStmt>(
+          stmt->getWhat(), nullptr, std::vector<Param>{}, nullptr,
+          stmt->getAs().empty() ? cast<IdExpr>(stmt->getWhat())->getValue()
+                                : stmt->getAs(),
+          stmt->getDots()));
+      return;
+    }
     if (stmt->getDots() == 0 &&
         (ctx->autoPython || ctx->cache->compiler->getOptions()->autopy)) {
       auto newStr = FormatVisitor::apply(stmt->getFrom());
@@ -92,6 +94,8 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
 
   const auto &import = getImport(file->path);
   std::string importVar = import->importVar;
+  if (importVar.empty() && !ctx->isStdlibLoading)
+    E(Error::CUSTOM, stmt, "cannot import main module '{}'", file->module);
   if (!import->loadedAtToplevel)
     handled = false;
 
@@ -131,8 +135,20 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
     // Case 3: from foo import bar
     auto i = cast<IdExpr>(stmt->getWhat());
     seqassert(i, "not a valid import what expression");
-    auto c = import->ctx->find(i->getValue());
+    auto c = relativeFrom ? import->ctx->Context<TypecheckItem>::find(i->getValue())
+                          : import->ctx->find(i->getValue());
     // Make sure that we are importing an existing global symbol
+    if (!c && relativeFrom &&
+        getImportFile(ctx->cache,
+                      path.empty() ? i->getValue() : path + "/" + i->getValue(),
+                      ctx->getFilename())) {
+      auto relativeImport = N<ImportStmt>(
+          stmt->getWhat(), nullptr, std::vector<Param>{}, nullptr,
+          stmt->getAs().empty() ? i->getValue() : stmt->getAs(), stmt->getDots());
+      resultStmt =
+          transform(N<SuiteStmt>(std::vector<Stmt *>{resultStmt, relativeImport}));
+      return;
+    }
     if (!c)
       E(Error::IMPORT_NO_NAME, i, i->getValue(), file->module);
     if (c->isConditional())

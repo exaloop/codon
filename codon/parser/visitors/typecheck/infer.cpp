@@ -34,8 +34,6 @@ Type *TypecheckVisitor::unify(Type *a, Type *b) const {
   if (!((*a) << b)) {
     types::Type::Unification undo;
     a->unify(b, &undo);
-    LOG("[unify] {} {}", a->debugString(2), b->debugString(2));
-    // log("[unify] {} {}", a->debugString(1), b->debugString(1));
     E(Error::TYPE_UNIFY, getSrcInfo(), a->prettyString(), b->prettyString());
     return nullptr;
   }

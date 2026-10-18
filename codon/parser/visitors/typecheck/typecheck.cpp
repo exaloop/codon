@@ -741,7 +741,12 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     };
   } else if (allowUnwrap && expectedClass && exprClass &&
              exprClass->is(StdlibTypes::Optional) &&
-             !exprClass->is(expectedClass->name)) { // unwrap optional
+             !exprClass->is(expectedClass->name) &&
+             !(expectedClass->getUnion() && expectedClass->canRealize() &&
+               std::ranges::any_of(expectedClass->getUnion()->getRealizationTypes(),
+                                   [](auto *member) {
+                                     return member->is(StdlibTypes::Optional);
+                                   }))) { // unwrap optional
     auto exprUnwrap = extractClassGeneric(exprClass);
     auto [_, tp, fnp] =
         canWrapExpr(exprUnwrap, expectedClass, callee, allowUnwrap, isEllipsis);
@@ -909,7 +914,10 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
         return {false, nullptr, nullptr};
       bool ok = false;
       for (auto &ut : e->getUnion()->getRealizationTypes()) {
-        if (ut->unify(t, nullptr) >= 0) {
+        if (ut->unify(t, nullptr) >= 0 ||
+            (ut->is(StdlibTypes::Optional) &&
+             (t->is(StdlibTypes::NoneType) ||
+              extractClassGeneric(ut)->unify(t, nullptr) >= 0))) {
           ok = true;
           break;
         }

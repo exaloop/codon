@@ -258,6 +258,11 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
     }
   }
 
+  if (typeExpr && cast<ListExpr>(stmt->getRhs())) {
+    auto expected = extractType(typeExpr);
+    if (expected->is(StdlibTypes::List) && extractClassGeneric(expected)->getUnion())
+      stmt->getRhs()->setExpectedType(expected);
+  }
   stmt->rhs = transform(stmt->getRhs(), true);
   stmt->type = typeExpr;
 

@@ -891,6 +891,10 @@ Expr *TypecheckVisitor::transformBinaryIs(const BinaryExpr *expr) {
 
   // Case: `is None` expressions
   if (cast<NoneExpr>(expr->getRhs())) {
+    if (extractClassType(expr->getLhs())->getUnion() && !isTypeExpr(expr->getLhs()))
+      return transform(
+          N<CallExpr>(N<DotExpr>(N<IdExpr>(StdlibTypes::Union), "_isinstance"),
+                      expr->getLhs(), N<IdExpr>(StdlibTypes::NoneType)));
     if (extractClassType(expr->getLhs())->is(StdlibTypes::NoneType))
       return transform(wrapSide(N<BoolExpr>(true)));
     if (!extractClassType(expr->getLhs())->is(StdlibTypes::Optional)) {

@@ -2189,22 +2189,20 @@ llvm::Type *LLVMVisitor::getLLVMType(Type *t) {
 
   if (auto *x = cast<UnionType>(t)) {
     auto &layout = M->getDataLayout();
-    llvm::Type *largest = nullptr;
+    llvm::Type *alignmentType = B->getInt8Ty();
     size_t maxSize = 0;
 
-    for (auto *t : *x) {
-      auto *llvmType = getLLVMType(t);
-      size_t size = layout.getTypeAllocSizeInBits(llvmType);
-      if (!largest || size > maxSize) {
-        largest = llvmType;
-        maxSize = size;
-      }
+    for (auto *member : *x) {
+      auto *llvmType = getLLVMType(member);
+      maxSize = std::max(maxSize, size_t(layout.getTypeAllocSize(llvmType)));
+      if (layout.getABITypeAlign(llvmType) > layout.getABITypeAlign(alignmentType))
+        alignmentType = llvmType;
     }
 
-    if (!largest)
-      largest = llvm::StructType::get(*context, {});
-
-    return llvm::StructType::get(*context, {B->getInt8Ty(), largest});
+    auto *storage = llvm::StructType::get(
+        *context, {llvm::ArrayType::get(alignmentType, 0),
+                   llvm::ArrayType::get(B->getInt8Ty(), maxSize)});
+    return llvm::StructType::get(*context, {B->getInt8Ty(), storage});
   }
 
   if (auto *x = cast<dsl::CustomType>(t)) {

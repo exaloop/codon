@@ -844,6 +844,12 @@ Expr *TypecheckVisitor::transformIsInstance(CallExpr *expr) {
     return transform(N<BoolExpr>(!typ->isRecord()));
   } else if (!extractType(typExpr)->getUnion() && typ->getUnion()) {
     auto unionTypes = typ->getUnion()->getRealizationTypes();
+    if (!isTypeExpr(expr->begin()->value) &&
+        std::ranges::any_of(
+            unionTypes, [](auto *member) { return member->is(StdlibTypes::Optional); }))
+      return transform(
+          N<CallExpr>(N<DotExpr>(N<IdExpr>(StdlibTypes::Union), "_isinstance"),
+                      expr->begin()->getExpr(), typExpr));
     int tag = -1;
     for (size_t ui = 0; ui < unionTypes.size(); ui++) {
       if (extractType(typExpr)->unify(unionTypes[ui], nullptr) >= 0) {

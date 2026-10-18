@@ -94,7 +94,7 @@ private: // Node typechecking rules
   void visit(SetExpr *) override;
   void visit(DictExpr *) override;
   Expr *transformComprehension(const std::string &, const std::string &,
-                               std::vector<Expr *> &);
+                               std::vector<Expr *> &, types::Type * = nullptr);
   void visit(GeneratorExpr *) override;
 
   /* Conditional expression and statements (cond.cpp) */
