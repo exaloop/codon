@@ -48,6 +48,33 @@ except Exception as e:
 raise 'hello'
 #! exceptions must derive from BaseException
 
+#%% exception_classes
+# exception classes and class-valued causes are constructed once.
+try:
+    raise ValueError
+except ValueError as error:
+    assert error.message == ''
+
+class CountedError(ValueError):
+    created: ClassVar[int] = 0
+    def __init__(self):
+        CountedError.created += 1
+        super().__init__('constructed')
+Alias = CountedError
+try:
+    raise Alias from KeyError
+except CountedError as error:
+    assert error.message == 'constructed'
+    cause: BaseException = error.__cause__
+    assert isinstance(cause, KeyError)
+assert CountedError.created == 1
+print('exception classes ok')  #: exception classes ok
+
+#%% invalid_exception_class
+# invalid classes receive a compiler diagnostic, not an LLVM assertion.
+raise int
+#! exceptions must derive from BaseException
+
 #%% raise_from,barebones
 def foo(bar):
     try:

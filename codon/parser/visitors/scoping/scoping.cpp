@@ -879,8 +879,12 @@ void ScopingVisitor::processChildCaptures() {
       if (i->back().binding && cast<ClassStmt>(i->back().binding))
         continue;
     }
-    if (!findDominatingBinding(n.first)) {
+    auto binding = findDominatingBinding(n.first);
+    if (!binding) {
       ctx->captures.insert(n); // propagate!
+    } else if (n.second == BindingsAttribute::CaptureType::Global && binding->binding) {
+      // A global None initializer can acquire its payload in a function.
+      binding->binding->setAttribute(Attr::NullableBinding);
     }
   }
 }
@@ -1061,6 +1065,9 @@ ScopingVisitor::findDominatingBinding(const std::string &name, bool allowShadow)
   for (auto i = it->begin(); i != it->end(); ++i) {
     if (i == lastGood)
       break;
+    // A None initializer may need the payload type of a later update.
+    if (lastGood->binding)
+      lastGood->binding->setAttribute(Attr::NullableBinding);
     switchToUpdate(i->binding, name, gotUsedVar);
     i->scope = lastGood->scope;
     i->ignore = true;

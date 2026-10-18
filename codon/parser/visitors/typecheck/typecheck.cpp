@@ -353,9 +353,30 @@ void TypecheckVisitor::visit(SuiteStmt *stmt) {
   auto done = true;
 
   std::vector<Stmt *> prepend;
+  auto function = ctx->getBase()->func;
+  // Deferred return inference must not repeat parameter boxing.
+  if (function && function->getSuite() == stmt && ctx->getBase()->iteration == 1) {
+    auto bindings = function->getAttribute<BindingsAttribute>(Attr::Bindings);
+    auto hoisted = stmt->getAttribute<BindingsAttribute>(Attr::Bindings);
+    if (bindings)
+      for (const auto &param : *function) {
+        auto name = getUnmangledName(param.getNameWithStars().second);
+        auto binding = in(bindings->bindings, name);
+        // Nonlocal parameters need one shared capsule before any reads.
+        if (param.isValue() && binding && binding->isNonlocal &&
+            (!hoisted || !in(hoisted->bindings, name)))
+          prepend.push_back(N<AssignStmt>(N<IdExpr>(name), N<IdExpr>(name)));
+      }
+  }
   if (auto b = stmt->getAttribute<BindingsAttribute>(Attr::Bindings)) {
     for (const auto &[n, bd] : sorted_view(b->bindings)) {
-      prepend.push_back(N<AssignStmt>(N<IdExpr>(n), nullptr));
+      // A hoisted captured argument starts with the incoming parameter.
+      Expr *initial = nullptr;
+      if (function && function->getSuite() == stmt)
+        for (const auto &param : *function)
+          if (param.isValue() && getUnmangledName(param.getNameWithStars().second) == n)
+            initial = N<IdExpr>(n);
+      prepend.push_back(N<AssignStmt>(N<IdExpr>(n), initial));
       if (bd.count > 0)
         prepend.push_back(N<AssignStmt>(
             N<IdExpr>(fmt::format("{}{}", n, VAR_USED_SUFFIX)), N<BoolExpr>(false)));
@@ -731,6 +752,20 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
 
   else if (expectedClass && expectedClass->is(StdlibTypes::Optional) && exprClass &&
            !exprClass->is(expectedClass->name)) {
+    // Converting NoneType to Optional[T] constructs an absent value.
+    if (exprClass->is(StdlibTypes::NoneType)) {
+      type = expectedClass->shared_from_this();
+      auto payload = extractClassGeneric(expectedClass)->shared_from_this();
+      fn = [this, type, payload](Expr *expr) -> Expr * {
+        auto constructor = N<IdExpr>(StdlibTypes::Optional);
+        constructor->setType(instantiateTypeVar(type.get()));
+        auto member = N<IdExpr>("T");
+        member->setType(instantiateTypeVar(payload.get()));
+        member->setDone();
+        return N<CallExpr>(N<DotExpr>(constructor, "_from_none"), expr, member);
+      };
+      return {true, type, fn};
+    }
     auto expectedUnwrap = extractClassGeneric(expectedClass);
     auto [_, tp, fnp] =
         canWrapExpr(exprClass, expectedUnwrap, callee, allowUnwrap, isEllipsis);

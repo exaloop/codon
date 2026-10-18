@@ -12,12 +12,11 @@ namespace codon::ast {
 
 using namespace types;
 
-/// Set type to `Optional[?]`
+/// None is a value of NoneType, not an empty generic optional.
 void TypecheckVisitor::visit(NoneExpr *expr) {
-  unify(expr->getType(), instantiateType(getStdLibType(StdlibTypes::Optional)));
+  unify(expr->getType(), getStdLibType(StdlibTypes::NoneType));
   if (realize(expr->getType())) {
-    // Realize the appropriate `Optional.__new__` for the translation stage
-    auto f = ctx->forceFind(getMangledMethod("", "Optional", "__new__"))->getType();
+    auto f = ctx->forceFind(getMangledMethod("", "NoneType", "__new__"))->getType();
     auto t = realize(instantiateType(f, extractClassType(expr)));
     expr->setDone();
   }

@@ -329,6 +329,29 @@ foo()
 #! name 'x' is not defined
 #! during the realization of foo()
 
+#%% captured_argument_initialization
+# hoisting a captured parameter must preserve its incoming value.
+def captured(number: int):
+    original = number
+    def add(value: int):
+        return value + number
+    assert add(1) == 43
+    number = 0
+    assert add(1) == 1
+    return original
+assert captured(42) == 42
+
+def changed(number: int):
+    original = number
+    def increment():
+        nonlocal number
+        number += 1
+    increment()
+    assert number == original + 1
+    return original
+assert changed(42) == 42
+print('captured arguments ok')  #: captured arguments ok
+
 #%% capture_recursive,barebones
 def f(x: int) -> int:
     z = 2 * x
@@ -575,6 +598,65 @@ print(num2(10, 20)) #: 3600
 from C import seq_print(str)
 x = seq_print("not ")
 print x  #: not None
+
+#%% nullable_return_inference
+# None/value returns infer one optional payload regardless of branch order.
+def none_first(flag: bool):
+    if flag:
+        return None
+    else:
+        return 42
+
+def value_first(flag: bool):
+    if flag:
+        return 42
+    return None
+
+def only_none(flag: bool):
+    if flag:
+        return None
+    return None
+
+assert none_first(True) is None and none_first(False) == 42
+assert value_first(False) is None and value_first(True) == 42
+assert type(none_first(False)) is Optional[int]
+assert type(value_first(True)) is Optional[int]
+assert type(only_none(True)) is NoneType
+
+def static_return(value):
+    if isinstance(value, int):
+        return value
+    return None
+assert type(static_return(42)) is int
+assert type(static_return('unused')) is NoneType
+
+def nested_return():
+    def inner():
+        return None
+    inner()
+    return 42
+assert type(nested_return()) is int
+
+def recursive_return(number: int):
+    if number < 0:
+        return None
+    if number == 0:
+        return 42
+    return recursive_return(number - 1)
+assert recursive_return(-1) is None and recursive_return(3) == 42
+
+def record_none(events):
+    events.append(1)
+    return None
+def tuple_return(flag: bool, events):
+    if flag:
+        return record_none(events)
+    return (42, 'answer')
+events: list[int] = []
+assert tuple_return(True, events) is None
+assert tuple_return(False, events) == (42, 'answer')
+assert events == [1]
+print('nullable returns ok')  #: nullable returns ok
 
 #%% return_none_err_1,barebones
 def foo(n: int):

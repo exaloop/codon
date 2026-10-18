@@ -729,7 +729,9 @@ star_target <-
   / primary { return ac_expr(V0); }
 star_parens <-
   / '(' _ tlist(',', star_target) _ ')' { return wrap_tuple(CTX, VS, LOC); }
-  / '[' _ tlist(',', star_target) _ ']' { return wrap_tuple(CTX, VS, LOC); }
+  / '[' _ tlist(',', star_target) _ ']' {
+    return aste(List, LOC, VS.transform<Expr*>());
+  }
 
 star_expressions <- tlist(',', star_expression) { return wrap_tuple(CTX, VS, LOC); }
 star_expression <-

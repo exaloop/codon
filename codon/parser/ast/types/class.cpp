@@ -51,7 +51,15 @@ ClassType::ClassType(const ClassType *base)
       hiddenGenerics(base->hiddenGenerics), isTuple(base->isTuple) {}
 
 int ClassType::unify(Type *typ, Unification *us) {
+  if (auto canonical = canonicalOptional())
+    return canonical->unify(typ, us);
   if (auto tc = typ->getClass()) {
+    // A defaulted None payload also resolves the original optional slot.
+    if (name == StdlibTypes::Optional && tc->name == StdlibTypes::NoneType &&
+        generics.size() == 1 && generics[0].type->getUnbound())
+      return generics[0].type->unify(tc, us);
+    if (name == StdlibTypes::NoneType && tc->name == StdlibTypes::Optional)
+      return tc->unify(this, us);
     if (name == StdlibTypes::UnrealizedType && tc->name == name) {
       // instantiate + unify!
       std::unordered_map<int, types::TypePtr> genericCache;
@@ -228,6 +236,8 @@ bool ClassType::isInstantiated() const {
 }
 
 std::string ClassType::debugString(char mode) const {
+  if (auto canonical = canonicalOptional())
+    return canonical->debugString(mode);
   if (name == StdlibTypes::NamedTuple) {
     if (auto ids = generics[0].type->getIntStatic()) {
       auto id = ids->value;
@@ -306,6 +316,8 @@ std::string ClassType::debugString(char mode) const {
 }
 
 std::string ClassType::realizedName() const {
+  if (auto canonical = canonicalOptional())
+    return canonical->realizedName();
   if (!_rn.empty())
     return _rn;
 
@@ -331,6 +343,22 @@ std::string ClassType::realizedName() const {
     const_cast<ClassType *>(this)->_rn = s;
 
   return s;
+}
+
+ClassType *ClassType::canonicalOptional() const {
+  // Normalize optional layers even when a generic is bound later.
+  if (name == StdlibTypes::Optional && generics.size() == 1 && generics[0].type) {
+    auto member = generics[0].type->getClass();
+    if (member && (member->name == StdlibTypes::Optional ||
+                   member->name == StdlibTypes::NoneType))
+      return member;
+  }
+  return nullptr;
+}
+
+ClassType *ClassType::getClass() {
+  auto canonical = canonicalOptional();
+  return canonical ? canonical : this;
 }
 
 FuncType *ClassType::getPartialFunc() const {

@@ -76,6 +76,38 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool sweepForceRealize) {
     //   preamble = cast<SuiteStmt>(pt);
     // }
     result = tv.transform(result);
+    auto base = ctx->getBase();
+    if (base->inferReturnType && !base->returnStatements.empty()) {
+      TypePtr first, payload;
+      bool hasNone = false, hasBareReturn = false, hasUnknown = false;
+      for (const auto &[statement, bare] : base->returnStatements) {
+        auto returned = statement->getExpr()->getType();
+        hasBareReturn |= bare;
+        if (returned->getUnbound()) {
+          hasUnknown = true;
+        } else {
+          if (!first)
+            first = returned->shared_from_this();
+          if (returned->is(StdlibTypes::NoneType))
+            hasNone = true;
+          else if (!payload)
+            payload = returned->shared_from_this();
+        }
+      }
+      if (payload || (first && !hasUnknown)) {
+        // Case 6: join reached returns before any branch fixes the function's type.
+        auto inferred = first;
+        if (hasNone && payload && !hasBareReturn)
+          inferred = payload->is(StdlibTypes::Optional)
+                         ? payload
+                         : instantiateType(getStdLibType(StdlibTypes::Optional),
+                                           std::vector<Type *>{payload.get()});
+        unify(base->returnType.get(), inferred.get());
+        base->inferReturnType = false;
+        base->returnStatements.clear();
+        ctx->changedNodes++;
+      }
+    }
     std::swap(ctx->changedNodes, changedNodes);
     std::swap(ctx->returnEarly, returnEarly);
     ctx->typecheckLevel--;
@@ -377,6 +409,9 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
     ast->suite = s;
   addClassGenerics(type, true);
   ctx->getBase()->func = ast;
+  ctx->getBase()->inferReturnType = !ast->getReturn() &&
+                                    isUnbound(type->getRetType()) && !ast->isAsync() &&
+                                    !ast->hasAttribute(Attr::IsGenerator);
 
   // Internal functions have no AST that can be realized
   bool hasAst = ast->getSuite() && !ast->hasAttribute(Attr::Internal);

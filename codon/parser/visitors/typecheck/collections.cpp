@@ -185,6 +185,14 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
   auto lctyp = [&](ClassType *collectionCls, ClassType *ti) -> TypePtr {
     if (!collectionCls)
       return ti->shared_from_this();
+    // NoneType introduces nullability without becoming the element type.
+    if (collectionCls->is(StdlibTypes::NoneType) != ti->is(StdlibTypes::NoneType)) {
+      auto member = collectionCls->is(StdlibTypes::NoneType) ? ti : collectionCls;
+      return member->is(StdlibTypes::Optional)
+                 ? member->shared_from_this()
+                 : instantiateType(getStdLibType(StdlibTypes::Optional),
+                                   std::vector<Type *>{member});
+    }
     if (collectionCls->is("Int") && ti->is("float")) {
       // Rule: int derives from float
       return ti->shared_from_this();

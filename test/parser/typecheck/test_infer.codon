@@ -192,6 +192,41 @@ rec3(1, 's')
 #! 'int' does not match expected type 'str'
 #! during the realization of rec3(x: int, y: str)
 
+#%% optional_canonicalization
+# redundant optional layers and optional None share canonical types.
+value: Optional[Optional[int]] = 42
+empty: Optional[None] = None
+assert type(value) is Optional[int]
+assert type(empty) is NoneType
+assert type(None) is NoneType
+assert Optional[Optional[Optional[int]]] is Optional[int]
+assert Optional[NoneType] is NoneType
+assert Optional[Optional[NoneType]] is NoneType
+
+def identity(value: Optional[Optional[int]]) -> Optional[Optional[int]]:
+    return value
+assert identity(42) == 42
+assert identity(None) is None
+assert type(identity(None)) is Optional[int]
+def make_empty(T: type) -> Optional[T]:
+    return None
+assert type(make_empty(Optional[int])) is Optional[int]
+assert type(make_empty(NoneType)) is NoneType
+assert type(Optional(None)) is NoneType
+assert Optional[int](None) is None
+assert type(Optional(what=None)) is NoneType
+wrapped = Optional(Optional(42))
+assert type(wrapped) is Optional[int] and wrapped == 42
+assert Optional(Optional[int]()) is None
+events: list[int] = []
+def empty_expression(events):
+    events.append(1)
+nullable: Optional[int] = empty_expression(events)
+assert nullable is None and events == [1]
+values = [None, 42, None]
+assert values[0] is None and values[1] == 42 and values[2] is None
+print('optional canonicalization ok')  #: optional canonicalization ok
+
 #%% optionals,barebones
 y = None
 print y  #: None
@@ -399,8 +434,10 @@ class A[T]:
     def foo(self, y): self.y = y
 a = A()
 a.foo(1)
-#! 'Optional[int]' does not match expected type 'Optional[NoneType]'
-#! during the realization
+# canonical None does not determine this constructor's generic payload.
+#! cannot typecheck the expression
+#! cannot typecheck the expression
+#! cannot typecheck the expression
 
 #%% return_deduction,barebones
 def fun[T, R](x, y: T) -> R:
@@ -468,7 +505,8 @@ def foof(l: List[int], x, f: CallableTrait[[int], int]):
     return [f(i)+x for i in l]
 test('qsort', foof(x=3, ...), lambda x: x+1) #: qsort [5, 6, 7, 8]
 
-#%% mutually_recursive_error,barebones
+#%% mutually_recursive_return_type,barebones
+# infer return payloads before finalizing mutually recursive signatures.
 def bl(x):
     return True
 def frec(x, y):
@@ -476,8 +514,7 @@ def frec(x, y):
         return frec(y, x)
     return grec(x, y) if bl(y) else 2
 print frec(1, 2).__class__.__name__, frec('s', 1).__class__.__name__
-#! 'NoneType' does not match expected type 'int'
-#! during the realization of frec(x: int, y: int)
+#: int int
 
 #%% type_error_reporting
 # TODO: improve this certainly
@@ -821,6 +858,18 @@ for value in values:
 #: 1 False True
 print(values[0].value)  #: first
 assert values[1].value == 'second'
+
+#%% generic_type_printing
+# printing generic type expressions must not leave compiler-only calls.
+assert str(type(list)) == str(type(list[NoneType]))
+assert str(type(dict)) == str(type(dict[NoneType, NoneType]))
+assert str(type(list[int])) == "<class 'List[int]'>"
+@tuple
+class Box:
+    value: T
+    T: type = NoneType
+assert str(type(Box)) == str(type(Box[NoneType]))
+print('generic types ok')  #: generic types ok
 
 #%% union_nullable
 Choice = Union[int, str, NoneType]

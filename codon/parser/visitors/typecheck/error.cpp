@@ -182,18 +182,24 @@ void TypecheckVisitor::visit(ThrowStmt *stmt) {
   }
 
   stmt->expr = transform(stmt->getExpr());
+  // Raising an exception class constructs its instance first.
+  if (isTypeExpr(stmt->getExpr()))
+    stmt->expr = transform(N<CallExpr>(stmt->getExpr()));
   if (!match(stmt->getExpr(),
              M<CallExpr>(M<IdExpr>(getMangledMethod("std.internal.types.error",
                                                     "BaseException", "_set_header")),
                          M_))) {
+    auto cause = stmt->getFrom()
+                     ? transform(stmt->getFrom())
+                     : transform(N<CallExpr>(N<IdExpr>(StdlibTypes::NoneType)));
+    if (isTypeExpr(cause))
+      cause = transform(N<CallExpr>(cause));
     stmt->expr = transform(N<CallExpr>(
         N<IdExpr>(getMangledMethod("std.internal.types.error", "BaseException",
                                    "_set_header")),
         stmt->getExpr(), N<StringExpr>(ctx->getBase()->name),
         N<StringExpr>(stmt->getSrcInfo().file), N<IntExpr>(stmt->getSrcInfo().line),
-        N<IntExpr>(stmt->getSrcInfo().col),
-        stmt->getFrom() ? stmt->getFrom()
-                        : N<CallExpr>(N<IdExpr>(StdlibTypes::NoneType))));
+        N<IntExpr>(stmt->getSrcInfo().col), cause));
   }
   if (stmt->getExpr()->isDone())
     stmt->setDone();

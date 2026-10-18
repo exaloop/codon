@@ -377,6 +377,26 @@ TypecheckVisitor::getCalleeFn(CallExpr *expr, PartialCallData &part) {
       typ = extractClassGeneric(typ)->getClass();
     if (!typ)
       return {nullptr, nullptr};
+    // Canonical optional constructors must not add a second value layer.
+    if (typ->is(StdlibTypes::Optional) && expr->size() == 1 &&
+        (expr->begin()->name.empty() || expr->begin()->name == "what")) {
+      auto argument = transform(expr->begin()->getExpr());
+      auto argumentType = argument->getType();
+      if (argumentType->is(StdlibTypes::Optional) &&
+          typ->unify(argumentType, nullptr) >= 0)
+        return {nullptr, argument};
+      if (argumentType->is(StdlibTypes::NoneType)) {
+        if (extractClassGeneric(typ)->getUnbound())
+          return {nullptr, argument};
+        auto member = N<IdExpr>("T");
+        member->setType(instantiateTypeVar(extractClassGeneric(typ)));
+        member->setDone();
+        return {nullptr,
+                transform(N<CallExpr>(N<DotExpr>(expr->getExpr(), "_from_none"),
+                                      argument, member))};
+      }
+      expr->begin()->value = argument;
+    }
     if (typ->is(getMangledClass("std.internal.types.error", "OSError"))) {
       auto factory = transform(
           N<CallExpr>(N<DotExpr>(expr->getExpr(), "_construct"), expr->items));
@@ -614,11 +634,11 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
               // Case: no arguments provided.
               if (!part.known.empty() &&
                   part.known[si] == ClassType::PartialFlag::Included) {
-                // Case 1: Argument captured by partial
+                // Argument captured by partial
                 args.emplace_back(realName, getPartialArg(pi));
                 pi++;
               } else if (startswith(realName, "$")) {
-                // Case 3: Local name capture
+                // Local name capture
                 bool added = false;
                 if (partial) {
                   if (auto val = ctx->find(realName.substr(1))) {
@@ -636,12 +656,12 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
                 if (!added)
                   args.emplace_back(realName, transform(N<IdExpr>(realName.substr(1))));
               } else if ((*calleeFn->ast)[si].getDefault()) {
-                // Case 4: default is present
+                // Default is present
                 if (auto ai = cast<IdExpr>((*calleeFn->ast)[si].getDefault())) {
-                  // Case 4a: non-values (Ids / .default names)
+                  // Non-values (Ids / .default names)
                   if (!part.known.empty() &&
                       part.known[si] == ClassType::PartialFlag::Default) {
-                    // Case 4a/1: Default already captured by partial.
+                    // Default already captured by partial.
                     args.emplace_back(realName, getPartialArg(pi));
                     pi++;
                   } else {
@@ -653,7 +673,7 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
                   if (partial)
                     newMask[si] = ClassType::PartialFlag::Default;
                 } else if (!partial) {
-                  // Case 4b: values / non-Id defaults (None, etc.)
+                  // Values / non-Id defaults (None, etc.)
                   if (cast<NoneExpr>((*calleeFn->ast)[si].getDefault()) &&
                       !(*calleeFn->ast)[si].type) {
                     args.emplace_back(realName,
@@ -671,7 +691,7 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
                   newMask[si] = ClassType::PartialFlag::Missing;
                 }
               } else if (partial) {
-                // Case 5: this is partial call. Just add ... for missing arguments
+                // This is partial call. Just add ... for missing arguments
                 args.emplace_back(realName,
                                   transform(N<EllipsisExpr>(EllipsisExpr::PARTIAL)));
                 newMask[si] = ClassType::PartialFlag::Missing;

@@ -63,6 +63,21 @@ void TypecheckVisitor::visit(IfExpr *expr) {
   expr->ifexpr = transform(expr->getIf());
   expr->elsexpr = transform(expr->getElse());
 
+  // A value/None conditional has one optional payload type.
+  auto ifType = expr->getIf()->getType();
+  auto elseType = expr->getElse()->getType();
+  if (ifType->is(StdlibTypes::NoneType) != elseType->is(StdlibTypes::NoneType)) {
+    auto member = ifType->is(StdlibTypes::NoneType) ? elseType : ifType;
+    if (member->getStatic())
+      member = member->getStatic()->getNonStaticType();
+    auto optional = member->is(StdlibTypes::Optional)
+                        ? member->shared_from_this()
+                        : instantiateType(getStdLibType(StdlibTypes::Optional),
+                                          std::vector<Type *>{member});
+    wrapExpr(&expr->ifexpr, optional.get(), nullptr, false);
+    wrapExpr(&expr->elsexpr, optional.get(), nullptr, false);
+  }
+
   wrapExpr(&expr->cond, getStdLibType(StdlibTypes::Bool));
   // Add wrappers and unify both sides
   if (expr->getIf()->getType()->getStatic())

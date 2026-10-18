@@ -37,6 +37,27 @@ fd['jedan'] = 1
 fd['dva'] = 2
 print gd, fd #: {1: 'jedan', 2: 'two', 3: 'tri'} {'jedan': 1, 'dva': 2}
 
+#%% dictionary_unpacking
+# **mapping entries retain order, overwrite semantics, and evaluation count.
+source = {'a': 1, 'b': 2, 'c': 3}
+copied = {**source}
+copied = {**copied, 'x': 99, **{'a': 42}}
+assert copied == {'a': 42, 'b': 2, 'c': 3, 'x': 99}
+assert source == {'a': 1, 'b': 2, 'c': 3}
+assert list(copied.keys()) == ['a', 'b', 'c', 'x']
+empty: dict[str, int] = {}
+assert {**empty, **source, **empty} == source
+
+def record(events, label, value):
+    events.append(label)
+    return value
+events: list[int] = []
+combined = {**record(events, 1, {'a': 1}),
+            record(events, 2, 'b'): record(events, 3, 2),
+            **record(events, 4, {'a': 3})}
+assert combined == {'a': 3, 'b': 2} and events == [1, 2, 3, 4]
+print('dictionary unpacking ok')  #: dictionary unpacking ok
+
 
 
 #%% comprehension,barebones

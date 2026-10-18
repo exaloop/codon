@@ -533,7 +533,9 @@ DictExpr::DictExpr(std::vector<Expr *> items)
     : AcceptorExtend(), Items(std::move(items)) {
   for (auto *i : *this) {
     auto t = cast<TupleExpr>(i);
-    seqassertn(t && t->size() == 2, "dictionary items are invalid");
+    // Dictionary entries include **mapping as well as key/value pairs.
+    seqassertn((t && t->size() == 2) || cast<KeywordStarExpr>(i),
+               "dictionary items are invalid");
   }
 }
 DictExpr::DictExpr(const DictExpr &expr, bool clean)
@@ -549,6 +551,9 @@ std::string DictExpr::toPythonString(bool a, int indent, int level) const {
                           : "None");
       v.push_back((*t)[1] ? (*t)[1]->toPythonString(a, indent, level + indent)
                           : "None");
+    } else if (auto star = cast<KeywordStarExpr>(x)) {
+      k.push_back("None");
+      v.push_back(star->getExpr()->toPythonString(a, indent, level + indent));
     }
   return pyNode("DictEx",
                 {"keys=" + pyList(k, indent, level + indent),

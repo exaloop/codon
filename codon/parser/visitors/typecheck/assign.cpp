@@ -119,13 +119,17 @@ Stmt *TypecheckVisitor::unpackAssignment(Expr *lhs, Expr *rhs) {
   auto oldSrcInfo = getSrcInfo();
   setSrcInfo(rhs->getSrcInfo());
   auto *block = N<SuiteStmt>();
-  if (!cast<IdExpr>(rhs)) {
-    // Store any non-trivial right-side expression into a variable
-    auto var = getTemporaryVar("assign");
-    auto newRhs = N<IdExpr>(var);
-    block->addStmt(N<AssignStmt>(newRhs, ast::clone(rhs)));
-    rhs = newRhs;
-  }
+  // Consume each nested unpacking source once, including generators.
+  bool hasStar = std::ranges::any_of(
+      leftSide, [](Expr *item) { return cast<StarExpr>(item) != nullptr; });
+  auto newRhs = N<IdExpr>(getTemporaryVar("assign"));
+  block->addStmt(N<AssignStmt>(
+      newRhs,
+      N<CallExpr>(N<IdExpr>(getMangledMethod("std.internal.types.collections.list",
+                                             "List", "_unpack")),
+                  ast::clone(rhs), N<IntExpr>(leftSide.size() - hasStar),
+                  N<BoolExpr>(hasStar))));
+  rhs = newRhs;
 
   // Process assignments until the fist StarExpr (if any)
   size_t st = 0;
@@ -264,6 +268,11 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
       stmt->getRhs()->setExpectedType(expected);
   }
   stmt->rhs = transform(stmt->getRhs(), true);
+  // Include None initializers produced by tuple unpacking or calls.
+  if (!typeExpr && e->hasAttribute(Attr::NullableBinding) && stmt->getRhs() &&
+      stmt->getRhs()->getType()->is(StdlibTypes::NoneType))
+    stmt->rhs = transform(N<StmtExpr>(N<ExprStmt>(stmt->getRhs()),
+                                      N<CallExpr>(N<IdExpr>(StdlibTypes::Optional))));
   stmt->type = typeExpr;
 
   // Generate new canonical variable name for this assignment and add it to the context
@@ -306,6 +315,12 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
   ctx->addAlwaysVisible(val);
 
   if (assign->getRhs()) { // not a declaration!
+    // Inferred chain temporaries preserve compile-time comparison operands.
+    if (stmt->hasAttribute(Attr::ChainStatic)) {
+      if (auto unbound = assign->getLhs()->getType()->getUnbound())
+        unbound->staticKind = assign->getRhs()->getType()->getStaticKind();
+      assign->setAttribute(Attr::ChainStatic);
+    }
     // Check if we can wrap the expression (e.g., `a: float = 3` -> `a = float(3)`)
     if (wrapExpr(&assign->rhs, assign->getLhs()->getType())) {
       unify(assign->getLhs()->getType(), assign->getRhs()->getType());
@@ -356,6 +371,12 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
 /// See @c transformInplaceUpdate and @c wrapExpr for details.
 Stmt *TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
   stmt->lhs = transform(stmt->getLhs());
+
+  // A hoisted nullable binding still infers its later payload type.
+  if (!stmt->getTypeExpr() && cast<NoneExpr>(stmt->getRhs()) &&
+      stmt->getLhs()->getType()->getUnbound())
+    unify(stmt->getLhs()->getType(),
+          instantiateType(getStdLibType(StdlibTypes::Optional)));
 
   // Check inplace updates
   auto [inPlace, inPlaceStmt] = transformInplaceUpdate(stmt);

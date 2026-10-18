@@ -124,6 +124,29 @@ print 15 >= foo()-1 < 30 > 20 > foo()
 
 print True == (b == 15) #: True
 
+#%% static_comparison_chain
+# middle operands retain static types without duplicating runtime calls.
+def check_lengths(first, second, third):
+    import internal.static as static
+    if not (static.len(first) == static.len(second) == static.len(third)):
+        compile_error('equal lengths rejected')
+    if static.len(first) == static.len(second) == 2:
+        compile_error('unequal lengths accepted')
+    if not (0 < static.len(first) < 3 <= static.len(third) + 2):
+        compile_error('ordered lengths rejected')
+check_lengths((1,), (2,), (3,))
+
+def record(events, value):
+    events.append(value)
+    return value
+events: list[int] = []
+assert 0 < record(events, 1) < record(events, 2)
+assert events == [1, 2]
+events.clear()
+assert not (3 < record(events, 2) < record(events, 4))
+assert events == [2]
+print('comparison chains ok')  #: comparison chains ok
+
 #%% pipe_error,barebones
 def b(a, b, c, d):
     pass
@@ -342,10 +365,8 @@ try:
     None |> foo2
 except ValueError:
     print 'exception'
-#! 'int' does not match expected type 'NoneType'
-#! during the realization
-# Explanation: None can also be Optional[Generator[int]]
-# It should, however, default to None as function argp
+#! 'NoneType' does not match expected type 'int'
+# None is rejected directly for a non-nullable pipeline argument.
 
 #%% instantiate_err,barebones
 def foo[N]():

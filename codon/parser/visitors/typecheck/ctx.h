@@ -87,6 +87,8 @@ struct TypeContext : public Context<TypecheckItem> {
     /// Only set for functions.
     FunctionStmt *func = nullptr;
     Stmt *suite = nullptr;
+    bool inferReturnType = false;
+    std::vector<std::pair<ReturnStmt *, bool>> returnStatements;
     /// Index of the parent base
     int parent = 0;
 

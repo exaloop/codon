@@ -1112,7 +1112,8 @@ Expr *TypecheckVisitor::transformTupleFn(CallExpr *expr) {
 Expr *TypecheckVisitor::transformTypeFn(CallExpr *expr) {
   expr->begin()->value = transform(expr->begin()->getExpr());
   unify(expr->getType(), instantiateTypeVar(expr->begin()->getExpr()->getType()));
-  if (!realize(expr->getType()))
+  // Generic type expressions have no runtime constructor to realize.
+  if (!realize(expr->getType()) && !isTypeExpr(expr->begin()->getExpr()))
     return nullptr;
 
   auto e = N<IdExpr>(expr->getType()->realizedName());

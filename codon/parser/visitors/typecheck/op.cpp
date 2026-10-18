@@ -236,11 +236,11 @@ void TypecheckVisitor::visit(ChainBinaryExpr *expr) {
   for (int i = 1; i < expr->exprs.size(); i++) {
     auto l = prev.empty() ? clone(expr->exprs[i - 1].second) : N<IdExpr>(prev);
     prev = ctx->generateCanonicalName("chain");
-    auto r =
-        (i + 1 == expr->exprs.size())
-            ? clone(expr->exprs[i].second)
-            : N<StmtExpr>(N<AssignStmt>(N<IdExpr>(prev), clone(expr->exprs[i].second)),
-                          N<IdExpr>(prev));
+    // Chain temporaries must retain a static operand's literal type.
+    auto assignment = N<AssignStmt>(N<IdExpr>(prev), clone(expr->exprs[i].second));
+    assignment->setAttribute(Attr::ChainStatic);
+    auto r = (i + 1 == expr->exprs.size()) ? clone(expr->exprs[i].second)
+                                           : N<StmtExpr>(assignment, N<IdExpr>(prev));
     items.emplace_back(N<BinaryExpr>(l, expr->exprs[i].first, r));
     if (isBool)
       items.back()->setExpectedType(getStdLibType(StdlibTypes::Bool));
@@ -469,6 +469,17 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
 ///   Instantiate(foo, [bar]) -> Id("foo[bar]")
 void TypecheckVisitor::visit(InstantiateExpr *expr) {
   expr->expr = transformType(expr->getExpr());
+
+  // Collapse explicit layers before binding a canonical type's generics.
+  if (extractType(expr->getExpr())->is(StdlibTypes::Optional) && expr->size() == 1) {
+    expr->items[0] = transformType(expr->front());
+    auto member = extractType(expr->front());
+    if (member->is(StdlibTypes::Optional) || member->is(StdlibTypes::NoneType)) {
+      resultExpr = expr->front();
+      unify(expr->getType(), resultExpr->getType());
+      return;
+    }
+  }
 
   TypePtr typ = nullptr;
   size_t typeParamsSize = expr->size();

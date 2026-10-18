@@ -108,6 +108,7 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
   if (!ctx->inFunction())
     E(Error::FN_OUTSIDE_ERROR, stmt, "return");
   auto isAsync = ctx->getBase()->func->isAsync();
+  bool bareReturn = !stmt->expr;
 
   if (!stmt->expr && ctx->getBase()->func->hasAttribute(Attr::IsGenerator)) {
     stmt->setDone();
@@ -119,7 +120,7 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
     stmt->expr = transform(stmt->getExpr());
 
     // Wrap expression to match the return type
-    if (!ctx->getBase()->returnType->getUnbound())
+    if (!ctx->getBase()->inferReturnType && !ctx->getBase()->returnType->getUnbound())
       if (!wrapExpr(&stmt->expr, ctx->getBase()->returnType.get())) {
         return;
       }
@@ -145,6 +146,11 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
       unify(ctx->getBase()->returnType.get(),
             instantiateType(getStdLibType(StdlibTypes::Coroutine),
                             {stmt->getExpr()->getType()}));
+    } else if (ctx->getBase()->inferReturnType) {
+      auto &returns = ctx->getBase()->returnStatements;
+      if (std::ranges::none_of(
+              returns, [stmt](const auto &entry) { return entry.first == stmt; }))
+        returns.emplace_back(stmt, bareReturn);
     } else {
       unify(ctx->getBase()->returnType.get(), stmt->getExpr()->getType());
     }
@@ -155,7 +161,8 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
   if (!ctx->blockLevel)
     ctx->returnEarly = true;
 
-  if (!stmt->getExpr() || stmt->getExpr()->isDone())
+  if (!ctx->getBase()->inferReturnType &&
+      (!stmt->getExpr() || stmt->getExpr()->isDone()))
     stmt->setDone();
 }
 

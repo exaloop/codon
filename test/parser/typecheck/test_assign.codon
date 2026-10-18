@@ -143,12 +143,42 @@ a, *b, c, *d = 1,2,3,4,5 #! multiple starred expressions in assignment
 #%% assign_err_4,barebones
 *x = range(5) #! cannot assign to given expression
 
-#%% assign_err_5_NOPY,barebones
-# TODO in Python, this is a ValueError
+#%% assign_err_5,barebones
 try:
     (sa, sb), sc = 'XYZ'
-except IndexError:
+except ValueError:
     print("assign failed") #: assign failed
+
+#%% nested_iterable_unpacking
+def triples():
+    yield 1, 2, 3
+[[first, second, third]] = triples()
+assert (first, second, third) == (1, 2, 3)
+[[first, second, third]] = list(triples())
+assert (first, second, third) == (1, 2, 3)
+[[number, text]] = [(42, 'answer')]
+assert number == 42 and text == 'answer'
+first, *middle, last = (value for value in range(5))
+assert first == 0 and middle == [1, 2, 3] and last == 4
+
+def bounded(events):
+    for value in range(4):
+        events.append(value)
+        yield value
+events: list[int] = []
+first = 99
+try:
+    first, second = bounded(events)
+    assert False
+except ValueError:
+    pass
+assert events == [0, 1, 2] and first == 99
+try:
+    first, second = iter([1])
+    assert False
+except ValueError:
+    pass
+print('iterable unpacking ok')  #: iterable unpacking ok
 
 #%% assign_comprehension
 g = ((b, a, c) for a, *b, c in ['ABC','DEEEEF','FHGIJ'])

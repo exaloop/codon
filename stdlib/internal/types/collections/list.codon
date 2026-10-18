@@ -20,6 +20,25 @@ class List:
         else:
             return List(x)
 
+    @staticmethod
+    def _unpack(source, count: Literal[int], has_star: Literal[bool]):
+        # Preserve heterogeneous tuples and bound non-starred iteration.
+        if isinstance(source, Tuple):
+            if len(source) < count:
+                raise ValueError("not enough values to unpack")
+            if not has_star and len(source) > count:
+                raise ValueError("too many values to unpack")
+            return source
+        else:
+            values = []
+            for value in source:
+                values.append(value)
+                if not has_star and len(values) > count:
+                    raise ValueError("too many values to unpack")
+            if len(values) < count:
+                raise ValueError("not enough values to unpack")
+            return values
+
     def __init__(self):
         self._ptr = Ptr[T](_DEFAULT_LIST_CAPACITY)
         self._len = 0
