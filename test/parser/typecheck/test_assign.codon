@@ -188,6 +188,25 @@ assert (first, second, third) == (1, 2, 3)
 assert (first, second, third) == (1, 2, 3)
 [[number, text]] = [(42, 'answer')]
 assert number == 42 and text == 'answer'
+
+# Named tuple records retain heterogeneous field types during unpacking.
+@tuple
+class UnpackedRecord:
+    number: int
+    text: str
+
+    def __getitem__(self, index: Literal[int]):
+        if index == 0 or index == -2:
+            return self.number
+        elif index == 1 or index == -1:
+            return self.text
+        else:
+            compile_error('record index out of range')
+
+number, text = UnpackedRecord(42, 'answer')
+assert type(number) is int and type(text) is str
+assert number == 42 and text == 'answer'
+
 first, *middle, last = (value for value in range(5))
 assert first == 0 and middle == [1, 2, 3] and last == 4
 
@@ -209,6 +228,40 @@ try:
 except ValueError:
     pass
 print('iterable unpacking ok')  #: iterable unpacking ok
+
+#%% loop_unpacking_arity
+# Static loop-target optimization must retain invalid-arity checks before writes.
+first = 99
+try:
+    for first, second in [(1, 2, 3)]:
+        assert False
+except ValueError:
+    pass
+assert first == 99
+for first, second in [(1, 2)]:
+    assert first == 1 and second == 2
+
+#%% unpack_mutable_tuple_storage
+# Tuple-backed containers must be consumed before overlapping target writes.
+@tuple
+class MutableTupleSequence:
+    values: list[int]
+
+    def __len__(self):
+        return len(self.values)
+
+    def __iter__(self):
+        yield from self.values
+
+    def __getitem__(self, index: int):
+        return self.values[index]
+
+    def __setitem__(self, index: int, value: int):
+        self.values[index] = value
+
+source = MutableTupleSequence([1, 2])
+source[1], observed = source
+assert source.values == [1, 1] and observed == 2
 
 #%% assign_comprehension
 g = ((b, a, c) for a, *b, c in ['ABC','DEEEEF','FHGIJ'])

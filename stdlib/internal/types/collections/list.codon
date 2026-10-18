@@ -22,8 +22,9 @@ class List:
 
     @staticmethod
     def _unpack(source, count: Literal[int], has_star: Literal[bool]):
-        # Preserve heterogeneous tuples and bound non-starred iteration.
-        if isinstance(source, Tuple):
+        # Preserve heterogeneous records, but snapshot mutable indexed containers.
+        if isinstance(source, Tuple) or (hasattr(type(source), '__tuplesize__') and
+                        not hasattr(type(source), '__setitem__')):
             if len(source) < count:
                 raise ValueError("not enough values to unpack")
             if not has_star and len(source) > count:

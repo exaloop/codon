@@ -89,10 +89,6 @@ struct TypeContext : public Context<TypecheckItem> {
     Stmt *suite = nullptr;
     /// Collect reached returns before committing to a result type or wrapping them.
     bool inferReturnType = false;
-    /// Source-level fallthrough possibility, retained before loop-else lowering.
-    bool returnCanFallThrough = false;
-    /// Original annotation while a deferred slot determines optional promotion.
-    types::TypePtr declaredReturnType;
     /// Reached returns and whether each was originally bare, for nullable joining.
     std::vector<std::pair<ReturnStmt *, bool>> returnStatements;
     /// Index of the parent base

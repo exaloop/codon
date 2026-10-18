@@ -219,6 +219,13 @@ assert type(Optional(what=None)) is NoneType
 wrapped = Optional(Optional(42))
 assert type(wrapped) is Optional[int] and wrapped == 42
 assert Optional(Optional[int]()) is None
+# Empty constructors retain their payload slot until surrounding uses constrain it.
+deferred = [Optional()]
+deferred.append(7)
+assert type(deferred) is list[Optional[int]]
+assert deferred[0] is None and deferred[1] == 7
+typed_empty: Optional[int] = Optional()
+assert typed_empty is None and type(typed_empty) is Optional[int]
 events: list[int] = []
 def empty_expression(events):
     events.append(1)

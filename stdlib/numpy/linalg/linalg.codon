@@ -4236,8 +4236,10 @@ def matrix_rank(A, tol = None, hermitian: bool = False):
         S = svd(A, compute_uv=False, hermitian=hermitian)
         R = S.dtype
 
-        if static.len(asarray(tol).shape) != 0:
-            compile_error("invalid tolerance dimension")
+        # None requests an inferred tolerance and is not an array-valued input.
+        if tol is not None:
+            if static.len(asarray(tol).shape) != 0:
+                compile_error("invalid tolerance dimension")
 
         s_max = -inf(R)
         if tol is None:

@@ -377,6 +377,13 @@ TypecheckVisitor::getCalleeFn(CallExpr *expr, PartialCallData &part) {
       typ = extractClassGeneric(typ)->getClass();
     if (!typ)
       return {nullptr, nullptr};
+    // A null constructor shares None's deferred payload and canonicalization path.
+    // Realizing Optional.__new__ after its parent becomes NoneType loses generic T.
+    if (typ->is(StdlibTypes::Optional) && expr->empty()) {
+      auto value = N<NoneExpr>();
+      value->setType(typ->shared_from_this());
+      return {nullptr, transform(value)};
+    }
     // Canonical optional constructors must not add a second value layer.
     if (typ->is(StdlibTypes::Optional) && expr->size() == 1 &&
         (expr->begin()->name.empty() || expr->begin()->name == "what")) {

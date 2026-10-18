@@ -149,7 +149,7 @@ private: // Node typechecking rules
   /* Assignments (assign.cpp) */
   void visit(AssignExpr *) override;
   void visit(AssignStmt *) override;
-  Stmt *unpackAssignment(Expr *lhs, Expr *rhs);
+  Stmt *unpackAssignment(Expr *lhs, Expr *rhs, bool isLoopTarget = false);
   Stmt *transformUpdate(AssignStmt *);
   Stmt *transformAssignment(AssignStmt *, bool = false);
   void visit(DelStmt *) override;

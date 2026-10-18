@@ -103,7 +103,9 @@ void TypecheckVisitor::visit(DelStmt *stmt) {
 /// @example
 ///   `a, b = c, d + foo()` -> `assign = (c, d + foo); a = assign[0]; b = assign[1]`.
 /// Each assignment is unpacked recursively to allow cases like `a, (b, c) = d`.
-Stmt *TypecheckVisitor::unpackAssignment(Expr *lhs, Expr *rhs) {
+/// Compiler-owned loop tuples can be read directly when their arity is known,
+/// preserving the field-read pattern used by loop optimizations.
+Stmt *TypecheckVisitor::unpackAssignment(Expr *lhs, Expr *rhs, bool isLoopTarget) {
   std::vector<Expr *> leftSide;
   if (auto et = cast<TupleExpr>(lhs)) {
     // Case: (a, b) = ...
@@ -132,14 +134,23 @@ Stmt *TypecheckVisitor::unpackAssignment(Expr *lhs, Expr *rhs) {
           *tuple, [](Expr *item) { return cast<StarExpr>(item) != nullptr; }) &&
       (hasStar ? tuple->size() >= leftSide.size() - 1
                : tuple->size() == leftSide.size());
-  Expr *source = ast::clone(rhs);
-  if (!knownShape)
-    source = N<CallExpr>(N<IdExpr>(getMangledMethod(
-                             "std.internal.types.collections.list", "List", "_unpack")),
-                         source, N<IntExpr>(leftSide.size() - hasStar),
-                         N<BoolExpr>(hasStar));
-  block->addStmt(N<AssignStmt>(newRhs, source));
-  rhs = newRhs;
+  auto sourceType = rhs->getType();
+  bool directLoopTuple = false;
+  if (isLoopTarget && sourceType && sourceType->is(StdlibTypes::Tuple)) {
+    auto sourceSize = getClassFields(sourceType->getClass()).size();
+    directLoopTuple =
+        hasStar ? sourceSize >= leftSide.size() - 1 : sourceSize == leftSide.size();
+  }
+  if (!directLoopTuple) {
+    Expr *source = ast::clone(rhs);
+    if (!knownShape)
+      source = N<CallExpr>(
+          N<IdExpr>(getMangledMethod("std.internal.types.collections.list", "List",
+                                     "_unpack")),
+          source, N<IntExpr>(leftSide.size() - hasStar), N<BoolExpr>(hasStar));
+    block->addStmt(N<AssignStmt>(newRhs, source));
+    rhs = newRhs;
+  }
 
   // Process assignments until the fist StarExpr (if any)
   size_t st = 0;

@@ -5,8 +5,9 @@ if True: a = 5 # wrap with `if`` to avoid shadowing
 print(a.__class__.__name__, a) #: Optional[int] 5
 
 #%% none_unbound,barebones
+# An unresolved null payload defaults to the canonical NoneType.
 a = None
-print(a.__class__.__name__, a) #: Optional[NoneType] None
+print(a.__class__.__name__, a) #: NoneType None
 
 #%% bool,barebones
 print(True, False) #: True False
