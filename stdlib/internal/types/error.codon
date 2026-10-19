@@ -35,6 +35,40 @@ class BaseException(object):
     def __cause__(self):
         return self.cause
 
+    def _context_exit_is_legacy_none(exit_method, is_async: Literal[bool]) -> Literal[bool]:
+        """Select plain finally cleanup only for exclusively legacy None exits."""
+        import internal.static as static
+        if static.function.can_call(exit_method, NoneType(), NoneType(), NoneType()):
+            return False
+        elif static.function.can_call(exit_method, get_typeinfo(BaseException()),
+                                      BaseException(), NoneType()):
+            return False
+        elif not static.function.can_call(exit_method):
+            return False
+        elif is_async:
+            if isinstance(exit_method(), Coroutine):
+                return type(exit_method()).T is NoneType
+            else:
+                return False
+        else:
+            return type(exit_method()) is NoneType
+
+    def _context_exit(exit_method, exc_type, exc_value):
+        """Prefer the exception-aware protocol, retaining legacy zero-argument exits."""
+        import internal.static as static
+        if static.function.can_call(exit_method, exc_type, exc_value, NoneType()):
+            return exit_method(exc_type, exc_value, NoneType())
+        else:
+            return exit_method()
+
+    async def _context_aexit(exit_method, exc_type, exc_value):
+        """Await the selected async exit protocol without coercing its result."""
+        import internal.static as static
+        if static.function.can_call(exit_method, exc_type, exc_value, NoneType()):
+            return await exit_method(exc_type, exc_value, NoneType())
+        else:
+            return await exit_method()
+
     @__hidden__
     def _set_header(e, func, file, line, col, cause):
         if not isinstance(e, BaseException):

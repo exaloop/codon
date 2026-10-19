@@ -144,6 +144,160 @@ try:
 except RuntimeError as e:
     print(e.message, e.__cause__)  #: oops None
 
+#%% with_exit_arguments
+from internal.types.rtti import get_typeinfo
+
+events: list[str] = []
+class Manager:
+    suppress: bool
+    def __enter__(self):
+        events.append('enter')
+        return 17
+    def __exit__(self, exc_type, exc_value, traceback):
+        assert traceback is None
+        if exc_type is None:
+            assert exc_value is None
+            events.append('normal')
+        else:
+            assert isinstance(exc_value, BaseException)
+            assert exc_type == get_typeinfo(exc_value)
+            events.append(exc_type.nice_name + ':' + exc_value.message)
+        return self.suppress
+
+with Manager(False) as value:
+    assert value == 17
+assert events == ['enter', 'normal']
+
+events.clear()
+try:
+    with Manager(False):
+        raise ValueError('propagate')
+except ValueError as error:
+    assert error.message == 'propagate'
+assert events == ['enter', 'ValueError:propagate']
+
+events.clear()
+with Manager(True):
+    raise KeyError('suppressed')
+assert events == ['enter', 'KeyError:suppressed']
+
+def returning():
+    with Manager(True) as value:
+        return value
+events.clear()
+assert returning() == 17
+assert events == ['enter', 'normal']
+
+events.clear()
+for index in range(3):
+    with Manager(False):
+        if index == 0:
+            continue
+        break
+assert events == ['enter', 'normal', 'enter', 'normal']
+
+class ExitFailure:
+    def __enter__(self):
+        return self
+    def __exit__(self, exc_type, exc_value, traceback):
+        events.append('exit failure')
+        raise RuntimeError('replacement')
+
+events.clear()
+try:
+    with ExitFailure():
+        raise ValueError('original')
+except RuntimeError as error:
+    assert error.message == 'replacement'
+assert events == ['exit failure']
+
+events.clear()
+try:
+    with ExitFailure():
+        pass
+except RuntimeError as error:
+    assert error.message == 'replacement'
+assert events == ['exit failure']
+
+events.clear()
+with Manager(False), Manager(True):
+    raise SystemExit('nested')
+assert events == ['enter', 'enter', 'SystemExit:nested', 'normal']
+
+class EntryFailure:
+    def __enter__(self):
+        raise ValueError('inner entry')
+    def __exit__(self):
+        assert False
+
+events.clear()
+with Manager(True), EntryFailure():
+    assert False
+assert events == ['enter', 'ValueError:inner entry']
+
+class LegacyExit:
+    def __enter__(self):
+        return self
+    def __exit__(self):
+        events.append('legacy')
+
+events.clear()
+try:
+    with LegacyExit():
+        raise KeyError('legacy error')
+except KeyError as error:
+    assert error.message == 'legacy error'
+assert events == ['legacy']
+
+class DefaultExit:
+    def __enter__(self):
+        return self
+    def __exit__(self, exc_type=None, exc_value=None, traceback=None):
+        assert traceback is None
+        if exc_type is None:
+            events.append('default normal')
+        else:
+            events.append('default ' + exc_type.nice_name)
+        return [True]
+
+events.clear()
+with DefaultExit():
+    pass
+with DefaultExit():
+    raise ValueError('truthy non-bool')
+assert events == ['default normal', 'default ValueError']
+
+class OverloadedExit:
+    def __enter__(self):
+        return self
+    def __exit__(self):
+        assert False
+    def __exit__(self, exc_type, exc_value, traceback):
+        events.append('overloaded')
+
+events.clear()
+with OverloadedExit():
+    pass
+assert events == ['overloaded']
+
+original: BaseException = ValueError('identity')
+headers: list[Tuple[str, str, int, int]] = []
+class IdentityExit:
+    def __enter__(self):
+        return self
+    def __exit__(self, exc_type, exc_value, traceback):
+        if exc_type is not None:
+            assert exc_value is original
+            headers.append((exc_value.func, exc_value.file, exc_value.line, exc_value.col))
+
+try:
+    with IdentityExit():
+        raise original
+except ValueError as error:
+    caught: BaseException = error
+    assert caught is original
+    assert headers == [(error.func, error.file, error.line, error.col)]
+
 #%% try_else,barebones
 def div(x, y):
     if y == 0: raise ZeroDivisionError("oops!")

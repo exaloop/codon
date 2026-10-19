@@ -15,6 +15,9 @@
 #include <unistd.h>
 #include <vector>
 
+#include "codon/cir/flow.h"
+#include "codon/cir/func.h"
+#include "codon/cir/module.h"
 #include "codon/cir/transform/manager.h"
 #include "codon/compiler/compiler.h"
 #include "codon/compiler/jit.h"
@@ -227,6 +230,110 @@ TEST(EnumConstructionTest, BoundsHelperRealizations) {
     EXPECT_EQ(countRealizations("_next_value"), 1u);
     EXPECT_EQ(countRealizations("_auto_maximum"), 1u);
   }
+}
+
+TEST(ContextManagerLoweringTest, OmitsHandlersOnlyForLegacyNoneExits) {
+  const std::vector<std::tuple<std::string, std::string, bool, bool>> cases = {
+      {"context_legacy", "LegacyNone", false, true},
+      {"context_bool", "LegacyBool", false, false},
+      {"context_aware", "AwareNone", false, false},
+      {"context_defaults", "DefaultNone", false, false},
+      {"context_overloaded", "OverloadedNone", false, false},
+      {"context_async_legacy", "AsyncNone", true, true},
+      {"context_async_bool", "AsyncBool", true, false},
+  };
+  std::string source = R"(
+class LegacyNone:
+  def __enter__(self):
+    return 7
+  def __exit__(self):
+    pass
+
+class LegacyBool:
+  def __enter__(self):
+    return 7
+  def __exit__(self):
+    return True
+
+class AwareNone:
+  def __enter__(self):
+    return 7
+  def __exit__(self, exc_type, exc_value, traceback):
+    pass
+
+class DefaultNone:
+  def __enter__(self):
+    return 7
+  def __exit__(self, exc_type=None, exc_value=None, traceback=None):
+    pass
+
+class OverloadedNone:
+  def __enter__(self):
+    return 7
+  def __exit__(self):
+    pass
+  def __exit__(self, exc_type, exc_value, traceback):
+    pass
+
+class AsyncNone:
+  async def __aenter__(self):
+    return 7
+  async def __aexit__(self):
+    pass
+
+class AsyncBool:
+  async def __aenter__(self):
+    return 7
+  async def __aexit__(self):
+    return True
+)";
+  for (const auto &[name, manager, isAsync, legacy] : cases)
+    source += std::string(isAsync ? "async def " : "def ") + name + "():\n    " +
+              (isAsync ? "async with " : "with ") + manager +
+              "() as value:\n        return value\n" + name + "()\n";
+
+  auto options = codon::Options::getDefault("build/codon_test");
+  codon::Compiler compiler(*options);
+  auto error = compiler.parseCode("context_manager_lowering.codon", source);
+  ASSERT_FALSE(bool(error)) << llvm::toString(std::move(error));
+
+  size_t checked = 0;
+  for (auto *variable : *compiler.getModule()) {
+    auto *function = codon::ir::cast<codon::ir::BodiedFunc>(variable);
+    if (!function)
+      continue;
+    auto expected = std::ranges::find_if(cases, [&](const auto &entry) {
+      return std::get<0>(entry) == function->getUnmangledName();
+    });
+    if (expected == cases.end())
+      continue;
+    SCOPED_TRACE(function->getUnmangledName());
+    ++checked;
+    int tries = 0;
+    int catches = 0;
+    int flags = 0;
+    std::vector<codon::ir::Value *> pending{function->getBody()};
+    while (!pending.empty()) {
+      auto *value = pending.back();
+      pending.pop_back();
+      if (!value)
+        continue;
+      if (auto *flow = codon::ir::cast<codon::ir::TryCatchFlow>(value)) {
+        ++tries;
+        catches += std::distance(flow->begin(), flow->end());
+        EXPECT_NE(flow->getFinally(), nullptr);
+      }
+      auto children = value->getUsedValues();
+      pending.insert(pending.end(), children.begin(), children.end());
+    }
+    for (auto *local : *function)
+      if (local->getName().find("with_exception") != std::string::npos)
+        ++flags;
+    EXPECT_EQ(tries, 1);
+    EXPECT_EQ(catches, std::get<3>(*expected) ? 0 : 1);
+    EXPECT_EQ(flags, std::get<3>(*expected) ? 0 : 1);
+  }
+  EXPECT_EQ(checked, cases.size());
 }
 
 TEST(PassManagerTest, HonorsDisabledPassesAtRegistration) {

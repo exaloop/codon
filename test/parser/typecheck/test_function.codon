@@ -167,6 +167,7 @@ class Foo:
     i: int
     def __enter__(self: Foo):
         print '> foo! ' + str(self.i)
+        return self
     def __exit__(self: Foo):
         print '< foo! ' + str(self.i)
     def foo(self: Foo):
@@ -175,6 +176,7 @@ class Bar:
     s: str
     def __enter__(self: Bar):
         print '> bar! ' + self.s
+        return self
     def __exit__(self: Bar):
         print '< bar! ' + self.s
     def bar(self: Bar):
@@ -198,6 +200,244 @@ with Foo(2), Bar('t') as q:
 #: < bar! t
 #: < foo! 2
 
+
+#%% with_enter_result
+events: list[str] = []
+class EntryValue:
+    def __enter__(self):
+        events.append('enter')
+        return 42
+    def __exit__(self):
+        events.append('exit')
+
+with EntryValue() as value:
+    assert type(value) is int and value == 42
+    value = 99
+assert events == ['enter', 'exit']
+
+class EmptyEntry:
+    def __enter__(self):
+        pass
+    def __exit__(self):
+        events.append('empty exit')
+
+with EmptyEntry() as empty:
+    assert empty is None
+assert events[-1] == 'empty exit'
+
+class FailedEntry:
+    def __enter__(self) -> int:
+        raise ValueError('entry failed')
+    def __exit__(self):
+        assert False
+
+try:
+    with FailedEntry() as missing:
+        assert False
+except ValueError as error:
+    assert error.message == 'entry failed'
+
+def legacy_returning():
+    with EntryValue() as value:
+        return value
+
+events.clear()
+assert legacy_returning() == 42
+assert events == ['enter', 'exit']
+
+events.clear()
+for index in range(3):
+    with EntryValue():
+        if index == 0:
+            continue
+        break
+assert events == ['enter', 'exit', 'enter', 'exit']
+
+class LegacySuppression:
+    suppress: bool
+    def __enter__(self):
+        return self
+    def __exit__(self):
+        events.append('legacy suppression')
+        return True if self.suppress else None
+
+events.clear()
+with LegacySuppression(True):
+    raise ValueError('suppressed')
+try:
+    with LegacySuppression(False):
+        raise KeyError('propagated')
+except KeyError as error:
+    assert error.message == 'propagated'
+assert events == ['legacy suppression', 'legacy suppression']
+
+#%% async_with
+import asyncio
+from internal.types.rtti import get_typeinfo
+
+events: list[str] = []
+class AsyncManager:
+    name: str
+    suppress: bool
+    async def __aenter__(self):
+        await asyncio.sleep(0)
+        events.append('enter:' + self.name)
+        return self.name
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        await asyncio.sleep(0)
+        assert traceback is None
+        if exc_type is None:
+            assert exc_value is None
+            events.append('normal:' + self.name)
+        else:
+            assert exc_type == get_typeinfo(exc_value)
+            events.append(exc_type.nice_name + ':' + self.name)
+        return self.suppress
+
+class AsyncLegacy:
+    async def __aenter__(self):
+        await asyncio.sleep(0)
+        return 42
+    async def __aexit__(self):
+        await asyncio.sleep(0)
+        events.append('legacy exit')
+
+class AsyncFailedEntry:
+    async def __aenter__(self):
+        await asyncio.sleep(0)
+        raise ValueError('async entry')
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        assert False
+
+class AsyncLegacySuppression:
+    async def __aenter__(self):
+        return self
+    async def __aexit__(self):
+        await asyncio.sleep(0)
+        events.append('async legacy suppression')
+        return True
+
+class ExitAwaitable:
+    def __await__(self):
+        events.append('custom exit')
+        yield
+
+class CustomAsyncExit:
+    async def __aenter__(self):
+        return self
+    def __aexit__(self):
+        return ExitAwaitable()
+
+class AsyncFailedExit:
+    async def __aenter__(self):
+        return self
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        await asyncio.sleep(0)
+        events.append('failed exit')
+        raise RuntimeError('async exit')
+
+async def returning():
+    async with AsyncLegacy() as value:
+        return value
+
+async def cancelling():
+    async with AsyncManager('task', False):
+        asyncio.current_task().cancel('task cancelled')
+        await asyncio.Future[int]()
+
+async def run_contexts():
+    async with AsyncManager('outer', False) as outer, AsyncManager('inner', True) as inner:
+        assert outer == 'outer' and inner == 'inner'
+        raise ValueError('suppressed')
+    assert events == ['enter:outer', 'enter:inner', 'ValueError:inner', 'normal:outer']
+
+    events.clear()
+    assert await returning() == 42
+    assert events == ['legacy exit']
+
+    events.clear()
+    async with AsyncLegacySuppression():
+        raise ValueError('async suppressed')
+    assert events == ['async legacy suppression']
+
+    events.clear()
+    try:
+        async with CustomAsyncExit():
+            raise KeyError('custom propagated')
+    except KeyError as error:
+        assert error.message == 'custom propagated'
+    assert events == ['custom exit']
+
+    events.clear()
+    for index in range(3):
+        async with AsyncManager('loop', False):
+            if index == 0:
+                continue
+            break
+    assert events == ['enter:loop', 'normal:loop', 'enter:loop', 'normal:loop']
+
+    events.clear()
+    try:
+        async with AsyncManager('cancel', False):
+            raise asyncio.CancelledError('cancelled')
+    except asyncio.CancelledError as error:
+        assert error.message == 'cancelled'
+    assert events == ['enter:cancel', 'CancelledError:cancel']
+
+    events.clear()
+    task = asyncio.create_task(cancelling())
+    try:
+        await task
+        assert False
+    except asyncio.CancelledError:
+        pass
+    assert task.cancelled()
+    assert events == ['enter:task', 'CancelledError:task']
+
+    try:
+        async with AsyncFailedEntry() as missing:
+            assert False
+    except ValueError as error:
+        assert error.message == 'async entry'
+
+    events.clear()
+    async with AsyncManager('outer failure', True), AsyncFailedEntry():
+        assert False
+    assert events == ['enter:outer failure', 'ValueError:outer failure']
+
+    events.clear()
+    try:
+        async with AsyncLegacy():
+            raise KeyError('legacy async error')
+    except KeyError as error:
+        assert error.message == 'legacy async error'
+    assert events == ['legacy exit']
+
+    events.clear()
+    try:
+        async with AsyncFailedExit():
+            raise ValueError('original')
+    except RuntimeError as error:
+        assert error.message == 'async exit'
+    assert events == ['failed exit']
+
+asyncio.run(run_contexts())
+
+#%% with_stdlib_entry_results
+from threading import Lock, RLock
+from time import TimeInterval
+
+def check_lock(lock):
+    with lock as acquired:
+        assert acquired is True
+    assert lock.acquire(False)
+    lock.release()
+
+check_lock(Lock())
+check_lock(RLock())
+interval = TimeInterval()
+entered = interval.__enter__()
+assert entered is interval
 
 #%% function_err_0,barebones
 def foo(a, b, a):

@@ -37,6 +37,7 @@ class TimeInterval:
 
     def __enter__(self):
         self.start = _C.seq_time()
+        return self
 
     def __exit__(self):
         from sys import stderr

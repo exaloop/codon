@@ -23,7 +23,7 @@ class Lock:
         _C.seq_lock_release(self.p)
 
     def __enter__(self):
-        self.acquire()
+        return self.acquire()
 
     def __exit__(self):
         self.release()
@@ -44,7 +44,7 @@ class RLock:
         _C.seq_rlock_release(self.p)
 
     def __enter__(self):
-        self.acquire()
+        return self.acquire()
 
     def __exit__(self):
         self.release()

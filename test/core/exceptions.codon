@@ -513,6 +513,7 @@ class Foo:
     i: int
     def __enter__(self: Foo):
         print '> foo! ' + str(self.i)
+        return self
     def __exit__(self: Foo):
         print '< foo! ' + str(self.i)
     def foo(self: Foo):
@@ -522,6 +523,7 @@ class Bar:
     s: str
     def __enter__(self: Bar):
         print '> bar! ' + self.s
+        return self
     def __exit__(self: Bar):
         print '< bar! ' + self.s
     def bar(self: Bar):
