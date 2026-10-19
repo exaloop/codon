@@ -3767,6 +3767,46 @@ define void @launch(ptr %result) {
   EXPECT_EQ(3, queries);
 }
 
+TEST(LLVMOptimizationTest, AlignsDemotedAllocationsForGarbageCollection) {
+  for (auto allocator : {"seq_alloc", "seq_alloc_atomic", "seq_alloc_uncollectable",
+                         "seq_alloc_atomic_uncollectable"}) {
+    SCOPED_TRACE(allocator);
+    auto optimized = compileAndOptimizeIR(std::string("declare noalias ptr @") +
+                                          allocator + R"((i64)
+declare i64 @collect()
+declare void @llvm.memcpy.p0.p0.i64(ptr nocapture writeonly, ptr nocapture readonly, i64, i1 immarg)
+
+define i8 @test(ptr %source) {
+entry:
+  %allocation = call ptr @)" + allocator + R"((i64 17)
+  call void @llvm.memcpy.p0.p0.i64(ptr align 1 %allocation, ptr align 1 %source, i64 17, i1 false)
+  %index = call i64 @collect()
+  %selected = getelementptr i8, ptr %allocation, i64 %index
+  %result = load i8, ptr %selected, align 1
+  ret i8 %result
+}
+)");
+    ASSERT_NE(optimized.module, nullptr);
+    auto *function = optimized.module->getFunction("test");
+    ASSERT_NE(function, nullptr);
+    auto pointerAlignment = optimized.module->getDataLayout().getPointerABIAlignment(0);
+    unsigned stackAllocations = 0;
+    for (auto &block : *function) {
+      for (auto &instruction : block) {
+        if (auto *allocation = llvm::dyn_cast<llvm::AllocaInst>(&instruction)) {
+          ++stackAllocations;
+          EXPECT_GE(allocation->getAlign().value(), pointerAlignment.value());
+        }
+        if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction)) {
+          auto *callee = call->getCalledFunction();
+          EXPECT_FALSE(callee && callee->getName() == allocator);
+        }
+      }
+    }
+    EXPECT_EQ(stackAllocations, 1u);
+  }
+}
+
 TEST(LLVMOptimizationTest, HoistsNonescapingPointerThroughAggregatePhi) {
   auto compiler =
       compileAndOptimize("PATH = 'allocation_phi_test.txt'\n"

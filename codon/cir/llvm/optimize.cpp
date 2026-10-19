@@ -762,9 +762,11 @@ struct AllocationRemover : public llvm::PassInfoMixin<AllocationRemover> {
     }
 
     if (info.isAllocSiteDemotable(&mi, size, users)) {
+      auto pointerAlignment = mi.getModule()->getDataLayout().getPointerABIAlignment(0);
       auto *replacement = new AllocaInst(
           llvm::Type::getInt8Ty(mi.getContext()), 0,
-          ConstantInt::get(llvm::Type::getInt64Ty(mi.getContext()), size), Align());
+          ConstantInt::get(llvm::Type::getInt64Ty(mi.getContext()), size),
+          pointerAlignment);
       alloca.push_back(replacement);
       replace.emplace_back(&mi, replacement);
       erase.insert(&mi);
