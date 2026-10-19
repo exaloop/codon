@@ -424,10 +424,8 @@ public:
   SuiteStmt *generateUnionNewAST(const types::FuncType *);
   SuiteStmt *generateUnionTagAST(types::FuncType *);
   SuiteStmt *generateUnionDispatchAST(types::FuncType *);
-  /// Iterate the active union alternative with a common or joined element type.
   SuiteStmt *generateUnionIteratorAST(types::FuncType *);
-  /// Dispatch both comparison operands while preserving their native result types.
-  SuiteStmt *generateUnionCompareAST(types::FuncType *);
+  SuiteStmt *generateUnionBinaryAST(types::FuncType *);
   SuiteStmt *generateNamedKeysAST(types::FuncType *);
   SuiteStmt *generateTupleMulAST(types::FuncType *);
   SuiteStmt *generateTypeInfoInitAST(types::FuncType *);

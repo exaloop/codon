@@ -520,10 +520,10 @@ SuiteStmt *TypecheckVisitor::generateUnionIteratorAST(FuncType *type) {
   return suite;
 }
 
-/// Generate equality/inequality dispatch for the active pair of operand types.
+/// Generate binary operator dispatch for the active pair of operand types.
 /// Either operand may be concrete or a union; retain native results such as boolean
 /// ndarrays, joining result types only when supported pairs return different types.
-SuiteStmt *TypecheckVisitor::generateUnionCompareAST(FuncType *type) {
+SuiteStmt *TypecheckVisitor::generateUnionBinaryAST(FuncType *type) {
   auto operation = extractFuncGeneric(type)->getStrStatic();
   if (!operation)
     return nullptr;
@@ -544,6 +544,7 @@ SuiteStmt *TypecheckVisitor::generateUnionCompareAST(FuncType *type) {
       ctx->addVar(rightName, rightName, rightTypes[rightTag]->shared_from_this());
       // Probe magic-method availability without rejecting the whole union when a
       // pair is unsupported. Such pairs use the runtime TypeError fallback below.
+      // Ordinary operator resolution also preserves reflected methods such as __rsub__.
       auto compared = transformBinaryMagic(
           N<BinaryExpr>(transform(N<IdExpr>(leftName)), operation->value,
                         transform(N<IdExpr>(rightName))));
@@ -582,6 +583,8 @@ SuiteStmt *TypecheckVisitor::generateUnionCompareAST(FuncType *type) {
                               N<BinaryExpr>(leftValue, operation->value, rightValue));
     }
   }
+  // Keep a shared native result type, such as ndarray[bool] for array comparisons.
+  // Arithmetic can return different dtypes across branches, requiring a result union.
   Expr *resultType = nullptr;
   if (results.size() > 1) {
     std::vector<Expr *> members;
@@ -601,6 +604,10 @@ SuiteStmt *TypecheckVisitor::generateUnionCompareAST(FuncType *type) {
   return suite;
 }
 
+/// Generate attribute access or calls for a union receiver/callable.
+/// Method lookup can return a union of bound callables. Selecting that callable alone
+/// is insufficient for generic methods: their bodies also need the active types of
+/// union-valued positional and keyword arguments, rather than the unions themselves.
 SuiteStmt *TypecheckVisitor::generateUnionDispatchAST(FuncType *type) {
   auto attr = extractFuncGeneric(type)->getStrStatic();
   if (!attr)
@@ -612,34 +619,82 @@ SuiteStmt *TypecheckVisitor::generateUnionDispatchAST(FuncType *type) {
 
   bool isCall = extractFuncArgType(type, 1)->is(StdlibTypes::Tuple) &&
                 extractFuncArgType(type, 2)->is(StdlibTypes::NamedTuple);
-  std::vector<std::pair<size_t, Expr *>> candidates;
+  std::vector<std::pair<std::string, Type *>> arguments;
+  if (isCall) {
+    for (auto &generic : extractFuncArgType(type, 1)->getClass()->generics)
+      arguments.emplace_back("", generic.getType());
+    auto id = getIntLiteral(extractFuncArgType(type, 2));
+    const auto &names = ctx->cache->generatedTupleNames[id];
+    auto keywords = extractClassGeneric(extractFuncArgType(type, 2), 1)->getClass();
+    for (size_t index = 0; index < keywords->generics.size(); ++index)
+      arguments.emplace_back(names[index], keywords->generics[index].getType());
+  }
+  // Read saved argument packs, not source expressions, so dispatch never repeats
+  // argument side effects. A null selected type keeps the union intact for tag tests.
+  auto argumentValue = [&](size_t index, Type *selected, const std::string &args,
+                           const std::string &kwargs) -> Expr * {
+    const auto &[name, original] = arguments[index];
+    Expr *value = name.empty() ? N<IndexExpr>(N<IdExpr>(args), N<IntExpr>(index))
+                               : N<IndexExpr>(N<IdExpr>(kwargs), N<StringExpr>(name));
+    if (selected && original->getUnion())
+      value = N<CallExpr>(N<IdExpr>(getMangledMethod("", "Union", "_get_data")), value,
+                          N<IdExpr>(selected->realizedName()));
+    return value;
+  };
+  std::vector<std::pair<Expr *, Expr *>> candidates;
   std::map<std::string, Type *> unionTypes;
   size_t tag = 0;
   for (auto &t : unionTyp->getRealizationTypes()) {
+    Expr *condition =
+        N<BinaryExpr>(N<CallExpr>(N<IdExpr>(getMangledMethod("", "Union", "_get_tag")),
+                                  N<IdExpr>("union")),
+                      "==", N<IntExpr>(tag++));
+    Expr *receiver = N<CallExpr>(N<IdExpr>(getMangledMethod("", "Union", "_get_data")),
+                                 N<IdExpr>("union"), N<IdExpr>(t->realizedName()));
     Type *typ = nullptr;
     if (isCall) {
-      std::vector<CallArg> callArgs;
-      for (auto &g : extractFuncArgType(type, 1)->getClass()->generics) {
-        callArgs.emplace_back("", N<NoneExpr>());
-        callArgs.back().getExpr()->setType(g.getType()->shared_from_this());
-      }
-      auto id = getIntLiteral(extractFuncArgType(type, 2));
-      const auto &names = ctx->cache->generatedTupleNames[id];
-      auto kwt = extractClassGeneric(extractFuncArgType(type, 2), 1)->getClass();
-      for (size_t gi = 0; gi < kwt->generics.size(); gi++) {
-        callArgs.emplace_back(names[gi], N<NoneExpr>());
-        callArgs.back().getExpr()->setType(
-            kwt->generics[gi].getType()->shared_from_this());
-      }
-      bool ok = false;
-      if (auto pt = t->getPartial()) {
-        ok = canCall(pt->getPartialFunc(), callArgs, pt) >= 0;
-      } else {
-        auto methods = findMethod(t->getClass(), "__call__", false);
-        auto m = findMatchingMethods(t->getClass(), methods, callArgs);
-        ok = !m.empty();
-      }
-      if (ok) {
+      std::vector<Type *> selected(arguments.size());
+      // Enumerate concrete argument combinations at compile time; runtime tag checks
+      // select one call. For example, f(int|str, scale=int|float) has four combinations
+      // per callable alternative. Non-union arguments contribute just one choice.
+      auto dispatch = [&](auto &&self, size_t index, Expr *selectedCondition) -> void {
+        if (index < arguments.size()) {
+          auto original = arguments[index].second;
+          if (auto alternatives = original->getUnion()) {
+            size_t argumentTag = 0;
+            for (auto member : alternatives->getRealizationTypes()) {
+              selected[index] = member;
+              auto matches = N<BinaryExpr>(
+                  N<CallExpr>(N<IdExpr>(getMangledMethod("", "Union", "_get_tag")),
+                              argumentValue(index, nullptr, "args", "kwargs")),
+                  "==", N<IntExpr>(argumentTag++));
+              self(self, index + 1,
+                   N<BinaryExpr>(clone(selectedCondition), "&&", matches));
+            }
+          } else {
+            selected[index] = original;
+            self(self, index + 1, selectedCondition);
+          }
+          return;
+        }
+        // Preserve keyword names and omit unsupplied arguments so ordinary call
+        // matching still handles overloads, defaults and bound receiver arguments.
+        std::vector<CallArg> callArgs;
+        for (size_t argument = 0; argument < arguments.size(); ++argument) {
+          auto value = N<NoneExpr>();
+          value->setType(selected[argument]->shared_from_this());
+          callArgs.emplace_back(arguments[argument].first, value);
+        }
+        // Skip incompatible signatures before realizing their bodies. An unsupported
+        // active combination reaches the original runtime TypeError fallback instead.
+        if (auto partial = t->getPartial()) {
+          if (canCall(partial->getPartialFunc(), callArgs, partial) < 0)
+            return;
+        } else {
+          auto methods = findMethod(t->getClass(), "__call__", false);
+          if (findMatchingMethods(t->getClass(), methods, callArgs).empty())
+            return;
+        }
         ctx->addBlock();
         auto var = getTemporaryVar("union");
         ctx->addVar(var, var, t->shared_from_this());
@@ -647,41 +702,45 @@ SuiteStmt *TypecheckVisitor::generateUnionDispatchAST(FuncType *type) {
         ctx->addVar(varA, varA, extractFuncArgType(type, 1)->shared_from_this());
         auto varK = getTemporaryVar("kwargs");
         ctx->addVar(varK, varK, extractFuncArgType(type, 2)->shared_from_this());
-        Expr *expr = N<CallExpr>(N<IdExpr>(var), N<StarExpr>(N<IdExpr>(varA)),
-                                 N<KeywordStarExpr>(N<IdExpr>(varK)));
-        expr = transform(expr);
-        typ = expr->getType();
+        callArgs.clear();
+        for (size_t argument = 0; argument < arguments.size(); ++argument)
+          callArgs.emplace_back(
+              arguments[argument].first,
+              argumentValue(argument, selected[argument], varA, varK));
+        // Realize each viable call before joining branch results: the same generic
+        // method may return int for one argument tag and str for another.
+        auto result = transform(N<CallExpr>(N<IdExpr>(var), callArgs))->getType();
+        seqassert(result->canRealize(), "cannot realize {}", result->debugString(2));
+        unionTypes[result->realizedName()] = result;
         ctx->popBlock();
-      }
-    } else {
-      // Do full expression typechecking.
-      ctx->addBlock();
-      auto var = getTemporaryVar("union");
-      ctx->addVar(var, var, t->shared_from_this());
-      auto ei = N<IdExpr>(var);
-      ei->setType(t->shared_from_this());
-      auto [expr, found] = getAttr(ei, attr->value);
-      if (found) {
-        expr = transform(N<DotExpr>(ei, attr->value));
-        typ = expr->getType();
-      }
-      ctx->popBlock();
+        callArgs.clear();
+        for (size_t argument = 0; argument < arguments.size(); ++argument)
+          callArgs.emplace_back(
+              arguments[argument].first,
+              argumentValue(argument, selected[argument], "args", "kwargs"));
+        candidates.emplace_back(selectedCondition,
+                                N<CallExpr>(clone(receiver), callArgs));
+      };
+      dispatch(dispatch, 0, condition);
+      continue;
     }
+    // Do full expression typechecking.
+    ctx->addBlock();
+    auto var = getTemporaryVar("union");
+    ctx->addVar(var, var, t->shared_from_this());
+    auto ei = N<IdExpr>(var);
+    ei->setType(t->shared_from_this());
+    auto [expr, found] = getAttr(ei, attr->value);
+    if (found) {
+      expr = transform(N<DotExpr>(ei, attr->value));
+      typ = expr->getType();
+    }
+    ctx->popBlock();
     if (typ) {
       seqassert(typ->canRealize(), "cannot realize {}", typ->debugString(2));
       unionTypes[typ->realizedName()] = typ;
-
-      Expr *e = N<CallExpr>(N<IdExpr>(getMangledMethod("", "Union", "_get_data")),
-                            N<IdExpr>("union"), N<IdExpr>(t->realizedName()));
-      if (isCall) {
-        e = N<CallExpr>(e, N<StarExpr>(N<IdExpr>("args")),
-                        N<KeywordStarExpr>(N<IdExpr>("kwargs")));
-      } else {
-        e = N<DotExpr>(e, attr->value);
-      }
-      candidates.emplace_back(tag, e);
+      candidates.emplace_back(condition, N<DotExpr>(receiver, attr->value));
     }
-    tag++;
   }
   if (unionTypes.size() > 1) {
     std::vector<Expr *> args;
@@ -692,14 +751,8 @@ SuiteStmt *TypecheckVisitor::generateUnionDispatchAST(FuncType *type) {
       e = N<CallExpr>(N<IdExpr>(getMangledMethod("", "Union", "_new")),
                       std::vector<Expr *>{e, w});
   }
-  for (auto &[tag, expr] : candidates) {
-    // # if static.function.can_call(T, *args, **kwargs):
-    suite->addStmt(N<IfStmt>(
-        N<BinaryExpr>(N<CallExpr>(N<IdExpr>(getMangledMethod("", "Union", "_get_tag")),
-                                  N<IdExpr>("union")),
-                      "==", N<IntExpr>(tag)),
-        N<ReturnStmt>(expr)));
-  }
+  for (auto &[condition, expr] : candidates)
+    suite->addStmt(N<IfStmt>(condition, N<ReturnStmt>(expr)));
   // Move the final check to the end
   suite->addStmt(suite->front());
   (*suite)[0] = nullptr;
@@ -754,8 +807,8 @@ SuiteStmt *TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     return generateUnionDispatchAST(type);
   } else if (startswith(ast->name, getMangledMethod("", "Union", "__iter__"))) {
     return generateUnionIteratorAST(type);
-  } else if (startswith(ast->name, getMangledMethod("", "Union", "_compare"))) {
-    return generateUnionCompareAST(type);
+  } else if (startswith(ast->name, getMangledMethod("", "Union", "_binary"))) {
+    return generateUnionBinaryAST(type);
   } else if (startswith(ast->name, getMangledMethod("", "NamedTuple", "_namedkeys"))) {
     return generateNamedKeysAST(type);
   } else if (startswith(ast->name, getMangledMethod("", "__magic__", "mul"))) {

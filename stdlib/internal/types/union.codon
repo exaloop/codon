@@ -106,13 +106,13 @@ class Union:
         yield
 
     @__generated__
-    def _compare(left, right, operation: Literal[str]):
-        """Compare the active operand types through compiler-generated dispatch.
+    def _binary(left, right, operation: Literal[str]):
+        """Apply a binary operator through compiler-generated active-type dispatch.
 
-        Preserve native comparison results, including elementwise boolean arrays.
+        Preserve native results, including elementwise arrays.
         Unsupported active pairs reach this fallback and raise TypeError.
         """
-        raise TypeError("invalid union comparison")
+        raise TypeError("invalid union operation")
 
     def _str(union):
         for tag, T in static.vars_types(union, with_index=True):

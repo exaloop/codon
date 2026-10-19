@@ -50,6 +50,136 @@ assert operand(1) != operand(2)
 assert events == [1, 2]
 assert operand(2) == 2.0 and 2 == operand(2)
 
+#%% union_numpy_operations
+import numpy as np
+
+Array = Union[np.ndarray[int, 1], np.ndarray[complex, 1],
+              np.ndarray[np.int8, 1], np.ndarray[np.int32, 1]]
+Key = Union[int, complex, np.int8, np.int32]
+
+def check_array(array):
+    values: Array = array
+    for key in (2, complex(2), np.int8(2), np.int32(2)):
+        value: Key = key
+        assert ((values + value) == (array + key)).all()
+        assert ((values * value) == (array * key)).all()
+        assert ((value + values) == (key + array)).all()
+        assert ((value * values) == (key * array)).all()
+        assert ((values + key) == (array + key)).all()
+        assert ((key + values) == (key + array)).all()
+        assert (values.dot(value) == array.dot(key)).all()
+        assert (values.__add__(value) == (array + key)).all()
+
+check_array(np.array([1, 2, 3, 4]))
+check_array(np.array([1, 2, 3, 4], dtype=complex))
+check_array(np.array([1, 2, 3, 4], dtype=np.int8))
+check_array(np.array([1, 2, 3, 4], dtype=np.int32))
+
+#%% union_binary_operations
+left: Union[int, str] = 3
+right: Union[int, float] = 2.5
+assert left + right == 5.5
+assert left * right == 7.5
+left: Union[int, str] = 'ab'
+right: Union[int, float] = 2
+assert left * right == 'abab'
+try:
+    left + right
+    assert False
+except TypeError:
+    pass
+
+events: list[int] = []
+def operand(value: int):
+    events.append(value)
+    result: Union[int, float] = value
+    return result
+
+assert operand(7) - operand(2) == 5
+assert events == [7, 2]
+assert operand(2) ** operand(3) == 8
+assert events == [7, 2, 2, 3]
+assert operand(4) < operand(5)
+
+@tuple
+class Reflected:
+    value: int
+    def __rsub__(self, other: int):
+        return other - self.value
+
+reflected: Union[Reflected, str] = Reflected(3)
+number: Union[int, str] = 10
+assert number - reflected == 7
+assert 10 - reflected == 7
+
+#%% union_method_arguments
+@tuple
+class Number:
+    value: int
+    def combine(self, other: int):
+        return self.value + other
+    def echo(self, value):
+        return value
+    def argument_types(self, first, second=1):
+        return type(first).__name__ + ':' + type(second).__name__
+    def choose(self, value: int):
+        return 'int'
+    @overload
+    def choose(self, value: str):
+        return 'str'
+
+@tuple
+class Text:
+    value: str
+    def combine(self, other: str):
+        return self.value + other
+    def echo(self, value):
+        return value
+    def argument_types(self, first, second=1):
+        return type(first).__name__ + ':' + type(second).__name__
+    def choose(self, value: int):
+        return 'int'
+    @overload
+    def choose(self, value: str):
+        return 'str'
+
+receiver: Union[Number, Text] = Number(10)
+argument: Union[int, str] = 2
+assert receiver.combine(argument) == 12
+argument: Union[int, str] = 'b'
+try:
+    receiver.combine(argument)
+    assert False
+except TypeError:
+    pass
+receiver: Union[Number, Text] = Text('a')
+assert receiver.combine(argument) == 'ab'
+echoed = receiver.echo(argument)
+assert type(echoed) is Union[int, str]
+assert echoed == 'b'
+assert receiver.argument_types(argument, second=argument) == 'str:str'
+assert receiver.argument_types(argument) == 'str:int'
+assert receiver.argument_types(second=argument, first=argument) == 'str:str'
+bound = receiver.argument_types
+assert bound(argument, second=argument) == 'str:str'
+assert receiver.choose(argument) == 'str'
+argument: Union[int, str] = 2
+assert receiver.choose(argument) == 'int'
+
+events: list[int] = []
+def get_receiver():
+    events.append(1)
+    result: Union[Number, Text] = Text('a')
+    return result
+
+def get_argument(index: int):
+    events.append(index)
+    result: Union[int, str] = 'b'
+    return result
+
+assert get_receiver().argument_types(get_argument(2), second=get_argument(3)) == 'str:str'
+assert events == [1, 2, 3]
+
 #%% binary_and_or,barebones
 s = 'hehe'
 a = 'hehe' or 5.2

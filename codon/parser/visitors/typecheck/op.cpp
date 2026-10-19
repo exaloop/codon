@@ -1036,11 +1036,11 @@ Expr *TypecheckVisitor::transformBinaryMagic(const BinaryExpr *expr) {
   auto lt = expr->getLhs()->getType();
   auto rt = expr->getRhs()->getType();
 
-  // Resolve both active alternatives before calling concrete comparison methods.
-  // A helper evaluates operands once and preserves non-bool results such as ndarrays.
-  if ((lt->getUnion() || rt->getUnion()) &&
-      (expr->getOp() == "==" || expr->getOp() == "!="))
-    return transform(N<CallExpr>(N<IdExpr>(getMangledMethod("", "Union", "_compare")),
+  // Resolving only the receiver can leave a union argument inside concrete arithmetic
+  // (e.g. an array plus an int-or-complex scalar). Select both active types through
+  // a helper that evaluates operands once, in source order, before testing their tags.
+  if (lt->getUnion() || rt->getUnion())
+    return transform(N<CallExpr>(N<IdExpr>(getMangledMethod("", "Union", "_binary")),
                                  expr->getLhs(), expr->getRhs(),
                                  N<StringExpr>(expr->getOp())));
 
@@ -1055,12 +1055,6 @@ Expr *TypecheckVisitor::transformBinaryMagic(const BinaryExpr *expr) {
         N<CallExpr>(N<DotExpr>(N<IdExpr>(r), fmt::format("__{}__", rightMagic)),
                     N<IdExpr>(l))));
   }
-  if (lt->getUnion()) {
-    // Special case: `union op obj` -> `union.__magic__(rhs)`
-    return transform(N<CallExpr>(
-        N<DotExpr>(expr->getLhs(), fmt::format("__{}__", magic)), expr->getRhs()));
-  }
-
   // Normal operations: check if `lhs.__magic__(lhs, rhs)` exists
   if (auto method =
           findBestMethod(lt->getClass(), fmt::format("__{}__", magic),
