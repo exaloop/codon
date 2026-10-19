@@ -256,7 +256,7 @@ private:
   findBestMethod(types::ClassType *typ, const std::string &member,
                  const std::vector<std::pair<std::string, types::Type *>> &args);
   int canCall(types::FuncType *, const std::vector<CallArg> &,
-              types::ClassType * = nullptr);
+              types::ClassType * = nullptr, std::vector<bool> * = nullptr);
   std::vector<types::FuncType *> findMatchingMethods(
       types::ClassType *typ, const std::vector<types::FuncType *> &methods,
       const std::vector<CallArg> &args, types::ClassType *part = nullptr);

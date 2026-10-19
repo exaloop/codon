@@ -139,6 +139,49 @@ Value(1).__init__()
   EXPECT_EQ(warnings.find("field 'ValueError."), std::string::npos) << warnings;
 }
 
+TEST(FieldInitializationTest, ReusesSharedHelperSummaries) {
+  // Each level has two edges to the same helper, but the graph has only 25 helpers.
+  // Without completed summaries, analysis repeats exponentially despite having no
+  // recursion. This depth exercises the scaling regression without a timing threshold.
+  std::string source =
+      "def initialize_0(instance, seed: int):\n    instance.value = seed\n";
+  for (int level = 1; level <= 24; ++level) {
+    auto previous = "initialize_" + std::to_string(level - 1);
+    source += "def initialize_" + std::to_string(level) +
+              "(instance, seed: int):\n"
+              "    if seed % 2 == 0:\n        " +
+              previous + "(instance, seed + 1)\n    else:\n        " + previous +
+              "(instance, seed + 2)\n";
+  }
+  // The same receiver in both slots also requires parameter-specific summaries.
+  source += R"(
+class Record:
+    value: int
+    def __init__(self, seed: int):
+        initialize_24(self, seed)
+
+def initialize_pair(first, second):
+    first.first = 1
+    second.second = 2
+
+class Pair:
+    first: int
+    second: int
+    def __init__(self):
+        initialize_pair(self, self)
+
+assert Record(1).value == 49
+assert Pair().first == 1 and Pair().second == 2
+)";
+  auto options = codon::Options::getDefault("build/codon_test");
+  codon::Compiler compiler(*options);
+  testing::internal::CaptureStderr();
+  auto error = compiler.parseCode("field_initialization_shared.codon", source);
+  auto warnings = testing::internal::GetCapturedStderr();
+  ASSERT_FALSE(bool(error)) << llvm::toString(std::move(error));
+  EXPECT_EQ(warnings.find("may be uninitialized"), std::string::npos) << warnings;
+}
+
 TEST(FieldInitializationTest, RejectsTupleInitOption) {
   auto options = codon::Options::getDefault("build/codon_test");
   codon::Compiler compiler(*options);

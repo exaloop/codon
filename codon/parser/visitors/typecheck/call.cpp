@@ -745,6 +745,15 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
       *eptr = swap;
       prepends.emplace_back(front);
     }
+    // getCalleeFn has already replaced the partial with its underlying function.
+    // Retrying that function would lose bound arguments such as self. Restore the
+    // saved partial and run its setup before argument effects, without retaining
+    // the trailing, potentially unresolved function expression from the StmtExpr.
+    if (!part.var.empty()) {
+      const auto &calleeStmts = cast<StmtExpr>(expr->expr)->items;
+      prepends.insert(prepends.begin(), calleeStmts.begin(), calleeStmts.end());
+      expr->expr = N<IdExpr>(part.var);
+    }
     return transform(N<StmtExpr>(prepends, expr));
   }
 

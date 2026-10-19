@@ -195,6 +195,9 @@ class UnpackedRecord:
     number: int
     text: str
 
+    def __len__(self):
+        return 0
+
     def __getitem__(self, index: Literal[int]):
         if index == 0 or index == -2:
             return self.number
@@ -206,6 +209,18 @@ class UnpackedRecord:
 number, text = UnpackedRecord(42, 'answer')
 assert type(number) is int and type(text) is str
 assert number == 42 and text == 'answer'
+
+@tuple
+class LongLengthRecord:
+    first: int
+    second: int
+    def __len__(self):
+        return 100
+
+record = LongLengthRecord(1, 2)
+assert len(record) == 100
+first, second = record
+assert (first, second) == (1, 2)
 
 first, *middle, last = (value for value in range(5))
 assert first == 0 and middle == [1, 2, 3] and last == 4

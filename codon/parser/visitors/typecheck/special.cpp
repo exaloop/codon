@@ -474,22 +474,35 @@ SuiteStmt *TypecheckVisitor::generateUnionTagAST(FuncType *type) {
   return suite;
 }
 
-/// Generate one iterator over the active union alternative.
+/// Generate eager iterator acquisition for the active union alternative.
 /// Join yielded element types rather than returning a union of generator objects,
 /// so ordinary loops can consume heterogeneous iterable alternatives.
+/// This dispatcher must not itself yield: iter(value) must run the active __iter__
+/// immediately, including its side effects and exceptions, rather than at next().
 SuiteStmt *TypecheckVisitor::generateUnionIteratorAST(FuncType *type) {
   auto alternatives = extractFuncArgType(type)->getUnion()->getRealizationTypes();
   std::map<std::string, Type *> elements;
-  for (const auto &alternative : alternatives) {
+  std::vector<bool> iterableAlternatives(alternatives.size());
+  for (size_t tag = 0; tag < alternatives.size(); ++tag) {
+    auto alternative = alternatives[tag];
     ctx->addBlock();
     auto name = getTemporaryVar("iterable");
     ctx->addVar(name, name, alternative->shared_from_this());
+    auto value = N<IdExpr>(name);
+    value->setType(alternative->shared_from_this());
+    // Union[list[int], int] remains iterable when its list alternative is active.
+    // A missing method leaves this tag to the runtime TypeError fallback below.
+    if (!getAttr(value, "__iter__").second) {
+      ctx->popBlock();
+      continue;
+    }
     auto iterator = transform(N<CallExpr>(N<DotExpr>(N<IdExpr>(name), "__iter__")));
     auto iteratorType = iterator->getType();
     if (!iteratorType->is(StdlibTypes::Generator))
       E(Error::EXPECTED_TYPE, getSrcInfo(), "iterable");
     auto element = extractClassGeneric(iteratorType);
     elements[element->realizedName()] = element;
+    iterableAlternatives[tag] = true;
     ctx->popBlock();
   }
   Expr *elementType = nullptr;
@@ -502,21 +515,22 @@ SuiteStmt *TypecheckVisitor::generateUnionIteratorAST(FuncType *type) {
   }
   auto suite = N<SuiteStmt>();
   for (size_t tag = 0; tag < alternatives.size(); ++tag) {
-    auto name = getTemporaryVar("element");
-    Expr *value = N<IdExpr>(name);
-    if (elementType)
-      value = N<CallExpr>(N<IdExpr>(getMangledMethod("", "Union", "_new")), value,
-                          clone(elementType));
+    if (!iterableAlternatives[tag])
+      continue;
     auto iterable =
         N<CallExpr>(N<IdExpr>(getMangledMethod("", "Union", "_get_data")),
                     N<IdExpr>("union"), N<IdExpr>(alternatives[tag]->realizedName()));
+    Expr *iterator = N<CallExpr>(N<DotExpr>(iterable, "__iter__"));
+    if (elementType)
+      iterator = N<CallExpr>(N<IdExpr>(getMangledMethod("", "Union", "_iter_union")),
+                             iterator, clone(elementType));
     suite->addStmt(N<IfStmt>(
         N<BinaryExpr>(N<CallExpr>(N<IdExpr>(getMangledMethod("", "Union", "_get_tag")),
                                   N<IdExpr>("union")),
                       "==", N<IntExpr>(tag)),
-        N<SuiteStmt>(N<ForStmt>(N<IdExpr>(name), iterable, N<YieldStmt>(value)),
-                     N<ReturnStmt>(nullptr))));
+        N<ReturnStmt>(iterator)));
   }
+  suite->addStmt(clone(type->ast->getSuite()));
   return suite;
 }
 
@@ -629,14 +643,15 @@ SuiteStmt *TypecheckVisitor::generateUnionDispatchAST(FuncType *type) {
     for (size_t index = 0; index < keywords->generics.size(); ++index)
       arguments.emplace_back(names[index], keywords->generics[index].getType());
   }
-  // Read saved argument packs, not source expressions, so dispatch never repeats
-  // argument side effects. A null selected type keeps the union intact for tag tests.
+  // Read saved argument packs so dispatch never repeats source argument effects.
+  // Null keeps the union intact for tag tests; the original type keeps it intact
+  // for union-typed parameters. Only a concrete member denotes a payload extraction.
   auto argumentValue = [&](size_t index, Type *selected, const std::string &args,
                            const std::string &kwargs) -> Expr * {
     const auto &[name, original] = arguments[index];
     Expr *value = name.empty() ? N<IndexExpr>(N<IdExpr>(args), N<IntExpr>(index))
                                : N<IndexExpr>(N<IdExpr>(kwargs), N<StringExpr>(name));
-    if (selected && original->getUnion())
+    if (selected && selected != original && original->getUnion())
       value = N<CallExpr>(N<IdExpr>(getMangledMethod("", "Union", "_get_data")), value,
                           N<IdExpr>(selected->realizedName()));
     return value;
@@ -653,14 +668,45 @@ SuiteStmt *TypecheckVisitor::generateUnionDispatchAST(FuncType *type) {
                                  N<IdExpr>("union"), N<IdExpr>(t->realizedName()));
     Type *typ = nullptr;
     if (isCall) {
+      // Splitting N int|str arguments creates 2^N branches even if their declared
+      // parameters already accept int|str. Probe the original argument types first
+      // and preserve a union only when every viable signature accepts it intact;
+      // otherwise its active member can affect overload selection or specialization.
+      std::vector<CallArg> signatureArgs;
+      for (const auto &[name, argument] : arguments) {
+        auto value = N<NoneExpr>();
+        value->setType(argument->shared_from_this());
+        signatureArgs.emplace_back(name, value);
+      }
+      std::vector<bool> preserveUnions(arguments.size(), true);
+      bool matched = false;
+      auto inspectSignature = [&](FuncType *function, ClassType *partial) {
+        std::vector<bool> accepted;
+        if (canCall(function, signatureArgs, partial, &accepted) < 0)
+          return;
+        matched = true;
+        for (size_t index = 0; index < accepted.size(); ++index)
+          preserveUnions[index] = preserveUnions[index] && accepted[index];
+      };
+      if (auto partial = t->getPartial()) {
+        inspectSignature(partial->getPartialFunc(), partial);
+      } else {
+        for (auto method : findMethod(t->getClass(), "__call__", false))
+          if (method)
+            inspectSignature(instantiateType(method, t->getClass())->getFunc(),
+                             nullptr);
+      }
+      if (!matched)
+        std::fill(preserveUnions.begin(), preserveUnions.end(), false);
       std::vector<Type *> selected(arguments.size());
-      // Enumerate concrete argument combinations at compile time; runtime tag checks
-      // select one call. For example, f(int|str, scale=int|float) has four combinations
-      // per callable alternative. Non-union arguments contribute just one choice.
+      // Expand only arguments that need concrete dispatch. Explicitly accepted union
+      // parameters stay intact; generic and member-specific signatures still select
+      // a concrete call through runtime tag checks.
       auto dispatch = [&](auto &&self, size_t index, Expr *selectedCondition) -> void {
         if (index < arguments.size()) {
           auto original = arguments[index].second;
-          if (auto alternatives = original->getUnion()) {
+          if (auto alternatives = original->getUnion();
+              alternatives && !preserveUnions[index]) {
             size_t argumentTag = 0;
             for (auto member : alternatives->getRealizationTypes()) {
               selected[index] = member;

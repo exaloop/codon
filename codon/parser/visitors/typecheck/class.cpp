@@ -1,5 +1,6 @@
 // Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
+#include <map>
 #include <string>
 #include <tuple>
 
@@ -52,6 +53,10 @@ class FieldInitializationVisitor : public CallbackASTVisitor<void, void> {
   Cache *cache;
   /// Shared recursion guard keyed by helper body and tracked parameter position.
   std::set<std::pair<FunctionStmt *, size_t>> &active;
+  /// Reuse completed summaries across shared helper paths. A recursion guard alone
+  /// does not prevent exponential work when both branches call the same next helper.
+  /// The parameter index distinguishes writes to different receivers in one helper.
+  std::map<std::pair<FunctionStmt *, size_t>, InitializedFields> &summaries;
   /// Facts at the current point in the body being analyzed.
   InitializedFields state;
   /// Explicit normal-return states, merged with fallthrough by analyze().
@@ -92,15 +97,19 @@ class FieldInitializationVisitor : public CallbackASTVisitor<void, void> {
   }
 
 public:
-  /// Share the recursion guard while keeping each helper's dataflow state local.
-  FieldInitializationVisitor(Cache *cache,
-                             std::set<std::pair<FunctionStmt *, size_t>> &active)
-      : cache(cache), active(active) {}
+  /// Share cached summaries and the recursion guard, but keep helper dataflow local.
+  FieldInitializationVisitor(
+      Cache *cache, std::set<std::pair<FunctionStmt *, size_t>> &active,
+      std::map<std::pair<FunctionStmt *, size_t>, InitializedFields> &summaries)
+      : cache(cache), active(active), summaries(summaries) {}
 
   /// Summarize normal exits with the receiver bound to an AST parameter index.
   /// Recursive re-entry contributes no new facts rather than assuming a write.
+  /// Publish a summary only after merging all exits, never from a partial traversal.
   InitializedFields analyze(FunctionStmt *function, size_t argument) {
     auto key = std::make_pair(function, argument);
+    if (auto summary = summaries.find(key); summary != summaries.end())
+      return summary->second;
     if (!active.insert(key).second)
       return state;
     state.aliases.insert((*function)[argument].getName());
@@ -108,6 +117,7 @@ public:
     for (const auto &exit : exits)
       state.intersect(exit);
     active.erase(key);
+    summaries.emplace(key, state);
     return state;
   }
 
@@ -169,7 +179,7 @@ public:
         break;
       if (!isInstance((*expr)[argument++].getExpr()))
         continue;
-      FieldInitializationVisitor helper(cache, active);
+      FieldInitializationVisitor helper(cache, active, summaries);
       auto initialized = helper.analyze(body, parameter);
       state.fields.insert(initialized.fields.begin(), initialized.fields.end());
       state.reachable &= initialized.reachable;
@@ -276,7 +286,8 @@ void TypecheckVisitor::checkFieldInitialization(types::FuncType *type,
       cls->ast->hasAttribute(Attr::Internal))
     return;
   std::set<std::pair<FunctionStmt *, size_t>> active;
-  FieldInitializationVisitor visitor(ctx->cache, active);
+  std::map<std::pair<FunctionStmt *, size_t>, InitializedFields> summaries;
+  FieldInitializationVisitor visitor(ctx->cache, active, summaries);
   auto initialized = visitor.analyze(function, 0);
   if (!initialized.reachable)
     return;

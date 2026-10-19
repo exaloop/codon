@@ -134,6 +134,18 @@ import whatever #! no module named 'whatever'
 #%% import_self,barebones
 import test_import #! cannot import main module
 
+#%% import_bootstrap
+from internal import gc
+from internal import gc as memory
+assert gc.sizeof(int) == 8
+assert memory.sizeof(int) == 8
+
+def bootstrap_size():
+    from internal import gc as local_gc
+    return local_gc.sizeof(int)
+
+assert bootstrap_size() == 8
+
 #%% import_err_5,barebones
 import a.b
 print a.b.x #! cannot import name 'x' from 'a.b.__init__'

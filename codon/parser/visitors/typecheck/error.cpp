@@ -182,24 +182,39 @@ void TypecheckVisitor::visit(ThrowStmt *stmt) {
   }
 
   stmt->expr = transform(stmt->getExpr());
-  // Raising an exception class constructs its instance first.
-  if (isTypeExpr(stmt->getExpr()))
-    stmt->expr = transform(N<CallExpr>(stmt->getExpr()));
-  if (!match(stmt->getExpr(),
+  // Cause staging can wrap the header in a StmtExpr. Recognize it on later passes
+  // so neither exception construction nor header initialization is repeated.
+  if (!match(getHeadExpr(stmt->getExpr()),
              M<CallExpr>(M<IdExpr>(getMangledMethod("std.internal.types.error",
                                                     "BaseException", "_set_header")),
                          M_))) {
+    auto exception = stmt->getExpr();
     auto cause = stmt->getFrom()
                      ? transform(stmt->getFrom())
                      : transform(N<CallExpr>(N<IdExpr>(StdlibTypes::NoneType)));
+    std::vector<Stmt *> setup;
+    // `raise Error from cause()` evaluates cause() before constructing Error().
+    // Save raw operands in source order before normalizing classes to instances;
+    // in particular, a failing cause expression must not run Error's constructor.
+    if (isTypeExpr(exception) && stmt->getFrom()) {
+      auto exceptionName = getTemporaryVar("exception");
+      auto causeName = getTemporaryVar("cause");
+      setup.push_back(transform(N<AssignStmt>(N<IdExpr>(exceptionName), exception)));
+      setup.push_back(transform(N<AssignStmt>(N<IdExpr>(causeName), cause)));
+      exception = transform(N<IdExpr>(exceptionName));
+      cause = transform(N<IdExpr>(causeName));
+    }
+    if (isTypeExpr(exception))
+      exception = transform(N<CallExpr>(exception));
     if (isTypeExpr(cause))
       cause = transform(N<CallExpr>(cause));
-    stmt->expr = transform(N<CallExpr>(
+    Expr *header = N<CallExpr>(
         N<IdExpr>(getMangledMethod("std.internal.types.error", "BaseException",
                                    "_set_header")),
-        stmt->getExpr(), N<StringExpr>(ctx->getBase()->name),
+        exception, N<StringExpr>(ctx->getBase()->name),
         N<StringExpr>(stmt->getSrcInfo().file), N<IntExpr>(stmt->getSrcInfo().line),
-        N<IntExpr>(stmt->getSrcInfo().col), cause));
+        N<IntExpr>(stmt->getSrcInfo().col), cause);
+    stmt->expr = transform(setup.empty() ? header : N<StmtExpr>(setup, header));
   }
   if (stmt->getExpr()->isDone())
     stmt->setDone();

@@ -896,6 +896,51 @@ assert type(same_elements([1])) is list[int]
 assert same_elements([1, 2]) == [1, 2]
 assert same_elements({3}) == [3]
 
+#%% union_iterator_acquisition
+class Iterable:
+    events: list[int]
+    def __iter__(self):
+        self.events.append(1)
+        return iter([7])
+
+events: list[int] = []
+value: Union[Iterable, list[str], int] = Iterable(events)
+iterator = iter(value)
+assert events == [1]
+assert type(iterator) is Generator[Union[int, str]]
+assert next(iterator) == 7
+assert events == [1]
+assert list(iterator) == []
+value: Union[Iterable, list[str], int] = ['a', 'b']
+assert ','.join(str(item) for item in value) == 'a,b'
+value: Union[Iterable, list[str], int] = 1
+try:
+    iter(value)
+    assert False
+except TypeError:
+    pass
+
+class FailingIterable:
+    def __iter__(self) -> Generator[int]:
+        raise ValueError('iterator acquisition')
+
+failing: Union[FailingIterable, list[int]] = FailingIterable()
+try:
+    iter(failing)
+    assert False
+except ValueError as error:
+    assert error.message == 'iterator acquisition'
+
+mixed: Union[list[int], int] = [1, 2]
+assert list(mixed) == [1, 2]
+mixed: Union[list[int], int] = 1
+try:
+    for item in mixed:
+        assert False
+    assert False
+except TypeError:
+    pass
+
 #%% union_nullable
 Choice = Union[int, str, NoneType]
 assert not isinstance(Choice, int)

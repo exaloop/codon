@@ -44,7 +44,13 @@ class List:
 
     @staticmethod
     def _unpack(source, count: Literal[int], has_star: Literal[bool]):
-        """Check arity and snapshot mutable sources before assignment targets run."""
+        """Check arity and snapshot mutable sources before assignment targets run.
+
+        Immutable records unpack their fields, regardless of an overridden __len__:
+        a two-field record still has two values even if len(record) returns zero.
+        Mutable tuple-backed sequences must use the snapshot paths instead, so
+        earlier assignment targets cannot change values still being unpacked.
+        """
         if isinstance(source, Tuple):
             if static.len(source) < count:
                 compile_error("not enough values to unpack")
@@ -52,9 +58,9 @@ class List:
                 compile_error("too many values to unpack")
             return source
         elif hasattr(type(source), '__tuplesize__') and not hasattr(type(source), '__setitem__'):
-            if len(source) < count:
+            if static.len(source) < count:
                 raise ValueError("not enough values to unpack")
-            if not has_star and len(source) > count:
+            if not has_star and static.len(source) > count:
                 raise ValueError("too many values to unpack")
             return source
         elif isinstance(source, List):

@@ -112,6 +112,25 @@ number: Union[int, str] = 10
 assert number - reflected == 7
 assert 10 - reflected == 7
 
+#%% union_nullable_arithmetic
+value: Union[int, str, NoneType] = 2
+assert value + 1 == 3
+assert 1 + value == 3
+assert value * 3 == 6
+value: Union[int, str, NoneType] = 'ab'
+assert value * 2 == 'abab'
+try:
+    value + 1
+    assert False
+except TypeError:
+    pass
+value: Union[int, str, NoneType] = None
+try:
+    value + 1
+    assert False
+except ValueError:
+    pass
+
 #%% union_method_arguments
 @tuple
 class Number:
@@ -179,6 +198,54 @@ def get_argument(index: int):
 
 assert get_receiver().argument_types(get_argument(2), second=get_argument(3)) == 'str:str'
 assert events == [1, 2, 3]
+
+#%% union_declared_arguments
+Choice = Union[int, str]
+
+@tuple
+class FirstFormatter:
+    offset: int
+    def width(self, first: Choice, second: Choice, third: Choice, fourth: Choice,
+              fifth: Choice, sixth: Choice, seventh: Choice, eighth: Choice,
+              marker=0):
+        return (self.offset + sum(len(str(value)) for value in
+                (first, second, third, fourth, fifth, sixth, seventh, eighth)),
+                type(marker).__name__)
+
+@tuple
+class SecondFormatter:
+    offset: int
+    def width(self, first: Choice, second: Choice, third: Choice, fourth: Choice,
+              fifth: Choice, sixth: Choice, seventh: Choice, eighth: Choice,
+              marker=0):
+        return (self.offset + sum(len(str(value)) for value in
+                (first, second, third, fourth, fifth, sixth, seventh, eighth)),
+                type(marker).__name__)
+
+formatter: Union[FirstFormatter, SecondFormatter] = FirstFormatter(1)
+field: Choice = 42
+assert formatter.width(field, field, field, field, field, field, field, field,
+                       marker=field) == (17, 'int')
+formatter: Union[FirstFormatter, SecondFormatter] = SecondFormatter(2)
+field: Choice = 'abc'
+bound = formatter.width
+assert bound(eighth=field, first=field, second=field, third=field,
+             fourth=field, fifth=field, sixth=field, seventh=field,
+             marker=field) == (26, 'str')
+
+events: list[int] = []
+def get_bound():
+    events.append(0)
+    return FirstFormatter(0).width
+
+def get_field(index: int) -> Choice:
+    events.append(index)
+    return 'a'
+
+assert get_bound()(eighth=get_field(8), seventh=get_field(7), sixth=get_field(6),
+                   fifth=get_field(5), fourth=get_field(4), third=get_field(3),
+                   second=get_field(2), first=get_field(1)) == (8, 'int')
+assert events == [0, 8, 7, 6, 5, 4, 3, 2, 1]
 
 #%% binary_and_or,barebones
 s = 'hehe'

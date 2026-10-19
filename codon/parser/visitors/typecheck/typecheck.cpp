@@ -502,8 +502,14 @@ types::FuncType *TypecheckVisitor::findBestMethod(
 
 /// Check if a function can be called with the given arguments.
 /// See @c reorderNamedArgs for details.
+/// If requested, preserveUnions marks supplied arguments whose formal parameters
+/// already accept the same union type. Indices follow the original argument list,
+/// not formal parameter order; the flags are usable only when the call matches.
 int TypecheckVisitor::canCall(types::FuncType *fn, const std::vector<CallArg> &args,
-                              types::ClassType *part) {
+                              types::ClassType *part,
+                              std::vector<bool> *preserveUnions) {
+  if (preserveUnions)
+    preserveUnions->assign(args.size(), false);
   std::vector<types::Type *> partialArgs;
   if (part && part->getPartial()) {
     auto known = part->getPartialMask();
@@ -543,7 +549,8 @@ int TypecheckVisitor::canCall(types::FuncType *fn, const std::vector<CallArg> &a
             // Partials
             if (slots[si].empty() && part && part->getPartial() &&
                 part->getPartialMask()[si] == ClassType::PartialFlag::Included) {
-              reordered.emplace_back(partialArgs[pi++], 0);
+              // Captured arguments, including self, must not mark a supplied argument.
+              reordered.emplace_back(partialArgs[pi++], args.size());
             } else {
               // Ignore *args, *kwargs and default arguments
               reordered.emplace_back(nullptr, 0);
@@ -564,6 +571,11 @@ int TypecheckVisitor::canCall(types::FuncType *fn, const std::vector<CallArg> &a
     auto [argType, argTypeIdx] = reordered[ai];
     if (!argType)
       continue;
+    // Check the declared shape before wrapping. A generic can also accept a union,
+    // but its body may need the active member type, e.g. when inspecting type(arg).
+    if (preserveUnions && argTypeIdx < args.size() && argType->getUnion() &&
+        expectTyp->getUnion() && argType->unify(expectTyp, nullptr) >= 0)
+      (*preserveUnions)[argTypeIdx] = true;
     real_gi += !(*fn->ast)[ai].isValue();
     if (!(*fn->ast)[ai].isValue()) {
       // Check if this is a good generic!

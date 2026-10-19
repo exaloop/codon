@@ -98,12 +98,20 @@ class Union:
 
     @__generated__
     def __iter__(union):
-        """Iterate the active alternative using one compiler-generated iterator.
+        """Acquire the active iterator before lazily adapting its elements.
 
+        The concrete __iter__ runs at iter(union), not at the first next(), preserving
+        acquisition side effects and exceptions. A non-iterable alternative raises
+        only when its tag is active; it does not invalidate other alternatives.
         Yield the shared element type, or a union of element types when they differ,
         so heterogeneous iterable alternatives remain usable in ordinary loops.
         """
-        yield
+        raise TypeError("union alternative is not iterable")
+
+    def _iter_union(iterator, T: type):
+        """Lazily box values from an iterator already acquired by union __iter__."""
+        for element in iterator:
+            yield Union._new(element, T)
 
     @__generated__
     def _binary(left, right, operation: Literal[str]):

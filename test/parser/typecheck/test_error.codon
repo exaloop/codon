@@ -70,6 +70,46 @@ except CountedError as error:
 assert CountedError.created == 1
 print('exception classes ok')  #: exception classes ok
 
+#%% exception_cause_order
+events: list[str] = []
+class TracedError(ValueError):
+    def __init__(self):
+        events.append('exception constructor')
+        super().__init__('traced')
+
+def get_cause():
+    events.append('cause expression')
+    return KeyError('cause')
+
+try:
+    raise TracedError from get_cause()
+except TracedError as error:
+    assert error.__cause__.message == 'cause'
+assert events == ['cause expression', 'exception constructor']
+
+def failing_cause():
+    events.append('failing cause')
+    raise RuntimeError('cause failed')
+    return KeyError('unused')
+
+events.clear()
+try:
+    raise TracedError from failing_cause()
+except RuntimeError as error:
+    assert error.message == 'cause failed'
+assert events == ['failing cause']
+
+def get_error():
+    events.append('exception expression')
+    return TracedError()
+
+events.clear()
+try:
+    raise get_error() from get_cause()
+except TracedError:
+    pass
+assert events == ['exception expression', 'exception constructor', 'cause expression']
+
 #%% invalid_exception_class
 # invalid classes receive a compiler diagnostic, not an LLVM assertion.
 raise int

@@ -1076,6 +1076,19 @@ Expr *TypecheckVisitor::transformBinaryMagic(const BinaryExpr *expr) {
         N<CallExpr>(N<IdExpr>(method->getFuncName()), N<IdExpr>(r), N<IdExpr>(l))));
   }
 
+  // Union candidate probing calls this helper directly, so Optional unwrapping
+  // cannot live only in visit(BinaryExpr): nullable integer alternatives would
+  // otherwise lose valid arithmetic. Try declared/reflected methods first to
+  // preserve Optional's own operations, including None-aware equality.
+  if (lt->is(StdlibTypes::Optional)) {
+    auto unwrapped = N<BinaryExpr>(
+        transform(N<CallExpr>(N<IdExpr>(FN_OPTIONAL_UNWRAP), expr->getLhs())),
+        expr->getOp(), expr->getRhs(), expr->isInPlace());
+    if (auto inplace = transformBinaryInplaceMagic(unwrapped, false))
+      return inplace;
+    return transformBinaryMagic(unwrapped);
+  }
+
   return nullptr;
 }
 
