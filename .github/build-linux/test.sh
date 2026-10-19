@@ -25,23 +25,15 @@ export CODON_DIR=$(pwd)/codon-deploy-${ARCH}
 
 echo "=> Unit tests..."
 mkdir -p build  # needed for some tests that write into this directory
-GTEST_PARALLEL_REVISION=cd488bdedc1d2cffb98201a17afc1b298b0b90f1
-GTEST_PARALLEL="$WORKSPACE/build/gtest_parallel.py"
-curl --fail --location --retry 3 \
-  "https://raw.githubusercontent.com/google/gtest-parallel/${GTEST_PARALLEL_REVISION}/gtest_parallel.py" \
-  --output "$GTEST_PARALLEL"
-python -m unittest discover -s .github/build-linux -p test_run_tests.py
-TEST_FILTER='*'
 if [ "${ARCH}" = "darwin-x86_64" ]; then
   # Disable numpy tests on Intel macOS since it breaks on macOS 13
   # (macOS 14 Intel runners are not free).
   # arithmetic.codon fails in debug mode on x86 due to float16 (TODO: why?)
   export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
-  TEST_FILTER='-*numpy*:*core_arithmetic_codon_debug*'
+  build-${ARCH}/codon_test --gtest_filter='-*numpy*:*core_arithmetic_codon_debug*'
+else
+  build-${ARCH}/codon_test
 fi
-python .github/build-linux/run_tests.py "build-${ARCH}/codon_test" \
-  --gtest-parallel "$GTEST_PARALLEL" --gtest-filter="$TEST_FILTER" \
-  --output-dir "build-${ARCH}/test-results"
 
 echo "=> OS differential tests..."
 python test/stdlib/os_differential.py --codon "${CODON_DIR}/bin/codon"
