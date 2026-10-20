@@ -91,6 +91,19 @@ def test_standard_sort():
     for i in range(len(v2) - 1):
         assert key(v2[i]) <= key(v2[i + 1])
 
+    for original in (List[int](), [1], [3, 2, 1, 2]):
+        expected = sorted(original)
+        for reverse in (False, True):
+            actual = original.copy()
+            actual.sort(key=None, reverse=reverse)
+            ordered = expected[::-1] if reverse else expected
+            assert actual == ordered
+            assert sorted(original, key=None, reverse=reverse) == ordered
+            actual = original.copy()
+            actual.sort(key=None, reverse=reverse, algorithm="tim")
+            assert actual == ordered
+            assert sorted(original, key=None, reverse=reverse, algorithm="tim") == ordered
+
 
 test_standard_sort()
 
