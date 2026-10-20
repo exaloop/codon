@@ -107,7 +107,7 @@ def _array(a, dtype: type = NoneType, copy: bool = True, order: str = 'K'):
                 else:
                     return a.astype(dtype, order='C', copy=False)
 
-            if order == 'F':
+            else:
                 if fc:
                     return a.astype(dtype, copy=False)
                 else:
