@@ -25,13 +25,13 @@ PCG64_INITIALIZER = PCG_STATE_SETSEQ_128_INITIALIZER
 def rotr64(value: u64, rot: int):
     return (value >> u64(rot)) | (value << u64((-rot) & 63))
 
-@dataclass(check_init=False)
 class PCG64:
     state: u128
     inc: u128
     seed: SeedSequence
 
-    def __init__(self, initstate: u128, initseq: u128):
+    def __init__(self, initstate: u128, initseq: u128, seed: SeedSequence):
+        self.seed = seed
         self.srandom_r(initstate, initseq)
 
     def __init__(self, seed):
@@ -47,8 +47,7 @@ class PCG64:
             p = val.data
             initstate = pcg_int(v0, v1)
             initseq = pcg_int(v2, v3)
-            self.__init__(initstate, initseq)
-            self.seed = seed
+            self.__init__(initstate, initseq, seed)
 
     def __get_state__(self):
         return (self.state, self.inc)
@@ -126,13 +125,13 @@ class PCG64:
         i = (u128(inc[0]) << u128(64)) | u128(inc[1])
         self.srandom_r(s, i)
 
-@dataclass(check_init=False)
 class PCG64DXSM:
     state: u128
     inc: u128
     seed: SeedSequence
 
-    def __init__(self, initstate: u128, initseq: u128):
+    def __init__(self, initstate: u128, initseq: u128, seed: SeedSequence):
+        self.seed = seed
         # For some reason NumPy uses PCG64 seeding here...
         # self.cm_srandom_r(initstate, initseq)
         self.srandom_r(initstate, initseq)
@@ -150,8 +149,7 @@ class PCG64DXSM:
             p = val.data
             initstate = pcg_int(v0, v1)
             initseq = pcg_int(v2, v3)
-            self.__init__(initstate, initseq)
-            self.seed = seed
+            self.__init__(initstate, initseq, seed)
 
     def __get_state__(self):
         return (self.state, self.inc)
