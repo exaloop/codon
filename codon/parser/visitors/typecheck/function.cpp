@@ -108,7 +108,7 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
   if (!ctx->inFunction())
     E(Error::FN_OUTSIDE_ERROR, stmt, "return");
   auto isAsync = ctx->getBase()->func->isAsync();
-  bool bareReturn = !stmt->expr;
+  bool hasEmptyReturn = !stmt->expr;
 
   if (!stmt->expr && ctx->getBase()->func->hasAttribute(Attr::IsGenerator)) {
     stmt->setDone();
@@ -118,7 +118,7 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
     if (!stmt->expr)
       stmt->expr = N<CallExpr>(N<IdExpr>(StdlibTypes::NoneType));
     stmt->expr = transform(stmt->getExpr());
-    bool returnWasRealizable = stmt->getExpr()->getType()->canRealize();
+    bool canRealize = stmt->getExpr()->getType()->canRealize();
 
     // Wrap expression to match the return type
     if (!ctx->getBase()->inferReturnType && !ctx->getBase()->returnType->getUnbound())
@@ -151,11 +151,11 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
       auto &returns = ctx->getBase()->returnStatements;
       if (std::ranges::none_of(
               returns, [stmt](const auto &entry) { return entry.first == stmt; }))
-        returns.emplace_back(stmt, bareReturn);
+        returns.emplace_back(stmt, hasEmptyReturn);
     } else {
       unify(ctx->getBase()->returnType.get(), stmt->getExpr()->getType());
     }
-    if (!returnWasRealizable && stmt->getExpr()->getType()->canRealize())
+    if (!canRealize && stmt->getExpr()->getType()->canRealize())
       ctx->changedNodes++;
   }
 

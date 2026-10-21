@@ -526,7 +526,7 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
       if ((v = val->getVar())) {
         if (!v->getType()) {
           v->setSrcInfo(stmt->getSrcInfo());
-          // A hoisted annotation establishes storage type without storing a value.
+          // A name annotation (no RHS) establishes storage type without storing value!
           v->setType(
               getType((stmt->getRhs() ? stmt->getRhs() : stmt->getLhs())->getType()));
         }

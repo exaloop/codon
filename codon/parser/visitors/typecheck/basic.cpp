@@ -12,10 +12,10 @@ namespace codon::ast {
 
 using namespace types;
 
-/// Keep the nullable payload provisional until inference resolves or defaults it.
 void TypecheckVisitor::visit(NoneExpr *expr) {
   unify(expr->getType(), instantiateType(getStdLibType(StdlibTypes::Optional)));
   if (realize(expr->getType())) {
+    // Keep the None provisional until inference resolves or defaults it to NoneType.
     auto name = expr->getType()->is(StdlibTypes::Optional) ? "Optional" : "NoneType";
     auto f = ctx->forceFind(getMangledMethod("", name, "__new__"))->getType();
     auto t = realize(instantiateType(f, extractClassType(expr)));

@@ -63,7 +63,7 @@ void TypecheckVisitor::visit(IfExpr *expr) {
   expr->ifexpr = transform(expr->getIf());
   expr->elsexpr = transform(expr->getElse());
 
-  // A value/None conditional has one optional payload type.
+  // Mix-match NoneType and Optionals.
   auto ifType = expr->getIf()->getType();
   auto elseType = expr->getElse()->getType();
   if (ifType->is(StdlibTypes::NoneType) != elseType->is(StdlibTypes::NoneType)) {

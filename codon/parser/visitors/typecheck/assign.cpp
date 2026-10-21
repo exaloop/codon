@@ -54,7 +54,7 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
     stmt->getLhs()->eraseAttribute(Attr::ExprDominatedUsed);
     auto e = cast<IdExpr>(stmt->getLhs());
     seqassert(e, "dominated bad assignment");
-    // A type declaration alone must not mark a hoisted binding initialized.
+    // A type declaration alone must not mark a binding initialized!
     if (stmt->getRhs())
       resultStmt = transform(N<SuiteStmt>(
           resultStmt,

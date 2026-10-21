@@ -222,12 +222,49 @@ void TypecheckVisitor::visit(ThrowStmt *stmt) {
     stmt->setDone();
 }
 
-/// Save the manager and exit callable independently of the entry-result binding.
-/// An exceptional exit can suppress the caught exception; the finally path handles
-/// normal completion and return/break/continue without calling exit twice. Entry
-/// remains outside this manager's try so a failed entry does not invoke its exit.
-/// Legacy None exits use only finally. The static alternatives share their body
-/// because only the selected branch is transformed, avoiding recursive duplication.
+/// Transform with statements, saving the manager and exit callable independently
+/// of the entry-result binding.
+/// @example
+///   `with manager() as value: BODY` ->
+///   ```python
+///   tmp = manager()
+///   exit_method = tmp.__exit__
+///   entered = tmp.__enter__()
+///   if BaseException._context_exit_is_legacy_none(exit_method, False):
+///       try:
+///           value = entered
+///           BODY
+///       finally:
+///           exit_method()
+///   else:
+///       exceptional = False
+///       try:
+///           value = entered
+///           BODY
+///       except BaseException as error:
+///           exceptional = True
+///           if not BaseException._context_exit(exit_method, get_typeinfo(error),
+///           error):
+///               raise error  # Internal rethrow preserves the original metadata.
+///       finally:
+///           if not exceptional:
+///               BaseException._context_exit(exit_method, None, None)
+///   ```
+/// _context_exit_is_legacy_none selects a cleanup branch statically; both alternatives
+/// share BODY to avoid recursive duplication.
+///
+/// _context_exit supplies a None traceback, prefers a callable three-argument exit, and
+/// otherwise calls the legacy zero-argument exit. Entry stays outside the try, while
+/// target assignment stays inside. The flag prevents a second exit call if exceptional
+/// cleanup suppresses or raises; finally handles normal completion and
+/// return/break/continue.
+///
+/// For async with, save __aexit__, await __aenter__, pass True to the predicate, and
+/// await either the legacy exit or _context_aexit.
+///
+/// Multiple managers nest this transformation so exits run in reverse entry order.
+/// Without an as target, entry is evaluated without binding its result and the target
+/// assignment is omitted.
 void TypecheckVisitor::visit(WithStmt *stmt) {
   seqassert(!stmt->empty(), "stmt->items is empty");
 

@@ -470,7 +470,7 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
 void TypecheckVisitor::visit(InstantiateExpr *expr) {
   expr->expr = transformType(expr->getExpr());
 
-  // Collapse explicit layers before binding a canonical type's generics.
+  // Collapse Optional[Optional[...]] to Optional[] (handle NoneType as well).
   if (extractType(expr->getExpr())->is(StdlibTypes::Optional) && expr->size() == 1) {
     expr->items[0] = transformType(expr->front());
     auto member = extractType(expr->front());
@@ -1080,6 +1080,7 @@ Expr *TypecheckVisitor::transformBinaryMagic(const BinaryExpr *expr) {
   // cannot live only in visit(BinaryExpr): nullable integer alternatives would
   // otherwise lose valid arithmetic. Try declared/reflected methods first to
   // preserve Optional's own operations, including None-aware equality.
+  // TODO: refactor visit() not to error on bad call so that it can be reused.
   if (lt->is(StdlibTypes::Optional)) {
     auto unwrapped = N<BinaryExpr>(
         transform(N<CallExpr>(N<IdExpr>(FN_OPTIONAL_UNWRAP), expr->getLhs())),

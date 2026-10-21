@@ -78,13 +78,13 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool sweepForceRealize) {
     result = tv.transform(result);
     auto base = ctx->getBase();
     // Join reached returns before wrapping them; early unification with NoneType
-    // would prevent later value returns from establishing an optional payload.
+    // would prevent later value returns from establishing an optional.
     if (base->inferReturnType && !base->returnStatements.empty()) {
       TypePtr first, payload;
-      bool hasNone = false, hasBareReturn = false, hasUnknown = false;
+      bool hasNone = false, hasEmptyReturn = false, hasUnknown = false;
       for (const auto &[statement, bare] : base->returnStatements) {
         auto returned = statement->getExpr()->getType();
-        hasBareReturn |= bare;
+        hasEmptyReturn |= bare;
         if (returned->getUnbound()) {
           hasUnknown = true;
         } else {
@@ -98,9 +98,9 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool sweepForceRealize) {
       }
       if (payload || (first && !hasUnknown)) {
         auto inferred = first;
-        if (payload && payload->is(StdlibTypes::Optional) && !hasBareReturn)
+        if (payload && payload->is(StdlibTypes::Optional) && !hasEmptyReturn)
           inferred = payload;
-        if (hasNone && payload && !hasBareReturn)
+        if (hasNone && payload && !hasEmptyReturn)
           inferred = payload->is(StdlibTypes::Optional)
                          ? payload
                          : instantiateType(getStdLibType(StdlibTypes::Optional),

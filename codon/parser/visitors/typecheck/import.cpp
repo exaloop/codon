@@ -94,7 +94,7 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
 
   const auto &import = getImport(file->path);
   std::string importVar = import->importVar;
-  // The bootstrap module also has no runtime import variable. Check its identity
+  // The main module has no runtime import variable. Check its identity
   // instead, so `from internal import gc` is not mistaken for a main-module import.
   if (import->ctx->moduleName.module == MODULE_MAIN && !ctx->isStdlibLoading)
     E(Error::CUSTOM, stmt, "cannot import main module '{}'", file->module);
@@ -144,6 +144,7 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
         getImportFile(ctx->cache,
                       path.empty() ? i->getValue() : path + "/" + i->getValue(),
                       ctx->getFilename())) {
+      // Support from . import int and similar commands
       auto relativeImport = N<ImportStmt>(
           stmt->getWhat(), nullptr, std::vector<Param>{}, nullptr,
           stmt->getAs().empty() ? i->getValue() : stmt->getAs(), stmt->getDots());
