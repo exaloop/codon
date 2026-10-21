@@ -300,11 +300,10 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
     }
   }
 
-  if (typeExpr && cast<ListExpr>(stmt->getRhs())) {
-    auto expected = extractType(typeExpr);
-    if (expected->is(StdlibTypes::List) && extractClassGeneric(expected)->getUnion())
-      stmt->getRhs()->setExpectedType(expected);
-  }
+  // Construct collection literals with their declared union storage (union_*_layout).
+  if (typeExpr && (cast<ListExpr>(stmt->getRhs()) || cast<SetExpr>(stmt->getRhs()) ||
+                   cast<DictExpr>(stmt->getRhs())))
+    stmt->getRhs()->setExpectedType(extractType(typeExpr));
   stmt->rhs = transform(stmt->getRhs(), true);
   stmt->type = typeExpr;
 

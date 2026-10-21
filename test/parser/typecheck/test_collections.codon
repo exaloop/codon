@@ -58,6 +58,69 @@ combined = {**record(events, 1, {'a': 1}),
 assert combined == {'a': 3, 'b': 2} and events == [1, 2, 3, 4]
 print('dictionary unpacking ok')  #: dictionary unpacking ok
 
+#%% union_set_layout
+from typing import Union
+
+Choice = Union[int, float]
+# The declared union determines storage even when all initial values are ints.
+homogeneous: set[Choice] = {1, 2, 3}
+homogeneous.add(4.5)
+assert type(homogeneous) is set[Choice]
+assert sorted(float(value) for value in homogeneous) == [1.0, 2.0, 3.0, 4.5]
+mixed: set[Choice] = {1, 2.5, 3}
+assert sorted(float(value) for value in mixed) == [1.0, 2.5, 3.0]
+expanded: set[Choice] = {0, *[1, 2], *[3.5]}
+assert sorted(float(value) for value in expanded) == [0.0, 1.0, 2.0, 3.5]
+print('union set layout ok')  #: union set layout ok
+
+#%% union_dict_layout
+from typing import Union
+
+Choice = Union[int, str]
+Key = Union[int, float]
+# Keys and values need their declared representation before the first insertion.
+values: dict[str, Choice] = {'one': 1, 'two': 'second'}
+assert type(values) is dict[str, Choice]
+assert isinstance(values['one'], int) and values['one'] == 1
+assert isinstance(values['two'], str) and values['two'] == 'second'
+keys: dict[Key, str] = {1: 'first', 2.5: 'second'}
+assert keys[1] == 'first' and keys[2.5] == 'second'
+both: dict[Key, Choice] = {1: 'first', 2.5: 2}
+assert both[1] == 'first' and both[2.5] == 2
+expanded: dict[Key, Choice] = {**{1: 'first'}, **{2.5: 2}, 3: 'third'}
+assert expanded[1] == 'first' and expanded[2.5] == 2 and expanded[3] == 'third'
+empty: dict[Key, Choice] = {}
+empty[1] = 'first'
+empty[2.5] = 2
+assert empty[1] == 'first' and empty[2.5] == 2
+print('union dict layout ok')  #: union dict layout ok
+
+#%% union_collection_common_type
+from typing import Union, Optional
+
+Choice = Union[int, str]
+Key = Union[int, float]
+# A union key must not disable lowest-common-type inference for values, or vice versa.
+values: dict[Key, float] = {1: 1, 2.5: 2.5}
+reversed_values: dict[Key, float] = {2.5: 2.5, 1: 1}
+assert type(values) is dict[Key, float] and type(reversed_values) is type(values)
+assert values[1] == 1.0 and values[2.5] == 2.5
+keys: dict[float, Choice] = {1: 'first', 2.5: 2}
+assert type(keys) is dict[float, Choice]
+assert keys[1.0] == 'first' and keys[2.5] == 2
+nullable: dict[Key, Optional[int]] = {1: None, 2.5: 2}
+assert nullable[1] is None and nullable[2.5] == 2
+
+# Conversely, lctyp must not promote members of an explicitly declared union.
+Number = Union[int, float]
+numbers: list[Number] = [1, 2.5]
+assert isinstance(numbers[0], int) and isinstance(numbers[1], float)
+number_set: set[Number] = {1, 2.5}
+assert sum(isinstance(value, int) for value in number_set) == 1
+number_dict: dict[str, Number] = {'one': 1, 'two': 2.5}
+assert isinstance(number_dict['one'], int) and isinstance(number_dict['two'], float)
+print('union collection common type ok')  #: union collection common type ok
+
 
 
 #%% comprehension,barebones
