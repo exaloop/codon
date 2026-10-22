@@ -94,14 +94,21 @@ std::string pyArguments(const std::vector<Param> &params, bool attributes, int i
             p.defaultValue->toPythonString(attributes, indent, indent + level));
       }
     } else {
-      args.push_back(pyNode(
+      auto &values = p.kind == Param::PositionalOnly ? pos
+                     : p.kind == Param::KeywordOnly  ? kwonly
+                                                     : args;
+      values.push_back(pyNode(
           "Arg",
           {"arg=" + pyQuote(p.name),
            "annotation=" +
                (p.type ? p.type->toPythonString(attributes, indent, indent + level)
                        : "None")},
           nullptr, attributes, indent, level + indent));
-      if (p.defaultValue) {
+      if (p.kind == Param::KeywordOnly) {
+        kwdef.push_back(p.defaultValue ? p.defaultValue->toPythonString(
+                                             attributes, indent, indent + level)
+                                       : "None");
+      } else if (p.defaultValue) {
         def.push_back(
             p.defaultValue->toPythonString(attributes, indent, indent + level));
       }
@@ -271,8 +278,8 @@ std::string Expr::wrapType(const std::string &sexpr) const {
          ")";
 }
 
-Param::Param(std::string name, Expr *type, Expr *defaultValue, int status)
-    : name(std::move(name)), type(type), defaultValue(defaultValue) {
+Param::Param(std::string name, Expr *type, Expr *defaultValue, int status, Kind kind)
+    : name(std::move(name)), type(type), defaultValue(defaultValue), kind(kind) {
   if (status == 0 &&
       (match(getType(),
              MOr(M<IdExpr>(StdlibTypes::Type), M<IdExpr>(StdlibTypes::TypeTrait),
@@ -284,8 +291,8 @@ Param::Param(std::string name, Expr *type, Expr *defaultValue, int status)
   }
 }
 Param::Param(const SrcInfo &info, std::string name, Expr *type, Expr *defaultValue,
-             int status)
-    : Param(std::move(name), type, defaultValue, status) {
+             int status, Kind kind)
+    : Param(std::move(name), type, defaultValue, status, kind) {
   setSrcInfo(info);
 }
 std::string Param::toString(int indent) const {
@@ -295,7 +302,8 @@ std::string Param::toString(int indent) const {
                      !isValue() ? " #:generic" : "");
 }
 Param Param::clone(bool clean) const {
-  return Param(name, ast::clone(type, clean), ast::clone(defaultValue, clean), status);
+  return Param(name, ast::clone(type, clean), ast::clone(defaultValue, clean), status,
+               kind);
 }
 std::pair<int, std::string> Param::getNameWithStars() const {
   int stars = 0;
@@ -944,7 +952,7 @@ std::string EllipsisExpr::toPythonString(bool a, int indent, int level) const {
 }
 
 LambdaExpr::LambdaExpr(std::vector<Param> vars, Expr *expr)
-    : AcceptorExtend(), Items(std::move(vars)), expr(expr) {}
+    : AcceptorExtend(), Items(FunctionStmt::parseParams(std::move(vars))), expr(expr) {}
 LambdaExpr::LambdaExpr(const LambdaExpr &expr, bool clean)
     : AcceptorExtend(expr, clean), Items(ast::clone(expr.items, clean)),
       expr(ast::clone(expr.expr, clean)) {}

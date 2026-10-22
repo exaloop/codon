@@ -370,25 +370,27 @@ function_def_async <-
   / function_def { return V0; }
 function_def <-
   / 'def' SPACE NAME _ generics _ params (_ '->' _ expression)? _ ':' {
-    auto params = ac<SemVals>(V2).transform<Param>();
-    for (auto &p: ac<vector<Param>>(V1))
-      params.push_back(p);
-    return asts(Function, LOC,
+    auto fn = asts(Function, LOC,
       ac<string>(V0),
       VS.size() == 4 ? ac_expr(VS[3]) : nullptr,
-      params,
+      ac<vector<Param>>(V2),
       nullptr
     );
+    for (auto &p: ac<vector<Param>>(V1))
+      static_cast<FunctionStmt*>(fn)->addParam(p);
+    return fn;
   }
   / 'def' SPACE NAME _ params (_ '->' _ expression)? _ ':' {
     return asts(Function, LOC,
       ac<string>(V0),
       VS.size() == 3 ? ac_expr(VS[2]) : nullptr,
-      ac<SemVals>(V1).transform<Param>(),
+      ac<vector<Param>>(V1),
       nullptr
     );
   }
-params <- '(' _ tlist(',', param)? _ ')' { return VS; }
+params <- '(' _ tlist(',', function_param)? _ ')' { return VS.transform<Param>(); }
+function_param <- param / param_separator
+param_separator <- <'*' / '/'> { return Param(LOC, VS.token_to_string()); }
 param <-
   / param_name _ ':' _ expression (_ '=' _ expression)? {
     return Param(LOC, ac<string>(V0), ac_expr(V1), VS.size() > 2 ? ac_expr(V2) : nullptr);
@@ -517,13 +519,14 @@ expression <-
 lambdef <-
   / 'lambda' SPACE lparams _ ':' _ expression {
     return aste(Lambda, LOC,
-      ac<SemVals>(V0).transform<Param>(), ac_expr(V1)
+      ac<vector<Param>>(V0), ac_expr(V1)
     );
   }
   / 'lambda' _ ':' _ expression {
     return aste(Lambda, LOC, vector<Param>{}, ac_expr(V0));
   }
-lparams <- tlist(',', lparam)? { return VS; }
+lparams <- tlist(',', lambda_param)? { return VS.transform<Param>(); }
+lambda_param <- lparam / param_separator
 lparam <- param_name (_ '=' _ expression)? {
     return Param(LOC, ac<string>(V0), nullptr, VS.size() > 1 ? ac_expr(V1) : nullptr);
   }

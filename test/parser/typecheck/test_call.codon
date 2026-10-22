@@ -1,4 +1,147 @@
 
+#%% parameter_separators,barebones
+def mixed(first: int, /, second: int = 2, *, third: int, fourth: int = 4):
+    return first, second, third, fourth
+assert mixed(1, third=3) == (1, 2, 3, 4)
+assert mixed(1, 20, fourth=40, third=30) == (1, 20, 30, 40)
+assert mixed(1, second=20, third=30) == (1, 20, 30, 4)
+def unpack(**kwargs):
+    return mixed(*(1, 20), **kwargs)
+assert unpack(third=30, fourth=40) == (1, 20, 30, 40)
+
+def shadow(name, /, **kwargs):
+    return name, kwargs.name
+assert shadow(1, name=2) == (1, 2)
+def defaults(first=1, /, second=2, *, third=3, fourth):
+    return first, second, third, fourth
+assert defaults(fourth=4) == (1, 2, 3, 4)
+def variadic(first=1, /, *args, optional=2, required, **kwargs):
+    return first, args, optional, required, kwargs.extra
+assert variadic(10, 20, 30, required=40, extra=50) == (10, (20, 30), 2, 40, 50)
+
+f = lambda first, /, second=2, *, third: first + second + third
+assert f(1, third=3) == 6
+partial = mixed(1, ...)
+assert partial(third=3) == (1, 2, 3, 4)
+def closure(offset):
+    def inner(first, /, *, second):
+        return offset + first + second
+    return inner
+assert closure(10)(1, second=2) == 13
+
+class Example:
+    def method(self, /, first, *, second):
+        return first + second
+bound = Example().method
+assert bound(1, second=2) == 3
+
+def choose(first: int, /):
+    return 'positional'
+@overload
+def choose(*, first: int):
+    return 'keyword'
+assert choose(1) == 'positional'
+assert choose(first=1) == 'keyword'
+def generic[T](first: T, /, *, second: T):
+    return first + second
+assert generic(1, second=2) == 3
+print('parameter separators ok')  #: parameter separators ok
+
+#%% parameter_virtual_separators,barebones
+class Base:
+    def compute(self, /, value: int, *, offset: int = 1) -> int:
+        return value + offset
+class Derived(Base):
+    def compute(self, /, value: int, *, offset: int = 1) -> int:
+        return value + offset + 10
+base: Base = Derived()
+assert base.compute(2, offset=3) == 15
+assert base.compute(2) == 13
+bound = base.compute
+assert bound(2, offset=3) == 15
+
+# Force the adapter path with a covariant result.
+class Result:
+    value: int
+class DetailedResult(Result):
+    extra: int
+class Factory:
+    def create(self, /, *, value: int) -> Result:
+        return Result(value)
+class DetailedFactory(Factory):
+    def create(self, /, *, value) -> DetailedResult:
+        return DetailedResult(value=value, extra=1)
+factory: Factory = DetailedFactory()
+assert factory.create(value=42).value == 42
+assert isinstance(factory.create(value=42), DetailedResult)
+print('virtual parameter separators ok')  #: virtual parameter separators ok
+
+#%% parameter_positional_only_error,barebones
+def positional(value, /):
+    return value
+positional(value=1)
+#! 'value' is an invalid keyword argument for positional
+
+#%% parameter_keyword_only_error,barebones
+def keyword(*, value):
+    return value
+keyword(1)
+#! keyword() takes 0 arguments (1 given)
+
+#%% parameter_keyword_missing_error,barebones
+def keyword(*, value):
+    return value
+keyword()
+#! keyword() missing 1 required keyword-only argument: 'value'
+
+#%% parameter_keyword_after_kwargs_error,barebones
+def keyword(*, value, **kwargs):
+    return value
+keyword(1)
+#! keyword() takes 0 arguments (1 given)
+
+#%% parameter_positional_only_missing_error,barebones
+def positional(value, /, **kwargs):
+    return value
+positional(value=1)
+#! positional() missing 1 required positional argument: 'value'
+
+#%% parameter_slash_first_error,barebones
+def bad(/, value): pass
+#! '/' must follow positional parameters and precede '*'
+
+#%% parameter_slash_twice_error,barebones
+def bad(first, /, second, /): pass
+#! '/' must follow positional parameters and precede '*'
+
+#%% parameter_slash_after_star_error,barebones
+def bad(*args, /): pass
+#! '/' must follow positional parameters and precede '*'
+
+#%% parameter_bare_star_error,barebones
+def bad(value, *): pass
+#! named arguments must follow bare '*'
+
+#%% parameter_bare_star_kwargs_error,barebones
+def bad(*, **kwargs): pass
+#! named arguments must follow bare '*'
+
+#%% parameter_star_twice_error,barebones
+def bad(*, first, *, second): pass
+#! '*' may appear only once
+
+#%% parameter_star_vararg_error,barebones
+def bad(*, first, *args): pass
+#! '*' may appear only once
+
+#%% parameter_generic_bare_star_error,barebones
+def bad[T](*): pass
+#! named arguments must follow bare '*'
+
+#%% parameter_lambda_bare_star_error,barebones
+bad = lambda *: 1
+#! named arguments must follow bare '*'
+
 #%% call_ptr,barebones
 v = 5
 p = __ptr__(v)

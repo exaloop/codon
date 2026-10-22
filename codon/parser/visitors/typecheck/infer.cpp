@@ -602,7 +602,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
   std::vector<Param> args;
   for (auto &i : *ast) {
     auto [_, varName] = i.getNameWithStars();
-    args.emplace_back(varName, nullptr, nullptr, i.status);
+    args.emplace_back(varName, nullptr, nullptr, i.status, i.kind);
   }
   r->ast =
       N<FunctionStmt>(r->type->realizedName(), nullptr, args, ctx->getBase()->suite,

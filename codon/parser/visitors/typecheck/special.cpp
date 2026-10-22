@@ -92,10 +92,14 @@ void TypecheckVisitor::prepareVTables() {
     std::vector<CallArg> arguments;
     std::vector<Expr *> placeholders;
     std::vector<int> argumentStars;
+    std::vector<std::string> argumentNames;
     for (const auto &parameter : *signature->ast) {
       auto [stars, name] = parameter.getNameWithStars();
-      if (parameter.isValue() && !startswith(getUnmangledName(name), "$"))
+      if (parameter.isValue() && !startswith(getUnmangledName(name), "$")) {
         argumentStars.push_back(stars);
+        argumentNames.push_back(
+            parameter.kind == Param::KeywordOnly ? getUnmangledName(name) : "");
+      }
     }
     seqassertn(argumentStars.size() == signature->size(),
                "dispatch signature argument count mismatch");
@@ -113,7 +117,7 @@ void TypecheckVisitor::prepareVTables() {
         argument = N<StarExpr>(argument);
       else if (argumentStars[index] == 2)
         argument = N<KeywordStarExpr>(argument);
-      arguments.emplace_back("", argument);
+      arguments.emplace_back(argumentNames[index], argument);
       placeholders.push_back(typed_argument(argumentType->shared_from_this()));
     }
     auto name = getTemporaryVar("dispatch.adapter");
@@ -153,7 +157,9 @@ void TypecheckVisitor::prepareVTables() {
           arguments.emplace_back(names[keyword],
                                  typed_argument(values->generics[keyword].type));
       } else {
-        arguments.emplace_back("", typed_argument(type->shared_from_this()));
+        arguments.emplace_back(
+            parameter.kind == Param::KeywordOnly ? getUnmangledName(name) : "",
+            typed_argument(type->shared_from_this()));
       }
     }
     arguments.front().getExpr()->setType(receiver->shared_from_this());

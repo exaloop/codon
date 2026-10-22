@@ -497,6 +497,7 @@ struct FunctionStmt : public AcceptorExtend<FunctionStmt, Stmt>, Items<Param> {
                Stmt *suite = nullptr, std::vector<Expr *> decorators = {},
                bool async = false);
   FunctionStmt(const FunctionStmt &, bool);
+  static std::vector<Param> parseParams(std::vector<Param>);
 
   std::string getName() const { return name; }
   void setName(const std::string &n) { name = n; }

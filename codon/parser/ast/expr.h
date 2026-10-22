@@ -95,9 +95,11 @@ private:
 
 /// Function signature parameter helper node (name: type = defaultValue).
 struct Param : public codon::SrcObject {
+  enum Kind { Normal, PositionalOnly, KeywordOnly };
   std::string name;
   Expr *type;
   Expr *defaultValue;
+  Kind kind;
   enum {
     Value,
     Generic,
@@ -105,9 +107,9 @@ struct Param : public codon::SrcObject {
   } status; // 1 for normal generic, 2 for hidden generic
 
   explicit Param(std::string name = "", Expr *type = nullptr,
-                 Expr *defaultValue = nullptr, int generic = 0);
+                 Expr *defaultValue = nullptr, int generic = 0, Kind kind = Normal);
   explicit Param(const SrcInfo &info, std::string name = "", Expr *type = nullptr,
-                 Expr *defaultValue = nullptr, int generic = 0);
+                 Expr *defaultValue = nullptr, int generic = 0, Kind kind = Normal);
 
   std::string getName() const { return name; }
   Expr *getType() const { return type; }
@@ -117,7 +119,7 @@ struct Param : public codon::SrcObject {
   bool isHiddenGeneric() const { return status == HiddenGeneric; }
   std::pair<int, std::string> getNameWithStars() const;
 
-  SERIALIZE(Param, name, type, defaultValue);
+  SERIALIZE(Param, name, type, defaultValue, kind);
   Param clone(bool) const;
   std::string toString(int) const;
 };

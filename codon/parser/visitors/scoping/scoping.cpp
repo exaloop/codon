@@ -650,7 +650,8 @@ void ScopingVisitor::visit(FunctionStmt *stmt) {
     if (in(seenArgs, n))
       STOP_ERROR(Error::FN_ARG_TWICE, a.getSrcInfo(), n);
     seenArgs.insert(n);
-    if (!a.getDefault() && defaultsStarted && !stars && a.isValue())
+    if (!a.getDefault() && defaultsStarted && !stars && a.isValue() &&
+        a.kind != Param::KeywordOnly)
       STOP_ERROR(Error::FN_DEFAULT, a.getSrcInfo(), n);
     defaultsStarted |= static_cast<bool>(a.getDefault());
     if (stmt->hasAttribute(Attr::C)) {

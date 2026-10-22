@@ -435,7 +435,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
         }
       }
       args.emplace_back(std::string(stars, '*') + name, a.getType(), defaultValue,
-                        a.status);
+                        a.status, a.kind);
 
       // Add generics to the context
       if (!a.isValue()) {

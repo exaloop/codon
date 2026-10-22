@@ -1599,7 +1599,11 @@ int TypecheckVisitor::reorderNamedArgs(const types::FuncType *func,
                  cast<EllipsisExpr>(args.back().value)->isPartial();
 
   int starArgIndex = -1, kwstarArgIndex = -1;
+  int positionalLimit = func->ast->size();
   for (int i = 0; i < func->ast->size(); i++) {
+    if ((*func->ast)[i].kind == Param::KeywordOnly ||
+        startswith((*func->ast)[i].name, "*"))
+      positionalLimit = std::min(positionalLimit, i);
     if (startswith((*func->ast)[i].name, "**"))
       kwstarArgIndex = i, score -= 2;
     else if (startswith((*func->ast)[i].name, "*"))
@@ -1618,7 +1622,7 @@ int TypecheckVisitor::reorderNamedArgs(const types::FuncType *func,
       while (!known.empty() && si < slots.size() &&
              known[si] == ClassType::PartialFlag::Included)
         si++;
-      if (si < slots.size() && (starArgIndex == -1 || si < starArgIndex))
+      if (si < positionalLimit)
         slots[si++] = {ai};
       else
         extra.emplace_back(ai);
@@ -1639,7 +1643,8 @@ int TypecheckVisitor::reorderNamedArgs(const types::FuncType *func,
   if (!namedArgs.empty()) {
     std::map<std::string, int> slotNames;
     for (int i = 0; i < func->ast->size(); i++)
-      if (known.empty() || known[i] != ClassType::PartialFlag::Included) {
+      if ((*func->ast)[i].kind != Param::PositionalOnly &&
+          (known.empty() || known[i] != ClassType::PartialFlag::Included)) {
         auto [_, n] = (*func->ast)[i].getNameWithStars();
         slotNames[getUnmangledName(n)] = i;
       }
@@ -1658,7 +1663,7 @@ int TypecheckVisitor::reorderNamedArgs(const types::FuncType *func,
   if (!extra.empty() && starArgIndex == -1)
     return onError(Error::CALL_ARGS_MANY, getSrcInfo(),
                    Emsg(Error::CALL_ARGS_MANY, getUserFacingName(func->ast->getName()),
-                        func->ast->size(), args.size() - partial));
+                        positionalLimit, args.size() - partial));
 
   if (starArgIndex != -1)
     slots[starArgIndex] = extra;
@@ -1683,10 +1688,14 @@ int TypecheckVisitor::reorderNamedArgs(const types::FuncType *func,
         score -= 2;
       } else if (!partial && (*func->ast)[i].isValue()) {
         auto [_, n] = (*func->ast)[i].getNameWithStars();
-        return onError(Error::CALL_ARGS_MISSING, getSrcInfo(),
-                       Emsg(Error::CALL_ARGS_MISSING,
-                            getUnmangledName(func->ast->getName()),
-                            getUnmangledName(n)));
+        return onError(
+            Error::CALL_ARGS_MISSING, getSrcInfo(),
+            (*func->ast)[i].kind == Param::KeywordOnly
+                ? fmt::format("{}() missing 1 required keyword-only argument: '{}'",
+                              getUnmangledName(func->ast->getName()),
+                              getUnmangledName(n))
+                : Emsg(Error::CALL_ARGS_MISSING, getUnmangledName(func->ast->getName()),
+                       getUnmangledName(n)));
       }
     }
   auto s = onDone(starArgIndex, kwstarArgIndex, slots, partial);
