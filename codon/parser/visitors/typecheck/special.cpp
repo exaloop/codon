@@ -112,7 +112,8 @@ void TypecheckVisitor::prepareVTables() {
       Expr *argument = N<IdExpr>(name);
       if (!index)
         argument = N<CallExpr>(N<IdExpr>(getMangledMethod("", "type", "_force_cast")),
-                               argument, N<IdExpr>(receiver->realizedName()));
+                               argument,
+                               N<IdExpr>(extractFuncArgType(target)->realizedName()));
       else if (argumentStars[index] == 1)
         argument = N<StarExpr>(argument);
       else if (argumentStars[index] == 2)
@@ -245,7 +246,17 @@ void TypecheckVisitor::prepareVTables() {
             E(Error::CUSTOM, method->ast,
               "no compatible virtual implementation of {} for {}", key,
               receiver->prettyString());
-          auto *resolved = realize_target(target, arguments);
+          // inherited overrides must not acquire the descendant's Self
+          if (auto *owner = target->ast->getAttribute<ir::StringValueAttribute>(
+                  Attr::ParentClass))
+            for (const auto &base : getMRO(receiver))
+              if (base->getClass()->name == owner->value) {
+                arguments.front().getExpr()->setType(base);
+                break;
+              }
+          auto *resolved = target->getFuncName() == method->getFuncName()
+                               ? method
+                               : realize_target(target, arguments);
           auto adapted = install_target(realization, id, method, receiver, resolved);
           LOG_REALIZE("[dispatch] {} (desc={}, id={}) = {}", key,
                       receiver->debugString(2), id, adapted->debugString(2));
@@ -990,8 +1001,11 @@ Expr *TypecheckVisitor::transformSuper() {
   ClassType *typ = extractFuncArgType(funcTyp)->getClass();
   auto self = N<IdExpr>(funcTyp->ast->begin()->name);
   self->setType(typ->shared_from_this());
-  auto typExpr = N<IdExpr>(typ->getClass()->name);
-  typExpr->setType(instantiateTypeVar(typ->getClass()));
+  // Self may specialize an inherited method for a derived receiver. super()
+  // must still start after the method's defining class, not after Self.
+  auto *lexical = funcTyp->funcParent ? funcTyp->funcParent->getClass() : typ;
+  auto typExpr = N<IdExpr>(lexical->name);
+  typExpr->setType(instantiateTypeVar(lexical));
   return transform(
       N<CallExpr>(N<IdExpr>(getMangledMethod("", "Super", "__new__")), typExpr, self));
 }

@@ -111,27 +111,29 @@ std::vector<Type *> FuncType::getUnbounds(bool includeGenerics) const {
 
 bool FuncType::canRealize() const {
   bool allowPassThrough = ast->hasAttribute(Attr::AllowPassThrough);
-  // Important: return type does not have to be realized.
-  for (int ai = 0; ai < size(); ai++)
-    if (!(*this)[ai]->getFunc() && !(*this)[ai]->canRealize()) {
-      if (!allowPassThrough)
-        return false;
-      for (auto &u : (*this)[ai]->getUnbounds(true))
-        if (u->getLink()->kind == LinkType::Generic || !u->getLink()->passThrough)
-          return false;
-    }
-  bool generics =
-      std::ranges::all_of(funcGenerics.begin(), funcGenerics.end(),
-                          [](auto &a) { return !a.type || a.type->canRealize(); });
-  if (generics && funcParent && !funcParent->canRealize()) {
+  auto canRealize = [&](Type *type) {
+    if (type->canRealize())
+      return true;
     if (!allowPassThrough)
       return false;
-    for (auto &u : funcParent->getUnbounds(true)) {
+    for (auto *u : type->getUnbounds(true))
       if (u->getLink()->kind == LinkType::Generic || !u->getLink()->passThrough)
         return false;
-    }
-  }
-  return generics;
+    return true;
+  };
+  // Important: return type does not have to be realized.
+  for (int ai = 0; ai < size(); ai++)
+    if (!(*this)[ai]->getFunc() && !canRealize((*this)[ai]))
+      return false;
+  bool generics =
+      std::ranges::all_of(funcGenerics.begin(), funcGenerics.end(), [&](auto &a) {
+        if (!a.type || a.type->canRealize())
+          return true;
+        // Self must not defer __init__
+        return allowPassThrough && !a.name.empty() && cache->rev(a.name) == "Self" &&
+               canRealize(a.type.get());
+      });
+  return generics && (!funcParent || canRealize(funcParent.get()));
 }
 
 bool FuncType::isInstantiated() const {

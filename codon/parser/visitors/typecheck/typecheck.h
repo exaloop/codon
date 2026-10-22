@@ -383,6 +383,7 @@ public:
   static bool isImportFn(const std::string &s);
   int64_t getTime() const;
   types::Type *getUnderlyingStaticType(types::Type *t) const;
+  types::TypePtr getSelfType(types::Type *t) const;
 
   int64_t getIntLiteral(types::Type *t, size_t pos = 0) const;
   bool getBoolLiteral(types::Type *t, size_t pos = 0) const;

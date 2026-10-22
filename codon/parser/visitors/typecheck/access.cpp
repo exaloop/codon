@@ -594,8 +594,13 @@ std::pair<Expr *, bool> TypecheckVisitor::getClassMember(Expr *expr,
   auto u = instantiateUnbound();
   u->staticKind = LiteralKind::String;
   if (auto m = findBestMethod(typ, "__getattr__", {typ, u.get()})) {
-    if (m->funcGenerics.size() == 1 &&
-        extractFuncGeneric(m)->getStaticKind() == LiteralKind::String) {
+    if (std::ranges::count_if(m->funcGenerics,
+                              [&](const auto &generic) {
+                                return getUnmangledName(generic.name) != "Self";
+                              }) == 1 &&
+        std::ranges::any_of(m->funcGenerics, [](const auto &generic) {
+          return generic.getType()->getStaticKind() == LiteralKind::String;
+        })) {
       return {transform(
                   N<CallExpr>(N<DotExpr>(expr, "__getattr__"), N<StringExpr>(member))),
               true};

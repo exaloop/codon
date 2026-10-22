@@ -631,7 +631,7 @@ Color.RED = Color.RED
 from enum import Enum
 Enum("invalid")
 #! cannot instantiate Enum directly
-#! during the realization of __new__(value: str, __SELF__: Enum)
+#! during the realization of __new__(value: str, Self: Enum)
 
 #%% enum_mixed_values_err
 from enum import Enum
@@ -750,14 +750,14 @@ Factory(1)
 #! 'int' does not match expected type 'str'
 
 #%% class_inherited_self
-# Enum shares its methods using __SELF__. The same inherited specialization
-# must work for ordinary classes, including calls through an intermediate base.
+# Self specializes inherited methods on the static receiver, including calls
+# through an intermediate base. Upcasting must not recover a runtime Self.
 class Base:
     @staticmethod
-    def owner(__SELF__: type = Base):
-        return __SELF__.__name__
-    def label(self: __SELF__, __SELF__: type) -> str:
-        if hasattr(__SELF__, "value"):
+    def owner(Self: type = Base):
+        return Self.__name__
+    def label(self: Self, Self: type) -> str:
+        if hasattr(Self, "value"):
             return "value=" + str(self.value)
         return "base"
 class First(Base):
@@ -766,14 +766,155 @@ def describe(obj: Base):
     return obj.label()
 assert Base.owner() == "Base"
 assert First.owner() == "First"
-assert describe(First(3)) == "value=3"
+assert First(3).label() == "value=3"
+assert describe(First(3)) == "base"
 class Middle(Base):
     pass
 class Late(Middle):
     value: str
 def describe_middle(obj: Middle):
     return obj.label()
-assert describe(Late("late")) == "value=late"
-assert describe_middle(Late("middle")) == "value=middle"
+assert Late("late").label() == "value=late"
+assert describe(Late("late")) == "base"
+assert describe_middle(Late("middle")) == "base"
 assert Late.owner() == "Late"
 print("inherited self ok")  #: inherited self ok
+
+#%% class_self_context
+# Implicit Self preserves the inferred __enter__ result; no WithStmt-specific
+# typing or return annotation is needed to access Writer's methods.
+class Context:
+    def __enter__(self):
+        return self
+    def __exit__(self):
+        pass
+class Writer(Context):
+    def write(self):
+        print("writer works")
+with Writer() as writer:
+    writer.write()  #: writer works
+
+#%% class_self_annotations
+class Base[T]:
+    value: T
+    def inferred(self):
+        return self
+    def annotated(self) -> Self:
+        return self
+    def explicit(self: Base[T]):
+        return self
+    def receiver(self):
+        return Self.__name__
+    def pair(self, value: U, U: type):
+        return self, value
+    def empty(self):
+        pass
+class Child(Base[int]):
+    def child(self):
+        return self.value + 1
+c = Child(41)
+assert c.inferred().child() == 42
+assert c.annotated().child() == 42
+assert c.receiver() == "Child"
+assert c.pair("text")[0].child() == 42
+assert c.pair("text")[1] == "text"
+assert c.empty() is None
+assert type(c.explicit()) is Base[int]
+def as_base(value: Base[int]):
+    assert type(value.inferred()) is Base[int]
+    assert type(value.annotated()) is Base[int]
+    return value.receiver()
+assert as_base(c) == "Base[int]"
+print("self annotations ok")  #: self annotations ok
+
+#%% class_self_tuple
+# Self retains record specialization without requiring RTTI.
+@tuple
+class Record[T]:
+    value: T
+    def identity(self) -> Self:
+        return self
+assert Record(3).identity().value == 3
+assert Record("text").identity().value == "text"
+assert (1, "text")[1] == "text"
+assert (1, 2) + (3,) == (1, 2, 3)
+assert tuple(x for x in (1, "text")) == (1, "text")
+assert not TypeInfo.cache(Record[int]).rtti
+print("self tuple ok")  #: self tuple ok
+
+#%% class_self_static_virtual
+# An override elsewhere makes identify virtual, but an inherited implementation
+# must keep the caller's static Self instead of specializing for each RTTI type.
+receivers = List[str]()
+class Base:
+    def identify(self):
+        return Self.__name__
+    def identity(self):
+        return self
+class Inherited(Base):
+    pass
+class Override(Base):
+    def identify(self):
+        return "override:" + Self.__name__
+    def identity(self) -> Self:
+        receivers.append(Self.__name__)
+        return self
+class OverrideChild(Override):
+    pass
+def identify(value: Base):
+    return value.identify()
+assert Inherited().identify() == "Inherited"
+assert identify(Inherited()) == "Base"
+assert identify(Override()) == "override:Override"
+assert identify(OverrideChild()) == "override:Override"
+assert OverrideChild().identify() == "override:OverrideChild"
+child = OverrideChild()
+base: Base = child
+assert base.identity() is child
+assert receivers == ["Override"]
+receivers.clear()
+assert child.identity() is child
+assert receivers == ["OverrideChild"]
+print("static virtual self ok")  #: static virtual self ok
+
+#%% class_self_inherited_super
+# Specializing self must not move the lexical anchor used by super().
+class Root:
+    def label(self):
+        return "root"
+class Middle(Root):
+    def label(self):
+        return super().label() + ":middle"
+class Leaf(Middle):
+    pass
+assert Leaf().label() == "root:middle"
+print("inherited self super ok")  #: inherited self super ok
+
+#%% class_self_function
+# Function.__raw__ is an LLVM method: Self must retain its runtime pointer
+# argument even when the receiver names a compile-time function realization.
+def increment(value: int) -> int:
+    return value + 1
+raw = increment.__raw__()
+assert raw != Ptr[byte]()
+fn = Function[[int], int](raw)
+assert fn(41) == 42
+print("function self ok")  #: function self ok
+
+#%% class_self_operator_generics,barebones
+# Operator lowering calls the canonical method without member lookup. Inferring
+# Self does not by itself bind the separate T in the defining class Box[T].
+class Box[T]:
+    value: T
+    def __add__(self, other):
+        return T.__name__
+box = Box(40)
+assert box.__add__(0) == "int"
+assert box + 0 == "int"
+class IntBox(Box[int]):
+    pass
+assert IntBox(40) + 0 == "int"
+def shift(value: int):
+    return 1 << value
+assert shift(3) == 8
+print("operator class generics ok")  #: operator class generics ok

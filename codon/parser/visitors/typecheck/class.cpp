@@ -563,7 +563,8 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         for (auto *&dc : fp->decorators) {
           // Handle @setter setters
           if (match(dc, M<DotExpr>(M<IdExpr>(fp->getName()), "setter")) &&
-              fp->size() == 2) {
+              std::ranges::count_if(*fp, [](const Param &p) { return p.isValue(); }) ==
+                  2) {
             fp->name = fmt::format("{}{}", FN_SETTER_SUFFIX, fp->getName());
             dc = nullptr;
             break;
@@ -585,22 +586,10 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     if (stmt->hasAttribute(Attr::Tuple))
       addLater.emplace_back(ctx->forceFind(name));
 
-    // Mark functions as virtual:
+    // Mark functions as virtual
     auto banned = std::set<std::string>{"__init__", "__new__", "__raw__",
                                         "__tuplesize__", "__repr_default__"};
     for (const auto &[method, root] : sorted_view(cls.methods)) {
-      // class_inherited_self / enum_test: an inherited __SELF__ method needs
-      // runtime receiver specialization even when a subclass does not override it.
-      if (!stmt->isRecord() && !in(banned, method))
-        for (const auto &overload : getOverloads(root)) {
-          auto *f = getFunction(overload)->getType();
-          if (f && !f->funcGenerics.empty() && !f->ast->empty() &&
-              getUnmangledName(f->ast->front().getName()) == "self" &&
-              getUnmangledName(f->funcGenerics.front().name) == "__SELF__" &&
-              !f->ast->hasAttribute(Attr::StaticMethod) &&
-              !f->ast->hasAttribute(Attr::Property))
-            cls.virtuals.insert(method);
-        }
       for (size_t mi = 1; mi < cls.mro.size(); mi++) {
         // ... in the current class
         auto b = cls.mro[mi]->name;

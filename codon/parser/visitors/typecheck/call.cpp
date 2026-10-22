@@ -853,6 +853,21 @@ bool TypecheckVisitor::typecheckCallArgs(FuncType *calleeFn, std::vector<CallArg
   bool wrappingDone = true;         // tracks whether all arguments are wrapped
   std::vector<Type *> replacements; // list of replacement arguments
 
+  // Unify Self with the argument so that generics (e.g. N in Int[N].__lshift__)
+  // propagate
+  auto *parent = calleeFn->funcParent ? calleeFn->funcParent->getClass() : nullptr;
+  if (parent && !parent->canRealize() && !args.empty() && !calleeFn->ast->empty() &&
+      !calleeFn->ast->hasAttribute(Attr::StaticMethod) &&
+      getUnmangledName(calleeFn->ast->front().getName()) == "self") {
+    if (auto *receiver =
+            getUnderlyingStaticType(args.front().value->getType())->getClass())
+      for (const auto &base : getClass(receiver)->mro)
+        if (base->name == parent->name) {
+          unify(parent, instantiateType(base.get(), receiver));
+          break;
+        }
+  }
+
   withClassGenerics(
       calleeFn,
       [&]() {

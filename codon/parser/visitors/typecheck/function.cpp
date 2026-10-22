@@ -505,22 +505,17 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       if (!(*stmt)[ai].isValue())
         continue;
       auto [_, canName] = (*stmt)[ai].getNameWithStars();
-      if (!(*stmt)[ai].getType()) {
-        if (parentClass && ai == 0 && (*stmt)[ai].getName() == "self") {
-          // Special case: self in methods
-          auto *st = unify(extractClassGeneric(argType, aj), parentClass);
-          if (getClass(parentClass->name)->ast->hasAttribute(Attr::ClassDeduce) &&
-              stmt->hasAttribute(Attr::ClassDeduce) && stmt->getName() == "__init__") {
-            for (auto &u : st->getUnbounds(true)) {
-              stmt->setAttribute(Attr::AllowPassThrough);
-              // log("pass-through: {}.__init__ / {}", parentClass->name,
-              //     u->debugString(2));
-              u->getLink()->passThrough = true;
-            }
-          }
-        } else {
-          generics.push_back(extractClassGeneric(argType, aj)->shared_from_this());
+      // Mark __init__ generics as AllowPassThrough
+      if (parentClass && ai == 0 && stmt->hasAttribute(Attr::HasSelf) &&
+          getClass(parentClass->name)->ast->hasAttribute(Attr::ClassDeduce) &&
+          stmt->hasAttribute(Attr::ClassDeduce) && stmt->getName() == "__init__") {
+        for (auto &u : parentClass->getUnbounds(true)) {
+          stmt->setAttribute(Attr::AllowPassThrough);
+          u->getLink()->passThrough = true;
         }
+      }
+      if (!(*stmt)[ai].getType()) {
+        generics.push_back(extractClassGeneric(argType, aj)->shared_from_this());
       } else if (startswith((*stmt)[ai].getName(), "*")) {
         // Special case: `*args: type` and `**kwargs: type`. Do not add this type to the
         // signature (as the real type is `Tuple[type, ...]`); it will be used during

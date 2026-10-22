@@ -662,6 +662,16 @@ void ScopingVisitor::visit(FunctionStmt *stmt) {
     }
   }
 
+  if (ctx->inClass && !stmt->hasAttribute(Attr::StaticMethod) && !stmt->empty() &&
+      stmt->front().getName() == "self") {
+    // Append default generic Self
+    if (!stmt->front().getType())
+      stmt->front().type = N<IdExpr>("Self");
+    if (isId(stmt->front().getType(), "Self") &&
+        std::ranges::none_of(*stmt, [](const Param &p) { return p.name == "Self"; }))
+      stmt->addParam(Param("Self", N<IdExpr>(StdlibTypes::Type)));
+  }
+
   bool isOverload = false;
   for (auto &d : stmt->getDecorators())
     if (isId(d, "overload")) {

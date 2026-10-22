@@ -1203,10 +1203,11 @@ bool TypecheckVisitor::isPolymorphic(types::FuncType *t) const {
   auto cls = getClass(slf);
   auto member = getUnmangledName(t->ast->getName());
   bool virtualMethod = in(cls->virtuals, member);
-  // class_inherited_self: __SELF__ can bind the receiver to a subclass while
+  // class_inherited_self: Self can bind the receiver to a subclass while
   // the virtual method remains declared on its original base class.
-  if (!t->funcGenerics.empty() &&
-      getUnmangledName(t->funcGenerics.front().name) == "__SELF__")
+  if (std::ranges::any_of(t->funcGenerics, [&](const auto &generic) {
+        return getUnmangledName(generic.name) == "Self";
+      }))
     if (auto parent = t->ast->getAttribute<ir::StringValueAttribute>(Attr::ParentClass))
       virtualMethod |= in(getClass(parent->value)->virtuals, member) != nullptr;
   return cls && cls->hasRTTI() && virtualMethod && !isDispatch(t) &&
@@ -1430,6 +1431,18 @@ types::Type *TypecheckVisitor::getUnderlyingStaticType(types::Type *t) const {
   return t;
 }
 
+types::TypePtr TypecheckVisitor::getSelfType(types::Type *t) const {
+  if (auto *receiver = getUnderlyingStaticType(t)->getClass()) {
+    // python_pybridge: Function methods take a runtime function pointer. Binding
+    // Self to a compile-time FuncType would erase their self argument from CIR.
+    // TODO: why?!
+    if (receiver->getFunc())
+      return std::make_shared<ClassType>(receiver);
+    return receiver->shared_from_this();
+  }
+  return nullptr;
+}
+
 std::shared_ptr<types::LinkType>
 TypecheckVisitor::instantiateUnbound(const SrcInfo &srcInfo, int level) const {
   auto typ = std::make_shared<types::LinkType>(
@@ -1453,8 +1466,7 @@ types::TypePtr TypecheckVisitor::instantiateType(const SrcInfo &srcInfo,
   seqassert(type, "type is null");
   std::unordered_map<int, types::TypePtr> genericCache;
   if (generics) {
-    if (generics->getIntStatic())
-      generics = getStdLibType("Int[64]");
+    generics = getUnderlyingStaticType(generics)->getClass();
     for (auto &g : generics->hiddenGenerics)
       if (g.type &&
           !(g.type->getLink() && g.type->getLink()->kind == types::LinkType::Generic)) {
@@ -1465,11 +1477,12 @@ types::TypePtr TypecheckVisitor::instantiateType(const SrcInfo &srcInfo,
           !(g.type->getLink() && g.type->getLink()->kind == types::LinkType::Generic)) {
         genericCache[g.id] = g.type;
       }
-    // special case: __SELF__
-    if (type->getFunc() && !type->getFunc()->funcGenerics.empty() &&
-        getUnmangledName(type->getFunc()->funcGenerics[0].name) == "__SELF__") {
-      genericCache[type->getFunc()->funcGenerics[0].id] = generics->shared_from_this();
-    }
+    // Self binds to the static receiver, including non-polymorphic Tuple types.
+    // Other method generics may precede the implicit Self parameter.
+    if (auto *function = type->getFunc())
+      for (const auto &generic : function->funcGenerics)
+        if (getUnmangledName(generic.name) == "Self")
+          genericCache[generic.id] = getSelfType(generics);
   }
   auto t = type->instantiate(ctx->typecheckLevel, &(ctx->cache->unboundCount),
                              &genericCache);

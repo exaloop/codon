@@ -452,7 +452,8 @@ class A[T]:
 a = A()
 a.foo(1)
 #! 'int' does not match expected type 'NoneType'
-#! during the realization of foo(self: A[NoneType], y: int)
+# The receiver's implicit Self generic is included in realization diagnostics.
+#! during the realization of foo(self: A[NoneType], y: int, Self: A[NoneType])
 
 #%% return_deduction,barebones
 def fun[T, R](x, y: T) -> R:

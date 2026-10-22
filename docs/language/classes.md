@@ -85,6 +85,31 @@ fields through `__init__`.
 Disabling the check does not initialize storage or add runtime checks. Every
 field must still be initialized before it is read.
 
+## Self
+
+An unannotated instance-method argument named `self` has type `Self`. Codon binds
+`Self` to the receiver's static type, so an inherited method can use the derived
+type without upcasting to the class that defined the method:
+
+``` python
+class A:
+    def foo(self):
+        return f"{type(self)} ({Self})"
+class B(A):
+    pass
+
+print(A().foo())  # <class 'A'> (<class 'A'>)
+print(B().foo())  # <class 'B'> (<class 'B'>)
+```
+
+Return types are inferred normally. A method can also explicitly annotate its
+return type as `Self` if needed. An explicit `self` annotation such as `self: Context`
+keeps that annotation and does not default to `Self`.
+
+`Self` also works for tuple classes and can be declared explicitly as a generic
+parameter (`Self: type`), including in static methods. It does not itself make
+a method virtual.
+
 ## Overloading methods
 
 In Python, class methods can be defined to take arguments of arbitrary types,
