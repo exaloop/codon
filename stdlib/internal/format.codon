@@ -1028,7 +1028,7 @@ def _percent_numeric_buffer_size(
         ):
             return _percent_integer_buffer_size(int(value), directive)
 
-        raise TypeError("a number is required")
+    raise TypeError("a number is required")
 
 
 def _percent_numeric_append(
@@ -1131,7 +1131,7 @@ def _percent_char_append(
     value,
     directive: _PercentDirective,
     result: _FormatBuffer,
-) -> int:
+):
     if directive.precision >= 0:
         raise ValueError("precision not allowed in %c format")
 

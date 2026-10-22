@@ -269,6 +269,14 @@ class RuntimeError(Exception):
 def _raise_no_active_exception():
     raise RuntimeError("No active exception to reraise")
 
+def _missing_return_error(message: str, name: str, file: str, line: int, column: int) -> BaseException:
+    error = RuntimeError(message)
+    error.func = name
+    error.file = file
+    error.line = line
+    error.col = column
+    return error
+
 class NotImplementedError(RuntimeError):
     _pytype: ClassVar[cobj] = cobj()
     def __init__(self, message: str = ""):

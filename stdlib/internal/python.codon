@@ -1896,9 +1896,10 @@ class _PyWrap:
         )
 
     def _args_from_py(fn, args):
+        @llvm
         def err(fail: Ptr[bool], T: type = NoneType) -> T:
-            fail[0] = True
-            # auto-return zero-initialized T
+            store i8 1, ptr %fail
+            ret {=T} zeroinitializer
 
         def get_arg(F, p, k, fail: Ptr[bool], i: Literal[int]):
             if static.function.has_type(F, i):

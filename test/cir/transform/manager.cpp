@@ -1,5 +1,10 @@
 #include "test.h"
 
+#include <map>
+#include <set>
+
+#include "codon/cir/transform/lowering/imperative.h"
+#include "codon/cir/transform/lowering/return.h"
 #include "codon/cir/transform/manager.h"
 #include "codon/cir/transform/pass.h"
 #include "codon/cir/util/irtools.h"
@@ -52,6 +57,141 @@ public:
 };
 
 int DummyPass::runCounter = 0;
+
+TEST(MissingReturnTest, GuardsOnlyReachableNonnullableFallthrough) {
+  auto options = codon::Options::getDefault("build/codon_test");
+  options->debug = false;
+  codon::Compiler compiler(*options);
+  llvm::cantFail(compiler.parseCode("missing_return.codon", R"(
+def error():
+  raise ValueError("original")
+def error_wrapper():
+  error()
+@export
+def required(flag: bool) -> int:
+  if flag:
+    return 17
+@export
+def complete(flag: bool) -> int:
+  if flag:
+    return 17
+  else:
+    return 18
+@export
+def nullable(flag: bool) -> Optional[int]:
+  if flag:
+    return 17
+@export
+def nothing(flag: bool):
+  if flag:
+    print(flag)
+@export
+def calls_error(flag: bool) -> int:
+  if flag:
+    return 17
+  error_wrapper()
+@export
+def caught_error() -> int:
+  try:
+    error_wrapper()
+  except ValueError:
+    pass
+@export
+def finally_returns(flag: bool) -> int:
+  try:
+    if flag:
+      return 17
+  finally:
+    return 18
+@export
+def finally_breaks() -> int:
+  while True:
+    try:
+      return 17
+    finally:
+      break
+@export
+def forever() -> int:
+  while True:
+    continue
+def throwing_generator():
+  error()
+  yield 17
+@export
+def creates_generator() -> int:
+  throwing_generator()
+@export
+def protected_return(flag: bool) -> int:
+  try:
+    if flag:
+      error()
+    return 17
+  except ValueError:
+    return 18
+@export
+def nonempty_loop() -> int:
+  for index in range(1):
+    return index
+@export
+def possibly_empty_loop(count: int) -> int:
+  for index in range(count):
+    return index
+@export
+def caught_return_expression() -> int:
+  try:
+    return int("bad")
+  except ValueError:
+    pass
+@export
+def complete_else(flag: bool) -> int:
+  try:
+    if flag:
+      error()
+  except ValueError:
+    return 17
+  else:
+    return 18
+)"));
+  transform::lowering::ImperativeForFlowLowering().run(compiler.getModule());
+  transform::lowering::MissingReturnLowering pass;
+  pass.run(compiler.getModule());
+  struct Inspector : public util::Operator {
+    std::map<std::string, int> guarded;
+    std::set<std::string> fixture = {"required",
+                                     "complete",
+                                     "nullable",
+                                     "nothing",
+                                     "calls_error",
+                                     "caught_error",
+                                     "finally_returns",
+                                     "finally_breaks",
+                                     "forever",
+                                     "creates_generator",
+                                     "protected_return",
+                                     "nonempty_loop",
+                                     "possibly_empty_loop",
+                                     "caught_return_expression",
+                                     "complete_else"};
+    void handle(CallInstr *call) override {
+      auto *callee = util::getFunc(call->getCallee());
+      if (callee && callee->getUnmangledName() == "_missing_return_error" &&
+          fixture.count(getParentFunc()->getUnmangledName()))
+        ++guarded[getParentFunc()->getUnmangledName()];
+    }
+  } inspector;
+  inspector.process(compiler.getModule());
+  std::map<std::string, int> expected = {{"required", 1},
+                                         {"caught_error", 1},
+                                         {"finally_breaks", 1},
+                                         {"creates_generator", 1},
+                                         {"possibly_empty_loop", 1},
+                                         {"caught_return_expression", 1}};
+  EXPECT_EQ(inspector.guarded, expected);
+  pass.run(compiler.getModule());
+  Inspector repeated;
+  repeated.process(compiler.getModule());
+  EXPECT_EQ(repeated.guarded, expected);
+}
 
 TEST_F(CIRCoreTest, PassManagerNoInvalidations) {
   int counter = 0;

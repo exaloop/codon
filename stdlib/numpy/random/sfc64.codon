@@ -5,7 +5,6 @@ from .seed import SeedSequence
 def rotl(value: u64, rot: int):
     return (value << u64(rot)) | (value >> u64((-rot) & 63))
 
-@dataclass(check_init=False)
 class SFC64:
     s0: u64
     s1: u64
@@ -13,11 +12,12 @@ class SFC64:
     s3: u64
     seed: SeedSequence
 
-    def __init__(self, s0: u64, s1: u64, s2: u64):
+    def __init__(self, s0: u64, s1: u64, s2: u64, seed: SeedSequence):
         self.s0 = s0
         self.s1 = s1
         self.s2 = s2
         self.s3 = u64(1)
+        self.seed = seed
 
         for _ in range(12):
             self.next64()
@@ -27,8 +27,7 @@ class SFC64:
             self.__init__(SeedSequence(seed))
         else:
             val = seed.generate_state(3, u64)
-            self.__init__(val[0], val[1], val[2])
-            self.seed = seed
+            self.__init__(val[0], val[1], val[2], seed)
 
     def __get_state__(self):
         return (self.s0, self.s1, self.s2, self.s3)

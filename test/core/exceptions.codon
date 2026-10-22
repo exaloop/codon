@@ -1,4 +1,85 @@
 @test
+def test_missing_returns():
+    def required(flag: bool) -> int:
+        if flag:
+            return 17
+
+    assert required(True) == 17
+    try:
+        required(False)
+        assert False, "missing return did not raise"
+    except RuntimeError as error:
+        assert "required" in error.message
+        assert "exceptions.codon" in error.message
+        assert error.func == "required"
+        assert error.file.endswith("exceptions.codon")
+        assert error.line > 0 and error.col > 0
+        assert f":{error.line}:{error.col})" in error.message
+
+    def nullable(flag: bool) -> Optional[int]:
+        if flag:
+            return 17
+    assert nullable(False) is None
+    assert nullable(True) == 17
+
+    events: list[int] = []
+    def nothing(events: list[int]):
+        events.append(1)
+    nothing(events)
+    assert events == [1]
+
+    def reference(flag: bool) -> list[int]:
+        if flag:
+            return [17]
+    assert reference(True) == [17]
+    try:
+        reference(False)
+        assert False, "missing reference return did not raise"
+    except RuntimeError as error:
+        assert error.func == "reference"
+
+    def fail():
+        raise ValueError("original error")
+    def fail_wrapper():
+        fail()
+    def calls_error(flag: bool) -> int:
+        if flag:
+            return 17
+        fail_wrapper()
+    try:
+        calls_error(False)
+        assert False
+    except ValueError as error:
+        assert error.message == "original error"
+
+    def cleanup_breaks() -> int:
+        while True:
+            try:
+                return 17
+            finally:
+                break
+    try:
+        cleanup_breaks()
+        assert False, "cleanup suppressed a return without a guard"
+    except RuntimeError as error:
+        assert error.func == "cleanup_breaks"
+
+    import asyncio
+    async def async_required(flag: bool):
+        await asyncio.sleep(0)
+        if flag:
+            return 17
+    assert asyncio.run(async_required(True)) == 17
+    try:
+        asyncio.run(async_required(False))
+        assert False, "missing async return did not raise"
+    except RuntimeError as error:
+        assert "function 'async_required'" in error.message
+        assert "exceptions.codon:" in error.message
+
+test_missing_returns()
+
+@test
 def test_native_hierarchy():
     assert IOError is OSError and EnvironmentError is OSError
     assert isinstance(FileNotFoundError("missing"), OSError)

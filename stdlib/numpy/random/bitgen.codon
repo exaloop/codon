@@ -10,7 +10,6 @@ from .ziggurat import *
 
 u128 = UInt[128]
 
-@dataclass(check_init=False)
 class Binomial:
     psave: float
     nsave: int
@@ -30,7 +29,22 @@ class Binomial:
     p4: float
 
     def __init__(self):
-        pass
+        self.psave = 0.0
+        self.nsave = 0
+        self.r = 0.0
+        self.q = 0.0
+        self.fm = 0.0
+        self.m = 0
+        self.p1 = 0.0
+        self.xm = 0.0
+        self.xl = 0.0
+        self.xr = 0.0
+        self.c = 0.0
+        self.laml = 0.0
+        self.lamr = 0.0
+        self.p2 = 0.0
+        self.p3 = 0.0
+        self.p4 = 0.0
 
 class BitGenerator[G]:
     state: G
@@ -86,6 +100,8 @@ class BitGenerator[G]:
         s = self.state.__get_state__()
         g = G.__new__()
         g.__set_state__(s)
+        if hasattr(self.state, "seed"):
+            g.seed = self.state.seed
         g.jump_inplace(jumps)
         return BitGenerator(g)
 
