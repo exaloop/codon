@@ -238,7 +238,7 @@ void TypecheckVisitor::visit(ChainBinaryExpr *expr) {
     prev = ctx->generateCanonicalName("chain");
     // Chain temporaries must retain a static operand's literal type.
     auto assignment = N<AssignStmt>(N<IdExpr>(prev), clone(expr->exprs[i].second));
-    assignment->setAttribute(Attr::ChainStatic);
+    assignment->setAttribute(Attr::MaybeLiteral);
     auto r = (i + 1 == expr->exprs.size()) ? clone(expr->exprs[i].second)
                                            : N<StmtExpr>(assignment, N<IdExpr>(prev));
     items.emplace_back(N<BinaryExpr>(l, expr->exprs[i].first, r));

@@ -64,7 +64,7 @@ struct Attr {
     ExprVirtual,
     TryPyVar,
     LocalRenames,
-    ChainStatic,
+    MaybeLiteral,
   };
 };
 } // namespace codon::ast

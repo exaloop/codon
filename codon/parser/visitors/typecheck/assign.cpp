@@ -348,10 +348,10 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
 
   if (assign->getRhs()) { // not a declaration!
     // Inferred chain temporaries preserve compile-time comparison operands.
-    if (stmt->hasAttribute(Attr::ChainStatic)) {
+    if (stmt->hasAttribute(Attr::MaybeLiteral)) {
       if (auto unbound = assign->getLhs()->getType()->getUnbound())
         unbound->staticKind = assign->getRhs()->getType()->getStaticKind();
-      assign->setAttribute(Attr::ChainStatic);
+      assign->setAttribute(Attr::MaybeLiteral);
     }
     // Check if we can wrap the expression (e.g., `a: float = 3` -> `a = float(3)`)
     if (wrapExpr(&assign->rhs, assign->getLhs()->getType())) {
