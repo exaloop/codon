@@ -1515,3 +1515,73 @@ def consume(values: Generator[int]):
 def consume(values: Generator[Tuple[int, int]]):
     return "pairs"
 print(consume([1, 2]), consume([(1, 2), (3, 4)]))  #: ints pairs
+
+#%% union_argument_specialization
+def identity(value: int | str = 1):
+    return value
+
+assert type(identity(42)) is int
+assert type(identity('hello')) is str
+assert identity(42) == 42 and identity('hello') == 'hello'
+assert type(identity()) is int
+assert type(identity(value='named')) is str
+partial = identity(...)
+assert type(partial(2)) is int
+assert type(partial('partial')) is str
+alias = identity
+assert type(alias(3)) is int
+assert type(alias('alias')) is str
+
+# Binding T to a union must retain its storage layout.
+def constrained(value: T, T: type): return value
+assert type(constrained(42, T=int | str)) is (int | str)
+
+@llvm
+def fixed(value: int | str) -> int | str:
+    ret {=int | str} %value
+assert type(fixed(42)) is (int | str)
+
+def argument_type(value: int | str):
+    return type(value).__name__
+
+assert argument_type(42) == 'int'
+assert argument_type('hello') == 'str'
+value: int | str = 42
+assert type(identity(value)) is (int | str)
+assert argument_type(value) == 'Union[int|str]'
+assert type(identity(7)) is int
+
+def boxed(value: int | str) -> int | str:
+    return value
+assert type(boxed(42)) is (int | str)
+
+class Methods:
+    def member(self, value: int | str): return value
+    @staticmethod
+    def static(value: int | str): return value
+assert type(Methods().member(42)) is int
+assert type(Methods.static('static')) is str
+bound = Methods().member
+assert type(bound('bound')) is str
+
+try:
+    identity(1.5)
+    assert False
+except TypeError:
+    pass
+print('union specialization ok')  #: union specialization ok
+
+#%% bound_callable_trait_generics
+# itertools_test passes Set.__contains__ to filter's CallableTrait. The implicit
+# Self generic must not make the last value parameter look like *args/**kwargs.
+assert list(filter({1, 2}.__contains__, [1, 3, 2])) == [1, 2]
+contains = {'a', 'b'}.__contains__
+assert list(filter(contains, ['c', 'b', 'a'])) == ['b', 'a']
+
+class Box[T]:
+    value: T
+    def matches(self, value: T) -> bool:
+        return self.value == value
+
+assert list(filter(Box(2).matches, [1, 2, 3])) == [2]
+print('bound callable traits ok')  #: bound callable traits ok

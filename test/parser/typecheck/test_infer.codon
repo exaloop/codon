@@ -892,7 +892,11 @@ print('generic types ok')  #: generic types ok
 def collect(values: Union[list[int], list[str]]):
     return [value for value in values]
 
-assert type(collect([1, 2])) is list[Union[int, str]]
+assert type(collect([1, 2])) is list[int]
+assert type(collect(['a', 'b'])) is list[str]
+# A union-valued argument still joins the iterator element types.
+mixed: Union[list[int], list[str]] = [1, 2]
+assert type(collect(mixed)) is list[Union[int, str]]
 assert ','.join(str(value) for value in collect([1, 2])) == '1,2'
 assert ','.join(str(value) for value in collect(['a', 'b'])) == 'a,b'
 assert len(collect(list[int]())) == 0
@@ -1039,7 +1043,9 @@ def keep(value: Union[Tuple[bool, int], int]):
     return value
 
 for original in [42, 256, 0x1122334455667788, -1]:
-    assert Union._get(keep(original), int) == original
+    assert type(keep(original)) is int
+    stored: Union[Tuple[bool, int], int] = original
+    assert Union._get(keep(stored), int) == original
 
 @llvm
 def payload_offset(U: type) -> int:

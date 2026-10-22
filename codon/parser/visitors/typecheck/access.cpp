@@ -137,6 +137,8 @@ void TypecheckVisitor::visit(DotExpr *expr) {
     expr->expr = dot->getExpr();
     expr->member = dot->getMember();
   } else {
+    if (expr->hasAttribute(Attr::ExprDoNotRealize))
+      final->setAttribute(Attr::ExprDoNotRealize);
     resultExpr = transform(final);
     return;
   }
@@ -166,9 +168,10 @@ std::pair<Expr *, bool> TypecheckVisitor::getAttr(Expr *expr, const std::string 
     return {nullptr, true};
   bool hasSide = hasSideEffect(expr);
   auto wrapSide = [&](Expr *e) -> Expr * {
-    if (hasSide) {
-      return transform(N<StmtExpr>(N<ExprStmt>(expr), e));
-    }
+    if (hasSide)
+      e = N<StmtExpr>(N<ExprStmt>(expr), e);
+    if (parentCall)
+      e->setAttribute(Attr::ExprDoNotRealize);
     return transform(e);
   };
 
@@ -245,6 +248,8 @@ std::pair<Expr *, bool> TypecheckVisitor::getAttr(Expr *expr, const std::string 
       methods.size() > 1 ? getDispatch(getRootName(methods.front())) : methods.front();
   Expr *e = N<IdExpr>(bestMethod->getFuncName());
   e->setType(instantiateType(bestMethod, typ));
+  if (parentCall)
+    e->setAttribute(Attr::ExprDoNotRealize);
 
   if (isTypeExpr(expr)) {
     // Static access: `cls.method`

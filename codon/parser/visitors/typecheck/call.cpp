@@ -76,8 +76,8 @@ void TypecheckVisitor::visit(CallExpr *expr) {
   // Do not allow realization here (function will be realized later);
   // used to prevent early realization of compile_error
   expr->setAttribute(Attr::ParentCallExpr);
-  if (part.isPartial)
-    expr->getExpr()->setAttribute(Attr::ExprDoNotRealize);
+  expr->getExpr()->setAttribute(Attr::ExprDoNotRealize);
+  getHeadExpr(expr->getExpr())->setAttribute(Attr::ExprDoNotRealize);
   expr->expr = transform(expr->getExpr());
   expr->eraseAttribute(Attr::ParentCallExpr);
   if (isUnbound(expr->getExpr()))
@@ -195,8 +195,22 @@ void TypecheckVisitor::visit(CallExpr *expr) {
   // Typecheck arguments with the function signature
   bool done = typecheckCallArgs(calleeFn.get(), expr->items, part);
   if (!part.isPartial && calleeFn->canRealize()) {
-    // Previous unifications can qualify existing identifiers.
-    // Transform again to get the full identifier
+    // Clean up DoNotRealize
+    Expr *head = expr->expr;
+    for (;;) {
+      head->eraseAttribute(Attr::ExprDoNotRealize);
+      head->setType(calleeFn);
+      if (auto *suite = cast<StmtExpr>(head))
+        head = suite->getExpr();
+      else
+        break;
+    }
+    // Fix original fn (without replacements) with the updated one!
+    if (auto *id = cast<IdExpr>(head))
+      if (auto *realized = realize(calleeFn.get())) {
+        id->value = realized->realizedName();
+        id->setDone();
+      }
     expr->expr = transform(expr->expr);
   }
   done &= expr->expr->isDone();
@@ -486,11 +500,15 @@ TypecheckVisitor::getCalleeFn(CallExpr *expr, PartialCallData &part) {
       Expr *var = N<IdExpr>(part.var = getTemporaryVar("partcall"));
       auto id = N<IdExpr>(calleeFn->getFuncName());
       id->setType(calleeFn);
-      expr->expr =
-          transform(N<StmtExpr>(N<AssignStmt>(clone(var), expr->getExpr()), id));
+      id->setAttribute(Attr::ExprDoNotRealize);
+      auto *callee = N<StmtExpr>(N<AssignStmt>(clone(var), expr->getExpr()), id);
+      callee->setAttribute(Attr::ExprDoNotRealize);
+      expr->expr = transform(callee);
       part.known = mask;
     } else {
-      expr->expr = transform(N<IdExpr>(calleeFn->getFuncName()));
+      auto *id = N<IdExpr>(calleeFn->getFuncName());
+      id->setAttribute(Attr::ExprDoNotRealize);
+      expr->expr = transform(id);
     }
     seqassert(expr->getExpr()->getType()->getFunc(), "not a function: {}",
               *(expr->getExpr()->getType()));
@@ -908,14 +926,32 @@ bool TypecheckVisitor::typecheckCallArgs(FuncType *calleeFn, std::vector<CallArg
             // Defaults should not be unified (yet)!
             replacements.push_back(extractFuncArgType(calleeFn, si));
           } else {
-            if (wrapExpr(&args[si].value, extractFuncArgType(calleeFn, si), calleeFn)) {
-              unify(args[si].getExpr()->getType(), extractFuncArgType(calleeFn, si));
+            auto *signature = getFunction(calleeFn->getFuncName())->getType();
+            auto *expected = extractFuncArgType(calleeFn, si);
+            auto *actual = getUnderlyingStaticType(args[si].getExpr()->getType());
+            // Specialize on a concrete union member instead of boxing it.
+            if (auto *u = expected->getUnion();
+                u && u->canRealize() && actual->canRealize() &&
+                extractFuncArgType(signature, si)->getUnion() &&
+                !calleeFn->ast->hasAttribute(Attr::LLVM) &&
+                !calleeFn->ast->hasAttribute(Attr::C))
+              for (auto *member : u->getRealizationTypes())
+                if (member->unify(actual, nullptr) >= 0) {
+                  expected = actual;
+                  // A stored callable may already have an inferred union result.
+                  if (!calleeFn->ast->getReturn() &&
+                      calleeFn->getRetType()->canRealize())
+                    calleeFn->generics[1].type =
+                        instantiateType(signature->getRetType());
+                  break;
+                }
+            if (wrapExpr(&args[si].value, expected, calleeFn)) {
+              unify(args[si].getExpr()->getType(), expected);
             } else {
               wrappingDone = false;
             }
-            replacements.push_back(!extractFuncArgType(calleeFn, si)->getClass()
-                                       ? args[si].getExpr()->getType()
-                                       : extractFuncArgType(calleeFn, si));
+            replacements.push_back(!expected->getClass() ? args[si].getExpr()->getType()
+                                                         : expected);
           }
           si++;
         }
