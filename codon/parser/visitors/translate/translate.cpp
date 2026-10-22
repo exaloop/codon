@@ -2,6 +2,7 @@
 
 #include "translate.h"
 
+#include <iterator>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -54,7 +55,28 @@ ir::Func *TranslateVisitor::apply(Cache *cache, Stmt *stmts) {
   cache->codegenCtx->series = {block};
 
   cache->populatePythonModule();
-  TranslateVisitor(cache->codegenCtx).translateStmts(stmts);
+  auto ctx = cache->codegenCtx;
+  ctx->mainFunc = main;
+  ctx->mainUserStart = nullptr;
+  TranslateVisitor v(ctx);
+  v.initializeGlobals();
+  auto *suite = cast<SuiteStmt>(stmts);
+  // Full typechecking returns [runtime preamble, user code]. JIT cells instead
+  // contain [user code, pending functions...]; their runtime is already running.
+  bool hasPreamble = !cache->compiler->getOptions()->jit && suite && !suite->empty();
+  if (hasPreamble)
+    v.transform(suite->front());
+  auto before = std::distance(block->begin(), block->end());
+  if (hasPreamble) {
+    for (size_t i = 1; i < suite->size(); ++i)
+      v.transform((*suite)[i]);
+  } else {
+    v.transform(stmts);
+  }
+  if (std::distance(block->begin(), block->end()) > before)
+    ctx->mainUserStart = *std::next(block->begin(), before);
+  for (auto &f : cache->functions | std::views::values)
+    v.transform(f.ast);
   return main;
 }
 

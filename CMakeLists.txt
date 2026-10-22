@@ -560,6 +560,7 @@ set(CODON_TEST_CPPFILES
     test/cir/instr.cpp
     test/cir/llvm/optimize.cpp
     test/cir/module.cpp
+    test/cir/parse_code.cpp
     test/cir/transform/enumerate.cpp
     test/cir/transform/format.cpp
     test/cir/transform/manager.cpp

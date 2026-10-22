@@ -314,7 +314,9 @@ public:
   /// @param c the cache
   void setCache(ast::Cache *c) { cache = c; }
 
-  /// Parse a codon code block.
+  /// Parse a Codon code block. Top-level statements run before user code in main
+  /// (or in the current JIT cell), after the runtime preamble.
+  /// Call before optimization passes remove/restructure the user entry statement.
   void parseCode(const std::string &code);
 
   /// Gets or realizes a method.
