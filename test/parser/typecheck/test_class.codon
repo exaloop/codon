@@ -691,6 +691,21 @@ class OtherResult:
     def __init__(self, value: int):
         compile_error("must not initialize an unrelated result")
 assert OtherResult(4) == 8
+
+# A lookup-only factory can initialize in __new__ without defining __init__.
+@dataclass(init=False)
+class OnlyNew:
+    value: int
+    @staticmethod
+    def __new__(value: int):
+        events.append("new only")
+        obj = type._ref_new(OnlyNew)
+        obj.value = value
+        return obj
+events.clear()
+assert OnlyNew(argument()).value == 10
+assert events == ["arg", "new only"]
+
 print("custom new ok")  #: custom new ok
 
 #%% class_static_protocols
@@ -721,6 +736,18 @@ class Factory:
         return type._ref_new(Factory)
 Factory()
 #! __new__() missing 1 required positional argument: 'value'
+
+#%% class_empty_init_args_err
+# Empty user initializers retain their signature checks even with custom __new__.
+@dataclass(init=False)
+class Factory:
+    @staticmethod
+    def __new__(value: int):
+        return type._ref_new(Factory)
+    def __init__(self, value: str):
+        pass
+Factory(1)
+#! 'int' does not match expected type 'str'
 
 #%% class_inherited_self
 # Enum shares its methods using __SELF__. The same inherited specialization

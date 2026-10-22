@@ -485,6 +485,41 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
 
   ctx->getBase()->suite = ast->getSuite();
   if (hasAst) {
+    // Prepare captured parameters once per realization, before inference retries.
+    auto bindings = ast->getAttribute<BindingsAttribute>(Attr::Bindings);
+    auto declaredAtToplevel =
+        ast->getSuite()->getAttribute<BindingsAttribute>(Attr::Bindings);
+    std::vector<Stmt *> prepend;
+    for (const auto &param : *ast) {
+      if (!param.isValue())
+        continue;
+      auto name = getUnmangledName(param.getNameWithStars().second);
+      auto binding = bindings ? in(bindings->bindings, name) : nullptr;
+      auto declaration =
+          declaredAtToplevel ? in(declaredAtToplevel->bindings, name) : nullptr;
+      if (declaration || (binding && binding->isNonlocal)) {
+        // Do not overwrite argument with a declaration if
+        // argument is captured by some local function.
+        prepend.push_back(N<AssignStmt>(N<IdExpr>(name), N<IdExpr>(name)));
+        if (declaration) {
+          if (declaration->count > 0)
+            prepend.push_back(
+                N<AssignStmt>(N<IdExpr>(fmt::format("{}{}", name, VAR_USED_SUFFIX)),
+                              N<BoolExpr>(false)));
+          // The suite must not introduce another, uninitialized parameter binding.
+          declaredAtToplevel->bindings.erase(name);
+        }
+      }
+    }
+    // Entry bindings must be visible throughout the body, regardless of call time.
+    auto time = ast->getSuite()->getAttribute<ir::IntValueAttribute>(Attr::ExprTime);
+    for (auto *stmt : prepend) {
+      stmt->setAttribute(Attr::ExprTime, time ? time->value : 0);
+      stmt->setSrcInfo(ast->getSuite()->getSrcInfo());
+    }
+    ast->getSuite()->items.insert(ast->getSuite()->items.begin(), prepend.begin(),
+                                  prepend.end());
+
     auto oldBlockLevel = ctx->blockLevel;
     ctx->blockLevel = 0;
     auto ret = inferTypes(ctx->getBase()->suite);

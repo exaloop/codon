@@ -353,30 +353,9 @@ void TypecheckVisitor::visit(SuiteStmt *stmt) {
   auto done = true;
 
   std::vector<Stmt *> prepend;
-  auto function = ctx->getBase()->func;
-  // Deferred return inference must not repeat parameter boxing.
-  if (function && function->getSuite() == stmt && ctx->getBase()->iteration == 1) {
-    auto bindings = function->getAttribute<BindingsAttribute>(Attr::Bindings);
-    auto hoisted = stmt->getAttribute<BindingsAttribute>(Attr::Bindings);
-    if (bindings)
-      for (const auto &param : *function) {
-        auto name = getUnmangledName(param.getNameWithStars().second);
-        auto binding = in(bindings->bindings, name);
-        // Nonlocal parameters need one shared capsule before any reads.
-        if (param.isValue() && binding && binding->isNonlocal &&
-            (!hoisted || !in(hoisted->bindings, name)))
-          prepend.push_back(N<AssignStmt>(N<IdExpr>(name), N<IdExpr>(name)));
-      }
-  }
   if (auto b = stmt->getAttribute<BindingsAttribute>(Attr::Bindings)) {
     for (const auto &[n, bd] : sorted_view(b->bindings)) {
-      // A hoisted captured argument starts with the incoming parameter.
-      Expr *initial = nullptr;
-      if (function && function->getSuite() == stmt)
-        for (const auto &param : *function)
-          if (param.isValue() && getUnmangledName(param.getNameWithStars().second) == n)
-            initial = N<IdExpr>(n);
-      prepend.push_back(N<AssignStmt>(N<IdExpr>(n), initial));
+      prepend.push_back(N<AssignStmt>(N<IdExpr>(n), nullptr));
       if (bd.count > 0)
         prepend.push_back(N<AssignStmt>(
             N<IdExpr>(fmt::format("{}{}", n, VAR_USED_SUFFIX)), N<BoolExpr>(false)));

@@ -450,14 +450,19 @@ TypecheckVisitor::getCalleeFn(CallExpr *expr, PartialCallData &part) {
     stmts.push_back(N<AssignStmt>(
         clone(var), N<CallExpr>(N<DotExpr>(expr->getExpr(), "__new__"),
                                 customNew ? args : std::vector<CallArg>{})));
-    auto init = N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "__init__"), args));
-    // class_custom_new: a factory may return another type, in which case its
-    // result must not be initialized as T.
-    stmts.push_back(customNew ? static_cast<Stmt *>(N<IfStmt>(
-                                    N<CallExpr>(N<IdExpr>("isinstance"), clone(var),
-                                                clone(expr->getExpr())),
-                                    init))
-                              : init);
+    auto initializers = findMethod(typ, "__init__");
+    // Check if object.__init__ (which is a stub) is being used (no default __init__).
+    bool ignoreInit = customNew && initializers.empty();
+    if (!ignoreInit) {
+      auto init = N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "__init__"), args));
+      // class_custom_new: a factory may return another type, in which case its
+      // result must not be initialized as T.
+      stmts.push_back(customNew ? static_cast<Stmt *>(N<IfStmt>(
+                                      N<CallExpr>(N<IdExpr>("isinstance"), clone(var),
+                                                  clone(expr->getExpr())),
+                                      init))
+                                : init);
+    }
     return {nullptr, transform(N<StmtExpr>(stmts, clone(var)))};
   }
 
@@ -747,9 +752,9 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
       prepends.emplace_back(front);
     }
     // getCalleeFn has already replaced the partial with its underlying function.
-    // Retrying that function would lose bound arguments such as self. Restore the
-    // saved partial and run its setup before argument effects, without retaining
-    // the trailing, potentially unresolved function expression from the StmtExpr.
+    // Restore the saved partial args and run its setup before new arguments,
+    // without retaining the trailing, potentially unresolved function expression from
+    // the StmtExpr.
     if (!part.var.empty()) {
       const auto &calleeStmts = cast<StmtExpr>(expr->expr)->items;
       prepends.insert(prepends.begin(), calleeStmts.begin(), calleeStmts.end());

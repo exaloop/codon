@@ -590,6 +590,21 @@ def changed(number: int):
     assert number == original + 1
     return original
 assert changed(42) == 42
+
+# A nonlocal parameter that is also hoisted must keep one initialized capsule.
+def changed_and_reassigned(number: int):
+    original = number
+    def increment():
+        nonlocal number
+        number += 1
+    increment()
+    assert number == original + 1
+    number = 100
+    increment()
+    assert number == 101
+    return original
+assert changed_and_reassigned(42) == 42
+assert changed_and_reassigned(7) == 7
 print('captured arguments ok')  #: captured arguments ok
 
 #%% capture_recursive,barebones

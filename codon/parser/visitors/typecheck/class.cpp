@@ -272,7 +272,7 @@ public:
 } // namespace
 
 /// Warn about fields not proven initialized at a realized __init__'s normal exits.
-/// Tuple classes, internal classes, and check_init=False classes are exempt.
+/// Tuple classes & internal classes are exempt.
 void TypecheckVisitor::checkFieldInitialization(types::FuncType *type,
                                                 FunctionStmt *function) {
   if (!type->getParentType() || getUnmangledName(type->getFuncName()) != "__init__" ||
@@ -282,8 +282,7 @@ void TypecheckVisitor::checkFieldInitialization(types::FuncType *type,
   if (parent->isTuple)
     return;
   auto cls = getClass(parent);
-  if (!cls || !cls->ast || cls->ast->hasAttribute(Attr::ClassNoInitCheck) ||
-      cls->ast->hasAttribute(Attr::Internal))
+  if (!cls || !cls->ast || cls->ast->hasAttribute(Attr::Internal))
     return;
   std::set<std::pair<FunctionStmt *, size_t>> active;
   std::map<std::pair<FunctionStmt *, size_t>, InitializedFields> summaries;
@@ -843,8 +842,6 @@ std::vector<Stmt *> TypecheckVisitor::prepareEnum(ClassStmt *stmt, ClassType *ty
         nullptr, AssignStmt::Update));
 
   stmt->eraseAttribute(Attr::ClassDeduce);
-  // enum_test: inherit Enum's __new__ and no-op __init__; all enum behavior
-  // lives in the base class rather than compiler-generated method bodies.
   if (auto magic = stmt->getAttribute<ir::StringListAttribute>(Attr::ClassMagic))
     std::erase_if(magic->values,
                   [](const auto &name) { return name == "init" || name == "new"; });

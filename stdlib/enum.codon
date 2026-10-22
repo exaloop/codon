@@ -6,7 +6,7 @@ from internal.types.collections.dict import DictEntry, OrderedDict
 _DENSE_MAX_SLOTS: Literal[int] = 4096
 _DENSE_MAX_SLOTS_PER_MEMBER: Literal[int] = 4
 
-@dataclass(check_init=False)
+@dataclass(init=False)
 class Enum:
     """Native singleton members, initialized by _make_member before lookup."""
 
@@ -38,10 +38,6 @@ class Enum:
     @staticmethod
     def __contains__(value, __SELF__: type = Enum):
         return _contains(__SELF__, value)
-
-    def __init__(self, value):
-        # Lookup in __new__ returns an existing member, so initialization is a no-op.
-        pass
 
     @property
     def name(self):
