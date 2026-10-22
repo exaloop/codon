@@ -40,6 +40,25 @@ Type *TypecheckVisitor::unify(Type *a, Type *b) const {
   return a;
 }
 
+/// Select a nullable target without committing unresolved payloads or coercing values.
+/// Ordinary wrapping/unification still checks payload compatibility at each use.
+TypePtr TypecheckVisitor::joinNullableTypes(Type *left, Type *right) {
+  if (left->getStatic())
+    left = left->getStatic()->getNonStaticType();
+  if (right->getStatic())
+    right = right->getStatic()->getNonStaticType();
+  if (right->is(StdlibTypes::Optional))
+    return right->shared_from_this();
+  if (left->is(StdlibTypes::Optional))
+    return left->shared_from_this();
+  if (!left->is(StdlibTypes::NoneType) && !right->is(StdlibTypes::NoneType))
+    return nullptr;
+  auto member = left->is(StdlibTypes::NoneType) ? right : left;
+  if (member->is(StdlibTypes::NoneType))
+    return member->shared_from_this();
+  return instantiateType(getStdLibType(StdlibTypes::Optional), {member});
+}
+
 /// Infer all types within a Stmt *. Implements the LTS-DI typechecking.
 Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool sweepForceRealize) {
   if (!result)
@@ -80,8 +99,8 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool sweepForceRealize) {
     // Join reached returns before wrapping them; early unification with NoneType
     // would prevent later value returns from establishing an optional.
     if (base->inferReturnType && !base->returnStatements.empty()) {
-      TypePtr first, payload;
-      bool hasNone = false, hasEmptyReturn = false, hasUnknown = false;
+      TypePtr first, inferred;
+      bool hasEmptyReturn = false, hasUnknown = false;
       for (const auto &[statement, bare] : base->returnStatements) {
         auto returned = statement->getExpr()->getType();
         hasEmptyReturn |= bare;
@@ -90,22 +109,15 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool sweepForceRealize) {
         } else {
           if (!first)
             first = returned->shared_from_this();
-          if (returned->is(StdlibTypes::NoneType))
-            hasNone = true;
-          else if (!payload || returned->is(StdlibTypes::Optional))
-            payload = returned->shared_from_this();
+          if (!inferred)
+            inferred = returned->shared_from_this();
+          else if (auto nullable = joinNullableTypes(inferred.get(), returned))
+            inferred = nullable;
         }
       }
-      if (payload || (first && !hasUnknown)) {
-        auto inferred = first;
-        if (payload && payload->is(StdlibTypes::Optional) && !hasEmptyReturn)
-          inferred = payload;
-        if (hasNone && payload && !hasEmptyReturn)
-          inferred = payload->is(StdlibTypes::Optional)
-                         ? payload
-                         : instantiateType(getStdLibType(StdlibTypes::Optional),
-                                           std::vector<Type *>{payload.get()});
-        unify(base->returnType.get(), inferred.get());
+      if (inferred && (!inferred->is(StdlibTypes::NoneType) || !hasUnknown)) {
+        // Bare returns retain their existing checks (return_none_err_1/2).
+        unify(base->returnType.get(), hasEmptyReturn ? first.get() : inferred.get());
         base->inferReturnType = false;
         base->returnStatements.clear();
         ctx->changedNodes++;

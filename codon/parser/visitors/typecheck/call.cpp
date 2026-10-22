@@ -353,6 +353,36 @@ bool TypecheckVisitor::transformCallArgs(CallExpr *expr) {
   return true;
 }
 
+/// Normalize Optional construction without introducing redundant value layers.
+/// Empty constructors must keep their arguments for deferred inference
+/// (optional_canonicalization); other calls use ordinary constructor matching.
+Expr *TypecheckVisitor::transformOptionalCall(CallExpr *expr, ClassType *type) {
+  if (expr->empty()) {
+    auto value = N<NoneExpr>();
+    value->setType(type->shared_from_this());
+    return transform(value);
+  }
+  if (expr->size() != 1 ||
+      (!expr->begin()->name.empty() && expr->begin()->name != "what"))
+    return nullptr;
+
+  auto &argument = expr->begin()->value;
+  argument = transform(argument);
+  auto argumentType = argument->getType();
+  if (argumentType->is(StdlibTypes::Optional) &&
+      type->unify(argumentType, nullptr) >= 0)
+    return argument;
+  if (!argumentType->is(StdlibTypes::NoneType))
+    return nullptr;
+  if (extractClassGeneric(type)->getUnbound())
+    return argument;
+  auto member = N<IdExpr>("T");
+  member->setType(instantiateTypeVar(extractClassGeneric(type)));
+  member->setDone();
+  return transform(
+      N<CallExpr>(N<DotExpr>(expr->getExpr(), "_from_none"), argument, member));
+}
+
 /// Extract the @c FuncType that represents the function to be called by the callee.
 /// Also handle special callees: constructors and partial functions.
 /// @return a pair with the callee's @c FuncType and the replacement expression
@@ -377,34 +407,9 @@ TypecheckVisitor::getCalleeFn(CallExpr *expr, PartialCallData &part) {
       typ = extractClassGeneric(typ)->getClass();
     if (!typ)
       return {nullptr, nullptr};
-    /// TODO: next 25 lines are mess, need refactoring or removal later.
-    // A null constructor shares None's deferred payload and canonicalization path.
-    // Realizing Optional.__new__ after its parent becomes NoneType loses generic T.
-    if (typ->is(StdlibTypes::Optional) && expr->empty()) {
-      auto value = N<NoneExpr>();
-      value->setType(typ->shared_from_this());
-      return {nullptr, transform(value)};
-    }
-    // Canonical optional constructors must not add a second value layer.
-    if (typ->is(StdlibTypes::Optional) && expr->size() == 1 &&
-        (expr->begin()->name.empty() || expr->begin()->name == "what")) {
-      auto argument = transform(expr->begin()->getExpr());
-      auto argumentType = argument->getType();
-      if (argumentType->is(StdlibTypes::Optional) &&
-          typ->unify(argumentType, nullptr) >= 0)
-        return {nullptr, argument};
-      if (argumentType->is(StdlibTypes::NoneType)) {
-        if (extractClassGeneric(typ)->getUnbound())
-          return {nullptr, argument};
-        auto member = N<IdExpr>("T");
-        member->setType(instantiateTypeVar(extractClassGeneric(typ)));
-        member->setDone();
-        return {nullptr,
-                transform(N<CallExpr>(N<DotExpr>(expr->getExpr(), "_from_none"),
-                                      argument, member))};
-      }
-      expr->begin()->value = argument;
-    }
+    if (typ->is(StdlibTypes::Optional))
+      if (auto value = transformOptionalCall(expr, typ))
+        return {nullptr, value};
     if (typ->is(getMangledClass("std.internal.types.error", "OSError"))) {
       auto factory = transform(
           N<CallExpr>(N<DotExpr>(expr->getExpr(), "_construct"), expr->items));

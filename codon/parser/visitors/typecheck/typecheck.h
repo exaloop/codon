@@ -138,6 +138,7 @@ private: // Node typechecking rules
   void visit(CallExpr *) override;
   static void validateCall(CallExpr *expr);
   bool transformCallArgs(CallExpr *);
+  Expr *transformOptionalCall(CallExpr *, types::ClassType *);
   std::pair<std::shared_ptr<types::FuncType>, Expr *> getCalleeFn(CallExpr *,
                                                                   PartialCallData &);
   Expr *callReorderArguments(types::FuncType *, CallExpr *, PartialCallData &);
@@ -240,6 +241,7 @@ public:
 
 private:
   Stmt *inferTypes(Stmt *, bool sweepForceRealize = false);
+  types::TypePtr joinNullableTypes(types::Type *, types::Type *);
   types::Type *realizeFunc(types::FuncType *, bool = false);
   types::Type *realizeType(types::ClassType *);
   SuiteStmt *generateSpecialAst(types::FuncType *);

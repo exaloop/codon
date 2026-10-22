@@ -231,6 +231,15 @@ def empty_expression(events):
     events.append(1)
 nullable: Optional[int] = empty_expression(events)
 assert nullable is None and events == [1]
+# Constructor normalization must also evaluate its argument exactly once.
+constructed = Optional[int](what=empty_expression(events))
+assert constructed is None and type(constructed) is Optional[int]
+assert events == [1, 1]
+def optional_expression(events):
+    events.append(2)
+    return Optional(42)
+assert Optional(what=optional_expression(events)) == 42
+assert events == [1, 1, 2]
 values = [None, 42, None]
 assert values[0] is None and values[1] == 42 and values[2] is None
 print('optional canonicalization ok')  #: optional canonicalization ok
