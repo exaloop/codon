@@ -1507,6 +1507,8 @@ Expr *TypecheckVisitor::transformStaticFnArgs(CallExpr *expr) {
   std::vector<Expr *> v;
   v.reserve(fn->ast->size());
   for (const auto &a : *fn->ast) {
+    if (a.isGeneric())
+      continue;
     auto [_, n] = a.getNameWithStars();
     n = getUnmangledName(n);
     v.push_back(N<StringExpr>(n));
@@ -1524,9 +1526,14 @@ Expr *TypecheckVisitor::transformStaticFnHasDefault(CallExpr *expr) {
       expr->begin()->getExpr()->getType()->prettyString());
   auto idx = extractFuncGeneric(expr->getExpr()->getType())->getIntStatic();
   seqassert(idx, "expected a static integer");
-  if (idx->value < 0 || idx->value >= fn->ast->size())
-    E(Error::CUSTOM, getSrcInfo(), "argument out of bounds");
-  return transform(N<BoolExpr>((*fn->ast)[idx->value].getDefault() != nullptr));
+  int64_t argumentIndex = 0;
+  for (const auto &argument : *fn->ast) {
+    if (argument.isGeneric())
+      continue;
+    if (argumentIndex++ == idx->value)
+      return transform(N<BoolExpr>(argument.getDefault() != nullptr));
+  }
+  E(Error::CUSTOM, getSrcInfo(), "argument out of bounds");
 }
 
 Expr *TypecheckVisitor::transformStaticFnGetDefault(CallExpr *expr) {
@@ -1536,9 +1543,14 @@ Expr *TypecheckVisitor::transformStaticFnGetDefault(CallExpr *expr) {
       expr->begin()->getExpr()->getType()->prettyString());
   auto idx = extractFuncGeneric(expr->getExpr()->getType())->getIntStatic();
   seqassert(idx, "expected a static integer");
-  if (idx->value < 0 || idx->value >= fn->ast->size())
-    E(Error::CUSTOM, getSrcInfo(), "argument out of bounds");
-  return transform((*fn->ast)[idx->value].getDefault());
+  int64_t argumentIndex = 0;
+  for (const auto &argument : *fn->ast) {
+    if (argument.isGeneric())
+      continue;
+    if (argumentIndex++ == idx->value)
+      return transform(argument.getDefault());
+  }
+  E(Error::CUSTOM, getSrcInfo(), "argument out of bounds");
 }
 
 Expr *TypecheckVisitor::transformStaticFnWrapCallArgs(CallExpr *expr) {
@@ -1551,27 +1563,24 @@ Expr *TypecheckVisitor::transformStaticFnWrapCallArgs(CallExpr *expr) {
     E(Error::CUSTOM, getSrcInfo(), "expected a function, got '{}'",
       expr->begin()->getExpr()->getType()->prettyString());
 
-  std::vector<CallArg> callArgs;
-  if (auto tup = cast<TupleExpr>((*expr)[1].getExpr()->getOrigExpr())) {
-    for (auto *a : *tup) {
-      callArgs.emplace_back("", a);
-    }
-  }
-  if (auto kw = cast<CallExpr>((*expr)[1].getExpr()->getOrigExpr())) {
-    auto kwCls = getClass(expr->getClassType());
-    seqassert(kwCls, "cannot find {}", expr->getClassType()->name);
-    for (size_t i = 0; i < kw->size(); i++) {
-      callArgs.emplace_back(kwCls->fields[i].name, (*kw)[i].getExpr());
-    }
-  }
-  auto tempCall = transform(N<CallExpr>(N<IdExpr>(fn->getFuncName()), callArgs));
+  auto tempCall =
+      transform(N<CallExpr>((*expr)[0].getExpr(), N<StarExpr>((*expr)[1].getExpr()),
+                            N<KeywordStarExpr>((*expr)[2].getExpr())));
   if (!tempCall->isDone())
     return nullptr;
 
+  std::vector<Stmt *> stmts;
+  while (auto suite = cast<StmtExpr>(tempCall)) {
+    stmts.insert(stmts.end(), suite->items.begin(), suite->items.end());
+    tempCall = suite->getExpr();
+  }
+  auto call = cast<CallExpr>(tempCall);
+  seqassert(call, "expected wrapped function call: {}", *tempCall);
+  stmts.push_back(N<ExprStmt>(call->getExpr()));
   std::vector<Expr *> tupArgs;
-  for (auto &a : *cast<CallExpr>(tempCall))
+  for (auto &a : *call)
     tupArgs.push_back(a.getExpr());
-  return transform(N<TupleExpr>(tupArgs));
+  return transform(N<StmtExpr>(stmts, N<TupleExpr>(tupArgs)));
 }
 
 Expr *TypecheckVisitor::transformStaticVars(CallExpr *expr) {
@@ -1903,6 +1912,18 @@ TypecheckVisitor::populateStaticFnOverloadsLoop(Expr *iter,
         }
       }
       stmt->rhs = N<IdExpr>(method);
+      if (!typ->is(StdlibTypes::NoneType)) {
+        for (const auto &generic : cfn->getType()->funcGenerics) {
+          if (getUnmangledName(generic.name) == "Self") {
+            stmt->rhs = N<CallExpr>(
+                stmt->rhs,
+                std::vector<CallArg>{
+                    CallArg("Self", N<IdExpr>(getSelfType(typ)->realizedName())),
+                    CallArg(N<EllipsisExpr>(EllipsisExpr::PARTIAL))});
+            break;
+          }
+        }
+      }
       block.push_back(clone(stmt));
     }
   }

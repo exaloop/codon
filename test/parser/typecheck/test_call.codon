@@ -751,6 +751,63 @@ kw()  #: False False
 kw(no=1)  #: False True
 kw(no=1, yes=1)  #: True True
 
+#%% static_wrap_args,barebones
+def unary(value: int):
+    assert False, 'wrapped function executed'
+    return value
+
+print static.function.wrap_args(unary, 7)  #: (7,)
+
+def target(value: float, offset: int = 3):
+    assert False, 'wrapped function executed'
+    return value + offset
+
+print static.function.wrap_args(target, 7)  #: (7.0, 3)
+print static.function.wrap_args(target, 7, offset=4)  #: (7.0, 4)
+wrapped = static.function.wrap_args(target, offset=5, value=8)
+assert isinstance(wrapped, Tuple[float, int])
+print wrapped  #: (8.0, 5)
+
+effects = []
+def argument(value: int):
+    effects.append(value)
+    return value
+
+print static.function.wrap_args(target, offset=argument(4), value=argument(9))
+#: (9.0, 4)
+print effects  #: [4, 9]
+partial = target(argument(12), ...)
+print static.function.wrap_args(partial, offset=argument(6))  #: (12.0, 6)
+print effects  #: [4, 9, 12, 6]
+
+def generic_default(Element: type, value: int = 13):
+    return value
+
+print static.function.args(generic_default)  #: ('value',)
+assert static.function.has_type(generic_default, 0)
+assert static.function.get_type(generic_default, 0) is int
+assert static.function.has_default(generic_default, 0)
+print static.function.get_default(generic_default, 0)  #: 13
+
+#%% static_method_metadata,barebones
+@dataclass(init=False)
+class WrappedMethod:
+    value: int
+
+    def __init__(self, value: int = 5):
+        self.value = value
+
+instance = WrappedMethod()
+for method in static.function.overloads(WrappedMethod, '__init__'):
+    print static.function.args(method)  #: ('self', 'value')
+    assert static.function.has_type(method, 0)
+    assert static.function.get_type(method, 0) is WrappedMethod
+    assert static.function.has_default(method, 1)
+    print static.function.get_default(method, 1)  #: 5
+    wrapped = static.function.wrap_args(method, instance)
+    assert wrapped[0] is instance
+    print wrapped[1]  #: 5
+
 #%% isinstance_inheritance,barebones
 class AX[T]:
     a: T
