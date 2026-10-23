@@ -1184,3 +1184,68 @@ foo('a')
 foo(3)
 #! 'int' does not match expected type 'str'
 #! during the realization of foo
+
+#%% nested_closure_chain
+# scratch.codon: captures and lexical parents share earlier closure types.
+# Keep that graph shared while specializing calls with independent argument types.
+def step(emit, k: int):
+    return lambda value: emit(value + k)
+
+def run():
+    e0 = lambda value: value
+    e1 = step(e0, 1)
+    e2 = step(e1, 2)
+    e3 = step(e2, 3)
+    e4 = step(e3, 4)
+    e5 = step(e4, 5)
+    e6 = step(e5, 6)
+    e7 = step(e6, 7)
+    e8 = step(e7, 8)
+    e9 = step(e8, 9)
+    e10 = step(e9, 10)
+    e11 = step(e10, 11)
+    e12 = step(e11, 12)
+    e13 = step(e12, 13)
+    e14 = step(e13, 14)
+    e15 = step(e14, 15)
+    e16 = step(e15, 16)
+    assert e16(0) == 136
+    assert e16(0.5) == 136.5
+
+run()
+print('nested closures ok')  #: nested closures ok
+
+#%% typed_closure_pointer
+# GC finalizers materialize typed callbacks without calling them first. Their
+# inferred return type must remain fresh even when generic templates are shared.
+def get_callback():
+    def callback(value: int):
+        return value + 1
+    return callback(...).F.T.__raw__()
+
+callback = Function[[int], int](get_callback())
+assert callback(41) == 42
+
+# Unpacking the same function template with different explicit generics must
+# infer independent return types instead of modifying the stored signature.
+def convert(value: int, T: type):
+    return T(value)
+
+int_callback = Function[[int], int](convert(T=int, ...).F.T.__raw__())
+float_callback = Function[[int], float](convert(T=float, ...).F.T.__raw__())
+assert int_callback(42) == 42
+assert float_callback(42) == 42.0
+print('typed closure pointer ok')  #: typed closure pointer ok
+
+#%% bound_callable_can_call
+import internal.static as static
+class Receiver:
+    def method(self, value):
+        return value
+
+bound = Receiver().method
+assert static.function.can_call(bound, 1)
+assert static.function.can_call(bound, 's')
+assert not static.function.can_call(bound)
+assert bound(1) == 1 and bound('s') == 's'
+print('bound can_call ok')  #: bound can_call ok

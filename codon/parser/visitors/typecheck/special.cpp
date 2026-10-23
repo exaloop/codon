@@ -1458,7 +1458,10 @@ Expr *TypecheckVisitor::transformStaticFnCanCall(CallExpr *expr) {
   if (auto fn = typ->getFunc()) {
     return transform(N<BoolExpr>(canCall(fn, callArgs) >= 0));
   } else if (auto pt = typ->getPartial()) {
-    return transform(N<BoolExpr>(canCall(pt->getPartialFunc(), callArgs, pt) >= 0));
+    // Captured function templates stay generalized; probe a fresh signature.
+    auto generic = pt->getPartialFunc()->generalize(0);
+    auto fn = instantiateType(generic.get());
+    return transform(N<BoolExpr>(canCall(fn->getFunc(), callArgs, pt) >= 0));
   } else {
     compilationWarning("cannot use fn_can_call on non-functions", getSrcInfo().file,
                        getSrcInfo().line, getSrcInfo().col);

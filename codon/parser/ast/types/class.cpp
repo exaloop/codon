@@ -61,6 +61,8 @@ int ClassType::unify(Type *typ, Unification *us) {
     if (name == StdlibTypes::NoneType && tc->name == StdlibTypes::Optional)
       return tc->unify(this, us);
     if (name == StdlibTypes::UnrealizedType && tc->name == name) {
+      if (generics[0].type == tc->generics[0].type)
+        return 0;
       // instantiate + unify!
       std::unordered_map<int, types::TypePtr> genericCache;
       auto l = generics[0].type->instantiate(0, &(cache->unboundCount), &genericCache);
@@ -160,6 +162,10 @@ int ClassType::unify(Type *typ, Unification *us) {
 }
 
 TypePtr ClassType::generalize(int atLevel) const {
+  // UnrealizedType needs this to avoid recursive references.
+  if (name == StdlibTypes::UnrealizedType && !generics.empty() && generics[0].type &&
+      generics[0].type->getClass())
+    return const_cast<ClassType *>(this)->shared_from_this();
   std::vector<Generic> g, hg;
   g.reserve(generics.size());
   hg.reserve(hiddenGenerics.size());
@@ -175,6 +181,10 @@ TypePtr ClassType::generalize(int atLevel) const {
 
 TypePtr ClassType::instantiate(int atLevel, int *unboundCount,
                                std::unordered_map<int, TypePtr> *cache) const {
+  // Share stored templates as in generalize(), rather than copying their graphs.
+  if (name == StdlibTypes::UnrealizedType && !generics.empty() && generics[0].type &&
+      generics[0].type->getClass())
+    return const_cast<ClassType *>(this)->shared_from_this();
   std::vector<Generic> g, hg;
   g.reserve(generics.size());
   hg.reserve(hiddenGenerics.size());
@@ -266,10 +276,10 @@ std::string ClassType::debugString(char mode) const {
     size_t ai = 0, gi = 0;
     for (size_t i = 0; i < known.size(); i++) {
       if ((*func->ast)[i].isValue()) {
-        as.emplace_back(ai < args.size() ? (known[i] == ClassType::PartialFlag::Included
-                                                ? args[ai]
-                                                : ("..." + (mode == 0 ? "" : args[ai])))
-                                         : "...");
+        as.emplace_back(
+            ai < args.size()
+                ? (known[i] == ClassType::PartialFlag::Included ? args[ai] : "...")
+                : "...");
         if (known[i] == ClassType::PartialFlag::Included)
           ai++;
       } else {

@@ -68,6 +68,44 @@ TEST(TypeCoreTest, NewFunctionRealizationIsIncomplete) {
   EXPECT_TRUE(realization->captures.empty());
 }
 
+TEST(TypeCoreTest, ChecksSharedTypeGraphsAndRestoresLevels) {
+  using namespace codon::ast::types;
+  auto options = codon::Options::getDefault("build/codon_test");
+  codon::Compiler compiler(*options);
+  auto *cache = compiler.getCache();
+  auto leaf = std::make_shared<LinkType>(cache, LinkType::Unbound,
+                                         cache->unboundCount++, 5, nullptr);
+  auto variable = std::make_shared<LinkType>(cache, LinkType::Unbound,
+                                             cache->unboundCount++, 1, nullptr);
+  TypePtr shared = leaf;
+  // scratch.codon builds shared closure graphs. Occurs checks must visit shared
+  // nodes once while still lowering free-variable levels and detecting cycles.
+  for (int depth = 0; depth < 24; ++depth)
+    shared = std::make_shared<ClassType>(
+        cache, "Shared",
+        std::vector<ClassType::Generic>{{"left", shared, 0, Runtime},
+                                        {"right", shared, 1, Runtime}});
+  Type::Unification changes;
+  ASSERT_GE(variable->unify(shared.get(), &changes), 0);
+  EXPECT_EQ(leaf->level, 1);
+  EXPECT_EQ(changes.leveled.size(), 1);
+  changes.undo();
+  EXPECT_EQ(leaf->level, 5);
+  EXPECT_EQ(variable->kind, LinkType::Unbound);
+
+  auto recursive = std::make_shared<ClassType>(
+      cache, "Recursive",
+      std::vector<ClassType::Generic>{{"shared", shared, 0, Runtime},
+                                      {"cycle", variable, 1, Runtime}});
+  Type::Unification rejected;
+  EXPECT_LT(variable->unify(recursive.get(), &rejected), 0);
+  rejected.undo();
+  EXPECT_EQ(variable->kind, LinkType::Unbound);
+  EXPECT_EQ(leaf->level, 5);
+  EXPECT_GE(variable->unify(shared.get(), nullptr), 0);
+  EXPECT_EQ(leaf->level, 5);
+}
+
 // Missing or conditional writes warn, while initialization through aliases, generic
 // helpers, and super() is recognized. Decorator opt-outs suppress field diagnostics.
 TEST(FieldInitializationTest, TracksHelpersAndSupportsOptOut) {

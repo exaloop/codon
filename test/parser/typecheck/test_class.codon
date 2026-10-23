@@ -918,3 +918,30 @@ def shift(value: int):
     return 1 << value
 assert shift(3) == 8
 print("operator class generics ok")  #: operator class generics ok
+
+#%% unrealized_class_templates
+# Shared UnrealizedType payloads also cover classes. Each .T access must get its
+# own generics, while concrete arguments and enclosing class bindings survive.
+ListTemplate = unrealized_type[list]
+assert ListTemplate.T[int]([1, 2]) == [1, 2]
+assert ListTemplate.T[str](['a']) == ['a']
+
+def make_template(T: type):
+    return unrealized_type[list[T]]
+
+assert make_template(int).T([1, 2]) == [1, 2]
+assert make_template(str).T(['a']) == ['a']
+
+def construct(T: type):
+    return unrealized_type[T].T()
+
+assert construct(int) == 0
+assert construct(str) == ''
+
+class Factory[T]:
+    def make(self):
+        return unrealized_type[list[T]].T()
+
+assert type(Factory[int]().make()) is list[int]
+assert type(Factory[str]().make()) is list[str]
+print('class templates ok')  #: class templates ok

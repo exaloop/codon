@@ -560,11 +560,14 @@ std::pair<Expr *, bool> TypecheckVisitor::getClassMember(Expr *expr,
       if (realize(generic->getType()))
         return {wrapSide(generic->type->getStatic()->getStaticExpr()), true};
     } else {
-      auto t = instantiateTypeVar(generic->getType());
+      auto payload = generic->type;
+      if (typ->is(StdlibTypes::UnrealizedType))
+        payload = instantiateType(payload.get());
+      auto t = instantiateTypeVar(payload.get());
       if (type)
         unify(type, t.get());
       if (realize(t.get()))
-        return {wrapSide(N<IdExpr>(generic->getType()->realizedName())), true};
+        return {wrapSide(N<IdExpr>(payload->realizedName())), true};
     }
     return {nullptr, true};
   }
