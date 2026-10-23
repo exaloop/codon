@@ -13,7 +13,7 @@ class Enum:
     _name_: str
 
     @staticmethod
-    def __new__(value, /, Self: type = Enum):
+    def __new__(value, Self: type = Enum):
         # enum_test: inherited methods bind Self to the concrete enum type.
         if Self is Enum:
             compile_error("cannot instantiate Enum directly")

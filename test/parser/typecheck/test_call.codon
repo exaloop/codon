@@ -1789,6 +1789,57 @@ try:
     assert False
 except TypeError:
     pass
+
+def normalize(value: int | str, replace: bool):
+    if replace:
+        value = 'changed'
+    return str(value)
+assert normalize(7, False) == '7'
+assert normalize(7, True) == 'changed'
+assert normalize('original', False) == 'original'
+normalize_alias = normalize
+assert normalize_alias(7, True) == 'changed'
+normalize_partial = normalize(replace=True, ...)
+assert normalize_partial(7) == 'changed'
+
+def normalize_number(value: int | str, replace: bool):
+    if replace:
+        value = 42
+    return str(value)
+assert normalize_number('original', False) == 'original'
+assert normalize_number('original', True) == '42'
+
+class Normalized:
+    value: int | str
+    def __init__(self, value: int | str):
+        if isinstance(value, int) and value == 0:
+            value = 'default'
+        self.value = value
+assert Normalized(0).value == 'default'
+assert Normalized(7).value == 7
+assert Normalized('text').value == 'text'
+
+def loop_rebind(value: int | str):
+    for replacement in ['loop']:
+        value = replacement
+    return str(value)
+assert loop_rebind(7) == 'loop'
+
+def unpack_rebind(value: int | str, replace: bool):
+    if replace:
+        value, other = ('unpacked', 1)
+    return str(value)
+assert unpack_rebind(7, True) == 'unpacked'
+assert unpack_rebind(7, False) == '7'
+
+def captured_rebind(value: int | str):
+    def replace():
+        nonlocal value
+        value = 'captured'
+    replace()
+    return str(value)
+assert captured_rebind(7) == 'captured'
+
 print('union specialization ok')  #: union specialization ok
 
 #%% bound_callable_trait_generics

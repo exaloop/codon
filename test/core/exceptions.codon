@@ -22,6 +22,38 @@ def test_missing_returns():
     assert nullable(False) is None
     assert nullable(True) == 17
 
+    def nullable_union(flag: bool) -> Union[int, str, NoneType]:
+        if flag:
+            return "present"
+    assert nullable_union(False) is None
+    assert nullable_union(True) == "present"
+
+    def nullable_reference_union(flag: bool) -> Union[list[int], str, NoneType]:
+        if flag:
+            return [17]
+    assert nullable_reference_union(False) is None
+    assert nullable_reference_union(True) == [17]
+
+    def optional_union(flag: bool) -> Optional[Union[int, str]]:
+        if flag:
+            return "present"
+    assert optional_union(False) is None
+    assert optional_union(True) == "present"
+
+    def explicit_none() -> Union[int, str, NoneType]:
+        return None
+    assert explicit_none() is None
+
+    def required_union(flag: bool) -> Union[int, str]:
+        if flag:
+            return "present"
+    assert required_union(True) == "present"
+    try:
+        required_union(False)
+        assert False, "missing union return did not raise"
+    except RuntimeError as error:
+        assert error.func == "required_union"
+
     events: list[int] = []
     def nothing(events: list[int]):
         events.append(1)
@@ -76,6 +108,14 @@ def test_missing_returns():
     except RuntimeError as error:
         assert "function 'async_required'" in error.message
         assert "exceptions.codon:" in error.message
+
+    async def async_nullable_union(flag: bool):
+        await asyncio.sleep(0)
+        if flag:
+            value: Union[int, str, NoneType] = 17
+            return value
+    assert asyncio.run(async_nullable_union(True)) == 17
+    assert asyncio.run(async_nullable_union(False)) is None
 
 test_missing_returns()
 

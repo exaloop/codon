@@ -82,6 +82,18 @@ def nullable(flag: bool) -> Optional[int]:
   if flag:
     return 17
 @export
+def nullable_union(flag: bool) -> Union[int, str, NoneType]:
+  if flag:
+    return "present"
+@export
+def optional_union(flag: bool) -> Optional[Union[int, str]]:
+  if flag:
+    return "present"
+@export
+def required_union(flag: bool) -> Union[int, str]:
+  if flag:
+    return "present"
+@export
 def nothing(flag: bool):
   if flag:
     print(flag)
@@ -160,6 +172,9 @@ def complete_else(flag: bool) -> int:
     std::set<std::string> fixture = {"required",
                                      "complete",
                                      "nullable",
+                                     "nullable_union",
+                                     "optional_union",
+                                     "required_union",
                                      "nothing",
                                      "calls_error",
                                      "caught_error",
@@ -181,6 +196,7 @@ def complete_else(flag: bool) -> int:
   } inspector;
   inspector.process(compiler.getModule());
   std::map<std::string, int> expected = {{"required", 1},
+                                         {"required_union", 1},
                                          {"caught_error", 1},
                                          {"finally_breaks", 1},
                                          {"creates_generator", 1},
@@ -191,6 +207,74 @@ def complete_else(flag: bool) -> int:
   Inspector repeated;
   repeated.process(compiler.getModule());
   EXPECT_EQ(repeated.guarded, expected);
+}
+
+TEST(MissingReturnTest, ConstructsNullForNoncanonicalUnionLayouts) {
+  auto options = codon::Options::getDefault("build/codon_test");
+  codon::Compiler compiler(*options);
+  llvm::cantFail(compiler.parseCode("union_null.codon", "pass\n"));
+  auto *module = compiler.getModule();
+  auto *integer = module->getIntType();
+  auto *optional = module->getOptionalType(module->getStringType());
+  auto *reference = module->getOrRealizeType("List", {integer});
+  ASSERT_NE(reference, nullptr);
+  auto *nested = module->getUnionType({integer, module->getOptionalType(reference)});
+  struct Case {
+    std::string name;
+    Type *type;
+    std::vector<int> tags;
+    BodiedFunc *function = nullptr;
+  };
+  std::vector<Case> cases = {
+      {"null_first",
+       module->getUnionType({module->getOptionalType(integer), optional}),
+       {0}},
+      {"null_last", module->getUnionType({integer, optional}), {1}},
+      {"null_reference", nested, {1}},
+      {"null_none", module->getUnionType({integer, module->getNoneType()}), {1}},
+      {"null_nested", module->getUnionType({integer, nested}), {1, 1}}};
+  for (auto &fixture : cases) {
+    fixture.function = module->Nr<BodiedFunc>(fixture.name);
+    fixture.function->realize(
+        module->unsafeGetFuncType(fixture.name + ".signature", fixture.type, {}), {});
+    fixture.function->setBody(module->Nr<SeriesFlow>());
+  }
+
+  transform::lowering::MissingReturnLowering pass;
+  pass.run(module);
+  auto functionCount = std::distance(module->begin(), module->end());
+  pass.run(module);
+  EXPECT_EQ(std::distance(module->begin(), module->end()), functionCount);
+  for (const auto &fixture : cases) {
+    SCOPED_TRACE(fixture.name);
+    auto *body = cast<SeriesFlow>(fixture.function->getBody());
+    ASSERT_NE(body, nullptr);
+    ASSERT_EQ(std::distance(body->begin(), body->end()), 1);
+    auto *returned = cast<ReturnInstr>(body->front());
+    ASSERT_NE(returned, nullptr);
+    auto *value = returned->getValue();
+    auto *type = fixture.type;
+    for (auto tag : fixture.tags) {
+      auto *call = cast<CallInstr>(value);
+      ASSERT_NE(call, nullptr);
+      ASSERT_EQ(call->numArgs(), 2);
+      EXPECT_EQ(call->getType(), type);
+      auto *member = *std::next(cast<UnionType>(type)->begin(), tag);
+      EXPECT_EQ(util::getFunc(call->getCallee()),
+                module->getOrRealizeMethod(type, "_make", {integer, member}, {type}));
+      auto *actualTag = cast<IntConst>(call->front());
+      ASSERT_NE(actualTag, nullptr);
+      EXPECT_EQ(actualTag->getVal(), tag);
+      value = call->back();
+      type = member;
+    }
+    auto *call = cast<CallInstr>(value);
+    ASSERT_NE(call, nullptr);
+    EXPECT_EQ(call->getType(), type);
+    EXPECT_EQ(call->numArgs(), 0);
+    EXPECT_EQ(util::getFunc(call->getCallee()),
+              module->getOrRealizeMethod(type, "__new__", {}));
+  }
 }
 
 TEST_F(CIRCoreTest, PassManagerNoInvalidations) {

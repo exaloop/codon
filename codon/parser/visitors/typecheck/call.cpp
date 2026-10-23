@@ -7,6 +7,7 @@
 #include "codon/parser/cache.h"
 #include "codon/parser/common.h"
 #include "codon/parser/match.h"
+#include "codon/parser/visitors/scoping/scoping.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 using namespace codon::error;
@@ -929,10 +930,18 @@ bool TypecheckVisitor::typecheckCallArgs(FuncType *calleeFn, std::vector<CallArg
             auto *signature = getFunction(calleeFn->getFuncName())->getType();
             auto *expected = extractFuncArgType(calleeFn, si);
             auto *actual = getUnderlyingStaticType(args[si].getExpr()->getType());
+            auto *bindings =
+                calleeFn->ast->getAttribute<BindingsAttribute>(Attr::Bindings);
+            auto *binding = bindings
+                                ? in(bindings->bindings,
+                                     getUnmangledName(
+                                         (*calleeFn->ast)[i].getNameWithStars().second))
+                                : nullptr;
             // Specialize on a concrete union member instead of boxing it.
             if (auto *u = expected->getUnion();
                 u && u->canRealize() && actual->canRealize() &&
                 extractFuncArgType(signature, si)->getUnion() &&
+                (!binding || (binding->count == 1 && !binding->isNonlocal)) &&
                 !calleeFn->ast->hasAttribute(Attr::LLVM) &&
                 !calleeFn->ast->hasAttribute(Attr::C))
               for (auto *member : u->getRealizationTypes())

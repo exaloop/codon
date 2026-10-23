@@ -25,6 +25,36 @@ Exits exit(ExitKind kind) { return {{kind, NO_TARGET}}; }
 
 bool has(const Exits &exits, ExitKind kind) { return exits.count({kind, NO_TARGET}); }
 
+bool isNullable(const Type *type, Type *noneType) {
+  if (type->is(noneType) || isA<OptionalType>(type))
+    return true;
+  if (auto *unionType = cast<UnionType>(type))
+    return std::any_of(unionType->begin(), unionType->end(), [noneType](auto *member) {
+      return isNullable(member, noneType);
+    });
+  return false;
+}
+
+Value *makeNone(Module *module, Type *type) {
+  if (auto *unionType = cast<UnionType>(type)) {
+    auto member =
+        std::find_if(unionType->begin(), unionType->end(), [module](auto *candidate) {
+          return isNullable(candidate, module->getNoneType());
+        });
+    seqassertn(member != unionType->end(), "union has no nullable member");
+    auto *value = makeNone(module, *member);
+    auto *constructor = module->getOrRealizeMethod(
+        type, "_make", {module->getIntType(), *member}, {type});
+    seqassertn(constructor, "union constructor not found");
+    return util::call(
+        constructor,
+        {module->getInt(std::distance(unionType->begin(), member)), value});
+  }
+  auto *constructor = module->getOrRealizeMethod(type, "__new__", {});
+  seqassertn(constructor, "null constructor not found for {}", type->getName());
+  return util::call(constructor, {});
+}
+
 void merge(Exits &destination, const Exits &source) {
   destination.insert(source.begin(), source.end());
 }
@@ -219,6 +249,7 @@ void MissingReturnLowering::run(Module *module) {
   }
 
   Func *helper = nullptr;
+  bool changed = false;
   for (auto *function : functions) {
     if (function->isGenerator() || !function->getBody())
       continue;
@@ -228,33 +259,39 @@ void MissingReturnLowering::run(Module *module) {
     if (result->is(module->getNoneType()) || isA<OptionalType>(result) ||
         !has(analysis.analyze(function->getBody()), ExitKind::Normal))
       continue;
-    if (!helper)
-      helper = module->getOrRealizeFunc(
-          "_missing_return_error",
-          {module->getStringType(), module->getStringType(), module->getStringType(),
-           module->getIntType(), module->getIntType()},
-          {}, "std.internal.types.error");
-    seqassertn(helper, "missing-return helper not found");
     auto info = function->getSrcInfo();
-    auto name = function->getUnmangledName();
-    auto message = fmt::format(
-        "function '{}' reached its end without returning a value ({}:{}:{})", name,
-        info.file, info.line, info.col);
-    auto *exception =
-        util::call(helper, {module->getString(message), module->getString(name),
-                            module->getString(info.file), module->getInt(info.line),
-                            module->getInt(info.col)});
-    auto *guard = module->N<ThrowInstr>(info, exception);
+    Value *ending;
+    if (isNullable(result, module->getNoneType())) {
+      ending = module->N<ReturnInstr>(info, makeNone(module, result));
+    } else {
+      if (!helper)
+        helper = module->getOrRealizeFunc(
+            "_missing_return_error",
+            {module->getStringType(), module->getStringType(), module->getStringType(),
+             module->getIntType(), module->getIntType()},
+            {}, "std.internal.types.error");
+      seqassertn(helper, "missing-return helper not found");
+      auto name = function->getUnmangledName();
+      auto message = fmt::format(
+          "function '{}' reached its end without returning a value ({}:{}:{})", name,
+          info.file, info.line, info.col);
+      auto *exception =
+          util::call(helper, {module->getString(message), module->getString(name),
+                              module->getString(info.file), module->getInt(info.line),
+                              module->getInt(info.col)});
+      ending = module->N<ThrowInstr>(info, exception);
+    }
     auto *body = cast<SeriesFlow>(function->getBody());
     if (!body) {
       body = module->N<SeriesFlow>(info);
       body->push_back(function->getBody());
       function->setBody(body);
     }
-    body->push_back(guard);
+    body->push_back(ending);
+    changed = true;
     LOG_IR("missing-return: {} [{}]", function->getName(), info);
   }
-  if (helper)
+  if (changed)
     run(module);
 }
 
