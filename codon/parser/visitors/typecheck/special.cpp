@@ -706,7 +706,9 @@ SuiteStmt *TypecheckVisitor::generateUnionDispatchAST(FuncType *type) {
           preserveUnions[index] = preserveUnions[index] && accepted[index];
       };
       if (auto partial = t->getPartial()) {
-        inspectSignature(partial->getPartialFunc(), partial);
+        auto generic = partial->getPartialFunc()->generalize(0);
+        auto function = instantiateType(generic.get());
+        inspectSignature(function->getFunc(), partial);
       } else {
         for (auto method : findMethod(t->getClass(), "__call__", false))
           if (method)
@@ -751,7 +753,9 @@ SuiteStmt *TypecheckVisitor::generateUnionDispatchAST(FuncType *type) {
         // Skip incompatible signatures before realizing their bodies. An unsupported
         // active combination reaches the original runtime TypeError fallback instead.
         if (auto partial = t->getPartial()) {
-          if (canCall(partial->getPartialFunc(), callArgs, partial) < 0)
+          auto generic = partial->getPartialFunc()->generalize(0);
+          auto function = instantiateType(generic.get());
+          if (canCall(function->getFunc(), callArgs, partial) < 0)
             return;
         } else {
           auto methods = findMethod(t->getClass(), "__call__", false);
