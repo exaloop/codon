@@ -5,6 +5,11 @@
 #   - Int, UInt
 #   - float, float128, float32, float16, bfloat16
 
+def _is_primitive_comparison(T: type) -> Literal[bool]:
+    return (T is bool or isinstance(T, Int) or isinstance(T, UInt) or
+            T is float or T is float128 or T is float32 or T is float16 or
+            T is bfloat16 or T is str or T is bytes)
+
 def _float_int_pow(a: F, b: I, F: type, I: type) -> F:
     abs_exp = b.__abs__()
     result = F(1)

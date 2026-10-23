@@ -126,6 +126,7 @@ struct TypeContext : public Context<TypecheckItem> {
     };
     std::vector<Loop> loops;
 
+    static constexpr int NONE_ARGUMENT_DEFAULT_PRIORITY = -1;
     std::map<int, std::set<types::TypePtr>> pendingDefaults;
     std::set<types::TypePtr> recursiveDependencies;
 

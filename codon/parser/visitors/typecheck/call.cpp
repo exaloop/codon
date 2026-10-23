@@ -962,6 +962,16 @@ bool TypecheckVisitor::typecheckCallArgs(FuncType *calleeFn, std::vector<CallArg
   // Realize arguments
   bool done = true;
   for (auto &a : args) {
+    if (a.getExpr()->getType()->is(StdlibTypes::Optional)) {
+      auto *payload = extractClassGeneric(a.getExpr()->getType());
+      if (payload->getUnbound()) {
+        auto pending = payload->shared_from_this();
+        ctx->getBase()
+            ->pendingDefaults[TypeContext::Base::NONE_ARGUMENT_DEFAULT_PRIORITY]
+            .insert(pending);
+        ctx->getBase()->pendingDefaults[0].erase(pending);
+      }
+    }
     // Previous unifications can qualify existing identifiers.
     // Transform again to get the full identifier
     if (realize(a.getExpr()->getType()))

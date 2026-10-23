@@ -1,3 +1,20 @@
+#%% explicit_none_iterator_result
+def forward(*iterables, key=None):
+    return iter(iterables[0])
+
+left = List[int]()
+right = List[int]()
+merged = forward(left, right, key=None)
+print(list(merged))  #: []
+absent = None
+merged = forward(left, right, key=absent)
+print(list(merged))  #: []
+assert list(forward(List[int](), key=None)) == List[int]()
+assert list(forward([1, 2], key=None)) == [1, 2]
+assert list(forward(["a", "b"], key=None)) == ["a", "b"]
+assert list(forward([1, 2])) == [1, 2]
+print("explicit None inference ok")  #: explicit None inference ok
+
 #%% stdlib_signature_keywords
 import math
 import json
