@@ -29,53 +29,53 @@ class Set:
         self._flags = Ptr[u32]()
         self._keys = Ptr[K]()
 
-    def __init__(self):
+    def __init__(self, /):
         self._init()
 
-    def __init__(self, g: Generator[K]):
+    def __init__(self, g: Generator[K], /):
         self._init()
         for a in g:
             self.add(a)
 
-    def __sub__(self, other: Set[K]) -> Set[K]:
+    def __sub__(self, other: Set[K], /) -> Set[K]:
         return self.difference(other)
 
-    def __isub__(self, other: Set[K]) -> Set[K]:
+    def __isub__(self, other: Set[K], /) -> Set[K]:
         self.difference_update(other)
         return self
 
     @commutative
     @associative
-    def __and__(self, other: Set[K]) -> Set[K]:
+    def __and__(self, other: Set[K], /) -> Set[K]:
         return self.intersection(other)
 
-    def __iand__(self, other: Set[K]) -> Set[K]:
+    def __iand__(self, other: Set[K], /) -> Set[K]:
         self.intersection_update(other)
         return self
 
     @commutative
     @associative
-    def __or__(self, other: Set[K]) -> Set[K]:
+    def __or__(self, other: Set[K], /) -> Set[K]:
         return self.union(other)
 
-    def __ior__(self, other: Set[K]) -> Set[K]:
+    def __ior__(self, other: Set[K], /) -> Set[K]:
         for a in other:
             self.add(a)
         return self
 
     @commutative
     @associative
-    def __xor__(self, other: Set[K]) -> Set[K]:
+    def __xor__(self, other: Set[K], /) -> Set[K]:
         return self.symmetric_difference(other)
 
-    def __ixor__(self, other: Set[K]) -> Set[K]:
+    def __ixor__(self, other: Set[K], /) -> Set[K]:
         self.symmetric_difference_update(other)
         return self
 
-    def __contains__(self, key: K) -> bool:
+    def __contains__(self, key: K, /) -> bool:
         return self._kh_get(key) != self._kh_end()
 
-    def __eq__(self, other: Set[K]) -> bool:
+    def __eq__(self, other: Set[K], /) -> bool:
         if self.__len__() != other.__len__():
             return False
         for k in self:
@@ -83,29 +83,29 @@ class Set:
                 return False
         return True
 
-    def __ne__(self, other: Set[K]) -> bool:
+    def __ne__(self, other: Set[K], /) -> bool:
         return not (self == other)
 
-    def __le__(self, other: Set[K]) -> bool:
+    def __le__(self, other: Set[K], /) -> bool:
         return self.issubset(other)
 
-    def __ge__(self, other: Set[K]) -> bool:
+    def __ge__(self, other: Set[K], /) -> bool:
         return self.issuperset(other)
 
-    def __lt__(self, other: Set[K]) -> bool:
+    def __lt__(self, other: Set[K], /) -> bool:
         return self != other and self <= other
 
-    def __gt__(self, other: Set[K]) -> bool:
+    def __gt__(self, other: Set[K], /) -> bool:
         return self != other and self >= other
 
-    def __iter__(self) -> Generator[K]:
+    def __iter__(self, /) -> Generator[K]:
         i = self._kh_begin()
         while i < self._kh_end():
             if self._kh_exist(i):
                 yield self._keys[i]
             i += 1
 
-    def __len__(self) -> int:
+    def __len__(self, /) -> int:
         return self._size
 
     def __bool__(self) -> bool:
@@ -127,7 +127,7 @@ class Set:
     def __deepcopy__(self) -> Set[K]:
         return {s.__deepcopy__() for s in self}
 
-    def __repr__(self) -> str:
+    def __repr__(self, /) -> str:
         n = self.__len__()
         if n == 0:
             return "set()"
@@ -149,44 +149,44 @@ class Set:
     def resize(self, new_n_buckets: int):
         self._kh_resize(new_n_buckets)
 
-    def add(self, key: K):
+    def add(self, key: K, /):
         self._kh_put(key)
 
-    def update(self, other: Generator[K]):
+    def update(self, other: Generator[K], /):
         for k in other:
             self.add(k)
 
-    def remove(self, key: K):
+    def remove(self, key: K, /):
         x = self._kh_get(key)
         if x != self._kh_end():
             self._kh_del(x)
         else:
             raise KeyError(str(key))
 
-    def pop(self) -> K:
+    def pop(self, /) -> K:
         if self.__len__() == 0:
             raise ValueError("empty set")
         for a in self:
             self.remove(a)
             return a
 
-    def discard(self, key: K):
+    def discard(self, key: K, /):
         x = self._kh_get(key)
         if x != self._kh_end():
             self._kh_del(x)
 
-    def difference(self, other: Set[K]) -> Set[K]:
+    def difference(self, other: Set[K], /) -> Set[K]:
         s = Set[K]()
         for a in self:
             if a not in other:
                 s.add(a)
         return s
 
-    def difference_update(self, other: Set[K]):
+    def difference_update(self, other: Set[K], /):
         for a in other:
             self.discard(a)
 
-    def intersection(self, other: Set[K]) -> Set[K]:
+    def intersection(self, other: Set[K], /) -> Set[K]:
         if other.__len__() < self.__len__():
             self, other = other, self
         s = Set[K]()
@@ -195,12 +195,12 @@ class Set:
                 s.add(a)
         return s
 
-    def intersection_update(self, other: Set[K]):
+    def intersection_update(self, other: Set[K], /):
         for a in self:
             if a not in other:
                 self.discard(a)
 
-    def symmetric_difference(self, other: Set[K]) -> Set[K]:
+    def symmetric_difference(self, other: Set[K], /) -> Set[K]:
         s = Set[K]()
         for a in self:
             if a not in other:
@@ -210,7 +210,7 @@ class Set:
                 s.add(a)
         return s
 
-    def symmetric_difference_update(self, other: Set[K]):
+    def symmetric_difference_update(self, other: Set[K], /):
         for a in other:
             if a in self:
                 self.discard(a)
@@ -218,7 +218,7 @@ class Set:
             if a in other:
                 self.discard(a)
 
-    def union(self, other: Set[K]) -> Set[K]:
+    def union(self, other: Set[K], /) -> Set[K]:
         s = Set[K]()
         s.resize(
             self._n_buckets if self._n_buckets >= other._n_buckets else other._n_buckets
@@ -229,7 +229,7 @@ class Set:
             s.add(a)
         return s
 
-    def isdisjoint(self, other: Set[K]) -> bool:
+    def isdisjoint(self, other: Set[K], /) -> bool:
         if other.__len__() < self.__len__():
             self, other = other, self
         for a in self:
@@ -237,7 +237,7 @@ class Set:
                 return False
         return True
 
-    def issubset(self, other: Set[K]) -> bool:
+    def issubset(self, other: Set[K], /) -> bool:
         if other.__len__() < self.__len__():
             return False
         for a in self:
@@ -245,13 +245,13 @@ class Set:
                 return False
         return True
 
-    def issuperset(self, other: Set[K]) -> bool:
+    def issuperset(self, other: Set[K], /) -> bool:
         return other.issubset(self)
 
-    def clear(self):
+    def clear(self, /):
         self._kh_clear()
 
-    def copy(self) -> Set[K]:
+    def copy(self, /) -> Set[K]:
         return self.__copy__()
 
     # Internal helpers

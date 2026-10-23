@@ -91,12 +91,12 @@ class List:
                 raise ValueError("not enough values to unpack")
             return _UnpackBuffer(values)
 
-    def __init__(self):
+    def __init__(self, /):
         self._ptr = Ptr[T](_DEFAULT_LIST_CAPACITY)
         self._len = 0
         self._cap = _DEFAULT_LIST_CAPACITY
 
-    def __init__(self, capacity: int):
+    def __init__(self, /, capacity: int):
         if capacity > 0:
             self._ptr = Ptr[T](capacity)
             self._len = 0
@@ -106,12 +106,12 @@ class List:
             self._len = 0
             self._cap = 0
 
-    def __init__(self, it: Generator[T]):
+    def __init__(self, it: Generator[T], /):
         self.__init__()
         for i in it:
             self.append(i)
 
-    def __init__(self, other: List[T]):
+    def __init__(self, other: List[T], /):
         n = other._len
         self._ptr = Ptr[T](n)
         self._len = n
@@ -119,7 +119,7 @@ class List:
         str.memcpy(self._ptr.as_byte(), other._ptr.as_byte(),
                    n * gc.sizeof(T))
 
-    def __init__(self, p: Ptr[T], n: int):
+    def __init__(self, /, p: Ptr[T], n: int):
         self._ptr = p
         self._len = n
         self._cap = n
@@ -130,19 +130,19 @@ class List:
     def _set(self, idx: int, val: T):
         self._ptr[idx] = val
 
-    def __len__(self) -> int:
+    def __len__(self, /) -> int:
         return self._len
 
     def __bool__(self) -> bool:
         return self.__len__() > 0
 
-    def __getitem__(self, idx: int) -> T:
+    def __getitem__(self, idx: int, /) -> T:
         if idx < 0:
             idx += self.__len__()
         self._idx_check(idx, "list index out of range")
         return self._get(idx)
 
-    def __setitem__(self, idx: int, val: T):
+    def __setitem__(self, idx: int, val: T, /):
         if idx < 0:
             idx += self.__len__()
         self._idx_check(idx, "list assignment index out of range")
@@ -156,13 +156,13 @@ class List:
         if not T.__atomic__:
             str.memset((self._ptr + self._len).as_byte(), u8(0), gc.sizeof(T))
 
-    def __delitem__(self, idx: int):
+    def __delitem__(self, idx: int, /):
         if idx < 0:
             idx += self.__len__()
         self._idx_check(idx, "list assignment index out of range")
         self._delete(idx)
 
-    def __eq__(self, other: List[T]) -> bool:
+    def __eq__(self, other: List[T], /) -> bool:
         if self.__len__() != other.__len__():
             return False
         for i in range(self.__len__()):
@@ -170,10 +170,10 @@ class List:
                 return False
         return True
 
-    def __ne__(self, other: List[T]) -> bool:
+    def __ne__(self, other: List[T], /) -> bool:
         return not (self == other)
 
-    def __getitem__(self, s: Slice) -> List[T]:
+    def __getitem__(self, s: Slice, /) -> List[T]:
         if s.start is None and s.stop is None and s.step is None:
             return self.__copy__()
         if s.step is None:
@@ -186,10 +186,10 @@ class List:
                 other.append(self._get(i))
             return other
 
-    def __setitem__(self, s: Slice, other: Generator[T]):
+    def __setitem__(self, s: Slice, other: Generator[T], /):
         return self.__setitem__(s, [a for a in other])
 
-    def __setitem__(self, s: Slice, other: List[T]):
+    def __setitem__(self, s: Slice, other: List[T], /):
         if s.start is None and s.stop is None and s.step is None:
             self.clear()
             for a in other:
@@ -222,7 +222,7 @@ class List:
                 cur += step
                 i += 1
 
-    def __delitem__(self, s: Slice):
+    def __delitem__(self, s: Slice, /):
         if s.start is None and s.stop is None and s.step is None:
             self.clear()
         else:
@@ -265,7 +265,7 @@ class List:
                     str.memset((self._ptr + self._len).as_byte(),
                                u8(0), length * gc.sizeof(T))
 
-    def __contains__(self, x: T) -> bool:
+    def __contains__(self, x: T, /) -> bool:
         for a in self:
             if a == x:
                 return True
@@ -277,7 +277,7 @@ class List:
     def __deepcopy__(self) -> List[T]:
         return [l.__deepcopy__() for l in self]
 
-    def __iter__(self) -> Generator[T]:
+    def __iter__(self, /) -> Generator[T]:
         i = 0
         N = self._len
         p = self._ptr
@@ -285,13 +285,13 @@ class List:
             yield p[i]
             i += 1
 
-    def __reversed__(self) -> Generator[T]:
+    def __reversed__(self, /) -> Generator[T]:
         i = self._len - 1
         while i >= 0:
             yield self._get(i)
             i -= 1
 
-    def __add__(self, other: List[T]) -> List[T]:
+    def __add__(self, other: List[T], /) -> List[T]:
         n = self._len + other._len
         v = List[T](n)
         v._len = n
@@ -304,7 +304,7 @@ class List:
                    other._len * gc.sizeof(T))
         return v
 
-    def __iadd__(self, other: List[T]) -> List[T]:
+    def __iadd__(self, other: List[T], /) -> List[T]:
         n = self._len + other._len
         if self._len < n:
             self._resize(n)
@@ -314,7 +314,7 @@ class List:
         self._len = n
         return self
 
-    def __mul__(self, n: int) -> List[T]:
+    def __mul__(self, n: int, /) -> List[T]:
         if n <= 0 or self._len == 0:
             return List[T]()
 
@@ -331,10 +331,10 @@ class List:
                            self._ptr.as_byte(), block_size)
         return List[T](data, new_len)
 
-    def __rmul__(self, n: int) -> List[T]:
+    def __rmul__(self, n: int, /) -> List[T]:
         return self.__mul__(n)
 
-    def __imul__(self, n: int) -> List[T]:
+    def __imul__(self, n: int, /) -> List[T]:
         if n == 1:
             return self
 
@@ -364,7 +364,7 @@ class List:
         self._len = new_cap
         return self
 
-    def __repr__(self) -> str:
+    def __repr__(self, /) -> str:
         n = self.__len__()
         if n == 0:
             return "[]"
@@ -380,16 +380,16 @@ class List:
 
     # Helper functions
 
-    def append(self, x: T):
+    def append(self, x: T, /):
         self._resize_if_full()
         self._set(self._len, x)
         self._len += 1
 
-    def extend(self, itr: Generator[T]):
+    def extend(self, itr: Generator[T], /):
         for a in itr:
             self.append(a)
 
-    def insert(self, idx: int, x: T):
+    def insert(self, idx: int, x: T, /):
         n = self.__len__()
         if idx < 0:
             idx += n
@@ -405,7 +405,7 @@ class List:
         self._set(idx, x)
         self._len += 1
 
-    def pop(self, idx: int = -1) -> T:
+    def pop(self, idx: int = -1, /) -> T:
         if self.__len__() == 0:
             raise IndexError("pop from empty list")
         if idx < 0:
@@ -415,7 +415,7 @@ class List:
         self._delete(idx)
         return x
 
-    def remove(self, x: T) -> bool:
+    def remove(self, x: T, /) -> bool:
         p = self._ptr
         for i in range(self._len):
             if p[i] == x:
@@ -423,13 +423,13 @@ class List:
                 return True
         return False
 
-    def clear(self):
+    def clear(self, /):
         if not T.__atomic__:
             str.memset(self._ptr.as_byte(),
                        u8(0), self._len * gc.sizeof(T))
         self._len = 0
 
-    def index(self, x: T) -> int:
+    def index(self, x: T, /) -> int:
         i = 0
         for a in self:
             if a == x:
@@ -445,14 +445,14 @@ class List:
             i += 1
         return -1
 
-    def count(self, x: T) -> int:
+    def count(self, x: T, /) -> int:
         count = 0
         for a in self:
             if a == x:
                 count += 1
         return count
 
-    def reverse(self):
+    def reverse(self, /):
         i = 0
         while i < (self._len >> 1):
             j = self._len - i - 1
@@ -461,7 +461,7 @@ class List:
             self._set(j, x)
             i += 1
 
-    def copy(self) -> List[T]:
+    def copy(self, /) -> List[T]:
         return self.__copy__()
 
     # Internal helpers
@@ -564,16 +564,16 @@ class List:
         else:
             return 1
 
-    def __lt__(self, other: List[T]):
+    def __lt__(self, other: List[T], /):
         return self._cmp(other) < 0
 
-    def __gt__(self, other: List[T]):
+    def __gt__(self, other: List[T], /):
         return self._cmp(other) > 0
 
-    def __le__(self, other: List[T]):
+    def __le__(self, other: List[T], /):
         return self._cmp(other) <= 0
 
-    def __ge__(self, other: List[T]):
+    def __ge__(self, other: List[T], /):
         return self._cmp(other) >= 0
 
     # list addition optimization helpers

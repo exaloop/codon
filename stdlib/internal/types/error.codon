@@ -12,7 +12,7 @@ class BaseException(object):
     python_type: cobj
     cause: Optional[BaseException]
 
-    def __init__(self, message: str = ""):
+    def __init__(self, message: str = "", /):
         self.message = message
         self.func = ""
         self.file = ""
@@ -21,10 +21,10 @@ class BaseException(object):
         self.python_type = BaseException._pytype
         self.cause = Optional._ref_new(T=BaseException)
 
-    def __str__(self: BaseException) -> str:
+    def __str__(self: BaseException, /) -> str:
         return self.message
 
-    def __repr__(self: BaseException) -> str:
+    def __repr__(self: BaseException, /) -> str:
         return f'{self.typename}({self.message.__repr__()})'
 
     @property
@@ -86,14 +86,14 @@ class BaseException(object):
 
 class Exception(BaseException):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, message: str = ""):
+    def __init__(self, message: str = "", /):
         super().__init__(message)
         if hasattr(self.__class__, "_pytype"):
             self.python_type = self.__class__._pytype
 
 class NameError(Exception):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, message: str = ""):
+    def __init__(self, message: str = "", /):
         super().__init__(message)
         self.python_type = self.__class__._pytype
 
@@ -163,7 +163,7 @@ class OSError(Exception):
         result.__init__(errno, strerror, filename, winerror, filename2)
         return result
 
-    def __init__(self, message: str = ""):
+    def __init__(self, message: str = "", /):
         super().__init__(message)
         self.python_type = self.__class__._pytype
         self.errno = None
@@ -174,7 +174,7 @@ class OSError(Exception):
 
     def __init__(self, errno: Optional[int], strerror: str,
                  filename: Optional[str] = None, winerror: Optional[int] = None,
-                 filename2: Optional[str] = None):
+                 filename2: Optional[str] = None, /):
         super().__init__()
         self.python_type = self.__class__._pytype
         self.errno = errno
@@ -202,25 +202,25 @@ IOError = OSError
 
 class ValueError(Exception):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, message: str = ""):
+    def __init__(self, message: str = "", /):
         super().__init__(message)
         self.python_type = self.__class__._pytype
 
 class LookupError(Exception):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, message: str = ""):
+    def __init__(self, message: str = "", /):
         super().__init__(message)
         self.python_type = self.__class__._pytype
 
 class IndexError(LookupError):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, message: str = ""):
+    def __init__(self, message: str = "", /):
         super().__init__(message)
         self.python_type = self.__class__._pytype
 
 class KeyError(LookupError):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, message: str = ""):
+    def __init__(self, message: str = "", /):
         super().__init__(message)
         self.python_type = self.__class__._pytype
 
@@ -232,37 +232,37 @@ class CError(Exception):
 
 class TypeError(Exception):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, message: str = ""):
+    def __init__(self, message: str = "", /):
         super().__init__(message)
         self.python_type = self.__class__._pytype
 
 class ArithmeticError(Exception):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, message: str = ""):
+    def __init__(self, message: str = "", /):
         super().__init__(message)
         self.python_type = self.__class__._pytype
 
 class ZeroDivisionError(ArithmeticError):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, message: str = ""):
+    def __init__(self, message: str = "", /):
         super().__init__(message)
         self.python_type = self.__class__._pytype
 
 class OverflowError(ArithmeticError):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, message: str = ""):
+    def __init__(self, message: str = "", /):
         super().__init__(message)
         self.python_type = self.__class__._pytype
 
 class AttributeError(Exception):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, message: str = ""):
+    def __init__(self, message: str = "", /):
         super().__init__(message)
         self.python_type = self.__class__._pytype
 
 class RuntimeError(Exception):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, message: str = ""):
+    def __init__(self, message: str = "", /):
         super().__init__(message)
         self.python_type = self.__class__._pytype
 
@@ -279,25 +279,25 @@ def _missing_return_error(message: str, name: str, file: str, line: int, column:
 
 class NotImplementedError(RuntimeError):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, message: str = ""):
+    def __init__(self, message: str = "", /):
         super().__init__(message)
         self.python_type = self.__class__._pytype
 
 class StopIteration(Exception):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, message: str = ""):
+    def __init__(self, message: str = "", /):
         super().__init__(message)
         self.python_type = self.__class__._pytype
 
 class AssertionError(Exception):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, message: str = ""):
+    def __init__(self, message: str = "", /):
         super().__init__(message)
         self.python_type = self.__class__._pytype
 
 class EOFError(Exception):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, message: str = ""):
+    def __init__(self, message: str = "", /):
         super().__init__(message)
         self.python_type = self.__class__._pytype
 
@@ -306,13 +306,13 @@ class SystemExit(BaseException):
     _status: int
     _message_exit: bool
 
-    def __init__(self, message: str, status: int = 1):
+    def __init__(self, message: str, status: int = 1, /):
         super().__init__(message)
         self._status = status
         self._message_exit = True
         self.python_type = self.__class__._pytype
 
-    def __init__(self, status: int = 0):
+    def __init__(self, status: int = 0, /):
         self.__init__("", status)
         self._message_exit = False
 
@@ -329,55 +329,55 @@ EnvironmentError = OSError
 
 class GeneratorExit(BaseException):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, message: str = ""):
+    def __init__(self, message: str = "", /):
         super().__init__(message)
         self.python_type = self.__class__._pytype
 
 class KeyboardInterrupt(BaseException):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, message: str = ""):
+    def __init__(self, message: str = "", /):
         super().__init__(message)
         self.python_type = self.__class__._pytype
 
 class MemoryError(Exception):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, message: str = ""):
+    def __init__(self, message: str = "", /):
         super().__init__(message)
         self.python_type = MemoryError._pytype
 
 class ReferenceError(Exception):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, message: str = ""):
+    def __init__(self, message: str = "", /):
         super().__init__(message)
         self.python_type = ReferenceError._pytype
 
 class SystemError(Exception):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, message: str = ""):
+    def __init__(self, message: str = "", /):
         super().__init__(message)
         self.python_type = SystemError._pytype
 
 class StopAsyncIteration(Exception):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, message: str = ""):
+    def __init__(self, message: str = "", /):
         super().__init__(message)
         self.python_type = StopAsyncIteration._pytype
 
 class FloatingPointError(ArithmeticError):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, message: str = ""):
+    def __init__(self, message: str = "", /):
         super().__init__(message)
         self.python_type = FloatingPointError._pytype
 
 class RecursionError(RuntimeError):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, message: str = ""):
+    def __init__(self, message: str = "", /):
         super().__init__(message)
         self.python_type = RecursionError._pytype
 
 class UnicodeError(ValueError):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, message: str = ""):
+    def __init__(self, message: str = "", /):
         super().__init__(message)
         self.python_type = UnicodeError._pytype
 
@@ -390,7 +390,7 @@ class UnicodeDecodeError(UnicodeError):
     reason: str
     _args: Tuple[str, bytes, int, int, str]
 
-    def __init__(self, encoding: str, object: bytes, start: int, end: int, reason: str):
+    def __init__(self, encoding: str, object: bytes, start: int, end: int, reason: str, /):
         super().__init__()
         self.python_type = UnicodeDecodeError._pytype
         self.encoding, self.object = encoding, object
@@ -402,10 +402,10 @@ class UnicodeDecodeError(UnicodeError):
     def args(self):
         return self._args
 
-    def __repr__(self):
+    def __repr__(self, /):
         return self.typename + repr(self.args)
 
-    def __str__(self):
+    def __str__(self, /):
         prefix = "'" + self.encoding + "' codec can't decode "
         if self.end == self.start + 1 and 0 <= self.start < len(self.object):
             return prefix + ("byte 0x%02x in position %d: " % (self.object[self.start], self.start)) + self.reason
@@ -428,7 +428,7 @@ class UnicodeEncodeError(UnicodeError):
     reason: str
     _args: Tuple[str, str, int, int, str]
 
-    def __init__(self, encoding: str, object: str, start: int, end: int, reason: str):
+    def __init__(self, encoding: str, object: str, start: int, end: int, reason: str, /):
         super().__init__()
         self.python_type = UnicodeEncodeError._pytype
         self.encoding, self.object = encoding, object
@@ -440,10 +440,10 @@ class UnicodeEncodeError(UnicodeError):
     def args(self):
         return self._args
 
-    def __repr__(self):
+    def __repr__(self, /):
         return self.typename + repr(self.args)
 
-    def __str__(self):
+    def __str__(self, /):
         prefix = "'" + self.encoding + "' codec can't encode "
         if self.end == self.start + 1 and 0 <= self.start < len(self.object):
             return prefix + "character '" + _unicode_error_character(self.object[self.start]) + ("' in position %d: " % self.start) + self.reason
@@ -457,7 +457,7 @@ class UnicodeTranslateError(UnicodeError):
     reason: str
     _args: Tuple[str, int, int, str]
 
-    def __init__(self, object: str, start: int, end: int, reason: str):
+    def __init__(self, object: str, start: int, end: int, reason: str, /):
         super().__init__()
         self.python_type = UnicodeTranslateError._pytype
         self.object, self.start, self.end, self.reason = object, start, end, reason
@@ -472,100 +472,100 @@ class UnicodeTranslateError(UnicodeError):
     def args(self):
         return self._args
 
-    def __repr__(self):
+    def __repr__(self, /):
         return self.typename + repr(self.args)
 
-    def __str__(self):
+    def __str__(self, /):
         if self.end == self.start + 1 and 0 <= self.start < len(self.object):
             return "can't translate character '" + _unicode_error_character(self.object[self.start]) + ("' in position %d: " % self.start) + self.reason
         return ("can't translate characters in position %d-%d: " % (self.start, self.end - 1)) + self.reason
 
 class BlockingIOError(OSError):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, *args, **kwargs):
+    def __init__(self, /, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.python_type = BlockingIOError._pytype
 
 class ChildProcessError(OSError):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, *args, **kwargs):
+    def __init__(self, /, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.python_type = ChildProcessError._pytype
 
 class ConnectionError(OSError):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, *args, **kwargs):
+    def __init__(self, /, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.python_type = ConnectionError._pytype
 
 class BrokenPipeError(ConnectionError):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, *args, **kwargs):
+    def __init__(self, /, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.python_type = BrokenPipeError._pytype
 
 class ConnectionAbortedError(ConnectionError):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, *args, **kwargs):
+    def __init__(self, /, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.python_type = ConnectionAbortedError._pytype
 
 class ConnectionRefusedError(ConnectionError):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, *args, **kwargs):
+    def __init__(self, /, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.python_type = ConnectionRefusedError._pytype
 
 class ConnectionResetError(ConnectionError):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, *args, **kwargs):
+    def __init__(self, /, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.python_type = ConnectionResetError._pytype
 
 class FileExistsError(OSError):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, *args, **kwargs):
+    def __init__(self, /, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.python_type = FileExistsError._pytype
 
 class FileNotFoundError(OSError):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, *args, **kwargs):
+    def __init__(self, /, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.python_type = FileNotFoundError._pytype
 
 class InterruptedError(OSError):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, *args, **kwargs):
+    def __init__(self, /, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.python_type = InterruptedError._pytype
 
 class IsADirectoryError(OSError):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, *args, **kwargs):
+    def __init__(self, /, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.python_type = IsADirectoryError._pytype
 
 class NotADirectoryError(OSError):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, *args, **kwargs):
+    def __init__(self, /, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.python_type = NotADirectoryError._pytype
 
 class PermissionError(OSError):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, *args, **kwargs):
+    def __init__(self, /, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.python_type = PermissionError._pytype
 
 class ProcessLookupError(OSError):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, *args, **kwargs):
+    def __init__(self, /, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.python_type = ProcessLookupError._pytype
 
 class TimeoutError(OSError):
     _pytype: ClassVar[cobj] = cobj()
-    def __init__(self, *args, **kwargs):
+    def __init__(self, /, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.python_type = TimeoutError._pytype

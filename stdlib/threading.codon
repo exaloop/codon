@@ -14,18 +14,18 @@ class Lock:
     def __new__() -> Lock:
         return Lock(_C.seq_lock_new(),)
 
-    def acquire(self, block: bool = True, timeout: float = -1.0) -> bool:
+    def acquire(self, /, block: bool = True, timeout: float = -1.0) -> bool:
         if timeout >= 0.0 and not block:
             raise ValueError("can't specify a timeout for a non-blocking call")
         return _C.seq_lock_acquire(self.p, block, timeout)
 
-    def release(self):
+    def release(self, /):
         _C.seq_lock_release(self.p)
 
-    def __enter__(self):
+    def __enter__(self, /):
         return self.acquire()
 
-    def __exit__(self):
+    def __exit__(self, /):
         self.release()
 
 @tuple
@@ -35,18 +35,18 @@ class RLock:
     def __new__() -> RLock:
         return RLock(_C.seq_rlock_new(),)
 
-    def acquire(self, block: bool = True, timeout: float = -1.0) -> bool:
+    def acquire(self, /, block: bool = True, timeout: float = -1.0) -> bool:
         if timeout >= 0.0 and not block:
             raise ValueError("can't specify a timeout for a non-blocking call")
         return _C.seq_rlock_acquire(self.p, block, timeout)
 
-    def release(self):
+    def release(self, /):
         _C.seq_rlock_release(self.p)
 
-    def __enter__(self):
+    def __enter__(self, /):
         return self.acquire()
 
-    def __exit__(self):
+    def __exit__(self, /):
         self.release()
 
 def active_count() -> int:

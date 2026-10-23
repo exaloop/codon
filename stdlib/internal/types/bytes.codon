@@ -47,16 +47,16 @@ class bytes:
     def __new__(what: str, encoding: str, errors: str = "strict") -> bytes:
         return what.encode(encoding, errors)
 
-    def decode(self, encoding: str = "utf-8", errors: str = "strict") -> str:
+    def decode(self, /, encoding: str = "utf-8", errors: str = "strict") -> str:
         return str(self, encoding, errors)
 
-    def __str__(self) -> str:
+    def __str__(self, /) -> str:
         return self.__repr__()
 
-    def __bytes__(self) -> bytes:
+    def __bytes__(self, /) -> bytes:
         return self
 
-    def __len__(self) -> int:
+    def __len__(self, /) -> int:
         return self._len
 
     def __bool__(self) -> bool:
@@ -92,7 +92,7 @@ class bytes:
         call void @llvm.memset.p0i8.i64(ptr %dest, i8 %val, i64 %len, i32 0, i1 false)
         ret {} {}
 
-    def __add__(self, other: bytes) -> bytes:
+    def __add__(self, other: bytes, /) -> bytes:
         len1 = self._len
         len2 = other._len
         len3 = len1 + len2
@@ -114,7 +114,7 @@ class bytes:
         bytes.memcpy(p, t, n)
         return bytes(p, n)
 
-    def __eq__(self, other: bytes) -> bool:
+    def __eq__(self, other: bytes, /) -> bool:
         if self._len != other._len:
             return False
         i = 0
@@ -127,7 +127,7 @@ class bytes:
     def __match__(self, obj: bytes) -> bool:
         return self.__eq__(obj)
 
-    def __ne__(self, other: bytes) -> bool:
+    def __ne__(self, other: bytes, /) -> bool:
         return not self.__eq__(other)
 
     def cat(*args) -> bytes:
@@ -178,7 +178,7 @@ class bytes:
 
     # Magic methods
 
-    def __hash__(self) -> int:
+    def __hash__(self, /) -> int:
         h = 0
         p, n = self._ptr, self._len
         i = 0
@@ -187,19 +187,19 @@ class bytes:
             i += 1
         return h
 
-    def __lt__(self, other: bytes) -> bool:
+    def __lt__(self, other: bytes, /) -> bool:
         return self._cmp(other) < 0
 
-    def __le__(self, other: bytes) -> bool:
+    def __le__(self, other: bytes, /) -> bool:
         return self._cmp(other) <= 0
 
-    def __gt__(self, other: bytes) -> bool:
+    def __gt__(self, other: bytes, /) -> bool:
         return self._cmp(other) > 0
 
-    def __ge__(self, other: bytes) -> bool:
+    def __ge__(self, other: bytes, /) -> bool:
         return self._cmp(other) >= 0
 
-    def __repr__(self) -> str:
+    def __repr__(self, /) -> str:
         q = 0x27
         single_quotes = 0
         found_double = False
@@ -257,14 +257,14 @@ class bytes:
         p[n] = u8(q)
         return str(bytes(p, n + 1), "ascii")
 
-    def __getitem__(self, idx: int) -> int:
+    def __getitem__(self, idx: int, /) -> int:
         if idx < 0:
             idx += len(self)
         if not (0 <= idx < len(self)):
             raise IndexError("index out of range")
         return int(self._ptr[idx])
 
-    def __getitem__(self, s: Slice) -> bytes:
+    def __getitem__(self, s: Slice, /) -> bytes:
         if s.start is None and s.stop is None and s.step is None:
             return self.__copy__()
         elif s.step is None:
@@ -282,7 +282,7 @@ class bytes:
             j += 1
         return bytes(p, length)
 
-    def __iter__(self) -> Generator[int]:
+    def __iter__(self, /) -> Generator[int]:
         i = 0
         n = len(self)
         while i < n:
@@ -295,7 +295,7 @@ class bytes:
             yield int(self._ptr[i])
             i -= 1
 
-    def __mul__(self, x: int) -> bytes:
+    def __mul__(self, x: int, /) -> bytes:
         if x <= 0:
             return bytes()
         total = x * self._len
@@ -306,7 +306,7 @@ class bytes:
             n += self._len
         return bytes(p, total)
 
-    def __rmul__(self, x: int) -> bytes:
+    def __rmul__(self, x: int, /) -> bytes:
         return self * x
 
     def _cmp(self, other: bytes) -> int:
@@ -324,7 +324,7 @@ import algorithms.strings as algorithms
 
 @extend
 class bytes:
-    def __contains__(self, pattern: bytes) -> bool:
+    def __contains__(self, pattern: bytes, /) -> bool:
         return self.find(pattern) >= 0
 
     # Helper methods
@@ -392,11 +392,11 @@ class bytes:
         return bytes(p, n)
 
     @staticmethod
-    def fromhex(value) -> bytes:
+    def fromhex(value, /) -> bytes:
         return bytes._fromhex(bytes(value))
 
     @staticmethod
-    def fromhex(value: str) -> bytes:
+    def fromhex(value: str, /) -> bytes:
         for i in range(len(value)):
             if ord(value[i]) > 0x7F:
                 raise ValueError(
@@ -405,7 +405,7 @@ class bytes:
         return bytes._fromhex(bytes(value, "ascii"))
 
     @staticmethod
-    def fromhex(value: bytes) -> bytes:
+    def fromhex(value: bytes, /) -> bytes:
         return bytes._fromhex(value)
 
     def _hex(self, separator: int, bytes_per_sep: int) -> str:
@@ -435,10 +435,10 @@ class bytes:
             j += 2
         return str(bytes(p, j), "ascii")
 
-    def hex(self) -> str:
+    def hex(self, /) -> str:
         return self._hex(0, 0)
 
-    def hex(self, sep: str, bytes_per_sep: int = 1) -> str:
+    def hex(self, /, sep: str, bytes_per_sep: int = 1) -> str:
         if len(sep) != 1:
             raise ValueError("sep must be length 1")
         separator = ord(sep)
@@ -446,7 +446,7 @@ class bytes:
             raise ValueError("sep must be ASCII")
         return self._hex(separator, bytes_per_sep)
 
-    def hex(self, sep: bytes, bytes_per_sep: int = 1) -> str:
+    def hex(self, /, sep: bytes, bytes_per_sep: int = 1) -> str:
         if len(sep) != 1:
             raise ValueError("sep must be length 1")
         if sep[0] > 0x7F:
@@ -454,7 +454,7 @@ class bytes:
         return self._hex(sep[0], bytes_per_sep)
 
     @staticmethod
-    def maketrans(source, replacement) -> bytes:
+    def maketrans(source, replacement, /) -> bytes:
         source: bytes = bytes(source)
         replacement: bytes = bytes(replacement)
         if len(source) != len(replacement):
@@ -467,7 +467,7 @@ class bytes:
             p[int(source._ptr[i])] = replacement._ptr[i]
         return bytes(p, 256)
 
-    def join(self, l: Generator[bytes]) -> bytes:
+    def join(self, l: Generator[bytes], /) -> bytes:
         capacity = 16
         data = Ptr[u8](capacity)
         length = 0
@@ -494,7 +494,7 @@ class bytes:
 
         return bytes(data, length)
 
-    def join(self, l: List[bytes]) -> bytes:
+    def join(self, l: List[bytes], /) -> bytes:
         if len(l) == 0:
             return bytes()
         if len(l) == 1:
@@ -525,7 +525,7 @@ class bytes:
 
         return bytes(p, n)
 
-    def isdigit(self) -> bool:
+    def isdigit(self, /) -> bool:
         if len(self) == 0:
             return False
 
@@ -534,7 +534,7 @@ class bytes:
                 return False
         return True
 
-    def islower(self) -> bool:
+    def islower(self, /) -> bool:
         cased = False
 
         # For empty strings
@@ -552,7 +552,7 @@ class bytes:
                 cased = True
         return cased
 
-    def isupper(self) -> bool:
+    def isupper(self, /) -> bool:
         cased = False
 
         # For empty strings
@@ -570,7 +570,7 @@ class bytes:
                 cased = True
         return cased
 
-    def isalnum(self) -> bool:
+    def isalnum(self, /) -> bool:
         if len(self) == 0:
             return False
 
@@ -579,7 +579,7 @@ class bytes:
                 return False
         return True
 
-    def isalpha(self) -> bool:
+    def isalpha(self, /) -> bool:
         if len(self) == 0:
             return False
 
@@ -588,7 +588,7 @@ class bytes:
                 return False
         return True
 
-    def isspace(self) -> bool:
+    def isspace(self, /) -> bool:
         if len(self) == 0:
             return False
 
@@ -597,7 +597,7 @@ class bytes:
                 return False
         return True
 
-    def istitle(self) -> bool:
+    def istitle(self, /) -> bool:
 
         # For empty strings
         if len(self) == 0:
@@ -624,7 +624,7 @@ class bytes:
                 prev_is_cased = False
         return cased
 
-    def capitalize(self) -> bytes:
+    def capitalize(self, /) -> bytes:
         n = len(self)
         if n > 0:
             p = Ptr[u8](n)
@@ -644,7 +644,7 @@ class bytes:
                 return False
         return True
 
-    def lower(self) -> bytes:
+    def lower(self, /) -> bytes:
         # Empty string
         n = len(self)
         if n == 0:
@@ -654,7 +654,7 @@ class bytes:
             p[i] = bytes._tolower(self._ptr[i])
         return bytes(p, n)
 
-    def upper(self) -> bytes:
+    def upper(self, /) -> bytes:
         # Empty string
         n = len(self)
         if n == 0:
@@ -664,7 +664,7 @@ class bytes:
             p[i] = bytes._toupper(self._ptr[i])
         return bytes(p, n)
 
-    def isascii(self) -> bool:
+    def isascii(self, /) -> bool:
         for i in range(len(self)):
             if int(self._ptr[i]) >= 128:
                 return False
@@ -673,7 +673,7 @@ class bytes:
     def casefold(self) -> bytes:
         return self.lower()
 
-    def swapcase(self) -> bytes:
+    def swapcase(self, /) -> bytes:
         # Empty string
         n = len(self)
         if n == 0:
@@ -688,7 +688,7 @@ class bytes:
                 p[i] = self._ptr[i]
         return bytes(p, n)
 
-    def title(self) -> bytes:
+    def title(self, /) -> bytes:
         prev_is_cased = False
 
         n = len(self)
@@ -741,21 +741,21 @@ class bytes:
 
         return bytes(p, total)
 
-    def ljust(self, width: int, fillchar: bytes = b" ") -> bytes:
+    def ljust(self, width: int, fillchar: bytes = b" ", /) -> bytes:
         if len(fillchar) != 1:
             raise ValueError("The fill character must be exactly one character long")
         if width <= len(self):
             return self
         return bytes._build(self, (fillchar, width - len(self)))
 
-    def rjust(self, width: int, fillchar: bytes = b" ") -> bytes:
+    def rjust(self, width: int, fillchar: bytes = b" ", /) -> bytes:
         if len(fillchar) != 1:
             raise ValueError("The fill character must be exactly one character long")
         if width <= len(self):
             return self
         return bytes._build((fillchar, width - len(self)), self)
 
-    def center(self, width: int, fillchar: bytes = b" ") -> bytes:
+    def center(self, width: int, fillchar: bytes = b" ", /) -> bytes:
         if len(fillchar) != 1:
             raise ValueError("The fill character must be exactly one character long")
         if width <= len(self):
@@ -766,7 +766,7 @@ class bytes:
         right_pad = width - len(self) - left_pad
         return bytes._build((fillchar, left_pad), self, (fillchar, right_pad))
 
-    def zfill(self, width: int) -> bytes:
+    def zfill(self, width: int, /) -> bytes:
         if len(self) >= width:
             return self
 
@@ -784,14 +784,14 @@ class bytes:
 
         return zf
 
-    def count(self, sub: bytes, start: int = 0, end: Optional[int] = None) -> int:
+    def count(self, sub: bytes, start: int = 0, end: Optional[int] = None, /) -> int:
         end: int = end if end is not None else len(self)
         start, end = self._correct_indices(start, end)
         if end - start < len(sub):
             return 0
         return algorithms.count(self._slice(start, end), sub)
 
-    def find(self, sub: bytes, start: int = 0, end: Optional[int] = None) -> int:
+    def find(self, sub: bytes, start: int = 0, end: Optional[int] = None, /) -> int:
         end: int = end if end is not None else len(self)
         start, end = self._correct_indices(start, end)
         if end - start < len(sub):
@@ -799,7 +799,7 @@ class bytes:
         pos = algorithms.find(self._slice(start, end), sub)
         return pos if pos < 0 else pos + start
 
-    def rfind(self, sub: bytes, start: int = 0, end: Optional[int] = None) -> int:
+    def rfind(self, sub: bytes, start: int = 0, end: Optional[int] = None, /) -> int:
         end: int = end if end is not None else len(self)
         start, end = self._correct_indices(start, end)
         if end - start < len(sub):
@@ -841,7 +841,7 @@ class bytes:
                 return True
         return False
 
-    def lstrip(self, chars: Optional[bytes] = None) -> bytes:
+    def lstrip(self, chars: Optional[bytes] = None, /) -> bytes:
         i = 0
         if chars is None:
             while i < len(self) and bytes._isspace(self._ptr[i]):
@@ -851,7 +851,7 @@ class bytes:
                 i += 1
         return self._slice(i, len(self))
 
-    def rstrip(self, chars: Optional[bytes] = None) -> bytes:
+    def rstrip(self, chars: Optional[bytes] = None, /) -> bytes:
         i = len(self) - 1
         if chars is None:
             while i >= 0 and bytes._isspace(self._ptr[i]):
@@ -861,10 +861,10 @@ class bytes:
                 i -= 1
         return self._slice(0, i + 1)
 
-    def strip(self, chars: Optional[bytes] = None) -> bytes:
+    def strip(self, chars: Optional[bytes] = None, /) -> bytes:
         return self.lstrip(chars).rstrip(chars)
 
-    def partition(self, sep: bytes) -> Tuple[bytes, bytes, bytes]:
+    def partition(self, sep: bytes, /) -> Tuple[bytes, bytes, bytes]:
         if not sep:
             raise ValueError("empty separator")
         pos = algorithms.find(self, sep)
@@ -872,7 +872,7 @@ class bytes:
             return self, bytes(), bytes()
         return self._slice(0, pos), sep, self._slice(pos + len(sep), len(self))
 
-    def rpartition(self, sep: bytes) -> Tuple[bytes, bytes, bytes]: # XXX
+    def rpartition(self, sep: bytes, /) -> Tuple[bytes, bytes, bytes]: # XXX
         if not sep:
             raise ValueError("empty separator")
         pos = algorithms.rfind(self, sep)
@@ -880,7 +880,7 @@ class bytes:
             return bytes(), bytes(), self
         return self._slice(0, pos), sep, self._slice(pos + len(sep), len(self))
 
-    def split(self, sep: Optional[bytes] = None, maxsplit: int = -1) -> List[bytes]:
+    def split(self, /, sep: Optional[bytes] = None, maxsplit: int = -1) -> List[bytes]:
         if sep is None:
             return self._split_whitespace(
                 maxsplit if maxsplit >= 0 else _MAX
@@ -914,7 +914,7 @@ class bytes:
         v.append(self._slice(i, n))
         return v
 
-    def rsplit(self, sep: Optional[bytes] = None, maxsplit: int = -1) -> List[bytes]:
+    def rsplit(self, /, sep: Optional[bytes] = None, maxsplit: int = -1) -> List[bytes]:
         if sep is None:
             return self._rsplit_whitespace(
                 maxsplit if maxsplit >= 0 else _MAX
@@ -948,7 +948,7 @@ class bytes:
         v.reverse()
         return v
 
-    def splitlines(self, keepends: bool = False) -> List[bytes]:
+    def splitlines(self, /, keepends: bool = False) -> List[bytes]:
         v = []
         i = 0
         j = 0
@@ -980,7 +980,8 @@ class bytes:
         return v
 
     def startswith(
-        self, prefix: bytes, start: int = 0, end: Optional[int] = None
+        self, prefix: bytes, start: int = 0, end: Optional[int] = None,
+        /,
     ) -> bool:
         end: int = end if end is not None else len(self)
         if end < 0:
@@ -1002,7 +1003,7 @@ class bytes:
 
         return prefix == self._slice(start, start + len(prefix))
 
-    def endswith(self, suffix: bytes, start: int = 0, end: Optional[int] = None) -> bool:
+    def endswith(self, suffix: bytes, start: int = 0, end: Optional[int] = None, /) -> bool:
         end: int = end if end is not None else len(self)
         if end < 0:
             end += len(self)
@@ -1028,36 +1029,36 @@ class bytes:
 
         return suffix == self._slice(start, start + len(suffix))
 
-    def removeprefix(self, prefix) -> bytes:
+    def removeprefix(self, prefix, /) -> bytes:
         prefix: bytes = bytes(prefix)
         if self.startswith(prefix):
             return self._slice(len(prefix), len(self))
         return self
 
-    def removesuffix(self, suffix) -> bytes:
+    def removesuffix(self, suffix, /) -> bytes:
         suffix: bytes = bytes(suffix)
         if self.endswith(suffix):
             return self._slice(0, len(self) - len(suffix))
         return self
 
-    def index(self, sub: bytes, start: int = 0, end: Optional[int] = None) -> int:
+    def index(self, sub: bytes, start: int = 0, end: Optional[int] = None, /) -> int:
         i = self.find(sub, start, end)
         if i == -1:
             raise ValueError("substring not found")
         else:
             return i
 
-    def rindex(self, sub: bytes, start: int = 0, end: Optional[int] = None) -> int:
+    def rindex(self, sub: bytes, start: int = 0, end: Optional[int] = None, /) -> int:
         i = self.rfind(sub, start, end)
         if i == -1:
             raise ValueError("substring not found")
         else:
             return i
 
-    def replace(self, old: bytes, new: bytes, maxcount: int = -1) -> bytes:
+    def replace(self, old: bytes, new: bytes, maxcount: int = -1, /) -> bytes:
         return self._replace(old, new, maxcount)
 
-    def expandtabs(self, tabsize: int = 8) -> bytes:
+    def expandtabs(self, /, tabsize: int = 8) -> bytes:
         i = 0
         j = 0
         p = self._ptr
@@ -1120,7 +1121,7 @@ class bytes:
 
         return bytes(u, u_len)
 
-    def translate(self, map) -> bytes:
+    def translate(self, map, /) -> bytes:
         if hasattr(map, "__bytes__"):
             return self.translate(bytes(map))
 
@@ -1152,7 +1153,7 @@ class bytes:
 
         return bytes(p, m)
 
-    def translate(self, table: bytes, delete: bytes = b"") -> bytes:
+    def translate(self, table: bytes, /, delete: bytes = b"") -> bytes:
         if len(table) != 256:
             raise ValueError("translation table must be 256 characters long")
 

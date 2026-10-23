@@ -34,14 +34,14 @@ class float:
         return 0.0
 
     @overload
-    def __new__(what) -> float:
+    def __new__(what, /) -> float:
         # do not overload! (needed to avoid pyobj conversion)
         if isinstance(what, str) or isinstance(what, Optional[str]):
             return float._from_str(what)
         else:
             return what.__float__()
 
-    def __repr__(self) -> str:
+    def __repr__(self, /) -> str:
         return self.__format__(str())
 
     def __copy__(self) -> float:
@@ -52,50 +52,50 @@ class float:
 
     @pure
     @llvm
-    def __int__(self) -> int:
+    def __int__(self, /) -> int:
         %0 = fptosi double %self to i64
         ret i64 %0
 
-    def __float__(self) -> float:
+    def __float__(self, /) -> float:
         return self
 
     @pure
     @llvm
-    def __bool__(self) -> bool:
+    def __bool__(self, /) -> bool:
         %0 = fcmp une double %self, 0.000000e+00
         %1 = zext i1 %0 to i8
         ret i8 %1
 
-    def __pos__(self) -> float:
+    def __pos__(self, /) -> float:
         return self
 
     @pure
     @llvm
-    def __neg__(self) -> float:
+    def __neg__(self, /) -> float:
         %0 = fneg double %self
         ret double %0
 
     @pure
     @commutative
     @llvm
-    def __add__(a: float, b: float) -> float:
+    def __add__(a: float, b: float, /) -> float:
         %tmp = fadd double %a, %b
         ret double %tmp
 
     @pure
     @llvm
-    def __sub__(a: float, b: float) -> float:
+    def __sub__(a: float, b: float, /) -> float:
         %tmp = fsub double %a, %b
         ret double %tmp
 
     @pure
     @commutative
     @llvm
-    def __mul__(a: float, b: float) -> float:
+    def __mul__(a: float, b: float, /) -> float:
         %tmp = fmul double %a, %b
         ret double %tmp
 
-    def __floordiv__(self, other: float) -> float:
+    def __floordiv__(self, other: float, /) -> float:
         if __py_numerics__:
             return _divmod(self, other)[0]
         else:
@@ -110,7 +110,7 @@ class float:
     def cdiv(self, other: float) -> float:
         return self._div(other)
 
-    def __truediv__(self, other: float) -> float:
+    def __truediv__(self, other: float, /) -> float:
         if __py_numerics__:
             if not other:
                 raise ZeroDivisionError("division by zero")
@@ -125,53 +125,53 @@ class float:
     def cmod(self, other: float) -> float:
         return self._mod(other)
 
-    def __mod__(self, other: float) -> float:
+    def __mod__(self, other: float, /) -> float:
         if __py_numerics__:
             return _divmod(self, other)[1]
         else:
             return self.cmod(other)
 
-    def __divmod__(self, other: float) -> Tuple[float, float]:
+    def __divmod__(self, other: float, /) -> Tuple[float, float]:
         return _divmod(self, other)
 
     @pure
     @llvm
-    def __eq__(a: float, b: float) -> bool:
+    def __eq__(a: float, b: float, /) -> bool:
         %tmp = fcmp oeq double %a, %b
         %res = zext i1 %tmp to i8
         ret i8 %res
 
     @pure
     @llvm
-    def __ne__(a: float, b: float) -> bool:
+    def __ne__(a: float, b: float, /) -> bool:
         %tmp = fcmp une double %a, %b
         %res = zext i1 %tmp to i8
         ret i8 %res
 
     @pure
     @llvm
-    def __lt__(a: float, b: float) -> bool:
+    def __lt__(a: float, b: float, /) -> bool:
         %tmp = fcmp olt double %a, %b
         %res = zext i1 %tmp to i8
         ret i8 %res
 
     @pure
     @llvm
-    def __gt__(a: float, b: float) -> bool:
+    def __gt__(a: float, b: float, /) -> bool:
         %tmp = fcmp ogt double %a, %b
         %res = zext i1 %tmp to i8
         ret i8 %res
 
     @pure
     @llvm
-    def __le__(a: float, b: float) -> bool:
+    def __le__(a: float, b: float, /) -> bool:
         %tmp = fcmp ole double %a, %b
         %res = zext i1 %tmp to i8
         ret i8 %res
 
     @pure
     @llvm
-    def __ge__(a: float, b: float) -> bool:
+    def __ge__(a: float, b: float, /) -> bool:
         %tmp = fcmp oge double %a, %b
         %res = zext i1 %tmp to i8
         ret i8 %res
@@ -234,28 +234,28 @@ class float:
 
     @pure
     @llvm
-    def __abs__(a: float) -> float:
+    def __abs__(a: float, /) -> float:
         declare double @llvm.fabs.f64(double %a)
         %tmp = call double @llvm.fabs.f64(double %a)
         ret double %tmp
 
     @pure
     @llvm
-    def __floor__(a: float) -> float:
+    def __floor__(a: float, /) -> float:
         declare double @llvm.floor.f64(double %a)
         %tmp = call double @llvm.floor.f64(double %a)
         ret double %tmp
 
     @pure
     @llvm
-    def __ceil__(a: float) -> float:
+    def __ceil__(a: float, /) -> float:
         declare double @llvm.ceil.f64(double %a)
         %tmp = call double @llvm.ceil.f64(double %a)
         ret double %tmp
 
     @pure
     @llvm
-    def __trunc__(a: float) -> float:
+    def __trunc__(a: float, /) -> float:
         declare double @llvm.trunc.f64(double %a)
         %tmp = call double @llvm.trunc.f64(double %a)
         ret double %tmp
@@ -283,7 +283,7 @@ class float:
 
     @pure
     @llvm
-    def __pow__(a: float, b: float) -> float:
+    def __pow__(a: float, b: float, /) -> float:
         declare double @llvm.pow.f64(double %a, double %b)
         %tmp = call double @llvm.pow.f64(double %a, double %b)
         ret double %tmp
@@ -316,7 +316,7 @@ class float:
         %tmp = call double @llvm.fma.f64(double %a, double %b, double %c)
         ret double %tmp
 
-    def __round__(self, ndigits=None):
+    def __round__(self, ndigits=None, /):
         @pure
         @llvm
         def inf() -> float:
@@ -397,7 +397,7 @@ class float:
         %16 = phi double [ %2, %0 ], [ %10, %7 ]
         ret double %16
 
-    def __hash__(self) -> int:
+    def __hash__(self, /) -> int:
         @nocapture
         @C
         def frexp(a: float, b: Ptr[Int[32]]) -> float: pass

@@ -121,25 +121,29 @@ def _try_native_sort(start: Ptr[T], n: int, nan_last: Literal[bool] = False,
 
 def sorted(
     v: Generator[T],
+    /,
+    *,
     key=None,
     reverse: bool = False,
     algorithm: Literal[str] = "auto",
     T: type,
 ) -> List[T]:
     newlist = [a for a in v]
-    newlist.sort(key, reverse, algorithm)
+    newlist.sort(key=key, reverse=reverse, algorithm=algorithm)
     return newlist
 
 @overload
 def sorted(
     v: List[T],
+    /,
+    *,
     key=None,
     reverse: bool = False,
     algorithm: Literal[str] = "auto",
     T: type,
 ) -> List[T]:
     newlist = v.copy()
-    newlist.sort(key, reverse, algorithm)
+    newlist.sort(key=key, reverse=reverse, algorithm=algorithm)
     return newlist
 
 def _is_pdq_compatible(x):
@@ -185,6 +189,8 @@ def _sort_list(
 class List:
     def sort(
         self,
+        /,
+        *,
         key=None,
         reverse: bool = False,
         algorithm: Literal[str] = "auto",

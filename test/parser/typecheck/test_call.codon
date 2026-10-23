@@ -1,3 +1,149 @@
+#%% stdlib_signature_keywords
+import math
+import json
+import random
+assert math.isclose(a=1.0, b=1.0, rel_tol=1e-8, abs_tol=0.0)
+assert math.prod([2, 3], start=4) == 24
+assert sum([1, 2], start=3) == 6
+assert sorted([3, 1, 2], reverse=True) == [3, 2, 1]
+values = [3, 1, 2]
+values.sort(key=lambda value: -value, reverse=True)
+assert values == [1, 2, 3]
+assert int("10", base=2) == 2
+assert "aaa".replace("a", "b", count=1) == "baa"
+assert "a,b,c".split(sep=",", maxsplit=1) == ["a", "b,c"]
+assert b"ab".hex(sep=":", bytes_per_sep=1) == "61:62"
+assert json.loads('"a\nb"', strict=False).as_str() == "a\nb"
+assert json.dumps({"value": 1}, separators=(",", ":")) == '{"value":1}'
+assert json.JSONDecoder(strict=False).decode('"a\nb"').as_str() == "a\nb"
+assert random.choices([7], cum_weights=[1], k=3) == [7, 7, 7]
+assert {"value": 1}.pop("missing", 2) == 2
+print("stdlib signatures ok")  #: stdlib signatures ok
+
+#%% stdlib_signature_len_keyword
+len(x=[1])
+#! 'x' is an invalid keyword argument for len
+
+#%% stdlib_signature_math_keyword
+import math
+math.sqrt(x=4.0)
+#! 'x' is an invalid keyword argument for sqrt
+
+#%% stdlib_signature_math_tolerance
+import math
+math.isclose(1.0, 1.0, 1e-8)
+#! isclose() takes 2 arguments (3 given)
+
+#%% stdlib_signature_prod_start
+import math
+math.prod([2, 3], 4)
+#! prod() takes 1 arguments (2 given)
+
+#%% stdlib_signature_operator_default
+import operator
+operator.length_hint([1], default=0)
+#! 'default' is an invalid keyword argument for length_hint
+
+#%% stdlib_signature_sorted_options
+sorted([2, 1], None)
+#! no function 'sorted'
+
+#%% stdlib_signature_dict_pop
+{"value": 1}.pop("missing", missing=2)
+#! no function 'OrderedDict.pop'
+
+#%% stdlib_signature_range_keyword
+range(stop=3)
+#! no function 'range.__new__'
+
+#%% stdlib_signature_json_loads
+import json
+json.loads("null", False)
+#! loads() takes 1 arguments (2 given)
+
+#%% stdlib_signature_json_dumps
+import json
+json.dumps([1], False)
+#! dumps() takes 1 arguments (2 given)
+
+#%% stdlib_signature_random_choices
+import random
+random.choices([1], None, None, 2)
+#! choices() takes 2 arguments (4 given)
+
+#%% stdlib_signature_module_keywords
+import datetime
+import itertools
+import os
+import pathlib
+import re
+import statistics
+assert list(itertools.accumulate([1, 2], initial=3)) == [3, 4, 6]
+assert list(itertools.repeat(object=7, times=2)) == [7, 7]
+assert len(statistics.quantiles([1, 2, 3, 4], n=4, method="inclusive")) == 3
+assert statistics.correlation([1, 2, 3], [2, 4, 6], method="linear") == 1.0
+assert datetime.date.fromisocalendar(year=2020, week=1, day=1) == datetime.date(2019, 12, 30)
+assert datetime.date(2020, 1, 1).replace(year=2021) == datetime.date(2021, 1, 1)
+assert datetime.time(hour=1).isoformat(timespec="minutes") == "01:00"
+assert re.compile("a").search(string="ba", pos=1).start() == 1
+assert pathlib.Path("a/b").relative_to("a", walk_up=True) == pathlib.Path("b")
+assert pathlib.Path("sample.py").match("*.PY", case_sensitive=False)
+assert os.path.realpath(".", strict=True) == os.getcwd()
+assert "{value}".format_map({"value": 7}) == "7"
+print("module signatures ok")  #: module signatures ok
+
+#%% stdlib_signature_statistics_options
+import statistics
+statistics.quantiles([1, 2, 3], 2)
+#! quantiles() takes 1 arguments (2 given)
+
+#%% stdlib_signature_itertools_initial
+import itertools
+itertools.accumulate([1, 2], lambda first, second: first + second, 3)
+#! no function 'accumulate'
+
+#%% stdlib_signature_os_stat
+import os
+os.stat(".", False)
+#! no function 'stat'
+
+#%% stdlib_signature_realpath
+import os
+os.path.realpath(".", True)
+#! realpath() takes 1 arguments (2 given)
+
+#%% stdlib_signature_asyncio_options
+import asyncio
+async def value():
+    return 1
+asyncio.run(value(), False)
+#! run() takes 1 arguments (2 given)
+
+#%% stdlib_signature_integer_constructor
+int(what=1)
+#! no function 'Int.__new__'
+
+#%% stdlib_signature_string_format_map
+"{value}".format_map(mapping={"value": 7})
+#! 'mapping' is an invalid keyword argument for format_map
+
+#%% stdlib_signature_exception_message
+ValueError(message="invalid")
+#! no function 'BaseException.__init__'
+#! during the realization of _dispatch
+#! during the realization of __init__
+#! during the realization of _dispatch
+#! during the realization of __init__
+
+#%% stdlib_signature_file_write
+with open("build/signature-output.txt", "w") as output:
+    output.write(s="value")
+#! 's' is an invalid keyword argument for write
+
+#%% stdlib_signature_operator_callable
+import operator
+operator.itemgetter(0)(o=[1, 2])
+#! 'o' is an invalid keyword argument
 
 #%% parameter_separators,barebones
 def mixed(first: int, /, second: int = 2, *, third: int, fourth: int = 4):
@@ -595,7 +741,7 @@ print hasattr(int, "__getitem__")
 print hasattr([1, 2], "__getitem__") #: True
 print hasattr([1, 2], "__getitem__", int) #: True
 print hasattr([1, 2], "__getitem__", str) #: False
-print hasattr([1, 2], "__getitem__", idx=int) #: True
+print hasattr([1, 2], "__getitem__", idx=int) #: False
 print hasattr([1, 2], "__getitem__", idx=str) #: False
 
 def kw(**kwargs):

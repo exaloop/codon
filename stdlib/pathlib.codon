@@ -207,7 +207,7 @@ class Path:
         else:
             return False
 
-    def __ne__(self, other) -> bool:
+    def __ne__(self, other, /) -> bool:
         return not self == other
 
     def __lt__(self, other: Path) -> bool:
@@ -327,7 +327,7 @@ class Path:
                 return False
         return True
 
-    def relative_to(self, other, walk_up: bool = False):
+    def relative_to(self, other, *, walk_up: bool = False):
         base = Path(other)
         if self.is_relative_to(base):
             return Path(os.sep.join(list(self.parts)[len(base.parts):]))
@@ -358,7 +358,7 @@ class Path:
         return Path(os.getcwd(), self)
 
     def resolve(self, strict: bool = False):
-        return Path(_path.realpath(self._path, strict))
+        return Path(_path.realpath(self._path, strict=strict))
 
     def expanduser(self):
         value = _path.expanduser(self._path)
@@ -371,20 +371,20 @@ class Path:
             raise ValueError("relative path cannot be expressed as a file URI")
         return _as_uri(self.as_posix(), self.drive)
 
-    def stat(self, follow_symlinks: bool = True):
-        return os.stat(self._path, follow_symlinks)
+    def stat(self, *, follow_symlinks: bool = True):
+        return os.stat(self._path, follow_symlinks=follow_symlinks)
 
     def lstat(self):
         return os.lstat(self._path)
 
-    def exists(self, follow_symlinks: bool = True) -> bool:
+    def exists(self, *, follow_symlinks: bool = True) -> bool:
         fields, error = os._stat_status(self._path, follow_symlinks)
         return not error
 
-    def is_file(self, follow_symlinks: bool = True) -> bool:
+    def is_file(self, *, follow_symlinks: bool = True) -> bool:
         return _path._mode(self._path, follow_symlinks) == 0o100000
 
-    def is_dir(self, follow_symlinks: bool = True) -> bool:
+    def is_dir(self, *, follow_symlinks: bool = True) -> bool:
         return _path._mode(self._path, follow_symlinks) == 0o040000
 
     def is_symlink(self) -> bool:
@@ -471,8 +471,8 @@ class Path:
         os.replace(self._path, str(destination))
         return destination
 
-    def chmod(self, mode: int, follow_symlinks: bool = True):
-        os.chmod(self._path, mode, follow_symlinks)
+    def chmod(self, mode: int, *, follow_symlinks: bool = True):
+        os.chmod(self._path, mode, follow_symlinks=follow_symlinks)
 
     def lchmod(self, mode: int):
         self.chmod(mode, follow_symlinks=False)
@@ -504,7 +504,7 @@ class Path:
         descriptor = os.open(self._path, flags, mode)
         os.close(descriptor)
 
-    def match(self, pattern, case_sensitive: Optional[bool] = None) -> bool:
+    def match(self, pattern, *, case_sensitive: Optional[bool] = None) -> bool:
         value = Path(pattern)
         patterns, parts = list(value.parts), list(self.parts)
         if not patterns:
@@ -519,7 +519,7 @@ class Path:
                 return False
         return True
 
-    def full_match(self, pattern, case_sensitive: Optional[bool] = None) -> bool:
+    def full_match(self, pattern, *, case_sensitive: Optional[bool] = None) -> bool:
         value = Path(pattern)
         patterns = (str(value) if value.parts else "").split(os.sep)
         tokens: List[Tuple[int, str]] = []
@@ -538,7 +538,7 @@ class Path:
         sensitive = static.platform() != "win32" if case_sensitive is None else unwrap(case_sensitive)
         return _WildcardPattern(tokens, sensitive).fullmatch(str(self) if self.parts else "")
 
-    def glob(self, pattern, case_sensitive: Optional[bool] = None, recurse_symlinks: bool = False):
+    def glob(self, pattern, *, case_sensitive: Optional[bool] = None, recurse_symlinks: bool = False):
         text = _path_string(pattern)
         parsed = Path(text)
         if parsed.anchor:
@@ -593,11 +593,12 @@ class Path:
                 elif matchers[index].fullmatch(name):
                     pending.append((child, index + 1))
 
-    def rglob(self, pattern, case_sensitive: Optional[bool] = None, recurse_symlinks: bool = False):
+    def rglob(self, pattern, *, case_sensitive: Optional[bool] = None, recurse_symlinks: bool = False):
         value = _path_string(pattern)
         if Path(value).anchor:
             raise NotImplementedError("glob patterns must be relative")
-        for path in self.glob("**" + os.sep + value, case_sensitive, recurse_symlinks):
+        for path in self.glob("**" + os.sep + value, case_sensitive=case_sensitive,
+                      recurse_symlinks=recurse_symlinks):
             yield path
 
     def walk(self, top_down: bool = True, on_error=None, follow_symlinks: bool = False):

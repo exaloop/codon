@@ -73,11 +73,11 @@ def _siftup_max(heap: List[T], pos: int, T: type):
     heap[pos] = newitem
     _siftdown_max(heap, startpos, pos)
 
-def heappush(heap: List[T], item: T, T: type):
+def heappush(heap: List[T], item: T, /, T: type):
     heap.append(item)
     _siftdown(heap, 0, len(heap) - 1)
 
-def heappop(heap: List[T], T: type) -> T:
+def heappop(heap: List[T], /, T: type) -> T:
     lastelt = heap.pop()  # raises appropriate IndexError if heap is empty
     if heap:
         returnitem = heap[0]
@@ -86,19 +86,19 @@ def heappop(heap: List[T], T: type) -> T:
         return returnitem
     return lastelt
 
-def heapreplace(heap: List[T], item: T, T: type) -> T:
+def heapreplace(heap: List[T], item: T, /, T: type) -> T:
     returnitem = heap[0]  # raises appropriate IndexError if heap is empty
     heap[0] = item
     _siftup(heap, 0)
     return returnitem
 
-def heappushpop(heap: List[T], item: T, T: type) -> T:
+def heappushpop(heap: List[T], item: T, /, T: type) -> T:
     if heap and heap[0] < item:
         item, heap[0] = heap[0], item
         _siftup(heap, 0)
     return item
 
-def heapify(x: List[T], T: type):
+def heapify(x: List[T], /, T: type):
     n = len(x)
     # Transform bottom-up.  The largest index there's any point to looking at
     # is the largest with a child index in-range, so must have 2*i + 1 < n,

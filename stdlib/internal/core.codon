@@ -153,33 +153,33 @@ class Tuple:
     @llvm
     def __new__() -> Tuple:
         ret {} {}
-    def __add__(self: Self, obj):
+    def __add__(self: Self, obj, /):
         return __magic__.add(self, obj)
-    def __mul__(self: Self, n: Literal[int]):
+    def __mul__(self: Self, n: Literal[int], /):
         return __magic__.mul(self, n)
-    def __contains__(self: Self, obj) -> bool:
+    def __contains__(self: Self, obj, /) -> bool:
         return __magic__.contains(self, obj)
-    def __getitem__(self: Self, idx: int):
+    def __getitem__(self: Self, idx: int, /):
         return __magic__.getitem(self, idx)
-    def __iter__(self: Self):
+    def __iter__(self: Self, /):
         yield from __magic__.iter(self)
-    def __hash__(self: Self) -> int:
+    def __hash__(self: Self, /) -> int:
         return __magic__.hash(self)
-    def __repr__(self: Self) -> str:
+    def __repr__(self: Self, /) -> str:
         return __magic__.repr(self)
-    def __len__(self: Self) -> int:
+    def __len__(self: Self, /) -> int:
         return __magic__.len(self)
-    def __eq__(self: Self, obj: Self) -> bool:
+    def __eq__(self: Self, obj: Self, /) -> bool:
         return __magic__.eq(self, obj)
-    def __ne__(self: Self, obj: Self) -> bool:
+    def __ne__(self: Self, obj: Self, /) -> bool:
         return __magic__.ne(self, obj)
-    def __gt__(self: Self, obj: Self) -> bool:
+    def __gt__(self: Self, obj: Self, /) -> bool:
         return __magic__.gt(self, obj)
-    def __ge__(self: Self, obj: Self) -> bool:
+    def __ge__(self: Self, obj: Self, /) -> bool:
         return __magic__.ge(self, obj)
-    def __lt__(self: Self, obj: Self) -> bool:
+    def __lt__(self: Self, obj: Self, /) -> bool:
         return __magic__.lt(self, obj)
-    def __le__(self: Self, obj: Self) -> bool:
+    def __le__(self: Self, obj: Self, /) -> bool:
         return __magic__.le(self, obj)
     def __pickle__(self: Self, dest: Ptr[u8]):
         return __magic__.pickle(self, dest)

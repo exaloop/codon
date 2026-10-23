@@ -873,12 +873,12 @@ def test_dict_pop_with_missing(mapping, missing, expected: Optional[int]):
     assert sorted(mapping.items()) == [("first", 11), ("last", 17)]
     if isinstance(mapping, OrderedDict):
         assert list(mapping.items()) == [("first", 11), ("last", 17)]
-    value = mapping.pop("target", missing=missing)
+    value = mapping.pop("target", missing)
     assert value == expected and len(mapping) == 2
     mapping["target"] = 23
     if isinstance(mapping, OrderedDict):
         assert list(mapping.items()) == [("first", 11), ("last", 17), ("target", 23)]
-    value = mapping.pop("target", missing=missing)
+    value = mapping.pop("target", missing)
     assert value == 23 and "target" not in mapping
     value = mapping.pop("first", missing)
     assert value == 11
@@ -1944,7 +1944,7 @@ def test_composed_mappings():
     assert list(mapping.keys()) == ['seed', 'plain', 'incremented', 'explicit', 'created']
     assert list(mapping.values()) == [3, 4, 5, 12, 12]
     assert list(reversed(mapping)) == ['created', 'explicit', 'incremented', 'plain', 'seed']
-    assert type(mapping).fromkeys(ks='xy', v=2) == {'x': 2, 'y': 2}
+    assert type(mapping).fromkeys('xy', 2) == {'x': 2, 'y': 2}
     for cloned in (mapping.copy(), copy(mapping), deepcopy(mapping)):
         assert isinstance(cloned, type(mapping))
         assert cloned == mapping and cloned._dict is not mapping._dict

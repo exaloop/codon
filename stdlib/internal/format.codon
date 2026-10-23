@@ -30,7 +30,7 @@ def _float_to_string(value: float) -> str:
 
 @extend
 class Int:
-    def __format__(self, format_spec: str) -> str:
+    def __format__(self, format_spec: str, /) -> str:
         return _format_scalar(self, format_spec)
 
 @extend
@@ -40,15 +40,15 @@ class UInt:
 
 @extend
 class float:
-    def __str__(self) -> str:
+    def __str__(self, /) -> str:
         return _float_to_string(self)
 
-    def __format__(self, format_spec: str) -> str:
+    def __format__(self, format_spec: str, /) -> str:
         return _format_scalar(self, format_spec)
 
 @extend
 class str:
-    def __format__(self, format_spec: str) -> str:
+    def __format__(self, format_spec: str, /) -> str:
         return _format_scalar(self, format_spec)
 
 @extend
@@ -83,7 +83,7 @@ def _divmod_10(dividend, N: Literal[int]):
 
 @extend
 class Int:
-    def __str__(self) -> str:
+    def __str__(self, /) -> str:
         if N < 64:
             n = int(self)
             return str(int(self))
@@ -1551,7 +1551,7 @@ def bytes_percent_format_mapping(format: bytes, values) -> bytes:
 
 @extend
 class bytes:
-    def __mod__(self, values) -> bytes:
+    def __mod__(self, values, /) -> bytes:
         if isinstance(values, Dict):
             return bytes_percent_format_mapping(self, values)
 
@@ -1563,7 +1563,7 @@ class bytes:
 
 @extend
 class str:
-    def __mod__(self, values) -> str:
+    def __mod__(self, values, /) -> str:
         if isinstance(values, Dict):
             return percent_format_mapping(self, values)
 
@@ -1572,10 +1572,10 @@ class str:
 
         return percent_format(self, values)
 
-    def format(self, *values) -> str:
+    def format(self, /, *values) -> str:
         return brace_format(self, values)
 
-    def format_map(self, mapping) -> str:
+    def format_map(self, mapping, /) -> str:
         return brace_format_map(self, mapping)
 
 

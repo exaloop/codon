@@ -613,7 +613,7 @@ class JSONDecoder:
     strict: bool
     max_depth: int
 
-    def __init__(self, strict: bool = True, max_depth: int = 512):
+    def __init__(self, *, strict: bool = True, max_depth: int = 512):
         if max_depth < 0: raise ValueError("max_depth must be nonnegative")
         self.strict, self.max_depth = strict, max_depth
 
@@ -633,14 +633,14 @@ class JSONDecoder:
             parser.error("Extra data")
         return value
 
-def loads(source, strict: bool = True, max_depth: int = 512) -> JSON:
+def loads(source, *, strict: bool = True, max_depth: int = 512) -> JSON:
     text = _text(source)
     if text and text._load_codepoint(0) == 0xFEFF:
         raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)", text, 0)
-    return JSONDecoder(strict, max_depth).decode(text)
+    return JSONDecoder(strict=strict, max_depth=max_depth).decode(text)
 
-def load(fp, strict: bool = True, max_depth: int = 512) -> JSON:
-    return loads(fp.read(), strict, max_depth)
+def load(fp, *, strict: bool = True, max_depth: int = 512) -> JSON:
+    return loads(fp.read(), strict=strict, max_depth=max_depth)
 
 def _indent_option(value) -> Tuple[bool, str]:
     if isinstance(value, NoneType):
@@ -803,7 +803,7 @@ class JSONEncoder:
     separators: Tuple[str, str]
     max_depth: int
 
-    def __init__(self, ensure_ascii: bool = True, check_circular: bool = True,
+    def __init__(self, *, ensure_ascii: bool = True, check_circular: bool = True,
                  allow_nan: bool = True, indent=None,
                  separators: Optional[Tuple[str, str]] = None,
                  sort_keys: bool = False, max_depth: int = 512):
@@ -821,16 +821,18 @@ class JSONEncoder:
         encoder.value(JSON(value), 0)
         return encoder.output.finish()
 
-def dumps(value, ensure_ascii: bool = True, check_circular: bool = True,
+def dumps(value, *, ensure_ascii: bool = True, check_circular: bool = True,
           allow_nan: bool = True, indent=None,
           separators: Optional[Tuple[str, str]] = None,
           sort_keys: bool = False, max_depth: int = 512) -> str:
-    return JSONEncoder(ensure_ascii, check_circular, allow_nan, indent,
-                       separators, sort_keys, max_depth).encode(value)
+    return JSONEncoder(ensure_ascii=ensure_ascii, check_circular=check_circular,
+                       allow_nan=allow_nan, indent=indent, separators=separators,
+                       sort_keys=sort_keys, max_depth=max_depth).encode(value)
 
-def dump(value, fp, ensure_ascii: bool = True, check_circular: bool = True,
+def dump(value, fp, *, ensure_ascii: bool = True, check_circular: bool = True,
          allow_nan: bool = True, indent=None,
          separators: Optional[Tuple[str, str]] = None,
          sort_keys: bool = False, max_depth: int = 512):
-    fp.write(dumps(value, ensure_ascii, check_circular, allow_nan, indent,
-                   separators, sort_keys, max_depth))
+    fp.write(dumps(value, ensure_ascii=ensure_ascii, check_circular=check_circular,
+                  allow_nan=allow_nan, indent=indent, separators=separators,
+                  sort_keys=sort_keys, max_depth=max_depth))

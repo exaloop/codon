@@ -13,7 +13,7 @@ class Enum:
     _name_: str
 
     @staticmethod
-    def __new__(value, Self: type = Enum):
+    def __new__(value, /, Self: type = Enum):
         # enum_test: inherited methods bind Self to the concrete enum type.
         if Self is Enum:
             compile_error("cannot instantiate Enum directly")
@@ -47,12 +47,12 @@ class Enum:
     def value(self):
         return self._value_
 
-    def __eq__(self, other):
+    def __eq__(self, other, /):
         if isinstance(other, Enum):
             return self is other
         return False
 
-    def __ne__(self, other):
+    def __ne__(self, other, /):
         return not self.__eq__(other)
 
     def __hash__(self):
