@@ -6,17 +6,82 @@ from algorithms.heapsort import heap_sort_inplace
 from algorithms.qsort import qsort_inplace
 from algorithms.timsort import tim_sort_inplace
 
-from C import cnp_sort_int16(cobj, int)
-from C import cnp_sort_uint16(cobj, int)
-from C import cnp_sort_int32(cobj, int)
-from C import cnp_sort_uint32(cobj, int)
-from C import cnp_sort_int64(cobj, int)
-from C import cnp_sort_uint64(cobj, int)
-from C import cnp_sort_uint128(cobj, int)
-from C import cnp_sort_float32(cobj, int)
-from C import cnp_sort_float64(cobj, int)
-from C import cnp_sort_float32_nan_last(cobj, int)
-from C import cnp_sort_float64_nan_last(cobj, int)
+@nocapture
+@llvm_nocapture
+@llvm_nofree
+@C
+def cnp_sort_int16(buffer: cobj, size: int) -> None:
+    pass
+
+@nocapture
+@llvm_nocapture
+@llvm_nofree
+@C
+def cnp_sort_uint16(buffer: cobj, size: int) -> None:
+    pass
+
+@nocapture
+@llvm_nocapture
+@llvm_nofree
+@C
+def cnp_sort_int32(buffer: cobj, size: int) -> None:
+    pass
+
+@nocapture
+@llvm_nocapture
+@llvm_nofree
+@C
+def cnp_sort_uint32(buffer: cobj, size: int) -> None:
+    pass
+
+@nocapture
+@llvm_nocapture
+@llvm_nofree
+@C
+def cnp_sort_int64(buffer: cobj, size: int) -> None:
+    pass
+
+@nocapture
+@llvm_nocapture
+@llvm_nofree
+@C
+def cnp_sort_uint64(buffer: cobj, size: int) -> None:
+    pass
+
+@nocapture
+@llvm_nocapture
+@llvm_nofree
+@C
+def cnp_sort_uint128(buffer: cobj, size: int) -> None:
+    pass
+
+@nocapture
+@llvm_nocapture
+@llvm_nofree
+@C
+def cnp_sort_float32(buffer: cobj, size: int) -> None:
+    pass
+
+@nocapture
+@llvm_nocapture
+@llvm_nofree
+@C
+def cnp_sort_float64(buffer: cobj, size: int) -> None:
+    pass
+
+@nocapture
+@llvm_nocapture
+@llvm_nofree
+@C
+def cnp_sort_float32_nan_last(buffer: cobj, size: int) -> None:
+    pass
+
+@nocapture
+@llvm_nocapture
+@llvm_nofree
+@C
+def cnp_sort_float64_nan_last(buffer: cobj, size: int) -> None:
+    pass
 
 def _try_native_sort(start: Ptr[T], n: int, nan_last: Literal[bool] = False,
                      T: type) -> bool:

@@ -280,7 +280,7 @@ struct AllocInfo {
 
   bool isAllocSiteDemotable(llvm::Instruction *ai, uint64_t &size,
                             llvm::SmallVectorImpl<llvm::WeakTrackingVH> &users,
-                            uint64_t maxSize = 1024) {
+                            llvm::Align &stackAlignment, uint64_t maxSize = 1024) {
     using namespace llvm;
 
     // Should never be an invoke, so just check right away.
@@ -290,11 +290,49 @@ struct AllocInfo {
     if (!(getFixedArg(*dyn_cast<CallBase>(&*ai), size) && 0 < size && size <= maxSize))
       return false;
 
-    SmallVector<Instruction *, 4> worklist;
-    worklist.push_back(ai);
+    if (ai->getType()->getPointerAddressSpace() != 0)
+      return false;
+    const auto &layout = ai->getModule()->getDataLayout();
+    auto returnAlignment = [](CallBase *call) {
+      auto alignment = call->getRetAlign().valueOrOne();
+      auto *callee = call->getCalledFunction();
+      if (callee)
+        alignment =
+            std::max(alignment, callee->getAttributes().getRetAlignment().valueOrOne());
+      return alignment;
+    };
+    auto allocator = getCalledFunction(ai)->getName();
+    bool atomic = allocator == "seq_alloc_atomic" ||
+                  allocator == "seq_alloc_atomic_uncollectable";
+    auto explicitAlignment = returnAlignment(cast<CallBase>(ai));
+    auto heapAlignment = Align(2 * layout.getPointerSize(0));
+    stackAlignment = std::max(atomic ? Align(1) : layout.getPointerABIAlignment(0),
+                              explicitAlignment);
+    auto requireAlignment = [&](MaybeAlign required, Align available) {
+      if (!required)
+        return true;
+      if (*required > available)
+        return false;
+      stackAlignment = std::max(stackAlignment, *required);
+      return true;
+    };
+    APInt zeroOffset(layout.getIndexSizeInBits(0), 0);
+    struct PointerInfo {
+      Instruction *instruction;
+      APInt offset;
+      Align allocationAlignment;
+      bool constantOffset;
+    };
+    SmallVector<PointerInfo, 4> worklist;
+    SmallPtrSet<Instruction *, 16> visited;
+    worklist.push_back(
+        {ai, zeroOffset, std::max(heapAlignment, explicitAlignment), true});
 
     do {
-      Instruction *pi = worklist.pop_back_val();
+      auto pointer = worklist.pop_back_val();
+      auto *pi = pointer.instruction;
+      if (!visited.insert(pi).second)
+        continue;
       for (User *u : pi->users()) {
         Instruction *instr = cast<Instruction>(u);
         switch (instr->getOpcode()) {
@@ -303,10 +341,25 @@ struct AllocInfo {
           return false;
 
         case Instruction::AddrSpaceCast:
+          return false;
         case Instruction::BitCast:
-        case Instruction::GetElementPtr:
-          worklist.push_back(instr);
+          worklist.push_back({instr, pointer.offset, pointer.allocationAlignment,
+                              pointer.constantOffset});
           continue;
+        case Instruction::GetElementPtr: {
+          auto derived = pointer;
+          derived.instruction = instr;
+          auto *gep = cast<GEPOperator>(instr);
+          APInt displacement(pointer.offset.getBitWidth(), 0);
+          if (pointer.constantOffset &&
+              gep->accumulateConstantOffset(layout, displacement)) {
+            derived.offset += displacement;
+          } else {
+            derived.constantOffset = false;
+          }
+          worklist.push_back(derived);
+          continue;
+        }
 
         case Instruction::ICmp: {
           ICmpInst *cmp = cast<ICmpInst>(instr);
@@ -321,7 +374,21 @@ struct AllocInfo {
           continue;
         }
 
-        case Instruction::Call:
+        case Instruction::Call: {
+          auto *call = cast<CallBase>(instr);
+          if (call->hasOperandBundles())
+            return false;
+          auto *callee = call->getCalledFunction();
+          for (unsigned index = 0; index < call->arg_size(); ++index) {
+            if (call->getArgOperand(index) != pi)
+              continue;
+            if (!requireAlignment(call->getParamAlign(index),
+                                  pointer.allocationAlignment) ||
+                (callee &&
+                 !requireAlignment(callee->getAttributes().getParamAlignment(index),
+                                   pointer.allocationAlignment)))
+              return false;
+          }
           // Ignore no-op and store intrinsics.
           if (IntrinsicInst *intrinsic = dyn_cast<IntrinsicInst>(instr)) {
             switch (intrinsic->getIntrinsicID()) {
@@ -345,8 +412,11 @@ struct AllocInfo {
               continue;
             case Intrinsic::launder_invariant_group:
             case Intrinsic::strip_invariant_group:
+              if (!requireAlignment(returnAlignment(call), pointer.allocationAlignment))
+                return false;
               users.emplace_back(instr);
-              worklist.push_back(instr);
+              worklist.push_back({instr, pointer.offset, pointer.allocationAlignment,
+                                  pointer.constantOffset});
               continue;
             }
           }
@@ -357,6 +427,9 @@ struct AllocInfo {
           }
 
           if (isRealloc(instr)) {
+            if (call->getArgOperand(0) != pi || !pointer.constantOffset ||
+                !pointer.offset.isZero())
+              return false;
             // If the realloc also has constant small size,
             // then we can just update the assumed size to be
             // max of original alloc's and this realloc's.
@@ -369,22 +442,40 @@ struct AllocInfo {
             }
 
             users.emplace_back(instr);
-            worklist.push_back(instr);
+            auto reallocAlignment = returnAlignment(call);
+            stackAlignment = std::max(stackAlignment, reallocAlignment);
+            worklist.push_back(
+                {instr, zeroOffset, std::max(heapAlignment, reallocAlignment), true});
             continue;
           }
 
-          return false;
+          if (!callee || call->isMustTailCall() || call->getType()->isPointerTy())
+            return false;
+          for (unsigned index = 0; index < call->arg_size(); ++index) {
+            if (call->getArgOperand(index) != pi)
+              continue;
+            bool noFree = call->hasFnAttr(llvm::Attribute::NoFree) ||
+                          call->paramHasAttr(index, llvm::Attribute::NoFree);
+            if (!call->paramHasAttr(index, llvm::Attribute::NoCapture) || !noFree)
+              return false;
+          }
+          stackAlignment = std::max(stackAlignment, pointer.allocationAlignment);
+          users.emplace_back(instr);
+          continue;
+        }
 
         case Instruction::Store: {
           StoreInst *si = cast<StoreInst>(instr);
-          if (si->isVolatile() || si->getPointerOperand() != pi)
+          if (si->isVolatile() || si->getPointerOperand() != pi ||
+              !requireAlignment(si->getAlign(), pointer.allocationAlignment))
             return false;
           continue;
         }
 
         case Instruction::Load: {
           LoadInst *li = cast<LoadInst>(instr);
-          if (li->isVolatile())
+          if (li->isVolatile() ||
+              !requireAlignment(li->getAlign(), pointer.allocationAlignment))
             return false;
           continue;
         }
@@ -761,12 +852,12 @@ struct AllocationRemover : public llvm::PassInfoMixin<AllocationRemover> {
       users.clear();
     }
 
-    if (info.isAllocSiteDemotable(&mi, size, users)) {
-      auto pointerAlignment = mi.getModule()->getDataLayout().getPointerABIAlignment(0);
+    Align stackAlignment;
+    if (info.isAllocSiteDemotable(&mi, size, users, stackAlignment)) {
       auto *replacement = new AllocaInst(
           llvm::Type::getInt8Ty(mi.getContext()), 0,
           ConstantInt::get(llvm::Type::getInt64Ty(mi.getContext()), size),
-          pointerAlignment);
+          stackAlignment);
       alloca.push_back(replacement);
       replace.emplace_back(&mi, replacement);
       erase.insert(&mi);
