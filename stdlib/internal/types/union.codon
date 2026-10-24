@@ -36,6 +36,8 @@ class Union:
         for tag, T in static.vars_types(U, with_index=True):
             if isinstance(value, T):
                 return Union._make(tag, value, U)
+            if T is Optional and value is None:
+                return Union._make(tag, T(), U)
             if T is Optional and isinstance(value, T.T):
                 return Union._make(tag, T(value), U)
             if isinstance(value, Union[T]):
@@ -49,7 +51,29 @@ class Union:
             if isinstance(TU, T):
                 if Union._get_tag(union) == tag:
                     return Union._get_data(union, TU)
+            elif TU is Optional:
+                if Union._get_tag(union) == tag:
+                    member = Union._get_data(union, TU)
+                    if T is NoneType:
+                        if member is None:
+                            return NoneType()
+                    elif isinstance(TU.T, T):
+                        if member is not None:
+                            return member.__val__()
         raise TypeError(f"invalid union getter for type '{T.__class__.__name__}'")
+
+    def _isinstance(union, T: type) -> bool:
+        for tag, TU in static.vars_types(union, with_index=True):
+            if Union._get_tag(union) == tag:
+                member = Union._get_data(union, TU)
+                if TU is Optional and T is not Optional:
+                    if T is NoneType:
+                        return member is None
+                    if member is None:
+                        return False
+                    return isinstance(member.__val__(), T)
+                return isinstance(member, T)
+        return False
 
     def _member_helper(union, member: Literal[str]):
         for tag, T in static.vars_types(union, with_index=True):
@@ -71,6 +95,32 @@ class Union:
 
     def __call__(self, *args, **kwargs):
         return Union._dispatch(self, "", args, kwargs)
+
+    @__generated__
+    def __iter__(union):
+        """Acquire the active iterator before lazily adapting its elements.
+
+        The concrete __iter__ runs at iter(union), not at the first next(), preserving
+        acquisition side effects and exceptions. A non-iterable alternative raises
+        only when its tag is active; it does not invalidate other alternatives.
+        Yield the shared element type, or a union of element types when they differ,
+        so heterogeneous iterable alternatives remain usable in ordinary loops.
+        """
+        raise TypeError("union alternative is not iterable")
+
+    def _iter_union(iterator, T: type):
+        """Lazily box values from an iterator already acquired by union __iter__."""
+        for element in iterator:
+            yield Union._new(element, T)
+
+    @__generated__
+    def _binary(left, right, operation: Literal[str]):
+        """Apply a binary operator through compiler-generated active-type dispatch.
+
+        Preserve native results, including elementwise arrays.
+        Unsupported active pairs reach this fallback and raise TypeError.
+        """
+        raise TypeError("invalid union operation")
 
     def _str(union):
         for tag, T in static.vars_types(union, with_index=True):

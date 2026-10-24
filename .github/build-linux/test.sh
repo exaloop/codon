@@ -30,10 +30,9 @@ if [ "${ARCH}" = "darwin-x86_64" ]; then
   # (macOS 14 Intel runners are not free).
   # arithmetic.codon fails in debug mode on x86 due to float16 (TODO: why?)
   export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
-  time build-${ARCH}/codon_test --gtest_filter="-*numpy*:*core_arithmetic_codon_debug*"
-  # :*python*:*core_arithmetic*:*stdlib_random_test*"
+  build-${ARCH}/codon_test --gtest_filter='-*numpy*:*core_arithmetic_codon_debug*'
 else
-  time build-${ARCH}/codon_test
+  build-${ARCH}/codon_test
 fi
 
 echo "=> OS differential tests..."

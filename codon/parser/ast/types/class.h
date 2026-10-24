@@ -69,7 +69,7 @@ public:
   bool isInstantiated() const override;
   std::string debugString(char mode) const override;
   std::string realizedName() const override;
-  ClassType *getClass() override { return this; }
+  ClassType *getClass() override;
   ClassType *getPartial() override { return name == "Partial" ? getClass() : nullptr; }
   bool isRecord() const { return isTuple; }
 
@@ -83,6 +83,9 @@ public:
   std::string getPartialMask() const;
   bool isPartialVirtual() const;
   bool isPartialEmpty() const;
+
+private:
+  ClassType *canonicalOptional() const;
 };
 
 } // namespace codon::ast::types

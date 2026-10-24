@@ -275,6 +275,7 @@ set(CODON_HPPFILES
   codon/cir/transform/lowering/await.h
   codon/cir/transform/lowering/imperative.h
   codon/cir/transform/lowering/pipeline.h
+  codon/cir/transform/lowering/return.h
   codon/cir/transform/lowering/throw.h
   codon/cir/transform/manager.h
   codon/cir/transform/parallel/openmp.h
@@ -389,6 +390,7 @@ set(CODON_CPPFILES
   codon/cir/transform/lowering/await.cpp
   codon/cir/transform/lowering/imperative.cpp
   codon/cir/transform/lowering/pipeline.cpp
+  codon/cir/transform/lowering/return.cpp
   codon/cir/transform/lowering/throw.cpp
   codon/cir/transform/manager.cpp
   codon/cir/transform/parallel/openmp.cpp
@@ -558,6 +560,7 @@ set(CODON_TEST_CPPFILES
     test/cir/instr.cpp
     test/cir/llvm/optimize.cpp
     test/cir/module.cpp
+    test/cir/parse_code.cpp
     test/cir/transform/enumerate.cpp
     test/cir/transform/format.cpp
     test/cir/transform/manager.cpp

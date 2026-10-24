@@ -14,6 +14,7 @@
 #include <cstdlib>
 
 #include <llvm/AsmParser/Parser.h>
+#include <llvm/IR/CFG.h>
 #include <llvm/IR/Verifier.h>
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/FileUtilities.h>
@@ -2162,6 +2163,96 @@ def replace_large(data: Ptr[float], count: int):
   }
 }
 
+TEST(LLVMOptimizationTest, UnpackingDoesNotAllocateTemporaryContainers) {
+  ASSERT_EXIT(
+      {
+        auto compiler = compileAndOptimize(R"(
+@export
+def unpack_pair(values: Tuple[int, int]):
+    left, right = values
+    return left + right
+
+@export
+def unpack_list(values: list[int]):
+    if len(values) != 2:
+        return 0
+    left, right = values
+    return left + right
+
+def pair_values(left: int, right: int):
+    yield left
+    yield right
+
+@export
+def unpack_generator(left: int, right: int):
+    first, second = pair_values(left, right)
+    return first + second
+
+@export
+def unpack_star(values: list[int]):
+    if len(values) < 2:
+        return values
+    first, *middle, last = values
+    return middle
+
+@export
+def unpack_generated_star(first: int, second: int):
+  head, *middle, tail = (value for value in (first, second, first, second))
+  return middle
+
+@export
+def slice_middle(values: list[int]):
+    if len(values) < 2:
+        return values
+    return values[1:-1]
+)");
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        auto allocations = [&](const char *name) {
+          auto *function = module->getFunction(name);
+          EXPECT_NE(nullptr, function);
+          unsigned count = 0;
+          std::unordered_set<llvm::Function *> visited;
+          std::function<void(llvm::Function *)> inspect = [&](llvm::Function *callee) {
+            if (!callee || !visited.insert(callee).second)
+              return;
+            std::unordered_set<llvm::BasicBlock *> returning;
+            std::vector<llvm::BasicBlock *> pending;
+            for (auto &block : *callee)
+              if (llvm::isa<llvm::ReturnInst>(block.getTerminator()))
+                pending.push_back(&block);
+            while (!pending.empty()) {
+              auto *block = pending.back();
+              pending.pop_back();
+              if (returning.insert(block).second)
+                for (auto *predecessor : llvm::predecessors(block))
+                  pending.push_back(predecessor);
+            }
+            for (auto &block : *callee) {
+              if (!returning.count(&block))
+                continue;
+              for (auto &instruction : block)
+                if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction)) {
+                  auto *target = call->getCalledFunction();
+                  if (target && target->getName().starts_with("seq_alloc"))
+                    ++count;
+                  else
+                    inspect(target);
+                }
+            }
+          };
+          inspect(function);
+          return count;
+        };
+        EXPECT_EQ(0u, allocations("unpack_pair"));
+        EXPECT_EQ(0u, allocations("unpack_list"));
+        EXPECT_EQ(0u, allocations("unpack_generator"));
+        EXPECT_EQ(allocations("slice_middle"), allocations("unpack_star"));
+        EXPECT_EQ(allocations("slice_middle"), allocations("unpack_generated_star"));
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
 TEST(LLVMOptimizationTest, PacksAndReleasesReversedDotOperands) {
   ASSERT_EXIT(
       {
@@ -3674,6 +3765,751 @@ define void @launch(ptr %result) {
     }
   }
   EXPECT_EQ(3, queries);
+}
+
+TEST(LLVMOptimizationTest, PreservesRequiredHeapAllocationAlignment) {
+  for (unsigned alignment : {8u, 32u}) {
+    SCOPED_TRACE(alignment);
+    auto optimized = compileAndOptimizeIR(
+        R"(
+declare noalias ptr @seq_alloc_atomic(i64)
+declare i64 @collect()
+declare void @llvm.memcpy.p0.p0.i64(ptr nocapture writeonly, ptr nocapture readonly, i64, i1 immarg)
+
+define void @test(ptr %source, ptr %output) {
+entry:
+  %allocation = call ptr @seq_alloc_atomic(i64 32)
+  call void @llvm.memcpy.p0.p0.i64(ptr align )" +
+        std::to_string(alignment) +
+        R"( %allocation, ptr align 1 %source, i64 32, i1 false)
+  %count = call i64 @collect()
+  call void @llvm.memcpy.p0.p0.i64(ptr align 1 %output, ptr align 1 %allocation, i64 %count, i1 false)
+  ret void
+}
+)");
+    ASSERT_NE(optimized.module, nullptr);
+    EXPECT_EQ(countFixedAllocations(optimized.module.get(), 32), alignment > 8 ? 1 : 0);
+  }
+}
+
+TEST(LLVMOptimizationTest, UsesAllocationAlignmentContracts) {
+  for (unsigned alignment : {1u, 2u, 4u, 8u, 16u, 32u, 64u}) {
+    SCOPED_TRACE(alignment);
+    auto optimized = compileAndOptimizeIR(
+        std::string("declare noalias ") +
+        (alignment > 16 ? "align " + std::to_string(alignment) + " " : "") +
+        R"(ptr @seq_alloc_atomic(i64)
+declare i64 @collect()
+declare void @llvm.memcpy.p0.p0.i64(ptr nocapture writeonly, ptr nocapture readonly, i64, i1 immarg)
+
+define void @test(ptr %source, ptr %output) {
+entry:
+  %allocation = call ptr @seq_alloc_atomic(i64 33)
+  call void @llvm.memcpy.p0.p0.i64(ptr align )" +
+        std::to_string(alignment) +
+        R"( %allocation, ptr align 1 %source, i64 33, i1 false)
+  %count = call i64 @collect()
+  call void @llvm.memcpy.p0.p0.i64(ptr align 1 %output, ptr align 1 %allocation, i64 %count, i1 false)
+  ret void
+}
+)");
+    ASSERT_NE(nullptr, optimized.module);
+    EXPECT_EQ(0, countFixedAllocations(optimized.module.get(), 33));
+    unsigned buffers = 0;
+    for (auto &block : *optimized.module->getFunction("test")) {
+      for (auto &instruction : block) {
+        if (auto *buffer = llvm::dyn_cast<llvm::AllocaInst>(&instruction)) {
+          ++buffers;
+          EXPECT_EQ(alignment, buffer->getAlign().value());
+        }
+      }
+    }
+    EXPECT_EQ(1u, buffers);
+  }
+}
+
+TEST(LLVMOptimizationTest, ChecksAlignmentThroughAllocationUses) {
+  struct Case {
+    const char *name;
+    const char *allocationAttributes;
+    const char *reallocAttributes;
+    const char *use;
+    unsigned heapAllocations;
+    const char *observedPointer = "%allocation";
+    const char *reallocParameterAttributes = "";
+    const char *allocationCallAttributes = "";
+    const char *afterCopy = "";
+  };
+  const Case cases[] = {
+      {"ordinary", "", "", "", 0},
+      {"allocator_return", "align 32", "", "", 0},
+      {"allocator_weak_return", "align 8", "", "", 0},
+      {"memset", "", "",
+       "call void @llvm.memset.p0.i64(ptr align 32 %allocation, i8 %byte, i64 %length, "
+       "i1 false)\n",
+       1},
+      {"memcpy_destination", "", "",
+       "call void @llvm.memcpy.p0.p0.i64(ptr align 32 %allocation, ptr %source, i64 "
+       "%length, i1 false)\n",
+       1},
+      {"memcpy_source", "", "",
+       "call void @llvm.memcpy.p0.p0.i64(ptr %output, ptr align 32 %allocation, i64 "
+       "%length, i1 false)\n",
+       1},
+      {"memmove_destination", "", "",
+       "call void @llvm.memmove.p0.p0.i64(ptr align 32 %allocation, ptr %source, i64 "
+       "%length, i1 false)\n",
+       1},
+      {"memmove_source", "", "",
+       "call void @llvm.memmove.p0.p0.i64(ptr %output, ptr align 32 %allocation, i64 "
+       "%length, i1 false)\n",
+       1},
+      {"aligned_load", "", "",
+       "%loaded = load i64, ptr %allocation, align 32\n"
+       "store i64 %loaded, ptr %output, align 1\n",
+       1},
+      {"aligned_store", "", "", "store i64 %length, ptr %allocation, align 32\n", 1},
+      {"constant_offset", "", "",
+       "%offset = getelementptr i8, ptr %allocation, i64 8\n"
+       "store i64 %length, ptr %offset, align 8\n",
+       0},
+      {"strong_constant_offset", "", "",
+       "%offset = getelementptr i8, ptr %allocation, i64 16\n"
+       "store i64 %length, ptr %offset, align 16\n",
+       0},
+      {"dynamic_offset", "", "",
+       "%offset = getelementptr i8, ptr %allocation, i64 %index\n"
+       "store i8 %byte, ptr %offset, align 1\n",
+       0},
+      {"dynamic_integer_offset", "", "",
+       "%offset = getelementptr i64, ptr %allocation, i64 %index\n"
+       "store i64 %length, ptr %offset, align 8\n",
+       0},
+      {"dynamic_scaled_byte_offset", "", "",
+       "%scaled = shl i64 %index, 3\n"
+       "%offset = getelementptr i8, ptr %allocation, i64 %scaled\n"
+       "store i64 %length, ptr %offset, align 8\n",
+       0},
+      {"dynamic_weak_scaled_byte_offset", "", "",
+       "%scaled = shl i64 %index, 1\n"
+       "%offset = getelementptr i8, ptr %allocation, i64 %scaled\n"
+       "store i64 %length, ptr %offset, align 8\n",
+       0},
+      {"dynamic_masked_byte_offset", "", "",
+       "%masked = and i64 %index, -8\n"
+       "%offset = getelementptr i8, ptr %allocation, i64 %masked\n"
+       "store i64 %length, ptr %offset, align 8\n",
+       0},
+      {"dynamic_strong_alignment", "", "",
+       "%offset = getelementptr i64, ptr %allocation, i64 %index\n"
+       "store i64 %length, ptr %offset, align 16\n",
+       0},
+      {"dynamic_byte_strong_alignment", "", "",
+       "%offset = getelementptr i8, ptr %allocation, i64 %index\n"
+       "store i64 %length, ptr %offset, align 8\n",
+       0},
+      {"dynamic_struct_field", "", "",
+       "%offset = getelementptr {i64, i32}, ptr %allocation, i64 %index, i32 1\n"
+       "store i8 %byte, ptr %offset, align 4\n",
+       0},
+      {"dynamic_misaligned_struct_field", "", "",
+       "%offset = getelementptr {i32, i32}, ptr %allocation, i64 %index, i32 1\n"
+       "store i8 %byte, ptr %offset, align 8\n",
+       0},
+      {"dynamic_memset", "", "",
+       "%offset = getelementptr i64, ptr %allocation, i64 %index\n"
+       "call void @llvm.memset.p0.i64(ptr align 8 %offset, i8 %byte, i64 %length, "
+       "i1 false)\n",
+       0},
+      {"dynamic_realloc", "", "",
+       "%offset = getelementptr i64, ptr %allocation, i64 %index\n"
+       "%grown = call ptr @seq_realloc(ptr %offset, i64 64, i64 32)\n",
+       1, "%grown"},
+      {"ordinary_realloc", "", "",
+       "%grown = call ptr @seq_realloc(ptr %allocation, i64 64, i64 32)\n", 0,
+       "%grown"},
+      {"realloc_drops_initial_alignment", "align 32", "",
+       "%grown = call ptr @seq_realloc(ptr %allocation, i64 64, i64 32)\n"
+       "%offset = getelementptr i8, ptr %grown, i64 16\n"
+       "%loaded = load i8, ptr %offset, align 32\n"
+       "store i8 %loaded, ptr %output, align 1\n",
+       1, "%grown"},
+      {"realloc_stronger_callsite_return", "", "",
+       "%grown = call align 64 ptr @seq_realloc(ptr %allocation, i64 64, i64 32)\n", 0,
+       "%grown"},
+      {"realloc_stronger_callee_return", "", "align 64",
+       "%grown = call align 8 ptr @seq_realloc(ptr %allocation, i64 64, i64 32)\n", 0,
+       "%grown"},
+      {"dynamic_realloc_use", "", "",
+       "%grown = call ptr @seq_realloc(ptr %allocation, i64 64, i64 32)\n"
+       "%offset = getelementptr i64, ptr %grown, i64 %index\n"
+       "store i64 %length, ptr %offset, align 8\n",
+       0, "%grown"},
+      {"chained_offset", "", "",
+       "%first = getelementptr i8, ptr %allocation, i64 1\n"
+       "%offset = getelementptr i8, ptr %first, i64 7\n"
+       "store i64 %length, ptr %offset, align 8\n",
+       0},
+      {"dynamic_chained_offset", "", "",
+       "%first = getelementptr i64, ptr %allocation, i64 %index\n"
+       "%offset = getelementptr i8, ptr %first, i64 4\n"
+       "store i8 %byte, ptr %offset, align 8\n",
+       0},
+      {"assume_alignment", "", "",
+       "call void @llvm.assume(i1 true) [\"align\"(ptr %allocation, i64 32)]\n", 1},
+      {"call_parameter", "", "", "", 1, "%allocation", "", "",
+       "call void @seq_free(ptr align 32 %allocation)\n"},
+      {"realloc_return", "", "align 32",
+       "%grown = call ptr @seq_realloc(ptr %allocation, i64 64, i64 32)\n"
+       "%loaded = load i8, ptr %grown, align 1\n"
+       "store i8 %loaded, ptr %output, align 1\n",
+       0, "%grown"},
+      {"realloc_use", "", "",
+       "%grown = call ptr @seq_realloc(ptr %allocation, i64 64, i64 32)\n"
+       "call void @llvm.memset.p0.i64(ptr align 32 %grown, i8 %byte, i64 %length, i1 "
+       "false)\n"
+       "%loaded = load i8, ptr %grown, align 1\n"
+       "store i8 %loaded, ptr %output, align 1\n",
+       1, "%grown"},
+      {"callsite_return", "", "", "", 0, "%allocation", "", "align 32"},
+      {"callee_stronger_return", "align 32", "", "", 0, "%allocation", "", "align 8"},
+      {"callee_parameter", "", "",
+       "%grown = call ptr @seq_realloc(ptr %allocation, i64 64, i64 32)\n", 1, "%grown",
+       "align 32"},
+      {"address_space_cast", "", "",
+       "%other = addrspacecast ptr %allocation to ptr addrspace(1)\n"
+       "store i8 %byte, ptr addrspace(1) %other, align 1\n",
+       1},
+  };
+  for (const auto &test : cases) {
+    SCOPED_TRACE(test.name);
+    auto optimized = compileAndOptimizeIR(
+        std::string("declare noalias ") + test.allocationAttributes +
+        " ptr @seq_alloc_atomic(i64)\ndeclare " + test.reallocAttributes +
+        " ptr @seq_realloc(ptr " + test.reallocParameterAttributes + R"(, i64, i64)
+declare void @seq_free(ptr)
+declare i64 @collect()
+declare void @llvm.assume(i1 noundef)
+declare void @llvm.memset.p0.i64(ptr nocapture writeonly, i8, i64, i1 immarg)
+declare void @llvm.memcpy.p0.p0.i64(ptr nocapture writeonly, ptr nocapture readonly, i64, i1 immarg)
+declare void @llvm.memmove.p0.p0.i64(ptr nocapture writeonly, ptr nocapture readonly, i64, i1 immarg)
+
+define void @test(ptr %source, ptr %output, i64 %length, i64 %index, i8 %byte) {
+entry:
+  %allocation = call )" +
+        test.allocationCallAttributes + R"( ptr @seq_alloc_atomic(i64 32)
+  call void @llvm.memcpy.p0.p0.i64(ptr align 1 %allocation, ptr align 1 %source, i64 32, i1 false)
+  %count = call i64 @collect()
+)" + test.use +
+        "call void @llvm.memcpy.p0.p0.i64(ptr align 1 %output, ptr align 1 " +
+        test.observedPointer + ", i64 %count, i1 false)\n" + test.afterCopy +
+        "ret void\n}\n");
+    ASSERT_NE(optimized.module, nullptr);
+    EXPECT_EQ(countFixedAllocations(optimized.module.get(), 32), test.heapAllocations);
+    if (!test.heapAllocations) {
+      for (auto &block : *optimized.module->getFunction("test")) {
+        for (auto &instruction : block) {
+          if (auto *buffer = llvm::dyn_cast<llvm::AllocaInst>(&instruction)) {
+            auto name = llvm::StringRef(test.name);
+            if (name.starts_with("realloc_stronger_"))
+              EXPECT_GE(buffer->getAlign().value(), 64u);
+            else if (name == "allocator_return" || name == "callsite_return" ||
+                     name == "callee_stronger_return" || name == "realloc_return")
+              EXPECT_GE(buffer->getAlign().value(), 32u);
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST(LLVMOptimizationTest, PromotesAllocationsPassedToSafeCalls) {
+  struct Case {
+    const char *name;
+    const char *declaration;
+    const char *call;
+    unsigned heapAllocations;
+  };
+  const Case cases[] = {
+      {"safe", "declare void @consume(ptr nocapture) nofree",
+       "call void @consume(ptr %allocation)", 0},
+      {"parameter_nofree", "declare void @consume(ptr nocapture nofree)",
+       "call void @consume(ptr %allocation)", 0},
+      {"callsite_attributes", "declare void @consume(ptr)",
+       "call void @consume(ptr nocapture nofree %allocation)", 0},
+      {"tail", "declare void @consume(ptr nocapture) nofree",
+       "tail call void @consume(ptr %allocation)", 0},
+      {"scalar_result", "declare i64 @consume(ptr nocapture) nofree",
+       "%result = call i64 @consume(ptr %allocation)\n"
+       "store i64 %result, ptr %output, align 1",
+       0},
+      {"capture", "declare void @consume(ptr) nofree",
+       "call void @consume(ptr %allocation)", 1},
+      {"free", "declare void @consume(ptr nocapture)",
+       "call void @consume(ptr %allocation)", 1},
+      {"readonly", "declare void @consume(ptr readonly)",
+       "call void @consume(ptr %allocation)", 1},
+      {"pointer_result", "declare ptr @consume(ptr nocapture) nofree",
+       "%result = call ptr @consume(ptr %allocation)\n"
+       "store ptr %result, ptr %output, align 1",
+       1},
+      {"strong_alignment", "declare void @consume(ptr nocapture align 32) nofree",
+       "call void @consume(ptr %allocation)", 1},
+      {"weak_callsite_alignment",
+       "declare void @consume(ptr nocapture align 32) nofree",
+       "call void @consume(ptr align 8 %allocation)", 1},
+      {"two_safe_arguments",
+       "declare void @consume(ptr nocapture, ptr nocapture) nofree",
+       "call void @consume(ptr %allocation, ptr %allocation)", 0},
+      {"dynamic_argument", "declare void @consume(ptr nocapture align 8) nofree",
+       "%offset = getelementptr i64, ptr %allocation, i64 %length\n"
+       "call void @consume(ptr %offset)",
+       0},
+      {"misaligned_argument", "declare void @consume(ptr nocapture align 8) nofree",
+       "%offset = getelementptr i8, ptr %allocation, i64 4\n"
+       "call void @consume(ptr %offset)",
+       0},
+      {"second_argument_captures", "declare void @consume(ptr nocapture, ptr) nofree",
+       "call void @consume(ptr %allocation, ptr %allocation)", 1},
+      {"second_argument_frees",
+       "declare void @consume(ptr nocapture nofree, ptr nocapture)",
+       "call void @consume(ptr %allocation, ptr %allocation)", 1},
+      {"operand_bundle", "declare void @consume(ptr nocapture) nofree",
+       "call void @consume(ptr %allocation) [\"unknown\"(ptr %allocation)]", 1},
+  };
+  for (const auto &test : cases) {
+    SCOPED_TRACE(test.name);
+    auto optimized = compileAndOptimizeIR(
+        std::string("declare noalias ptr @seq_alloc_atomic(i64)\n") + test.declaration +
+        R"(
+declare void @llvm.memcpy.p0.p0.i64(ptr nocapture writeonly, ptr nocapture readonly, i64, i1 immarg)
+
+define void @test(ptr %source, ptr %output, i64 %length) {
+entry:
+  %allocation = call ptr @seq_alloc_atomic(i64 32)
+  call void @llvm.memcpy.p0.p0.i64(ptr align 1 %allocation, ptr align 1 %source, i64 32, i1 false)
+)" + test.call +
+        R"(
+  call void @llvm.memcpy.p0.p0.i64(ptr align 1 %output, ptr align 1 %allocation, i64 %length, i1 false)
+  ret void
+}
+)");
+    ASSERT_NE(nullptr, optimized.module);
+    EXPECT_EQ(test.heapAllocations, countFixedAllocations(optimized.module.get(), 32));
+    if (!test.heapAllocations) {
+      unsigned calls = 0;
+      for (auto &block : *optimized.module->getFunction("test")) {
+        for (auto &instruction : block) {
+          auto *call = llvm::dyn_cast<llvm::CallInst>(&instruction);
+          if (call && call->getCalledFunction() &&
+              call->getCalledFunction()->getName() == "consume") {
+            ++calls;
+            EXPECT_FALSE(call->isTailCall());
+          }
+        }
+      }
+      EXPECT_EQ(1u, calls);
+    }
+  }
+
+  auto mandatoryTail = compileAndOptimizeIR(R"(
+declare noalias ptr @seq_alloc_atomic(i64)
+declare void @consume(ptr nocapture) nofree
+declare void @llvm.memcpy.p0.p0.i64(ptr nocapture writeonly, ptr nocapture readonly, i64, i1 immarg)
+
+define void @test(ptr %source) {
+entry:
+  %allocation = call ptr @seq_alloc_atomic(i64 32)
+  call void @llvm.memcpy.p0.p0.i64(ptr %allocation, ptr %source, i64 32, i1 false)
+  musttail call void @consume(ptr %allocation)
+  ret void
+}
+)");
+  ASSERT_NE(nullptr, mandatoryTail.module);
+  EXPECT_EQ(1, countFixedAllocations(mandatoryTail.module.get(), 32));
+}
+
+TEST(LLVMOptimizationTest, LowersExternalOwnershipAnnotations) {
+  auto compiler = compileAndOptimize(R"(
+@nocapture
+@llvm_nocapture
+@llvm_nofree
+@C
+def annotated_mutation(buffer: cobj, size: int) -> None:
+    pass
+
+@nocapture
+@C
+def codon_capture_contract(buffer: cobj) -> None:
+    pass
+
+@export
+def invoke_contracts(buffer: cobj, size: int):
+    annotated_mutation(buffer, size)
+    codon_capture_contract(buffer)
+)");
+  auto *module = compiler->getLLVMVisitor()->getModule();
+  auto *annotated = module->getFunction("annotated_mutation");
+  ASSERT_NE(nullptr, annotated);
+  EXPECT_TRUE(annotated->hasParamAttribute(0, llvm::Attribute::NoCapture));
+  EXPECT_FALSE(annotated->hasParamAttribute(1, llvm::Attribute::NoCapture));
+  EXPECT_TRUE(annotated->hasFnAttribute(llvm::Attribute::NoFree));
+  EXPECT_FALSE(annotated->onlyReadsMemory());
+  auto *codonOnly = module->getFunction("codon_capture_contract");
+  ASSERT_NE(nullptr, codonOnly);
+  EXPECT_FALSE(codonOnly->hasParamAttribute(0, llvm::Attribute::NoCapture));
+  EXPECT_FALSE(codonOnly->hasFnAttribute(llvm::Attribute::NoFree));
+}
+
+TEST(LLVMOptimizationTest, PromotesNativeSortBuffers) {
+  struct Case {
+    const char *suffix;
+    const char *type;
+    unsigned alignment;
+    bool nanLast;
+  };
+  const Case cases[] = {
+      {"int16", "i16", 2, false},
+      {"uint16", "u16", 2, false},
+      {"int32", "i32", 4, false},
+      {"uint32", "u32", 4, false},
+      {"int64", "i64", 8, false},
+      {"uint64", "u64", 8, false},
+      {"uint128", "u128", 16, false},
+      {"float32", "float32", 4, false},
+      {"float64", "float", 8, false},
+      {"float32_nan_last", "float32", 4, true},
+      {"float64_nan_last", "float", 8, true},
+  };
+  ASSERT_EXIT(
+      {
+        std::string code = "from internal.sort import _try_native_sort\n";
+        for (const auto &test : cases) {
+          std::string type = test.type;
+          code += std::string("@export\ndef sort_") + test.suffix +
+                  "(index: int):\n    values = Ptr[" + type + "](4)\n";
+          code += "    values[0] = " + type + "(3)\n";
+          code += "    values[1] = " + type + "(1)\n";
+          code += "    values[2] = " + type + "(4)\n";
+          code += "    values[3] = " + type + "(2)\n";
+          code += "    supported = _try_native_sort(values, 4, " +
+                  std::string(test.nanLast ? "True" : "False") + ")\n";
+          code += "    assert supported\n    return int(values[index & 3])\n";
+        }
+        code += "for index in range(4):\n";
+        for (const auto &test : cases)
+          code +=
+              std::string("    assert sort_") + test.suffix + "(index) == index + 1\n";
+        auto compiler = compileAndOptimize(code);
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        auto heapAlignment = 2 * module->getDataLayout().getPointerSize(0);
+        for (const auto &test : cases) {
+          SCOPED_TRACE(test.suffix);
+          auto *function = module->getFunction(std::string("sort_") + test.suffix);
+          auto *native = module->getFunction(std::string("cnp_sort_") + test.suffix);
+          ASSERT_NE(nullptr, function);
+          ASSERT_NE(nullptr, native);
+          EXPECT_TRUE(native->hasParamAttribute(0, llvm::Attribute::NoCapture));
+          EXPECT_TRUE(native->hasFnAttribute(llvm::Attribute::NoFree));
+          EXPECT_FALSE(native->onlyReadsMemory());
+          unsigned allocations = 0;
+          unsigned sorts = 0;
+          unsigned stackBuffers = 0;
+          for (auto &block : *function) {
+            for (auto &instruction : block) {
+              if (auto *buffer = llvm::dyn_cast<llvm::AllocaInst>(&instruction)) {
+                ++stackBuffers;
+                EXPECT_GE(buffer->getAlign().value(), test.alignment);
+                EXPECT_GE(buffer->getAlign().value(), heapAlignment);
+              }
+              auto *call = llvm::dyn_cast<llvm::CallInst>(&instruction);
+              auto *callee = call ? call->getCalledFunction() : nullptr;
+              if (!callee)
+                continue;
+              allocations += callee->getName().starts_with("seq_alloc");
+              if (callee == native) {
+                ++sorts;
+                EXPECT_FALSE(call->isTailCall());
+              }
+            }
+          }
+          EXPECT_EQ(1u, sorts);
+          EXPECT_EQ(0u, allocations);
+          EXPECT_GE(stackBuffers, 1u);
+        }
+        compiler->getLLVMVisitor()->run({"native_sort_stack_test.codon"});
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(LLVMOptimizationTest, PromotesFunctionLocalContainers) {
+  struct Case {
+    const char *name;
+    unsigned maxDataAllocations;
+    unsigned maxObjectAllocations = 0;
+  };
+  const Case cases[] = {
+      {"local_list_index", 0},         {"local_list_loop", 0},
+      {"local_list_append", 0},        {"local_list_grow", 4, 1},
+      {"local_list_copy", 0},          {"local_list_sort", 0},
+      {"local_list_comprehension", 2}, {"local_histogram", 0},
+      {"local_array_index", 0},        {"local_array_loop", 0},
+      {"local_array_view_index", 0},   {"local_array_view", 1},
+      {"local_array_expression", 1},   {"local_object", 0},
+      {"local_nested_object", 0},
+  };
+  ASSERT_EXIT(
+      {
+        auto compiler = compileAndOptimize(R"(
+import numpy as np
+
+@export
+def local_list_index(value: int, index: int):
+    values = [value, value + 1, value + 2, value + 3]
+    values[index & 3] += 7
+    return sum(values)
+
+@export
+def local_list_loop(value: int, limit: int):
+    values = [value, value + 1, value + 2, value + 3]
+    total = 0
+    for offset in range(limit):
+        slot = offset & 3
+        values[slot] += offset
+        total += values[slot]
+    return total + sum(values)
+
+@export
+def local_list_append(value: int, index: int):
+  values = [value]
+  values.append(value + 1)
+  values.append(value + 2)
+  values.append(value + 3)
+  values[index & 3] += 7
+  return sum(values)
+
+@export
+def local_list_grow(value: int):
+    values = [value]
+    values.append(value + 1)
+    values.extend([value + 2, value + 3])
+    last = values.pop()
+    return sum(values) + last
+
+@export
+def local_list_copy(value: int, index: int):
+    values = [value, value + 1, value + 2, value + 3]
+    copied = values[:]
+    copied.reverse()
+    copied[index & 3] += 7
+    return sum(values) + sum(copied)
+
+@export
+def local_list_sort(value: int, index: int):
+    values = [value + 3, value, value + 2, value + 1]
+    values.sort()
+    return values[index & 3]
+
+@export
+def local_list_comprehension(value: int, index: int):
+    values = [value + offset for offset in range(8)]
+    values[index & 7] += 7
+    return sum(values)
+
+@export
+def local_histogram(data: bytes):
+    counts = [0] * 32
+    for value in data:
+        counts[int(value) & 31] += 1
+    return sum(count * count for count in counts)
+
+@export
+def local_array_index(value: int, index: int):
+    values = np.zeros(8, dtype=np.int64)
+    values[index & 7] = value
+    return int(values.sum())
+
+@export
+def local_array_loop(value: int, limit: int):
+    values = np.zeros(8, dtype=np.int64)
+    for offset in range(limit):
+        values[offset & 7] += value + offset
+    return int(values.sum())
+
+@export
+def local_array_view_index(value: int, index: int):
+  values = np.zeros((2, 4), dtype=np.int64)
+  viewed = values.T
+  viewed[index & 3, 1] = value
+  total = 0
+  for column in range(4):
+    total += int(values[1, column])
+  return total + int(viewed[index & 3, 1])
+
+@export
+def local_array_view(value: int, index: int):
+    values = np.zeros((2, 4), dtype=np.int64)
+    viewed = values.T
+    viewed[index & 3, 1] = value
+    return int(values.sum()) + int(viewed.sum())
+
+@export
+def local_array_expression(value: int, index: int):
+    values = np.zeros(8, dtype=np.int64)
+    values[index & 7] = value
+    updated = values * 3 + 1
+    return int(updated.sum()) + int(values.sum())
+
+class LocalPair:
+    first: int
+    second: int
+
+    def update(self, value: int):
+        self.first += value
+        self.second -= value
+
+@export
+def local_object(value: int, limit: int):
+    pair = LocalPair(value, value + 1)
+    alias = pair
+    for offset in range(limit):
+        alias.update(offset)
+    return pair.first * 2 + alias.second
+
+class LocalBuffer:
+    values: list[int]
+
+@export
+def local_nested_object(value: int, index: int):
+    buffer = LocalBuffer([value, value + 1, value + 2, value + 3])
+    alias = buffer
+    alias.values[index & 3] += 7
+    return sum(buffer.values)
+
+for value in (-3, 0, 11):
+    for index in range(8):
+        assert local_list_index(value, index) == 4 * value + 13
+        assert local_list_append(value, index) == 4 * value + 13
+        assert local_list_copy(value, index) == 8 * value + 19
+        assert local_list_sort(value, index) == value + (index & 3)
+        assert local_list_comprehension(value, index) == 8 * value + 35
+        assert local_array_index(value, index) == value
+        assert local_array_view_index(value, index) == 2 * value
+        assert local_array_view(value, index) == 2 * value
+        assert local_array_expression(value, index) == 4 * value + 8
+        assert local_nested_object(value, index) == 4 * value + 13
+    assert local_list_grow(value) == 4 * value + 6
+    for limit in (0, 1, 19):
+        expected = [value, value + 1, value + 2, value + 3]
+        total = 0
+        for offset in range(limit):
+            slot = offset & 3
+            expected[slot] += offset
+            total += expected[slot]
+        assert local_list_loop(value, limit) == total + sum(expected)
+        assert local_array_loop(value, limit) == limit * value + limit * (limit - 1) // 2
+        assert local_object(value, limit) == 3 * value + 1 + limit * (limit - 1) // 2
+assert local_histogram(b"abracadabra") == 35
+assert local_histogram(b"") == 0
+)");
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        for (const auto &test : cases) {
+          SCOPED_TRACE(test.name);
+          auto *function = module->getFunction(test.name);
+          ASSERT_NE(nullptr, function);
+          std::unordered_set<llvm::Function *> visited;
+          unsigned dataAllocations = 0;
+          unsigned objectAllocations = 0;
+          std::function<void(llvm::Function *)> inspect = [&](llvm::Function *current) {
+            if (!visited.insert(current).second)
+              return;
+            std::unordered_set<llvm::BasicBlock *> returning;
+            std::vector<llvm::BasicBlock *> pending;
+            for (auto &block : *current)
+              if (llvm::isa<llvm::ReturnInst>(block.getTerminator()))
+                pending.push_back(&block);
+            while (!pending.empty()) {
+              auto *block = pending.back();
+              pending.pop_back();
+              if (returning.insert(block).second)
+                for (auto *predecessor : llvm::predecessors(block))
+                  pending.push_back(predecessor);
+            }
+            for (auto &block : *current) {
+              if (!returning.count(&block))
+                continue;
+              for (auto &instruction : block) {
+                auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+                auto *callee = call ? call->getCalledFunction() : nullptr;
+                if (!callee)
+                  continue;
+                if (callee->getName() == "seq_alloc_atomic" ||
+                    callee->getName() == "seq_realloc") {
+                  ++dataAllocations;
+                } else if (callee->getName().starts_with("seq_alloc")) {
+                  ++objectAllocations;
+                } else {
+                  inspect(callee);
+                }
+              }
+            }
+          };
+          inspect(function);
+          if (objectAllocations > test.maxObjectAllocations ||
+              dataAllocations > test.maxDataAllocations)
+            llvm::errs() << test.name << ": objects=" << objectAllocations
+                         << ", data=" << dataAllocations << '\n'
+                         << *function;
+          EXPECT_LE(objectAllocations, test.maxObjectAllocations);
+          EXPECT_LE(dataAllocations, test.maxDataAllocations);
+        }
+        compiler->getLLVMVisitor()->run({"local_containers_test.codon"});
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(LLVMOptimizationTest, AlignsDemotedAllocationsForGarbageCollection) {
+  for (auto allocator : {"seq_alloc", "seq_alloc_atomic", "seq_alloc_uncollectable",
+                         "seq_alloc_atomic_uncollectable"}) {
+    SCOPED_TRACE(allocator);
+    auto optimized = compileAndOptimizeIR(std::string("declare noalias ptr @") +
+                                          allocator + R"((i64)
+declare i64 @collect()
+declare void @llvm.memcpy.p0.p0.i64(ptr nocapture writeonly, ptr nocapture readonly, i64, i1 immarg)
+
+define i8 @test(ptr %source) {
+entry:
+  %allocation = call ptr @)" + allocator + R"((i64 17)
+  call void @llvm.memcpy.p0.p0.i64(ptr align 1 %allocation, ptr align 1 %source, i64 17, i1 false)
+  %index = call i64 @collect()
+  %selected = getelementptr i8, ptr %allocation, i64 %index
+  %result = load i8, ptr %selected, align 1
+  ret i8 %result
+}
+)");
+    ASSERT_NE(optimized.module, nullptr);
+    auto *function = optimized.module->getFunction("test");
+    ASSERT_NE(function, nullptr);
+    auto pointerAlignment = optimized.module->getDataLayout().getPointerABIAlignment(0);
+    bool atomic = llvm::StringRef(allocator).contains("atomic");
+    unsigned stackAllocations = 0;
+    for (auto &block : *function) {
+      for (auto &instruction : block) {
+        if (auto *allocation = llvm::dyn_cast<llvm::AllocaInst>(&instruction)) {
+          ++stackAllocations;
+          EXPECT_EQ(allocation->getAlign().value(),
+                    atomic ? 1u : pointerAlignment.value());
+        }
+        if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction)) {
+          auto *callee = call->getCalledFunction();
+          EXPECT_FALSE(callee && callee->getName() == allocator);
+        }
+      }
+    }
+    EXPECT_EQ(stackAllocations, 1u);
+  }
 }
 
 TEST(LLVMOptimizationTest, HoistsNonescapingPointerThroughAggregatePhi) {

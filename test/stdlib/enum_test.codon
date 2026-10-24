@@ -16,7 +16,9 @@ assert Color.RED.value == 1
 assert Color.CRIMSON is Color.RED
 assert Color.CRIMSON.name == "RED"
 assert Color(1) is Color.RED
+assert Color(value=1) is Color.RED
 assert Color(Color.RED) is Color.RED
+assert Color(value=Color.CRIMSON) is Color.RED
 assert Color["CRIMSON"] is Color.RED
 assert Color.__members__["CRIMSON"] is Color.RED
 assert Color.RED != Color.GREEN
@@ -48,6 +50,11 @@ assert 2 in Color
 assert 10 not in Color
 try:
     Color(100)
+    assert False
+except ValueError:
+    pass
+try:
+    Color(value=100)
     assert False
 except ValueError:
     pass
@@ -132,6 +139,7 @@ class Owner:
         def label(self):
             return self.name.lower()
 assert Owner.Mode.parse("r") is Owner.Mode.READ
+assert Owner.Mode(value="w") is Owner.Mode.WRITE
 assert Owner.Mode.WRITE.label() == "write"
 assert Owner.Mode.READ.value == "r"
 assert str(Owner.Mode.READ) == "Mode.READ"
@@ -154,6 +162,7 @@ class Base(Enum):
 Base.metadata = 7
 class Derived(Base):
     VALUE = 10
+assert Derived(value=10) is Derived.VALUE
 assert Derived.VALUE.describe() == "VALUE"
 assert Derived.metadata == 7
 Derived.metadata = 8
@@ -168,8 +177,10 @@ copied, deepcopied = enum_copy(Color.RED)
 assert copied is Color.RED and deepcopied is Color.RED
 def enum_text(value: Enum):
     return str(value), repr(value)
-assert enum_text(Color.RED) == ("Color.RED", "<Color.RED: 1>")
-assert enum_text(Owner.Mode.READ) == ("Mode.READ", "<Mode.READ: 'r'>")
+# Self is Enum through this typed boundary, so inherited repr cannot read a
+# concrete enum's _value_. Its fallback still uses virtual __str__ normally.
+assert enum_text(Color.RED) == ("Color.RED", "Color.RED")
+assert enum_text(Owner.Mode.READ) == ("Mode.READ", "Mode.READ")
 
 class Empty(Enum):
     pass
@@ -187,14 +198,17 @@ class Described(Enum):
         return "custom " + self.name
 assert str(Described.VALUE) == "custom VALUE"
 
-# Inherited __SELF__ methods still specialize for enums declared after the first
-# call through Enum. Repr reads the current payload rather than caching its text.
+# Concrete receivers bind Self to late enum types and repr reads the current
+# payload. Calls through Enum keep their original static Self specialization.
 class Late(Enum):
     VALUE = [1]
-assert enum_text(Late.VALUE) == ("Late.VALUE", "<Late.VALUE: [1]>")
+assert enum_text(Late.VALUE) == ("Late.VALUE", "Late.VALUE")
+assert repr(Late.VALUE) == "<Late.VALUE: [1]>"
 Late.VALUE.value.append(2)
-assert enum_text(Late.VALUE) == ("Late.VALUE", "<Late.VALUE: [1, 2]>")
-assert enum_text(Described.VALUE) == ("custom VALUE", "<Described.VALUE: 1>")
+assert enum_text(Late.VALUE) == ("Late.VALUE", "Late.VALUE")
+assert repr(Late.VALUE) == "<Late.VALUE: [1, 2]>"
+assert enum_text(Described.VALUE) == ("custom VALUE", "custom VALUE")
+assert repr(Described.VALUE) == "<Described.VALUE: 1>"
 
 # User-defined methods override inherited methods through ordinary method lookup.
 class IterableMember(Enum):

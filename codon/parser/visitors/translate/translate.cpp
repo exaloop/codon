@@ -2,6 +2,7 @@
 
 #include "translate.h"
 
+#include <iterator>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -54,7 +55,28 @@ ir::Func *TranslateVisitor::apply(Cache *cache, Stmt *stmts) {
   cache->codegenCtx->series = {block};
 
   cache->populatePythonModule();
-  TranslateVisitor(cache->codegenCtx).translateStmts(stmts);
+  auto ctx = cache->codegenCtx;
+  ctx->mainFunc = main;
+  ctx->mainUserStart = nullptr;
+  TranslateVisitor v(ctx);
+  v.initializeGlobals();
+  auto *suite = cast<SuiteStmt>(stmts);
+  // Full typechecking returns [runtime preamble, user code]. JIT cells instead
+  // contain [user code, pending functions...]; their runtime is already running.
+  bool hasPreamble = !cache->compiler->getOptions()->jit && suite && !suite->empty();
+  if (hasPreamble)
+    v.transform(suite->front());
+  auto before = std::distance(block->begin(), block->end());
+  if (hasPreamble) {
+    for (size_t i = 1; i < suite->size(); ++i)
+      v.transform((*suite)[i]);
+  } else {
+    v.transform(stmts);
+  }
+  if (std::distance(block->begin(), block->end()) > before)
+    ctx->mainUserStart = *std::next(block->begin(), before);
+  for (auto &f : cache->functions | std::views::values)
+    v.transform(f.ast);
   return main;
 }
 
@@ -173,8 +195,10 @@ void TranslateVisitor::defaultVisit(Expr *n) {
 }
 
 void TranslateVisitor::visit(NoneExpr *expr) {
-  auto f = expr->getType()->realizedName() + ":" +
-           getMangledMethod("", "Optional", "__new__");
+  auto f = expr->getType()->is(StdlibTypes::Optional)
+               ? expr->getType()->realizedName() + ":" +
+                     getMangledMethod("", "Optional", "__new__")
+               : getMangledMethod("", "NoneType", "__new__");
   auto val = ctx->find(f);
   seqassert(val, "cannot find '{}'", f);
   result = make<ir::CallInstr>(expr, make<ir::VarValue>(expr, val->getFunc()),
@@ -524,9 +548,12 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
       if ((v = val->getVar())) {
         if (!v->getType()) {
           v->setSrcInfo(stmt->getSrcInfo());
-          v->setType(getType(stmt->getRhs()->getType()));
+          // A name annotation (no RHS) establishes storage type without storing value!
+          v->setType(
+              getType((stmt->getRhs() ? stmt->getRhs() : stmt->getLhs())->getType()));
         }
-        result = make<ir::AssignInstr>(stmt, v, transform(stmt->getRhs()));
+        if (stmt->getRhs())
+          result = make<ir::AssignInstr>(stmt, v, transform(stmt->getRhs()));
       }
     }
     return;

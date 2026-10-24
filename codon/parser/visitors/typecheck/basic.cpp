@@ -12,12 +12,12 @@ namespace codon::ast {
 
 using namespace types;
 
-/// Set type to `Optional[?]`
 void TypecheckVisitor::visit(NoneExpr *expr) {
   unify(expr->getType(), instantiateType(getStdLibType(StdlibTypes::Optional)));
   if (realize(expr->getType())) {
-    // Realize the appropriate `Optional.__new__` for the translation stage
-    auto f = ctx->forceFind(getMangledMethod("", "Optional", "__new__"))->getType();
+    // Keep the None provisional until inference resolves or defaults it to NoneType.
+    auto name = expr->getType()->is(StdlibTypes::Optional) ? "Optional" : "NoneType";
+    auto f = ctx->forceFind(getMangledMethod("", name, "__new__"))->getType();
     auto t = realize(instantiateType(f, extractClassType(expr)));
     expr->setDone();
   }

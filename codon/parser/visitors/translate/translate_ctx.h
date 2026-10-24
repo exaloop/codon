@@ -49,6 +49,10 @@ struct TranslateContext : public Context<TranslateItem> {
   std::vector<codon::ir::SeriesFlow *> series;
   /// Stack of sequence items for attribute initialization.
   std::vector<std::vector<std::pair<int, ir::Value *>>> seqItems;
+  /// Function holding top-level code: main, or the current JIT cell.
+  codon::ir::BodiedFunc *mainFunc = nullptr;
+  /// First user statement after the runtime preamble. Late parsed code runs here.
+  codon::ir::Value *mainUserStart = nullptr;
 
 public:
   TranslateContext(Cache *cache);

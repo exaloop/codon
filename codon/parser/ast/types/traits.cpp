@@ -82,7 +82,7 @@ int CallableTrait::unify(Type *typ, Unification *us) {
         if (fi < kwStar && !(*trAst)[fi].isValue())
           kwStar--;
       }
-      if (kwStar < trAst->size() && star >= trInArgs->generics.size())
+      if (kwStar < trInArgs->generics.size() && star >= trInArgs->generics.size())
         star -= 1;
       size_t preStar = 0;
       for (size_t fi = 0; fi < trAst->size(); fi++) {

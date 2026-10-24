@@ -96,7 +96,10 @@ class TestInliner : public ir::transform::OperatorPass {
         return;
       for (auto *var : res.newVars)
         ir::cast<ir::BodiedFunc>(getParentFunc())->push_back(var);
-      v->replaceAll(ir::util::call(neg, {res.result}));
+      auto *result = res.result;
+      if (result->getType()->is(M->getIntType()))
+        result = ir::util::call(neg, {result});
+      v->replaceAll(result);
     }
   }
 };

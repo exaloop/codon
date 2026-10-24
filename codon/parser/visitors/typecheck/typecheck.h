@@ -94,7 +94,7 @@ private: // Node typechecking rules
   void visit(SetExpr *) override;
   void visit(DictExpr *) override;
   Expr *transformComprehension(const std::string &, const std::string &,
-                               std::vector<Expr *> &);
+                               std::vector<Expr *> &, types::Type * = nullptr);
   void visit(GeneratorExpr *) override;
 
   /* Conditional expression and statements (cond.cpp) */
@@ -138,6 +138,7 @@ private: // Node typechecking rules
   void visit(CallExpr *) override;
   static void validateCall(CallExpr *expr);
   bool transformCallArgs(CallExpr *);
+  Expr *transformOptionalCall(CallExpr *, types::ClassType *);
   std::pair<std::shared_ptr<types::FuncType>, Expr *> getCalleeFn(CallExpr *,
                                                                   PartialCallData &);
   Expr *callReorderArguments(types::FuncType *, CallExpr *, PartialCallData &);
@@ -149,7 +150,7 @@ private: // Node typechecking rules
   /* Assignments (assign.cpp) */
   void visit(AssignExpr *) override;
   void visit(AssignStmt *) override;
-  Stmt *unpackAssignment(Expr *lhs, Expr *rhs);
+  Stmt *unpackAssignment(Expr *lhs, Expr *rhs, bool isLoopTarget = false);
   Stmt *transformUpdate(AssignStmt *);
   Stmt *transformAssignment(AssignStmt *, bool = false);
   void visit(DelStmt *) override;
@@ -205,6 +206,8 @@ private:
   parseBaseClasses(std::vector<Expr *> &, std::vector<Param> &, const Stmt *,
                    const std::string &, types::ClassType *);
   bool autoDeduceMembers(ClassStmt *, std::vector<Param> &);
+  /// Diagnose fields not initialized on every modeled normal constructor exit.
+  void checkFieldInitialization(types::FuncType *, FunctionStmt *);
   std::vector<Stmt *> prepareEnum(ClassStmt *, types::ClassType *,
                                   std::vector<Stmt *> &);
   bool isEnum(types::ClassType *) const;
@@ -238,6 +241,7 @@ public:
 
 private:
   Stmt *inferTypes(Stmt *, bool sweepForceRealize = false);
+  types::TypePtr joinNullableTypes(types::Type *, types::Type *);
   types::Type *realizeFunc(types::FuncType *, bool = false);
   types::Type *realizeType(types::ClassType *);
   SuiteStmt *generateSpecialAst(types::FuncType *);
@@ -254,7 +258,7 @@ private:
   findBestMethod(types::ClassType *typ, const std::string &member,
                  const std::vector<std::pair<std::string, types::Type *>> &args);
   int canCall(types::FuncType *, const std::vector<CallArg> &,
-              types::ClassType * = nullptr);
+              types::ClassType * = nullptr, std::vector<bool> * = nullptr);
   std::vector<types::FuncType *> findMatchingMethods(
       types::ClassType *typ, const std::vector<types::FuncType *> &methods,
       const std::vector<CallArg> &args, types::ClassType *part = nullptr);
@@ -379,6 +383,7 @@ public:
   static bool isImportFn(const std::string &s);
   int64_t getTime() const;
   types::Type *getUnderlyingStaticType(types::Type *t) const;
+  types::TypePtr getSelfType(types::Type *t) const;
 
   int64_t getIntLiteral(types::Type *t, size_t pos = 0) const;
   bool getBoolLiteral(types::Type *t, size_t pos = 0) const;
@@ -422,6 +427,8 @@ public:
   SuiteStmt *generateUnionNewAST(const types::FuncType *);
   SuiteStmt *generateUnionTagAST(types::FuncType *);
   SuiteStmt *generateUnionDispatchAST(types::FuncType *);
+  SuiteStmt *generateUnionIteratorAST(types::FuncType *);
+  SuiteStmt *generateUnionBinaryAST(types::FuncType *);
   SuiteStmt *generateNamedKeysAST(types::FuncType *);
   SuiteStmt *generateTupleMulAST(types::FuncType *);
   SuiteStmt *generateTypeInfoInitAST(types::FuncType *);

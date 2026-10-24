@@ -2119,7 +2119,7 @@ class GelsdParams:
     B_: Ptr[T]
     LDB: fint
     S: Ptr[B]
-    RCOND: Ptr[B]
+    RCOND: B
     RANK: fint
     WORK: Ptr[T]
     LWORK: fint
@@ -2248,6 +2248,8 @@ class GelsdParams:
         self.LWORK = work_count
 
     def __init__(self, m: fint, n: fint, nrhs: fint):
+        self.RCOND = cast(-1, B)
+        self.RANK = fint(0)
         if T is complex or T is complex64:
             self._init_complex(m, n, nrhs)
         else:
@@ -2278,7 +2280,7 @@ class GelsdParams:
                      B.as_byte(),
                      __ptr__(LDB),
                      S.as_byte(),
-                     RCOND.as_byte(),
+                     __ptr__(RCOND).as_byte(),
                      __ptr__(RANK),
                      WORK.as_byte(),
                      __ptr__(LWORK),
@@ -2293,7 +2295,7 @@ class GelsdParams:
                      B.as_byte(),
                      __ptr__(LDB),
                      S.as_byte(),
-                     RCOND.as_byte(),
+                     __ptr__(RCOND).as_byte(),
                      __ptr__(RANK),
                      WORK.as_byte(),
                      __ptr__(LWORK),
@@ -2389,7 +2391,7 @@ def lstsq(a, b, rcond = None):
 
     a_in.linearize(params.A, a_ptr)
     b_in.linearize(params.B_, b_ptr)
-    params.RCOND = __ptr__(rc)
+    params.RCOND = rc
     not_ok = params.call()
     error_occured = False
 
@@ -4236,8 +4238,10 @@ def matrix_rank(A, tol = None, hermitian: bool = False):
         S = svd(A, compute_uv=False, hermitian=hermitian)
         R = S.dtype
 
-        if static.len(asarray(tol).shape) != 0:
-            compile_error("invalid tolerance dimension")
+        # None requests an inferred tolerance and is not an array-valued input.
+        if tol is not None:
+            if static.len(asarray(tol).shape) != 0:
+                compile_error("invalid tolerance dimension")
 
         s_max = -inf(R)
         if tol is None:

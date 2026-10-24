@@ -135,11 +135,11 @@ class OrderedDict:
         self._active = Ptr[u8](active_bytes)
         str.memset(self._active.as_byte(), byte(0), active_bytes)
 
-    def __init__(self, capacity: int = 8):
+    def __init__(self, /, capacity: int = 8):
         self._used = 0
         self._init(capacity)
 
-    def __init__(self, items: Generator[Tuple[K, V]]):
+    def __init__(self, items: Generator[Tuple[K, V]], /):
         self.__init__()
         for k, v in items:
             self[k] = v
@@ -164,13 +164,13 @@ class OrderedDict:
         self._active = Ptr[u8](active_bytes)
         str.memcpy(self._active.as_byte(), other._active.as_byte(), active_bytes)
 
-    def __init__(self, other: OrderedDict[K, V]):
+    def __init__(self, other: OrderedDict[K, V], /):
         self._init_from(other)
 
     def __copy__(self):
         return OrderedDict[K, V](self)
 
-    def copy(self):
+    def copy(self, /):
         return self.__copy__()
 
     def __deepcopy__(self):
@@ -180,7 +180,7 @@ class OrderedDict:
                 d._entries[i] = d._entries[i].__deepcopy__()
         return d
 
-    def __len__(self):
+    def __len__(self, /):
         return self._used
 
     def __bool__(self):
@@ -249,7 +249,7 @@ class OrderedDict:
     def resize(self, minused: int):
         self._resize(minused)
 
-    def __setitem__(self, key: K, value: V):
+    def __setitem__(self, key: K, value: V, /):
         if self._usable == 0:
             self._resize(self._used + 1)
 
@@ -272,7 +272,7 @@ class OrderedDict:
         self._usable -= 1
         self._used += 1
 
-    def __getitem__(self, key: K):
+    def __getitem__(self, key: K, /):
         h = self._hash(key)
         r = self._lookup(key, h)
 
@@ -282,7 +282,7 @@ class OrderedDict:
         ix = _get_index(self._indices, self._log2_index_bytes, r.slot)
         return self._entries[ix].value
 
-    def get(self, key: K) -> Optional[V]:
+    def get(self, key: K, /) -> Optional[V]:
         h = self._hash(key)
         r = self._lookup(key, h)
 
@@ -292,7 +292,7 @@ class OrderedDict:
         ix = _get_index(self._indices, self._log2_index_bytes, r.slot)
         return self._entries[ix].value
 
-    def get(self, key: K, default: V):
+    def get(self, key: K, default: V, /):
         h = self._hash(key)
         r = self._lookup(key, h)
 
@@ -302,7 +302,7 @@ class OrderedDict:
         ix = _get_index(self._indices, self._log2_index_bytes, r.slot)
         return self._entries[ix].value
 
-    def setdefault(self, key: K, value: V) -> V:
+    def setdefault(self, key: K, value: V, /) -> V:
         h = self._hash(key)
         r = self._lookup(key, h)
 
@@ -325,11 +325,11 @@ class OrderedDict:
         ix = _get_index(self._indices, self._log2_index_bytes, r.slot)
         return self._entries[ix].value
 
-    def __contains__(self, key: K):
+    def __contains__(self, key: K, /):
         h = self._hash(key)
         return self._lookup(key, h).found
 
-    def __delitem__(self, key: K):
+    def __delitem__(self, key: K, /):
         h = self._hash(key)
         r = self._lookup(key, h)
 
@@ -355,7 +355,7 @@ class OrderedDict:
             self._clear_slot(ix)
             self._used -= 1
 
-    def pop(self, key: K) -> V:
+    def pop(self, key: K, /) -> V:
         h = self._hash(key)
         r = self._lookup(key, h)
 
@@ -371,7 +371,7 @@ class OrderedDict:
 
         return e.value
 
-    def pop(self, key: K, missing):
+    def pop(self, key: K, missing, /):
         h = self._hash(key)
         r = self._lookup(key, h)
 
@@ -394,7 +394,7 @@ class OrderedDict:
 
         return e.value
 
-    def popitem(self):
+    def popitem(self, /):
         if self._used == 0:
             raise KeyError("popitem(): dictionary is empty")
 
@@ -418,31 +418,31 @@ class OrderedDict:
 
         raise KeyError("popitem(): dictionary is empty")
 
-    def keys(self):
+    def keys(self, /):
         for i in range(self._nentries):
             if self._is_active(i):
                 e = self._entries[i]
                 yield e.key
 
-    def values(self):
+    def values(self, /):
         for i in range(self._nentries):
             if self._is_active(i):
                 e = self._entries[i]
                 yield e.value
 
-    def items(self):
+    def items(self, /):
         for i in range(self._nentries):
             if self._is_active(i):
                 e = self._entries[i]
                 yield (e.key, e.value)
 
-    def __reversed__(self):
+    def __reversed__(self, /):
         for i in range(self._nentries - 1, -1, -1):
             if self._is_active(i):
                 e = self._entries[i]
                 yield e.key
 
-    def update(self, other):
+    def update(self, other, /):
         if isinstance(other, OrderedDict[K, V]):
             for k, v in other.items():
                 self[k] = v
@@ -450,13 +450,13 @@ class OrderedDict:
             for k, v in other:
                 self[k] = v
 
-    def clear(self):
+    def clear(self, /):
         self.__init__()
 
-    def __iter__(self):
+    def __iter__(self, /):
         return self.keys()
 
-    def __eq__(self, other: OrderedDict[K, V]) -> bool:
+    def __eq__(self, other: OrderedDict[K, V], /) -> bool:
         if self.__len__() != other.__len__():
             return False
         for k, v in self.items():
@@ -465,19 +465,19 @@ class OrderedDict:
                 return False
         return True
 
-    def __ne__(self, other: OrderedDict[K, V]) -> bool:
+    def __ne__(self, other: OrderedDict[K, V], /) -> bool:
         return not (self == other)
 
-    def __or__(self, other):
+    def __or__(self, other, /):
         new = self.__copy__()
         OrderedDict.update(new, other)
         return new
 
-    def __ior__(self, other):
+    def __ior__(self, other, /):
         OrderedDict.update(self, other)
         return self
 
-    def __repr__(self):
+    def __repr__(self, /):
         if self.__len__() == 0:
             return '{}'
 
@@ -496,7 +496,7 @@ class OrderedDict:
         s.append('}')
         return s.__str__()
 
-    def fromkeys(ks: Generator[K], v: V, K: type, V: type) -> OrderedDict[K, V]:
+    def fromkeys(ks: Generator[K], v: V, /, K: type, V: type) -> OrderedDict[K, V]:
         return {k: v for k in ks}
 
 
@@ -623,42 +623,42 @@ class UnorderedDict:
         k = key.__hash__()
         return (k >> 33) ^ k ^ (k << 11)
 
-    def __init__(self):
+    def __init__(self, /):
         self._init()
 
-    def __init__(self, capacity: int):
+    def __init__(self, /, capacity: int):
         self.__init__()
         self._resize(capacity)
 
-    def __init__(self, g: Generator[Tuple[K, V]]):
+    def __init__(self, g: Generator[Tuple[K, V]], /):
         self._init()
         for k, v in g:
             self[k] = v
 
-    def __init__(self, other: UnorderedDict[K, V]):
+    def __init__(self, other: UnorderedDict[K, V], /):
         self._init_from(other)
 
-    def __getitem__(self, key: K) -> V:
+    def __getitem__(self, key: K, /) -> V:
         x = self._kh_get(key)
         if x != self._kh_end():
             return self._vals[x]
         raise KeyError(str(key))
 
-    def __setitem__(self, key: K, val: V):
+    def __setitem__(self, key: K, val: V, /):
         ret, x = self._kh_put(key)
         self._vals[x] = val
 
-    def __delitem__(self, key: K):
+    def __delitem__(self, key: K, /):
         x = self._kh_get(key)
         if x != self._kh_end():
             self._kh_del(x)
         else:
             raise KeyError(str(key))
 
-    def __contains__(self, key: K) -> bool:
+    def __contains__(self, key: K, /) -> bool:
         return self._kh_get(key) != self._kh_end()
 
-    def __eq__(self, other: UnorderedDict[K, V]) -> bool:
+    def __eq__(self, other: UnorderedDict[K, V], /) -> bool:
         if self.__len__() != other.__len__():
             return False
         for k, v in self.items():
@@ -666,21 +666,21 @@ class UnorderedDict:
                 return False
         return True
 
-    def __ne__(self, other: UnorderedDict[K, V]) -> bool:
+    def __ne__(self, other: UnorderedDict[K, V], /) -> bool:
         return not (self == other)
 
-    def __iter__(self) -> Generator[K]:
+    def __iter__(self, /) -> Generator[K]:
         return self.keys()
 
-    def __len__(self) -> int:
+    def __len__(self, /) -> int:
         return self._size
 
-    def __or__(self, other):
+    def __or__(self, other, /):
         new = self.__copy__()
         UnorderedDict.update(new, other)
         return new
 
-    def __ior__(self, other):
+    def __ior__(self, other, /):
         UnorderedDict.update(self, other)
         return self
 
@@ -708,7 +708,7 @@ class UnorderedDict:
     def __deepcopy__(self) -> UnorderedDict[K, V]:
         return {k.__deepcopy__(): v.__deepcopy__() for k, v in self.items()}
 
-    def __repr__(self) -> str:
+    def __repr__(self, /) -> str:
         n = self.__len__()
         if n == 0:
             return "{}"
@@ -735,15 +735,15 @@ class UnorderedDict:
     def resize(self, new_n_buckets: int):
         self._kh_resize(new_n_buckets)
 
-    def get(self, key: K, default: V) -> V:
+    def get(self, key: K, default: V, /) -> V:
         x = self._kh_get(key)
         return self._vals[x] if x != self._kh_end() else default
 
-    def get(self, key: K) -> Optional[V]:
+    def get(self, key: K, /) -> Optional[V]:
         x = self._kh_get(key)
         return self._vals[x] if x != self._kh_end() else None
 
-    def setdefault(self, key: K, val: V) -> V:
+    def setdefault(self, key: K, val: V, /) -> V:
         ret, x = self._kh_put(key)
         if ret != 0:  # i.e. key not present
             self._vals[x] = val
@@ -771,7 +771,7 @@ class UnorderedDict:
         ret, x = self._kh_put(key)
         self._vals[x] = op(dflt if ret != 0 else self._vals[x], other)
 
-    def update(self, other):
+    def update(self, other, /):
         if isinstance(other, UnorderedDict[K, V]):
             for k, v in other.items():
                 self[k] = v
@@ -779,11 +779,11 @@ class UnorderedDict:
             for k, v in other:
                 self[k] = v
 
-    def update(self, other: UnorderedDict[K, V]):
+    def update(self, other: UnorderedDict[K, V], /):
         for k, v in other.items():
             self[k] = v
 
-    def pop(self, key: K) -> V:
+    def pop(self, key: K, /) -> V:
         x = self._kh_get(key)
         if x != self._kh_end():
             v = self._vals[x]
@@ -791,7 +791,7 @@ class UnorderedDict:
             return v
         raise KeyError(str(key))
 
-    def pop(self, key: K, missing):
+    def pop(self, key: K, missing, /):
         x = self._kh_get(key)
         if x == self._kh_end():
             if missing is None:
@@ -806,7 +806,7 @@ class UnorderedDict:
         self._kh_del(x)
         return v
 
-    def popitem(self) -> Tuple[K, V]:
+    def popitem(self, /) -> Tuple[K, V]:
         if self._size == 0:
             raise KeyError("dictionary is empty")
 
@@ -822,41 +822,41 @@ class UnorderedDict:
                 return item
             i += 1
 
-    def clear(self):
+    def clear(self, /):
         self._kh_clear()
 
-    def items(self) -> Generator[Tuple[K, V]]:
+    def items(self, /) -> Generator[Tuple[K, V]]:
         i = self._kh_begin()
         while i < self._kh_end():
             if self._kh_exist(i):
                 yield self._keys[i], self._vals[i]
             i += 1
 
-    def keys(self) -> Generator[K]:
+    def keys(self, /) -> Generator[K]:
         i = self._kh_begin()
         while i < self._kh_end():
             if self._kh_exist(i):
                 yield self._keys[i]
             i += 1
 
-    def values(self) -> Generator[V]:
+    def values(self, /) -> Generator[V]:
         i = self._kh_begin()
         while i < self._kh_end():
             if self._kh_exist(i):
                 yield self._vals[i]
             i += 1
 
-    def __reversed__(self):
+    def __reversed__(self, /):
         i = self._kh_end() - 1
         while i >= self._kh_begin():
             if self._kh_exist(i):
                 yield self._keys[i]
             i -= 1
 
-    def copy(self):
+    def copy(self, /):
         return self.__copy__()
 
-    def fromkeys(ks: Generator[K], v: V, K: type, V: type) -> UnorderedDict[K, V]:
+    def fromkeys(ks: Generator[K], v: V, /, K: type, V: type) -> UnorderedDict[K, V]:
         return {k: v for k in ks}
 
     # Internal helpers

@@ -137,6 +137,8 @@ void TypecheckVisitor::visit(DotExpr *expr) {
     expr->expr = dot->getExpr();
     expr->member = dot->getMember();
   } else {
+    if (expr->hasAttribute(Attr::ExprDoNotRealize))
+      final->setAttribute(Attr::ExprDoNotRealize);
     resultExpr = transform(final);
     return;
   }
@@ -162,11 +164,14 @@ void TypecheckVisitor::visit(DotExpr *expr) {
 std::pair<Expr *, bool> TypecheckVisitor::getAttr(Expr *expr, const std::string &member,
                                                   types::Type *type,
                                                   CallExpr *parentCall) {
+  if (expr->getType()->is(StdlibTypes::Optional) && expr->getType()->hasUnbounds(false))
+    return {nullptr, true};
   bool hasSide = hasSideEffect(expr);
   auto wrapSide = [&](Expr *e) -> Expr * {
-    if (hasSide) {
-      return transform(N<StmtExpr>(N<ExprStmt>(expr), e));
-    }
+    if (hasSide)
+      e = N<StmtExpr>(N<ExprStmt>(expr), e);
+    if (parentCall)
+      e->setAttribute(Attr::ExprDoNotRealize);
     return transform(e);
   };
 
@@ -243,6 +248,8 @@ std::pair<Expr *, bool> TypecheckVisitor::getAttr(Expr *expr, const std::string 
       methods.size() > 1 ? getDispatch(getRootName(methods.front())) : methods.front();
   Expr *e = N<IdExpr>(bestMethod->getFuncName());
   e->setType(instantiateType(bestMethod, typ));
+  if (parentCall)
+    e->setAttribute(Attr::ExprDoNotRealize);
 
   if (isTypeExpr(expr)) {
     // Static access: `cls.method`
@@ -553,11 +560,14 @@ std::pair<Expr *, bool> TypecheckVisitor::getClassMember(Expr *expr,
       if (realize(generic->getType()))
         return {wrapSide(generic->type->getStatic()->getStaticExpr()), true};
     } else {
-      auto t = instantiateTypeVar(generic->getType());
+      auto payload = generic->type;
+      if (typ->is(StdlibTypes::UnrealizedType))
+        payload = instantiateType(payload.get());
+      auto t = instantiateTypeVar(payload.get());
       if (type)
         unify(type, t.get());
       if (realize(t.get()))
-        return {wrapSide(N<IdExpr>(generic->getType()->realizedName())), true};
+        return {wrapSide(N<IdExpr>(payload->realizedName())), true};
     }
     return {nullptr, true};
   }
@@ -592,8 +602,13 @@ std::pair<Expr *, bool> TypecheckVisitor::getClassMember(Expr *expr,
   auto u = instantiateUnbound();
   u->staticKind = LiteralKind::String;
   if (auto m = findBestMethod(typ, "__getattr__", {typ, u.get()})) {
-    if (m->funcGenerics.size() == 1 &&
-        extractFuncGeneric(m)->getStaticKind() == LiteralKind::String) {
+    if (std::ranges::count_if(m->funcGenerics,
+                              [&](const auto &generic) {
+                                return getUnmangledName(generic.name) != "Self";
+                              }) == 1 &&
+        std::ranges::any_of(m->funcGenerics, [](const auto &generic) {
+          return generic.getType()->getStaticKind() == LiteralKind::String;
+        })) {
       return {transform(
                   N<CallExpr>(N<DotExpr>(expr, "__getattr__"), N<StringExpr>(member))),
               true};

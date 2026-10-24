@@ -236,11 +236,11 @@ void TypecheckVisitor::visit(ChainBinaryExpr *expr) {
   for (int i = 1; i < expr->exprs.size(); i++) {
     auto l = prev.empty() ? clone(expr->exprs[i - 1].second) : N<IdExpr>(prev);
     prev = ctx->generateCanonicalName("chain");
-    auto r =
-        (i + 1 == expr->exprs.size())
-            ? clone(expr->exprs[i].second)
-            : N<StmtExpr>(N<AssignStmt>(N<IdExpr>(prev), clone(expr->exprs[i].second)),
-                          N<IdExpr>(prev));
+    // Chain temporaries must retain a static operand's literal type.
+    auto assignment = N<AssignStmt>(N<IdExpr>(prev), clone(expr->exprs[i].second));
+    assignment->setAttribute(Attr::MaybeLiteral);
+    auto r = (i + 1 == expr->exprs.size()) ? clone(expr->exprs[i].second)
+                                           : N<StmtExpr>(assignment, N<IdExpr>(prev));
     items.emplace_back(N<BinaryExpr>(l, expr->exprs[i].first, r));
     if (isBool)
       items.back()->setExpectedType(getStdLibType(StdlibTypes::Bool));
@@ -469,6 +469,17 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
 ///   Instantiate(foo, [bar]) -> Id("foo[bar]")
 void TypecheckVisitor::visit(InstantiateExpr *expr) {
   expr->expr = transformType(expr->getExpr());
+
+  // Collapse Optional[Optional[...]] to Optional[] (handle NoneType as well).
+  if (extractType(expr->getExpr())->is(StdlibTypes::Optional) && expr->size() == 1) {
+    expr->items[0] = transformType(expr->front());
+    auto member = extractType(expr->front());
+    if (member->is(StdlibTypes::Optional) || member->is(StdlibTypes::NoneType)) {
+      resultExpr = expr->front();
+      unify(expr->getType(), resultExpr->getType());
+      return;
+    }
+  }
 
   TypePtr typ = nullptr;
   size_t typeParamsSize = expr->size();
@@ -891,6 +902,10 @@ Expr *TypecheckVisitor::transformBinaryIs(const BinaryExpr *expr) {
 
   // Case: `is None` expressions
   if (cast<NoneExpr>(expr->getRhs())) {
+    if (extractClassType(expr->getLhs())->getUnion() && !isTypeExpr(expr->getLhs()))
+      return transform(
+          N<CallExpr>(N<DotExpr>(N<IdExpr>(StdlibTypes::Union), "_isinstance"),
+                      expr->getLhs(), N<IdExpr>(StdlibTypes::NoneType)));
     if (extractClassType(expr->getLhs())->is(StdlibTypes::NoneType))
       return transform(wrapSide(N<BoolExpr>(true)));
     if (!extractClassType(expr->getLhs())->is(StdlibTypes::Optional)) {
@@ -1021,6 +1036,14 @@ Expr *TypecheckVisitor::transformBinaryMagic(const BinaryExpr *expr) {
   auto lt = expr->getLhs()->getType();
   auto rt = expr->getRhs()->getType();
 
+  // Resolving only the receiver can leave a union argument inside concrete arithmetic
+  // (e.g. an array plus an int-or-complex scalar). Select both active types through
+  // a helper that evaluates operands once, in source order, before testing their tags.
+  if (lt->getUnion() || rt->getUnion())
+    return transform(N<CallExpr>(N<IdExpr>(getMangledMethod("", "Union", "_binary")),
+                                 expr->getLhs(), expr->getRhs(),
+                                 N<StringExpr>(expr->getOp())));
+
   if (!lt->is("pyobj") && rt->is("pyobj")) {
     // Special case: `obj op pyobj` -> `rhs.__rmagic__(lhs)` on lhs
     // Assumes that pyobj implements all left and right magics
@@ -1032,12 +1055,6 @@ Expr *TypecheckVisitor::transformBinaryMagic(const BinaryExpr *expr) {
         N<CallExpr>(N<DotExpr>(N<IdExpr>(r), fmt::format("__{}__", rightMagic)),
                     N<IdExpr>(l))));
   }
-  if (lt->getUnion()) {
-    // Special case: `union op obj` -> `union.__magic__(rhs)`
-    return transform(N<CallExpr>(
-        N<DotExpr>(expr->getLhs(), fmt::format("__{}__", magic)), expr->getRhs()));
-  }
-
   // Normal operations: check if `lhs.__magic__(lhs, rhs)` exists
   if (auto method =
           findBestMethod(lt->getClass(), fmt::format("__{}__", magic),
@@ -1057,6 +1074,20 @@ Expr *TypecheckVisitor::transformBinaryMagic(const BinaryExpr *expr) {
         N<AssignStmt>(N<IdExpr>(l), expr->getLhs()),
         N<AssignStmt>(N<IdExpr>(r), expr->getRhs()),
         N<CallExpr>(N<IdExpr>(method->getFuncName()), N<IdExpr>(r), N<IdExpr>(l))));
+  }
+
+  // Union candidate probing calls this helper directly, so Optional unwrapping
+  // cannot live only in visit(BinaryExpr): nullable integer alternatives would
+  // otherwise lose valid arithmetic. Try declared/reflected methods first to
+  // preserve Optional's own operations, including None-aware equality.
+  // TODO: refactor visit() not to error on bad call so that it can be reused.
+  if (lt->is(StdlibTypes::Optional)) {
+    auto unwrapped = N<BinaryExpr>(
+        transform(N<CallExpr>(N<IdExpr>(FN_OPTIONAL_UNWRAP), expr->getLhs())),
+        expr->getOp(), expr->getRhs(), expr->isInPlace());
+    if (auto inplace = transformBinaryInplaceMagic(unwrapped, false))
+      return inplace;
+    return transformBinaryMagic(unwrapped);
   }
 
   return nullptr;

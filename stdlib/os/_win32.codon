@@ -109,7 +109,7 @@ def _stat_status(path: str, follow_symlinks: bool = True) -> Tuple[Ptr[int], _St
     error = error if error else cleanup
     return Ptr[int]() if error else fields, error
 
-def stat(path: str, follow_symlinks: bool = True) -> List[int]:
+def stat(path: str, *, follow_symlinks: bool = True) -> List[int]:
     fields, error = _stat_status(path, follow_symlinks)
     error.raise_error("stat" if follow_symlinks else "lstat", path)
     return List(fields, 14)
@@ -379,7 +379,7 @@ def make_env_map() -> Dict[str, str]:
                 _winerror("FreeEnvironmentStringsW", code)
 
 
-def putenv(key: str, value: str):
+def putenv(key: str, value: str, /):
     """Update CRT and OS environment, but not the public `environ` snapshot."""
     from C import _wputenv_s(Ptr[u16], Ptr[u16]) -> i32
     from C import SetEnvironmentVariableW(Ptr[u16], Ptr[u16]) -> i32
@@ -393,7 +393,7 @@ def putenv(key: str, value: str):
         _winerror("putenv", code)
 
 
-def unsetenv(key: str):
+def unsetenv(key: str, /):
     from C import _wputenv_s(Ptr[u16], Ptr[u16]) -> i32
     from C import SetEnvironmentVariableW(Ptr[u16], Ptr[u16]) -> i32
     from C import GetLastError() -> u32
@@ -747,7 +747,7 @@ def close(fd: int):
     _crt_call("close", False, _close, _fd(fd))
 
 
-def read(fd: int, n: int) -> bytes:
+def read(fd: int, n: int, /) -> bytes:
     from C import _read(i32, cobj, u32) -> i32
     descriptor = _fd(fd)
     if n < 0:
@@ -758,7 +758,7 @@ def read(fd: int, n: int) -> bytes:
     return bytes(buffer, int(count))
 
 
-def write(fd: int, data: bytes) -> int:
+def write(fd: int, data: bytes, /) -> int:
     from C import _write(i32, cobj, u32) -> i32
     descriptor = _fd(fd)
     size = min(len(data), 2147483647)
@@ -766,7 +766,7 @@ def write(fd: int, data: bytes) -> int:
     return int(_crt_call("write", False, _write, descriptor, buffer, u32(size)))
 
 
-def lseek(fd: int, pos: int, how: int) -> int:
+def lseek(fd: int, pos: int, how: int, /) -> int:
     from C import _lseeki64(i32, int, i32) -> int
     descriptor = _fd(fd)
     if how < 0 or how > 2:
@@ -779,7 +779,7 @@ def fsync(fd: int):
     _crt_call("fsync", False, _commit, _fd(fd))
 
 
-def ftruncate(fd: int, length: int):
+def ftruncate(fd: int, length: int, /):
     from C import _chsize_s(i32, int) -> i32
     descriptor = _fd(fd)
     if length < 0:

@@ -569,7 +569,8 @@ class X[T]:
         return (x+x, y+y)
 y = X[X[int]]()
 print y.__class__.__name__ #: X[X[int]]
-print X[float].foo(U=int, ...).__fn_name__ #: foo[int;X[float],float,int]
+# Self is now an additional realized generic in the inherited method signature.
+print X[float].foo(U=int, ...).__fn_name__ #: foo[int,X[float];X[float],float,int]
 print X[int]().foo(1, 's') #: (2, 'ss')
 
 #%% class_partial_access_NOPY,barebones
@@ -577,7 +578,8 @@ class X[T]:
     def foo[U](self, x, y: U):
         return (x+x, y+y)
 y = X[X[int]]()
-print y.foo(U=float,...).__class__.__name__  #: foo(X[X[int]],...,...,float)
+# The partial mask also includes the implicit Self generic slot.
+print y.foo(U=float,...).__class__.__name__  #: foo(X[X[int]],...,...,float,...)
 print y.foo(1, 2.2, float) #: (2, 4.4)
 
 #%% fn_overloads_NOPY,barebones

@@ -196,7 +196,7 @@ class Match[T]:
         else:
             return (self._get_match(args[0], n), *self._group_multi(n, *args[1:]))
 
-    def group(self, *args):
+    def group(self, /, *args):
         if static.len(args) == 0:
             return self._get_match(0, 1).__val__()
         elif static.len(args) == 1:
@@ -204,16 +204,16 @@ class Match[T]:
         else:
             return self._group_multi(self.re.groups, *args)
 
-    def __getitem__(self, g):
+    def __getitem__(self, g, /):
         return self._get_match(g, self.re.groups)
 
-    def start(self, group = 0):
+    def start(self, group = 0, /):
         return self._get_group(group, self.re.groups).start
 
-    def end(self, group = 0):
+    def end(self, group = 0, /):
         return self._get_group(group, self.re.groups).end
 
-    def span(self, group = 0):
+    def span(self, group = 0, /):
         start, end = self._get_group(group, self.re.groups)
         return start, end
 
@@ -300,7 +300,7 @@ class Match[T]:
 
         return r.__str__()
 
-    def expand(self, template: str):
+    def expand(self, /, template: str):
         if "\\" not in template:
             return template
 
@@ -343,7 +343,7 @@ class Match[T]:
         name = seq_re_group_index_to_name(self.re._re, max_group)
         return name.decode() if isinstance(self.string, str) else name
 
-    def groups(self, default: Optional[str] = None):
+    def groups(self, /, default: Optional[str] = None):
         def get_or_default(item, default):
             return item if item is not None else default
 
@@ -351,17 +351,17 @@ class Match[T]:
         return [get_or_default(self._span_match(self._spans[i]), default)
                 for i in range(1, n + 1)]
 
-    def groupdict(self, default: Optional[str] = None):
+    def groupdict(self, /, default: Optional[str] = None):
         d = {}
         for group, index in self.re.groupindex.items():
             item = self[index]
             d[group] = item if item is not None else default
         return d
 
-    def __copy__(self):
+    def __copy__(self, /):
         return self
 
-    def __deepcopy__(self):
+    def __deepcopy__(self, /):
         return self
 
     def __bool__(self):
@@ -516,26 +516,26 @@ class Pattern:
                 codepoint_pos = posx
 
     def search(
-        self, string: T, pos: Optional[int] = None, endpos: Optional[int] = None
+        self, /, string: T, pos: Optional[int] = None, endpos: Optional[int] = None
     ) -> Optional[Match[T]]:
         return self._match_one(_ANCHOR_NONE, string, pos, endpos)
 
     def match(
-        self, string: T, pos: Optional[int] = None, endpos: Optional[int] = None
+        self, /, string: T, pos: Optional[int] = None, endpos: Optional[int] = None
     ) -> Optional[Match[T]]:
         return self._match_one(_ANCHOR_START, string, pos, endpos)
 
     def fullmatch(
-        self, string: T, pos: Optional[int] = None, endpos: Optional[int] = None
+        self, /, string: T, pos: Optional[int] = None, endpos: Optional[int] = None
     ) -> Optional[Match[T]]:
         return self._match_one(_ANCHOR_BOTH, string, pos, endpos)
 
     def finditer(
-        self, string: T, pos: Optional[int] = None, endpos: Optional[int] = None
+        self, /, string: T, pos: Optional[int] = None, endpos: Optional[int] = None
     ) -> Generator[Match[T]]:
         return self._match(_ANCHOR_NONE, string, pos, endpos)
 
-    def findall(self, string: T, pos: Optional[int] = None, endpos: Optional[int] = None):
+    def findall(self, /, string: T, pos: Optional[int] = None, endpos: Optional[int] = None):
         return [m.group() for m in self.finditer(string, pos, endpos)]
 
     def _split(self, cb, string: T, maxsplit: int = 0):
@@ -555,7 +555,7 @@ class Pattern:
         pieces.append(string[end:])
         return pieces, numsplit
 
-    def split(self, string: T, maxsplit: int = 0):
+    def split(self, /, string: T, maxsplit: int = 0):
         if maxsplit < 0:
             return [Optional[T](string)]
 
@@ -581,13 +581,13 @@ class Pattern:
         else:
             return repl(match)
 
-    def subn(self, repl, string: T, count: int = 0):
+    def subn(self, /, repl, string: T, count: int = 0):
         cb = lambda match: (Pattern._repl(match, repl),)
         pieces, numsplit = self._split(cb, string, count)
         joined_pieces = str.cat(pieces) if isinstance(string, str) else bytes.cat(pieces)
         return joined_pieces, numsplit
 
-    def sub(self, repl, string: T, count: int = 0):
+    def sub(self, /, repl, string: T, count: int = 0):
         joined_pieces, _ = self.subn(repl, string, count)
         return joined_pieces
 

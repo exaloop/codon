@@ -34,12 +34,29 @@ Type *TypecheckVisitor::unify(Type *a, Type *b) const {
   if (!((*a) << b)) {
     types::Type::Unification undo;
     a->unify(b, &undo);
-    LOG("[unify] {} {}", a->debugString(2), b->debugString(2));
-    // log("[unify] {} {}", a->debugString(1), b->debugString(1));
     E(Error::TYPE_UNIFY, getSrcInfo(), a->prettyString(), b->prettyString());
     return nullptr;
   }
   return a;
+}
+
+/// Select a nullable target without committing unresolved payloads or coercing values.
+/// Ordinary wrapping/unification still checks payload compatibility at each use.
+TypePtr TypecheckVisitor::joinNullableTypes(Type *left, Type *right) {
+  if (left->getStatic())
+    left = left->getStatic()->getNonStaticType();
+  if (right->getStatic())
+    right = right->getStatic()->getNonStaticType();
+  if (right->is(StdlibTypes::Optional))
+    return right->shared_from_this();
+  if (left->is(StdlibTypes::Optional))
+    return left->shared_from_this();
+  if (!left->is(StdlibTypes::NoneType) && !right->is(StdlibTypes::NoneType))
+    return nullptr;
+  auto member = left->is(StdlibTypes::NoneType) ? right : left;
+  if (member->is(StdlibTypes::NoneType))
+    return member->shared_from_this();
+  return instantiateType(getStdLibType(StdlibTypes::Optional), {member});
 }
 
 /// Infer all types within a Stmt *. Implements the LTS-DI typechecking.
@@ -78,6 +95,34 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool sweepForceRealize) {
     //   preamble = cast<SuiteStmt>(pt);
     // }
     result = tv.transform(result);
+    auto base = ctx->getBase();
+    // Join reached returns before wrapping them; early unification with NoneType
+    // would prevent later value returns from establishing an optional.
+    if (base->inferReturnType && !base->returnStatements.empty()) {
+      TypePtr first, inferred;
+      bool hasEmptyReturn = false, hasUnknown = false;
+      for (const auto &[statement, bare] : base->returnStatements) {
+        auto returned = statement->getExpr()->getType();
+        hasEmptyReturn |= bare;
+        if (returned->getUnbound()) {
+          hasUnknown = true;
+        } else {
+          if (!first)
+            first = returned->shared_from_this();
+          if (!inferred)
+            inferred = returned->shared_from_this();
+          else if (auto nullable = joinNullableTypes(inferred.get(), returned))
+            inferred = nullable;
+        }
+      }
+      if (inferred && (!inferred->is(StdlibTypes::NoneType) || !hasUnknown)) {
+        // Bare returns retain their existing checks (return_none_err_1/2).
+        unify(base->returnType.get(), hasEmptyReturn ? first.get() : inferred.get());
+        base->inferReturnType = false;
+        base->returnStatements.clear();
+        ctx->changedNodes++;
+      }
+    }
     std::swap(ctx->changedNodes, changedNodes);
     std::swap(ctx->returnEarly, returnEarly);
     ctx->typecheckLevel--;
@@ -379,6 +424,9 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
     ast->suite = s;
   addClassGenerics(type, true);
   ctx->getBase()->func = ast;
+  ctx->getBase()->inferReturnType = !ast->getReturn() &&
+                                    isUnbound(type->getRetType()) && !ast->isAsync() &&
+                                    !ast->hasAttribute(Attr::IsGenerator);
 
   // Internal functions have no AST that can be realized
   bool hasAst = ast->getSuite() && !ast->hasAttribute(Attr::Internal);
@@ -449,6 +497,41 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
 
   ctx->getBase()->suite = ast->getSuite();
   if (hasAst) {
+    // Prepare captured parameters once per realization, before inference retries.
+    auto bindings = ast->getAttribute<BindingsAttribute>(Attr::Bindings);
+    auto declaredAtToplevel =
+        ast->getSuite()->getAttribute<BindingsAttribute>(Attr::Bindings);
+    std::vector<Stmt *> prepend;
+    for (const auto &param : *ast) {
+      if (!param.isValue())
+        continue;
+      auto name = getUnmangledName(param.getNameWithStars().second);
+      auto binding = bindings ? in(bindings->bindings, name) : nullptr;
+      auto declaration =
+          declaredAtToplevel ? in(declaredAtToplevel->bindings, name) : nullptr;
+      if (declaration || (binding && binding->isNonlocal)) {
+        // Do not overwrite argument with a declaration if
+        // argument is captured by some local function.
+        prepend.push_back(N<AssignStmt>(N<IdExpr>(name), N<IdExpr>(name)));
+        if (declaration) {
+          if (declaration->count > 0)
+            prepend.push_back(
+                N<AssignStmt>(N<IdExpr>(fmt::format("{}{}", name, VAR_USED_SUFFIX)),
+                              N<BoolExpr>(false)));
+          // The suite must not introduce another, uninitialized parameter binding.
+          declaredAtToplevel->bindings.erase(name);
+        }
+      }
+    }
+    // Entry bindings must be visible throughout the body, regardless of call time.
+    auto time = ast->getSuite()->getAttribute<ir::IntValueAttribute>(Attr::ExprTime);
+    for (auto *stmt : prepend) {
+      stmt->setAttribute(Attr::ExprTime, time ? time->value : 0);
+      stmt->setSrcInfo(ast->getSuite()->getSrcInfo());
+    }
+    ast->getSuite()->items.insert(ast->getSuite()->items.begin(), prepend.begin(),
+                                  prepend.end());
+
     auto oldBlockLevel = ctx->blockLevel;
     ctx->blockLevel = 0;
     auto ret = inferTypes(ctx->getBase()->suite);
@@ -519,13 +602,15 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
   std::vector<Param> args;
   for (auto &i : *ast) {
     auto [_, varName] = i.getNameWithStars();
-    args.emplace_back(varName, nullptr, nullptr, i.status);
+    args.emplace_back(varName, nullptr, nullptr, i.status, i.kind);
   }
   r->ast =
       N<FunctionStmt>(r->type->realizedName(), nullptr, args, ctx->getBase()->suite,
                       std::vector<Expr *>{}, ast->isAsync());
   r->ast->setSrcInfo(ast->getSrcInfo());
   r->ast->cloneAttributesFrom(ast);
+  // Resolved helper bodies and receiver wrappers are available only after typing.
+  checkFieldInitialization(type, r->ast);
 
   auto newType = std::static_pointer_cast<types::FuncType>(type->generalize(0));
   auto newKey = newType->realizedName();

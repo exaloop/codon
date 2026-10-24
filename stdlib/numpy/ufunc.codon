@@ -710,7 +710,9 @@ class BinaryUFunc:
             out.data[0] = ans
             return out
         else:
-            return ans
+            # Optional tracks an unseeded accumulator, not the public scalar dtype.
+            result: dtype = ans
+            return result
 
     def reduce(self,
                array,

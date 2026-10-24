@@ -39,7 +39,7 @@ from math import (
 )
 
 class StatisticsError(ValueError):
-    def __init__(self, message: str = ""):
+    def __init__(self, message: str = "", /):
         super().__init__(message)
 
 def median(data) -> float:
@@ -123,7 +123,7 @@ def multimode(data):
     maximum = max((pair[1] for pair in counts), default=0)
     return [value for value, count in counts if count == maximum]
 
-def quantiles(data, n: int = 4, method: str = "exclusive") -> List[float]:
+def quantiles(data, *, n: int = 4, method: str = "exclusive") -> List[float]:
     if n < 1:
         raise StatisticsError("n must be at least 1")
     data = sorted(data)
@@ -530,7 +530,7 @@ def _scaled_centered(data, origin, center: float, count: int, scale: float):
     for index in range(count):
         yield _scaled_difference(data[index], origin, scale) - center.cdiv(scale)
 
-def covariance(xdata, ydata) -> float:
+def covariance(xdata, ydata, /) -> float:
     left, right = _paired(xdata, ydata, "covariance")
     left_origin, left_mean = _origin_mean(left)
     right_origin, right_mean = _origin_mean(right)
@@ -583,7 +583,7 @@ def _correlation(left, right, left_origin, right_origin, left_mean: float,
         raise StatisticsError("at least one of the inputs is constant")
     return product.cdiv(denominator)
 
-def correlation(xdata, ydata, method: str = "linear") -> float:
+def correlation(xdata, ydata, /, *, method: str = "linear") -> float:
     left, right = _paired(xdata, ydata, "correlation")
     if method == "ranked":
         return _correlation(_rank(left), _rank(right), 0.0, 0.0, 0.0, 0.0, len(left))
@@ -604,7 +604,7 @@ def _origin_parts(value):
     else:
         return float(value), 0.0
 
-def linear_regression(xdata, ydata, proportional: bool = False):
+def linear_regression(xdata, ydata, /, *, proportional: bool = False):
     left, right = _paired(xdata, ydata, "linear regression")
     left_origin, left_mean = _origin_mean(left, proportional)
     right_origin, right_mean = _origin_mean(right, proportional)
@@ -718,7 +718,7 @@ def _kernel_values(data, first: int, last: int, point: float, bandwidth: float,
     for index in range(first, last):
         yield _kernel_value((point - data[index]).cdiv(bandwidth), kind, cumulative)
 
-def kde(data, h, kernel: str = "normal", cumulative: bool = False):
+def kde(data, h, kernel: str = "normal", *, cumulative: bool = False):
     """Return a kernel density or cumulative distribution estimator."""
     kind = _kernel_id(data, h, kernel)
     bandwidth = float(h)
@@ -776,7 +776,7 @@ def _kernel_inverse(probability: float, kind: int, normal) -> float:
         value = candidate if lower < candidate < upper else (lower + upper) * 0.5
     return value
 
-def kde_random(data, h, kernel: str = "normal", seed: Optional[int] = None):
+def kde_random(data, h, kernel: str = "normal", *, seed: Optional[int] = None):
     """Return a sampler with a private random generator and optional integer seed."""
     kind = _kernel_id(data, h, kernel)
     generator = random.Random(seed)
@@ -936,7 +936,7 @@ class NormalDist:
 
         return 1.0 - (_fabs(Y.cdf(x1) - X.cdf(x1)) + _fabs(Y.cdf(x2) - X.cdf(x2)))
 
-    def samples(self, n: int, seed: Optional[int] = None):
+    def samples(self, n: int, *, seed: Optional[int] = None):
         if seed is None:
             return [self._normal_dist_inv_cdf(random.random(), self._mu, self._sigma) for index in range(n)]
         else:
@@ -987,7 +987,7 @@ class NormalDist:
     def __eq__(x1: NormalDist, x2: NormalDist):
         return x1._mu == x2._mu and x1._sigma == x2._sigma
 
-    def __ne__(self, other: NormalDist):
+    def __ne__(self, other: NormalDist, /):
         return not self == other
 
     def __hash__(self):

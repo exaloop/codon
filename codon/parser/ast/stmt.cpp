@@ -567,11 +567,47 @@ std::string GlobalStmt::toPythonString(bool a, int indent, int level) const {
                 this, a, indent, level);
 }
 
+/// Consume parameter separators, sharing their validation with lambda constructors.
+std::vector<Param> FunctionStmt::parseParams(std::vector<Param> args) {
+  std::vector<Param> params;
+  bool slash = false, star = false, bareStar = false, keyword = false;
+  SrcInfo starInfo;
+  for (auto &p : args) {
+    if (p.name == "/") {
+      if (slash || star || params.empty())
+        error::E(Error::CUSTOM, p.getSrcInfo(),
+                 "'/' must follow positional parameters and precede '*'");
+      for (auto &q : params)
+        q.kind = Param::PositionalOnly;
+      slash = true;
+    } else if (p.name == "*") {
+      if (star)
+        error::E(Error::CUSTOM, p.getSrcInfo(), "'*' may appear only once");
+      star = bareStar = true;
+      starInfo = p.getSrcInfo();
+    } else {
+      auto stars = p.getNameWithStars().first;
+      if (stars) {
+        if (bareStar && stars == 1)
+          error::E(Error::CUSTOM, p.getSrcInfo(), "'*' may appear only once");
+        star = true;
+      } else if (star) {
+        p.kind = Param::KeywordOnly;
+        keyword = true;
+      }
+      params.push_back(std::move(p));
+    }
+  }
+  if (bareStar && !keyword)
+    error::E(Error::CUSTOM, starInfo, "named arguments must follow bare '*'");
+  return params;
+}
+
 FunctionStmt::FunctionStmt(std::string name, Expr *ret, std::vector<Param> args,
                            Stmt *suite, std::vector<Expr *> decorators, bool async)
-    : AcceptorExtend(), Items(std::move(args)), name(std::move(name)), ret(ret),
-      suite(SuiteStmt::wrap(suite)), decorators(std::move(decorators)), async(async),
-      nonInferrableGenerics(nullptr) {}
+    : AcceptorExtend(), Items(parseParams(std::move(args))), name(std::move(name)),
+      ret(ret), suite(SuiteStmt::wrap(suite)), decorators(std::move(decorators)),
+      async(async), nonInferrableGenerics(nullptr) {}
 FunctionStmt::FunctionStmt(const FunctionStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), Items(ast::clone(stmt.items, clean)),
       name(stmt.name), ret(ast::clone(stmt.ret, clean)),
@@ -611,11 +647,12 @@ std::string FunctionStmt::toPythonString(bool a, int indent, int level) const {
            (ret ? ret->toPythonString(a, indent, level + 2 * indent) : "None")},
       this, a, indent, indent + level);
 }
+/// TODO: get rid of this fn one day, refactor it away
 std::string FunctionStmt::getSignature() {
   if (signature.empty()) {
     std::vector<std::string> s;
     for (auto &a : items)
-      s.push_back(a.type ? a.type->toString() : "-");
+      s.push_back(fmt::format("{}:{}", int(a.kind), a.type ? a.type->toString() : "-"));
     signature = join(s, ":");
   }
   return signature;

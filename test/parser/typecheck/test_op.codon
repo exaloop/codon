@@ -14,6 +14,239 @@ print c is c, c is not c #: True False
 z: Optional[int] = None
 print z is None, None is z, None is not z, None is None #: True True False True
 
+#%% union_equality
+# Dispatch both active dtype alternatives and preserve elementwise array results.
+import numpy as np
+
+Array = Union[np.ndarray[int, 1], np.ndarray[complex, 1],
+              np.ndarray[np.int8, 1], np.ndarray[np.int32, 1]]
+Key = Union[int, complex, np.int8, np.int32]
+
+def compare_array(array):
+    values: Array = array
+    for key in (2, complex(2), np.int8(2), np.int32(2)):
+        value: Key = key
+        equal = values == value
+        assert type(equal) is np.ndarray[bool, 1]
+        assert equal.tolist() == [False, True, False, False]
+        assert (values != value).tolist() == [True, False, True, True]
+        assert (value == values).tolist() == [False, True, False, False]
+        assert (values == key).tolist() == [False, True, False, False]
+        assert (key == values).tolist() == [False, True, False, False]
+
+compare_array(np.array([1, 2, 3, 4]))
+compare_array(np.array([1, 2, 3, 4], dtype=complex))
+compare_array(np.array([1, 2, 3, 4], dtype=np.int8))
+compare_array(np.array([1, 2, 3, 4], dtype=np.int32))
+
+# Dispatch must evaluate the left and right operands once, in source order.
+events = []
+def operand(value: int):
+    events.append(value)
+    result: Union[int, float] = value
+    return result
+
+assert operand(1) != operand(2)
+assert events == [1, 2]
+assert operand(2) == 2.0 and 2 == operand(2)
+
+#%% union_numpy_operations
+import numpy as np
+
+Array = Union[np.ndarray[int, 1], np.ndarray[complex, 1],
+              np.ndarray[np.int8, 1], np.ndarray[np.int32, 1]]
+Key = Union[int, complex, np.int8, np.int32]
+
+def check_array(array):
+    values: Array = array
+    for key in (2, complex(2), np.int8(2), np.int32(2)):
+        value: Key = key
+        assert ((values + value) == (array + key)).all()
+        assert ((values * value) == (array * key)).all()
+        assert ((value + values) == (key + array)).all()
+        assert ((value * values) == (key * array)).all()
+        assert ((values + key) == (array + key)).all()
+        assert ((key + values) == (key + array)).all()
+        assert (values.dot(value) == array.dot(key)).all()
+        assert (values.__add__(value) == (array + key)).all()
+
+check_array(np.array([1, 2, 3, 4]))
+check_array(np.array([1, 2, 3, 4], dtype=complex))
+check_array(np.array([1, 2, 3, 4], dtype=np.int8))
+check_array(np.array([1, 2, 3, 4], dtype=np.int32))
+
+#%% union_binary_operations
+left: Union[int, str] = 3
+right: Union[int, float] = 2.5
+assert left + right == 5.5
+assert left * right == 7.5
+left: Union[int, str] = 'ab'
+right: Union[int, float] = 2
+assert left * right == 'abab'
+try:
+    left + right
+    assert False
+except TypeError:
+    pass
+
+events: list[int] = []
+def operand(value: int):
+    events.append(value)
+    result: Union[int, float] = value
+    return result
+
+assert operand(7) - operand(2) == 5
+assert events == [7, 2]
+assert operand(2) ** operand(3) == 8
+assert events == [7, 2, 2, 3]
+assert operand(4) < operand(5)
+
+@tuple
+class Reflected:
+    value: int
+    def __rsub__(self, other: int):
+        return other - self.value
+
+reflected: Union[Reflected, str] = Reflected(3)
+number: Union[int, str] = 10
+assert number - reflected == 7
+assert 10 - reflected == 7
+
+#%% union_nullable_arithmetic
+value: Union[int, str, NoneType] = 2
+assert value + 1 == 3
+assert 1 + value == 3
+assert value * 3 == 6
+value: Union[int, str, NoneType] = 'ab'
+assert value * 2 == 'abab'
+try:
+    value + 1
+    assert False
+except TypeError:
+    pass
+value: Union[int, str, NoneType] = None
+try:
+    value + 1
+    assert False
+except ValueError:
+    pass
+
+#%% union_method_arguments
+@tuple
+class Number:
+    value: int
+    def combine(self, other: int):
+        return self.value + other
+    def echo(self, value):
+        return value
+    def argument_types(self, first, second=1):
+        return type(first).__name__ + ':' + type(second).__name__
+    def choose(self, value: int):
+        return 'int'
+    @overload
+    def choose(self, value: str):
+        return 'str'
+
+@tuple
+class Text:
+    value: str
+    def combine(self, other: str):
+        return self.value + other
+    def echo(self, value):
+        return value
+    def argument_types(self, first, second=1):
+        return type(first).__name__ + ':' + type(second).__name__
+    def choose(self, value: int):
+        return 'int'
+    @overload
+    def choose(self, value: str):
+        return 'str'
+
+receiver: Union[Number, Text] = Number(10)
+argument: Union[int, str] = 2
+assert receiver.combine(argument) == 12
+argument: Union[int, str] = 'b'
+try:
+    receiver.combine(argument)
+    assert False
+except TypeError:
+    pass
+receiver: Union[Number, Text] = Text('a')
+assert receiver.combine(argument) == 'ab'
+echoed = receiver.echo(argument)
+assert type(echoed) is Union[int, str]
+assert echoed == 'b'
+assert receiver.argument_types(argument, second=argument) == 'str:str'
+assert receiver.argument_types(argument) == 'str:int'
+assert receiver.argument_types(second=argument, first=argument) == 'str:str'
+bound = receiver.argument_types
+assert bound(argument, second=argument) == 'str:str'
+assert receiver.choose(argument) == 'str'
+argument: Union[int, str] = 2
+assert receiver.choose(argument) == 'int'
+
+events: list[int] = []
+def get_receiver():
+    events.append(1)
+    result: Union[Number, Text] = Text('a')
+    return result
+
+def get_argument(index: int):
+    events.append(index)
+    result: Union[int, str] = 'b'
+    return result
+
+assert get_receiver().argument_types(get_argument(2), second=get_argument(3)) == 'str:str'
+assert events == [1, 2, 3]
+
+#%% union_declared_arguments
+Choice = Union[int, str]
+
+@tuple
+class FirstFormatter:
+    offset: int
+    def width(self, first: Choice, second: Choice, third: Choice, fourth: Choice,
+              fifth: Choice, sixth: Choice, seventh: Choice, eighth: Choice,
+              marker=0):
+        return (self.offset + sum(len(str(value)) for value in
+                (first, second, third, fourth, fifth, sixth, seventh, eighth)),
+                type(marker).__name__)
+
+@tuple
+class SecondFormatter:
+    offset: int
+    def width(self, first: Choice, second: Choice, third: Choice, fourth: Choice,
+              fifth: Choice, sixth: Choice, seventh: Choice, eighth: Choice,
+              marker=0):
+        return (self.offset + sum(len(str(value)) for value in
+                (first, second, third, fourth, fifth, sixth, seventh, eighth)),
+                type(marker).__name__)
+
+formatter: Union[FirstFormatter, SecondFormatter] = FirstFormatter(1)
+field: Choice = 42
+assert formatter.width(field, field, field, field, field, field, field, field,
+                       marker=field) == (17, 'int')
+formatter: Union[FirstFormatter, SecondFormatter] = SecondFormatter(2)
+field: Choice = 'abc'
+bound = formatter.width
+assert bound(eighth=field, first=field, second=field, third=field,
+             fourth=field, fifth=field, sixth=field, seventh=field,
+             marker=field) == (26, 'str')
+
+events: list[int] = []
+def get_bound():
+    events.append(0)
+    return FirstFormatter(0).width
+
+def get_field(index: int) -> Choice:
+    events.append(index)
+    return 'a'
+
+assert get_bound()(eighth=get_field(8), seventh=get_field(7), sixth=get_field(6),
+                   fifth=get_field(5), fourth=get_field(4), third=get_field(3),
+                   second=get_field(2), first=get_field(1)) == (8, 'int')
+assert events == [0, 8, 7, 6, 5, 4, 3, 2, 1]
+
 #%% binary_and_or,barebones
 s = 'hehe'
 a = 'hehe' or 5.2
@@ -123,6 +356,29 @@ print 15 >= foo()-1 < 30 > 20 > foo()
 #: True
 
 print True == (b == 15) #: True
+
+#%% static_comparison_chain
+# middle operands retain static types without duplicating runtime calls.
+def check_lengths(first, second, third):
+    import internal.static as static
+    if not (static.len(first) == static.len(second) == static.len(third)):
+        compile_error('equal lengths rejected')
+    if static.len(first) == static.len(second) == 2:
+        compile_error('unequal lengths accepted')
+    if not (0 < static.len(first) < 3 <= static.len(third) + 2):
+        compile_error('ordered lengths rejected')
+check_lengths((1,), (2,), (3,))
+
+def record(events, value):
+    events.append(value)
+    return value
+events: list[int] = []
+assert 0 < record(events, 1) < record(events, 2)
+assert events == [1, 2]
+events.clear()
+assert not (3 < record(events, 2) < record(events, 4))
+assert events == [2]
+print('comparison chains ok')  #: comparison chains ok
 
 #%% pipe_error,barebones
 def b(a, b, c, d):
@@ -344,8 +600,6 @@ except ValueError:
     print 'exception'
 #! 'int' does not match expected type 'NoneType'
 #! during the realization
-# Explanation: None can also be Optional[Generator[int]]
-# It should, however, default to None as function argp
 
 #%% instantiate_err,barebones
 def foo[N]():

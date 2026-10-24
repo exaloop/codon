@@ -752,6 +752,7 @@ class CSVReader:
 
         if int(self._mmap_ptr) == -1:
             raise IOError("CSVReader error: mmap() failed")
+        return self
 
     def __exit__(self):
         if self._mmap_len > 0:
@@ -1272,7 +1273,7 @@ class CSVReaderGen:
 
     def __enter__(self):
         if not self._path:
-            return
+            return self
 
         with open(self._path, 'rb') as f:
             f.seek(0, 2)
@@ -1286,6 +1287,7 @@ class CSVReaderGen:
 
         if int(self._mmap_ptr) == -1:
             raise IOError("CSVReader error: mmap() failed")
+        return self
 
     def __exit__(self):
         if self._mmap_len > 0:

@@ -15,6 +15,9 @@
 #include <unistd.h>
 #include <vector>
 
+#include "codon/cir/flow.h"
+#include "codon/cir/func.h"
+#include "codon/cir/module.h"
 #include "codon/cir/transform/manager.h"
 #include "codon/compiler/compiler.h"
 #include "codon/compiler/jit.h"
@@ -65,6 +68,175 @@ TEST(TypeCoreTest, NewFunctionRealizationIsIncomplete) {
   EXPECT_TRUE(realization->captures.empty());
 }
 
+TEST(TypeCoreTest, ChecksSharedTypeGraphsAndRestoresLevels) {
+  using namespace codon::ast::types;
+  auto options = codon::Options::getDefault("build/codon_test");
+  codon::Compiler compiler(*options);
+  auto *cache = compiler.getCache();
+  auto leaf = std::make_shared<LinkType>(cache, LinkType::Unbound,
+                                         cache->unboundCount++, 5, nullptr);
+  auto variable = std::make_shared<LinkType>(cache, LinkType::Unbound,
+                                             cache->unboundCount++, 1, nullptr);
+  TypePtr shared = leaf;
+  // scratch.codon builds shared closure graphs. Occurs checks must visit shared
+  // nodes once while still lowering free-variable levels and detecting cycles.
+  for (int depth = 0; depth < 24; ++depth)
+    shared = std::make_shared<ClassType>(
+        cache, "Shared",
+        std::vector<ClassType::Generic>{{"left", shared, 0, Runtime},
+                                        {"right", shared, 1, Runtime}});
+  Type::Unification changes;
+  ASSERT_GE(variable->unify(shared.get(), &changes), 0);
+  EXPECT_EQ(leaf->level, 1);
+  EXPECT_EQ(changes.leveled.size(), 1);
+  changes.undo();
+  EXPECT_EQ(leaf->level, 5);
+  EXPECT_EQ(variable->kind, LinkType::Unbound);
+
+  auto recursive = std::make_shared<ClassType>(
+      cache, "Recursive",
+      std::vector<ClassType::Generic>{{"shared", shared, 0, Runtime},
+                                      {"cycle", variable, 1, Runtime}});
+  Type::Unification rejected;
+  EXPECT_LT(variable->unify(recursive.get(), &rejected), 0);
+  rejected.undo();
+  EXPECT_EQ(variable->kind, LinkType::Unbound);
+  EXPECT_EQ(leaf->level, 5);
+  EXPECT_GE(variable->unify(shared.get(), nullptr), 0);
+  EXPECT_EQ(leaf->level, 5);
+}
+
+// Missing or conditional writes warn, while initialization through aliases, generic
+// helpers, and super() is recognized. Decorator opt-outs suppress field diagnostics.
+TEST(FieldInitializationTest, TracksHelpersAndSupportsOptOut) {
+  auto options = codon::Options::getDefault("build/codon_test");
+  codon::Compiler compiler(*options);
+  testing::internal::CaptureStderr();
+  auto error = compiler.parseCode("field_initialization.codon", R"(
+class Missing:
+  values: list[int]
+  def __init__(self):
+    pass
+
+def initialize_values(Element: type, instance):
+  target = instance
+  target.values = [Element(1)]
+
+class ThroughHelpers:
+  values: list[int]
+  def __init__(self):
+    self.initialize()
+  def initialize(self):
+    initialize_values(int, self)
+
+class Conditional:
+  values: list[int]
+  def __init__(self, flag: bool):
+    if flag:
+      self.values = [1]
+
+class Parent:
+  value: int
+  def __init__(self):
+    self.value = 1
+
+class Inherits(Parent):
+  def __init__(self):
+    super().__init__()
+
+@dataclass(init=False)
+class Unchecked:
+  values: list[int]
+  def __new__():
+    return type._ref_new(Unchecked)
+
+@tuple
+class Value:
+  number: int
+  def __init__(self):
+    pass
+
+Missing()
+ThroughHelpers()
+Conditional(False)
+Inherits()
+Unchecked()
+Value(1).__init__()
+)");
+  auto warnings = testing::internal::GetCapturedStderr();
+  ASSERT_FALSE(bool(error)) << llvm::toString(std::move(error));
+  EXPECT_NE(warnings.find("field 'Missing.values' may be uninitialized"),
+            std::string::npos)
+      << warnings;
+  EXPECT_NE(warnings.find("field 'Conditional.values' may be uninitialized"),
+            std::string::npos)
+      << warnings;
+  EXPECT_EQ(warnings.find("field 'ThroughHelpers.values'"), std::string::npos)
+      << warnings;
+  EXPECT_EQ(warnings.find("field 'Unchecked.values'"), std::string::npos) << warnings;
+  EXPECT_EQ(warnings.find("field 'Value.number'"), std::string::npos) << warnings;
+  EXPECT_EQ(warnings.find("field 'Inherits.value'"), std::string::npos) << warnings;
+  EXPECT_EQ(warnings.find("field 'Exception."), std::string::npos) << warnings;
+  EXPECT_EQ(warnings.find("field 'ValueError."), std::string::npos) << warnings;
+}
+
+TEST(FieldInitializationTest, ReusesSharedHelperSummaries) {
+  // Each level has two edges to the same helper, but the graph has only 25 helpers.
+  // Without completed summaries, analysis repeats exponentially despite having no
+  // recursion. This depth exercises the scaling regression without a timing threshold.
+  std::string source =
+      "def initialize_0(instance, seed: int):\n    instance.value = seed\n";
+  for (int level = 1; level <= 24; ++level) {
+    auto previous = "initialize_" + std::to_string(level - 1);
+    source += "def initialize_" + std::to_string(level) +
+              "(instance, seed: int):\n"
+              "    if seed % 2 == 0:\n        " +
+              previous + "(instance, seed + 1)\n    else:\n        " + previous +
+              "(instance, seed + 2)\n";
+  }
+  // The same receiver in both slots also requires parameter-specific summaries.
+  source += R"(
+class Record:
+    value: int
+    def __init__(self, seed: int):
+        initialize_24(self, seed)
+
+def initialize_pair(first, second):
+    first.first = 1
+    second.second = 2
+
+class Pair:
+    first: int
+    second: int
+    def __init__(self):
+        initialize_pair(self, self)
+
+assert Record(1).value == 49
+assert Pair().first == 1 and Pair().second == 2
+)";
+  auto options = codon::Options::getDefault("build/codon_test");
+  codon::Compiler compiler(*options);
+  testing::internal::CaptureStderr();
+  auto error = compiler.parseCode("field_initialization_shared.codon", source);
+  auto warnings = testing::internal::GetCapturedStderr();
+  ASSERT_FALSE(bool(error)) << llvm::toString(std::move(error));
+  EXPECT_EQ(warnings.find("may be uninitialized"), std::string::npos) << warnings;
+}
+
+TEST(FieldInitializationTest, RejectsTupleInitOption) {
+  auto options = codon::Options::getDefault("build/codon_test");
+  codon::Compiler compiler(*options);
+  auto error = compiler.parseCode("tuple_init_option.codon", R"(
+@tuple(check_init=False)
+class Value:
+  number: int
+)");
+  ASSERT_TRUE(bool(error));
+  EXPECT_NE(
+      llvm::toString(std::move(error)).find("class decorator got unexpected argument"),
+      std::string::npos);
+}
+
 TEST(EnumConstructionTest, BoundsHelperRealizations) {
   std::string source = "from enum import Enum, auto\nclass Explicit(Enum):\n";
   for (int index = 0; index < 32; ++index)
@@ -96,6 +268,146 @@ TEST(EnumConstructionTest, BoundsHelperRealizations) {
     EXPECT_EQ(countRealizations("_next_value"), 1u);
     EXPECT_EQ(countRealizations("_auto_maximum"), 1u);
   }
+}
+
+TEST(EnumConstructionTest, SkipsLookupInitialization) {
+  auto options = codon::Options::getDefault("build/codon_test");
+  codon::Compiler compiler(*options);
+  testing::internal::CaptureStderr();
+  auto error = compiler.parseCode("enum_lookup_initialization.codon", R"(
+from enum import Enum
+class Color(Enum):
+    RED = 1
+    ALIAS = 1
+assert Color(1) is Color.RED
+assert Color(Color.RED) is Color.RED
+assert Color.ALIAS is Color.RED
+
+class ExplicitEmpty:
+    @staticmethod
+    def __new__(value: int):
+        return type._ref_new(ExplicitEmpty)
+    def __init__(self, value: int):
+        pass
+ExplicitEmpty(1)
+)");
+  auto warnings = testing::internal::GetCapturedStderr();
+  ASSERT_FALSE(bool(error)) << llvm::toString(std::move(error));
+  EXPECT_EQ(warnings.find("field 'Enum."), std::string::npos) << warnings;
+  auto enumInit = codon::ast::getMangledClass("std.enum", "Enum") + ".__init__:";
+  bool realizedExplicitEmpty = false;
+  for (const auto &[name, function] : compiler.getCache()->functions) {
+    EXPECT_FALSE(name.starts_with(enumInit)) << name;
+    if (name.find("ExplicitEmpty") != std::string::npos &&
+        name.find(".__init__:") != std::string::npos &&
+        !function.ast->hasAttribute(codon::ast::Attr::AutoGenerated))
+      realizedExplicitEmpty |= !function.realizations.empty();
+  }
+  EXPECT_TRUE(realizedExplicitEmpty);
+}
+
+TEST(ContextManagerLoweringTest, OmitsHandlersOnlyForLegacyNoneExits) {
+  const std::vector<std::tuple<std::string, std::string, bool, bool>> cases = {
+      {"context_legacy", "LegacyNone", false, true},
+      {"context_bool", "LegacyBool", false, false},
+      {"context_aware", "AwareNone", false, false},
+      {"context_defaults", "DefaultNone", false, false},
+      {"context_overloaded", "OverloadedNone", false, false},
+      {"context_async_legacy", "AsyncNone", true, true},
+      {"context_async_bool", "AsyncBool", true, false},
+  };
+  std::string source = R"(
+class LegacyNone:
+  def __enter__(self):
+    return 7
+  def __exit__(self):
+    pass
+
+class LegacyBool:
+  def __enter__(self):
+    return 7
+  def __exit__(self):
+    return True
+
+class AwareNone:
+  def __enter__(self):
+    return 7
+  def __exit__(self, exc_type, exc_value, traceback):
+    pass
+
+class DefaultNone:
+  def __enter__(self):
+    return 7
+  def __exit__(self, exc_type=None, exc_value=None, traceback=None):
+    pass
+
+class OverloadedNone:
+  def __enter__(self):
+    return 7
+  def __exit__(self):
+    pass
+  def __exit__(self, exc_type, exc_value, traceback):
+    pass
+
+class AsyncNone:
+  async def __aenter__(self):
+    return 7
+  async def __aexit__(self):
+    pass
+
+class AsyncBool:
+  async def __aenter__(self):
+    return 7
+  async def __aexit__(self):
+    return True
+)";
+  for (const auto &[name, manager, isAsync, legacy] : cases)
+    source += std::string(isAsync ? "async def " : "def ") + name + "():\n    " +
+              (isAsync ? "async with " : "with ") + manager +
+              "() as value:\n        return value\n" + name + "()\n";
+
+  auto options = codon::Options::getDefault("build/codon_test");
+  codon::Compiler compiler(*options);
+  auto error = compiler.parseCode("context_manager_lowering.codon", source);
+  ASSERT_FALSE(bool(error)) << llvm::toString(std::move(error));
+
+  size_t checked = 0;
+  for (auto *variable : *compiler.getModule()) {
+    auto *function = codon::ir::cast<codon::ir::BodiedFunc>(variable);
+    if (!function)
+      continue;
+    auto expected = std::ranges::find_if(cases, [&](const auto &entry) {
+      return std::get<0>(entry) == function->getUnmangledName();
+    });
+    if (expected == cases.end())
+      continue;
+    SCOPED_TRACE(function->getUnmangledName());
+    ++checked;
+    int tries = 0;
+    int catches = 0;
+    int flags = 0;
+    std::vector<codon::ir::Value *> pending{function->getBody()};
+    while (!pending.empty()) {
+      auto *value = pending.back();
+      pending.pop_back();
+      if (!value)
+        continue;
+      if (auto *flow = codon::ir::cast<codon::ir::TryCatchFlow>(value)) {
+        ++tries;
+        catches += std::distance(flow->begin(), flow->end());
+        EXPECT_NE(flow->getFinally(), nullptr);
+      }
+      auto children = value->getUsedValues();
+      pending.insert(pending.end(), children.begin(), children.end());
+    }
+    for (auto *local : *function)
+      if (local->getName().find("with_exception") != std::string::npos)
+        ++flags;
+    EXPECT_EQ(tries, 1);
+    EXPECT_EQ(catches, std::get<3>(*expected) ? 0 : 1);
+    EXPECT_EQ(flags, std::get<3>(*expected) ? 0 : 1);
+  }
+  EXPECT_EQ(checked, cases.size());
 }
 
 TEST(PassManagerTest, HonorsDisabledPassesAtRegistration) {

@@ -7,6 +7,7 @@
 #include "codon/parser/cache.h"
 #include "codon/parser/common.h"
 #include "codon/parser/match.h"
+#include "codon/parser/visitors/scoping/scoping.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 using namespace codon::error;
@@ -76,8 +77,8 @@ void TypecheckVisitor::visit(CallExpr *expr) {
   // Do not allow realization here (function will be realized later);
   // used to prevent early realization of compile_error
   expr->setAttribute(Attr::ParentCallExpr);
-  if (part.isPartial)
-    expr->getExpr()->setAttribute(Attr::ExprDoNotRealize);
+  expr->getExpr()->setAttribute(Attr::ExprDoNotRealize);
+  getHeadExpr(expr->getExpr())->setAttribute(Attr::ExprDoNotRealize);
   expr->expr = transform(expr->getExpr());
   expr->eraseAttribute(Attr::ParentCallExpr);
   if (isUnbound(expr->getExpr()))
@@ -195,8 +196,22 @@ void TypecheckVisitor::visit(CallExpr *expr) {
   // Typecheck arguments with the function signature
   bool done = typecheckCallArgs(calleeFn.get(), expr->items, part);
   if (!part.isPartial && calleeFn->canRealize()) {
-    // Previous unifications can qualify existing identifiers.
-    // Transform again to get the full identifier
+    // Clean up DoNotRealize
+    Expr *head = expr->expr;
+    for (;;) {
+      head->eraseAttribute(Attr::ExprDoNotRealize);
+      head->setType(calleeFn);
+      if (auto *suite = cast<StmtExpr>(head))
+        head = suite->getExpr();
+      else
+        break;
+    }
+    // Fix original fn (without replacements) with the updated one!
+    if (auto *id = cast<IdExpr>(head))
+      if (auto *realized = realize(calleeFn.get())) {
+        id->value = realized->realizedName();
+        id->setDone();
+      }
     expr->expr = transform(expr->expr);
   }
   done &= expr->expr->isDone();
@@ -353,6 +368,36 @@ bool TypecheckVisitor::transformCallArgs(CallExpr *expr) {
   return true;
 }
 
+/// Normalize Optional construction without introducing redundant value layers.
+/// Empty constructors must keep their arguments for deferred inference
+/// (optional_canonicalization); other calls use ordinary constructor matching.
+Expr *TypecheckVisitor::transformOptionalCall(CallExpr *expr, ClassType *type) {
+  if (expr->empty()) {
+    auto value = N<NoneExpr>();
+    value->setType(type->shared_from_this());
+    return transform(value);
+  }
+  if (expr->size() != 1 ||
+      (!expr->begin()->name.empty() && expr->begin()->name != "what"))
+    return nullptr;
+
+  auto &argument = expr->begin()->value;
+  argument = transform(argument);
+  auto argumentType = argument->getType();
+  if (argumentType->is(StdlibTypes::Optional) &&
+      type->unify(argumentType, nullptr) >= 0)
+    return argument;
+  if (!argumentType->is(StdlibTypes::NoneType))
+    return nullptr;
+  if (extractClassGeneric(type)->getUnbound())
+    return argument;
+  auto member = N<IdExpr>("T");
+  member->setType(instantiateTypeVar(extractClassGeneric(type)));
+  member->setDone();
+  return transform(
+      N<CallExpr>(N<DotExpr>(expr->getExpr(), "_from_none"), argument, member));
+}
+
 /// Extract the @c FuncType that represents the function to be called by the callee.
 /// Also handle special callees: constructors and partial functions.
 /// @return a pair with the callee's @c FuncType and the replacement expression
@@ -377,6 +422,9 @@ TypecheckVisitor::getCalleeFn(CallExpr *expr, PartialCallData &part) {
       typ = extractClassGeneric(typ)->getClass();
     if (!typ)
       return {nullptr, nullptr};
+    if (typ->is(StdlibTypes::Optional))
+      if (auto value = transformOptionalCall(expr, typ))
+        return {nullptr, value};
     if (typ->is(getMangledClass("std.internal.types.error", "OSError"))) {
       auto factory = transform(
           N<CallExpr>(N<DotExpr>(expr->getExpr(), "_construct"), expr->items));
@@ -422,14 +470,19 @@ TypecheckVisitor::getCalleeFn(CallExpr *expr, PartialCallData &part) {
     stmts.push_back(N<AssignStmt>(
         clone(var), N<CallExpr>(N<DotExpr>(expr->getExpr(), "__new__"),
                                 customNew ? args : std::vector<CallArg>{})));
-    auto init = N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "__init__"), args));
-    // class_custom_new: a factory may return another type, in which case its
-    // result must not be initialized as T.
-    stmts.push_back(customNew ? static_cast<Stmt *>(N<IfStmt>(
-                                    N<CallExpr>(N<IdExpr>("isinstance"), clone(var),
-                                                clone(expr->getExpr())),
-                                    init))
-                              : init);
+    auto initializers = findMethod(typ, "__init__");
+    // Check if object.__init__ (which is a stub) is being used (no default __init__).
+    bool ignoreInit = customNew && initializers.empty();
+    if (!ignoreInit) {
+      auto init = N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "__init__"), args));
+      // class_custom_new: a factory may return another type, in which case its
+      // result must not be initialized as T.
+      stmts.push_back(customNew ? static_cast<Stmt *>(N<IfStmt>(
+                                      N<CallExpr>(N<IdExpr>("isinstance"), clone(var),
+                                                  clone(expr->getExpr())),
+                                      init))
+                                : init);
+    }
     return {nullptr, transform(N<StmtExpr>(stmts, clone(var)))};
   }
 
@@ -448,11 +501,15 @@ TypecheckVisitor::getCalleeFn(CallExpr *expr, PartialCallData &part) {
       Expr *var = N<IdExpr>(part.var = getTemporaryVar("partcall"));
       auto id = N<IdExpr>(calleeFn->getFuncName());
       id->setType(calleeFn);
-      expr->expr =
-          transform(N<StmtExpr>(N<AssignStmt>(clone(var), expr->getExpr()), id));
+      id->setAttribute(Attr::ExprDoNotRealize);
+      auto *callee = N<StmtExpr>(N<AssignStmt>(clone(var), expr->getExpr()), id);
+      callee->setAttribute(Attr::ExprDoNotRealize);
+      expr->expr = transform(callee);
       part.known = mask;
     } else {
-      expr->expr = transform(N<IdExpr>(calleeFn->getFuncName()));
+      auto *id = N<IdExpr>(calleeFn->getFuncName());
+      id->setAttribute(Attr::ExprDoNotRealize);
+      expr->expr = transform(id);
     }
     seqassert(expr->getExpr()->getType()->getFunc(), "not a function: {}",
               *(expr->getExpr()->getType()));
@@ -636,9 +693,9 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
                 if (!added)
                   args.emplace_back(realName, transform(N<IdExpr>(realName.substr(1))));
               } else if ((*calleeFn->ast)[si].getDefault()) {
-                // Case 4: default is present
+                // Case 4: Default is present
                 if (auto ai = cast<IdExpr>((*calleeFn->ast)[si].getDefault())) {
-                  // Case 4a: non-values (Ids / .default names)
+                  // Non-values (Ids / .default names)
                   if (!part.known.empty() &&
                       part.known[si] == ClassType::PartialFlag::Default) {
                     // Case 4a/1: Default already captured by partial.
@@ -653,7 +710,7 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
                   if (partial)
                     newMask[si] = ClassType::PartialFlag::Default;
                 } else if (!partial) {
-                  // Case 4b: values / non-Id defaults (None, etc.)
+                  // Case 4b: Values / non-Id defaults (None, etc.)
                   if (cast<NoneExpr>((*calleeFn->ast)[si].getDefault()) &&
                       !(*calleeFn->ast)[si].type) {
                     args.emplace_back(realName,
@@ -671,7 +728,7 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
                   newMask[si] = ClassType::PartialFlag::Missing;
                 }
               } else if (partial) {
-                // Case 5: this is partial call. Just add ... for missing arguments
+                // Case 5: This is partial call. Just add ... for missing arguments
                 args.emplace_back(realName,
                                   transform(N<EllipsisExpr>(EllipsisExpr::PARTIAL)));
                 newMask[si] = ClassType::PartialFlag::Missing;
@@ -717,6 +774,15 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
       auto swap = transform(N<IdExpr>(name));
       *eptr = swap;
       prepends.emplace_back(front);
+    }
+    // getCalleeFn has already replaced the partial with its underlying function.
+    // Restore the saved partial args and run its setup before new arguments,
+    // without retaining the trailing, potentially unresolved function expression from
+    // the StmtExpr.
+    if (!part.var.empty()) {
+      const auto &calleeStmts = cast<StmtExpr>(expr->expr)->items;
+      prepends.insert(prepends.begin(), calleeStmts.begin(), calleeStmts.end());
+      expr->expr = N<IdExpr>(part.var);
     }
     return transform(N<StmtExpr>(prepends, expr));
   }
@@ -806,6 +872,21 @@ bool TypecheckVisitor::typecheckCallArgs(FuncType *calleeFn, std::vector<CallArg
   bool wrappingDone = true;         // tracks whether all arguments are wrapped
   std::vector<Type *> replacements; // list of replacement arguments
 
+  // Unify Self with the argument so that generics (e.g. N in Int[N].__lshift__)
+  // propagate
+  auto *parent = calleeFn->funcParent ? calleeFn->funcParent->getClass() : nullptr;
+  if (parent && !parent->canRealize() && !args.empty() && !calleeFn->ast->empty() &&
+      !calleeFn->ast->hasAttribute(Attr::StaticMethod) &&
+      getUnmangledName(calleeFn->ast->front().getName()) == "self") {
+    if (auto *receiver =
+            getUnderlyingStaticType(args.front().value->getType())->getClass())
+      for (const auto &base : getClass(receiver)->mro)
+        if (base->name == parent->name) {
+          unify(parent, instantiateType(base.get(), receiver));
+          break;
+        }
+  }
+
   withClassGenerics(
       calleeFn,
       [&]() {
@@ -846,14 +927,40 @@ bool TypecheckVisitor::typecheckCallArgs(FuncType *calleeFn, std::vector<CallArg
             // Defaults should not be unified (yet)!
             replacements.push_back(extractFuncArgType(calleeFn, si));
           } else {
-            if (wrapExpr(&args[si].value, extractFuncArgType(calleeFn, si), calleeFn)) {
-              unify(args[si].getExpr()->getType(), extractFuncArgType(calleeFn, si));
+            auto *signature = getFunction(calleeFn->getFuncName())->getType();
+            auto *expected = extractFuncArgType(calleeFn, si);
+            auto *actual = getUnderlyingStaticType(args[si].getExpr()->getType());
+            auto *bindings =
+                calleeFn->ast->getAttribute<BindingsAttribute>(Attr::Bindings);
+            auto *binding = bindings
+                                ? in(bindings->bindings,
+                                     getUnmangledName(
+                                         (*calleeFn->ast)[i].getNameWithStars().second))
+                                : nullptr;
+            // Specialize on a concrete union member instead of boxing it.
+            if (auto *u = expected->getUnion();
+                u && u->canRealize() && actual->canRealize() &&
+                extractFuncArgType(signature, si)->getUnion() &&
+                (!binding || (binding->count == 1 && !binding->isNonlocal)) &&
+                !calleeFn->ast->hasAttribute(Attr::LLVM) &&
+                !calleeFn->ast->hasAttribute(Attr::C))
+              for (auto *member : u->getRealizationTypes())
+                if (member->unify(actual, nullptr) >= 0) {
+                  expected = actual;
+                  // A stored callable may already have an inferred union result.
+                  if (!calleeFn->ast->getReturn() &&
+                      calleeFn->getRetType()->canRealize())
+                    calleeFn->generics[1].type =
+                        instantiateType(signature->getRetType());
+                  break;
+                }
+            if (wrapExpr(&args[si].value, expected, calleeFn)) {
+              unify(args[si].getExpr()->getType(), expected);
             } else {
               wrappingDone = false;
             }
-            replacements.push_back(!extractFuncArgType(calleeFn, si)->getClass()
-                                       ? args[si].getExpr()->getType()
-                                       : extractFuncArgType(calleeFn, si));
+            replacements.push_back(!expected->getClass() ? args[si].getExpr()->getType()
+                                                         : expected);
           }
           si++;
         }
@@ -864,6 +971,16 @@ bool TypecheckVisitor::typecheckCallArgs(FuncType *calleeFn, std::vector<CallArg
   // Realize arguments
   bool done = true;
   for (auto &a : args) {
+    if (a.getExpr()->getType()->is(StdlibTypes::Optional)) {
+      auto *payload = extractClassGeneric(a.getExpr()->getType());
+      if (payload->getUnbound()) {
+        auto pending = payload->shared_from_this();
+        ctx->getBase()
+            ->pendingDefaults[TypeContext::Base::NONE_ARGUMENT_DEFAULT_PRIORITY]
+            .insert(pending);
+        ctx->getBase()->pendingDefaults[0].erase(pending);
+      }
+    }
     // Previous unifications can qualify existing identifiers.
     // Transform again to get the full identifier
     if (realize(a.getExpr()->getType()))

@@ -2,6 +2,10 @@
 
 @extend
 class Optional:
+    @staticmethod
+    def _from_none(value: NoneType, T: type) -> Optional[T]:
+        return Optional[T]()
+
     @pure
     @llvm
     def _tuple_new(T: type) -> Optional[T]:

@@ -376,7 +376,14 @@ void ScopingVisitor::visit(AssignStmt *stmt) {
   CHECK(transform(stmt->getRhs()));
   CHECK(transform(stmt->getTypeExpr()));
   SetInScope s(&(ctx->root), (ASTNode *)stmt);
-  CHECK(transform(stmt->getLhs()));
+  if (!stmt->getRhs() && stmt->getTypeExpr() && !ctx->inClass) {
+    // Reuse conditional-binding used flags so annotation-only locals and globals
+    // raise NameError when read before assignment. Class fields are checked later.
+    ConditionalBlock block(ctx.get(), nullptr);
+    CHECK(transform(stmt->getLhs()));
+  } else {
+    CHECK(transform(stmt->getLhs()));
+  }
 }
 
 void ScopingVisitor::visit(IfStmt *stmt) {
@@ -643,7 +650,8 @@ void ScopingVisitor::visit(FunctionStmt *stmt) {
     if (in(seenArgs, n))
       STOP_ERROR(Error::FN_ARG_TWICE, a.getSrcInfo(), n);
     seenArgs.insert(n);
-    if (!a.getDefault() && defaultsStarted && !stars && a.isValue())
+    if (!a.getDefault() && defaultsStarted && !stars && a.isValue() &&
+        a.kind != Param::KeywordOnly)
       STOP_ERROR(Error::FN_DEFAULT, a.getSrcInfo(), n);
     defaultsStarted |= static_cast<bool>(a.getDefault());
     if (stmt->hasAttribute(Attr::C)) {
@@ -652,6 +660,16 @@ void ScopingVisitor::visit(FunctionStmt *stmt) {
       if (stars != 1 && !a.getType())
         STOP_ERROR(Error::FN_C_TYPE, a.getSrcInfo(), n);
     }
+  }
+
+  if (ctx->inClass && !stmt->hasAttribute(Attr::StaticMethod) && !stmt->empty() &&
+      stmt->front().getName() == "self") {
+    // Append default generic Self
+    if (!stmt->front().getType())
+      stmt->front().type = N<IdExpr>("Self");
+    if (isId(stmt->front().getType(), "Self") &&
+        std::ranges::none_of(*stmt, [](const Param &p) { return p.name == "Self"; }))
+      stmt->addParam(Param("Self", N<IdExpr>(StdlibTypes::Type)));
   }
 
   bool isOverload = false;
