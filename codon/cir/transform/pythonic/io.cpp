@@ -54,6 +54,8 @@ void optimizePrint(CallInstr *v) {
 }
 
 void optimizeWrite(CallInstr *v) {
+  if (v->numArgs() != 2)
+    return;
   auto *M = v->getModule();
 
   auto it = v->begin();

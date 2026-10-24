@@ -21,6 +21,30 @@ def test_file_io():
 test_file_io()
 
 @test
+def test_write_call_shapes():
+    @noinline
+    def write():
+        return "free function"
+
+    class Writer:
+        @noinline
+        def write(self):
+            return "method"
+
+    class RepeatedWriter:
+        @noinline
+        def write(self, text: str, count: int):
+            return text * count
+
+        def __file_write_gen__(self, values):
+            return "unexpected rewrite"
+
+    assert write() == "free function"
+    assert Writer().write() == "method"
+    assert RepeatedWriter().write(str.cat("a", "b"), 2) == "abab"
+test_write_call_shapes()
+
+@test
 def test_print():
     from sys import stdout
     print('hello world')               # EXPECT: hello world
