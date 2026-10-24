@@ -5,6 +5,20 @@ from numpy import *
 import itertools
 import internal.static as static
 
+@test
+def test_lstsq_plan_state(dtype: type, real_dtype: type):
+    from numpy.linalg.blas import fint
+    from numpy.linalg.linalg import GelsdParams
+    params = GelsdParams[dtype, real_dtype](fint(2), fint(2), fint(1))
+    assert params.RCOND == real_dtype(-1)
+    assert params.RANK == fint(0)
+    params.release()
+
+test_lstsq_plan_state(float, float)
+test_lstsq_plan_state(float32, float32)
+test_lstsq_plan_state(complex, float)
+test_lstsq_plan_state(complex64, float32)
+
 def identity_like_generalized(a):
     a = np.array(a)
     if a.ndim >= 3:
