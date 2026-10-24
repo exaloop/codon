@@ -1400,11 +1400,18 @@ Expr *TypecheckVisitor::transformRealizedFn(CallExpr *expr) {
   if (!argt)
     return nullptr;
   seqassert(argt->name == StdlibTypes::Tuple, "not a tuple");
-  for (size_t i = 0; i < std::min(argt->size(), fn->getFunc()->size()); i++) {
-    auto at = (*argt)[i]->is(StdlibTypes::TypeWrap) ? extractClassGeneric((*argt)[i])
-                                                    : (*argt)[i];
-    unify((*fn->getFunc())[i], at);
+  std::vector<CallArg> callArgs;
+  for (const auto &argument : argt->generics) {
+    auto type = argument.getType();
+    if (type->is(StdlibTypes::TypeWrap))
+      type = extractClassGeneric(type);
+    auto value = N<NoneExpr>();
+    value->setType(type->shared_from_this());
+    callArgs.emplace_back(value);
   }
+  Type::Unification changes;
+  if (canCall(fn->getFunc(), callArgs, nullptr, nullptr, &changes) < 0)
+    E(Error::CALL_REALIZED_FN, (*expr)[0].getExpr());
   if (auto f = realize(fn.get())) {
     auto e = N<IdExpr>(f->getFunc()->realizedName());
     e->setType(f->shared_from_this());
@@ -1459,18 +1466,13 @@ Expr *TypecheckVisitor::transformStaticFnCanCall(CallExpr *expr) {
     callArgs.emplace_back(v, N<NoneExpr>()); // dummy expression
     callArgs.back().getExpr()->setType(t->shared_from_this());
   }
-  if (auto fn = typ->getFunc()) {
-    return transform(N<BoolExpr>(canCall(fn, callArgs) >= 0));
-  } else if (auto pt = typ->getPartial()) {
-    // Captured function templates stay generalized; probe a fresh signature.
-    auto generic = pt->getPartialFunc()->generalize(0);
-    auto fn = instantiateType(generic.get());
-    return transform(N<BoolExpr>(canCall(fn->getFunc(), callArgs, pt) >= 0));
-  } else {
+  if (!typ->is(StdlibTypes::Function) && !typ->getPartial() &&
+      !typ->is(StdlibTypes::TypeWrap)) {
     compilationWarning("cannot use fn_can_call on non-functions", getSrcInfo().file,
                        getSrcInfo().line, getSrcInfo().col);
     return transform(N<BoolExpr>(false));
   }
+  return transform(N<BoolExpr>(matchCallable(typ, callArgs) >= 0));
 }
 
 Expr *TypecheckVisitor::transformStaticFnArgHasType(CallExpr *expr) {

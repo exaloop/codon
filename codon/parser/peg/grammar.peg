@@ -2,8 +2,6 @@
 # Codon PEG grammar
 # Adopted from Python 3's PEG grammar (https://docs.python.org/3/reference/grammar.html)
 
-# TODO: nice docstrs
-
 PREAMBLE {
   #include "codon/parser/peg/rules.h"
   #include <any>
@@ -155,7 +153,6 @@ assert_stmt <- 'assert' SPACE expression (_ ',' _ expression)? {
   return asts(Assert, LOC, ac_expr(V0), VS.size() > 1 ? ac_expr(V1) : nullptr);
 }
 
-# TODO: do targets as in Python
 del_stmt <- 'del' SPACE tlist(',', expression) {
   return asts(Suite, LOC,
     vmap(VS, [&](const any &i) { return asts(Del, LOC, ac_expr(i)); })
@@ -308,7 +305,6 @@ as_item <-
     return pair(ac_expr(V0), ac_expr(V1));
   }
   / expression { return pair(ac_expr(V0), (Expr*)nullptr); }
-# TODO: else block?
 try_stmt <-
   / ('try' _ ':' _ suite) excepts else_finally? {
     std::pair<Stmt*, Stmt*> ef {nullptr, nullptr};

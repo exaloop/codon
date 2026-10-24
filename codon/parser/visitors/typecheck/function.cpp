@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <string>
 #include <tuple>
+#include <unordered_set>
 
 #include "codon/cir/attribute.h"
 #include "codon/parser/ast.h"
@@ -541,10 +542,16 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     }
     ctx->typecheckLevel--;
 
+    // Callable factory constraints can link a method generic to a class generic
+    // (defaultdict.__new__). Generalizing the method must not mutate that outer slot.
+    std::unordered_set<int> parentGenerics;
+    if (parentClass)
+      for (auto u : parentClass->getUnbounds(true))
+        parentGenerics.insert(u->getLink()->id);
     // Generalize generics and remove them from the context
     for (const auto &g : generics) {
       for (auto &u : g->getUnbounds(false))
-        if (u->getUnbound()) {
+        if (u->getUnbound() && !in(parentGenerics, u->getUnbound()->id)) {
           u->getUnbound()->kind = LinkType::Generic;
         }
     }

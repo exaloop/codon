@@ -1856,3 +1856,153 @@ class Box[T]:
 
 assert list(filter(Box(2).matches, [1, 2, 3])) == [2]
 print('bound callable traits ok')  #: bound callable traits ok
+
+#%% callable_matching_defaults_variadics
+# Trait constraints and can_call must bind the same defaults, captured arguments,
+# and typed variadics as a normal call, including implicit Self/type parameters.
+import internal.static as static
+
+def apply(fn: CallableTrait[[int], R], R: type):
+    return fn(5)
+
+def defaulted(value: int, amount: int = 2):
+    return value + amount
+assert apply(defaulted) == 7
+assert apply(defaulted(amount=9, ...)) == 14
+
+def positional(value: int, /, *, amount: int = 3):
+    return value + amount
+assert apply(positional) == 8
+assert static.function.can_call(positional, 5)
+assert not static.function.can_call(positional, value=5)
+
+def convert(value: int, T: type = float):
+    return T(value)
+assert apply(convert) == 5.0
+assert apply(convert(T=int, ...)) == 5
+
+def variadic(*values: float, **kw: float):
+    return sum(values) + sum(kw.args)
+assert static.function.can_call(variadic, 1, extra=2)
+assert not static.function.can_call(variadic, 'bad')
+assert not static.function.can_call(variadic, extra='bad')
+assert apply(variadic) == 5.0
+partial = variadic(1, extra=2, ...)
+assert apply(partial) == 8.0
+assert static.function.can_call(partial, 5, extra=4)
+assert not static.function.can_call(partial, extra='bad')
+assert partial(5, extra=4) == 10.0
+
+class Box[T]:
+    value: T
+    def add(self, value: T, *rest: int, extra: int = 2):
+        return self.value + value + sum(rest) + extra
+assert apply(Box(10).add) == 17
+assert static.function.can_call(Box(10).add, 5, 1, 2)
+assert not static.function.can_call(Box(10).add, 5, 'bad')
+print('callable defaults and variadics ok')  #: callable defaults and variadics ok
+
+#%% callable_matching_probes
+# A probe needs correlated type variables, but must undo its temporary bindings
+# after both successful and failed matches and must not typecheck function bodies.
+import internal.static as static
+
+def same[T](first: T, second: T):
+    return first
+assert static.function.can_call(same, 1, 2)
+assert not static.function.can_call(same, 1, 's')
+assert static.function.can_call(same, 'a', 'b')
+assert same('a', 'b') == 'a'
+
+def uncalled(value):
+    compile_error('can_call must not realize this body')
+assert static.function.can_call(uncalled, 1)
+assert static.function.can_call(uncalled, 's')
+assert not static.function.can_call(uncalled)
+
+def receives_callback(fn: CallableTrait[[int], int]):
+    compile_error('a nested callable constraint must not realize this body')
+assert static.function.can_call(receives_callback, uncalled)
+
+def required_keyword(value: int, *, amount: int):
+    return value + amount
+assert not static.function.can_call(required_keyword, 5)
+assert static.function.can_call(required_keyword, 5, amount=2)
+
+def increment(value: int) -> int:
+    return value + 2
+pointer: Function[[int], int] = increment
+assert static.function.can_call(pointer, 1)
+assert not static.function.can_call(pointer, 'bad')
+assert not static.function.can_call(pointer, 1, 2)
+from internal.attributes import no_argument_wrap
+@no_argument_wrap
+def unwrapped(value: int) -> int:
+    return value
+assert static.function.can_call(unwrapped, 1)
+assert not static.function.can_call(unwrapped, 'bad')
+print('callable probes ok')  #: callable probes ok
+
+#%% callable_matching_adapters
+# Callable adapters use the same matcher as traits, including default parameters
+# and bound methods. Different adaptations of a template need distinct proxies.
+def defaulted(value: int, amount: int = 2):
+    return value + amount
+
+def apply(fn: Callable[[int], int]):
+    return fn(5)
+assert apply(defaulted) == 7
+
+class Box:
+    value: int
+    def add(self, value: int, *, amount: int = 2):
+        return self.value + value + amount
+assert apply(Box(10).add) == 17
+
+def identity(value):
+    return value
+integer = Callable[[int], int](identity)
+string = Callable[[str], str](identity)
+assert integer(7) == 7
+assert string('s') == 's'
+print('callable adapters ok')  #: callable adapters ok
+
+#%% callable_matching_pointer_argument_error,barebones
+# A raw Function has no AST; its argument types must still satisfy the trait.
+def increment(value: int) -> int:
+    return value + 1
+pointer: Function[[int], int] = increment
+
+def accept(fn: CallableTrait[[str], int]):
+    pass
+accept(pointer)  #! 'Function[Tuple[int],int]' does not match expected type
+
+#%% callable_matching_pointer_return_error,barebones
+# Raw Function return types must also be checked even when accept never calls it.
+def increment(value: int) -> int:
+    return value + 1
+pointer: Function[[int], int] = increment
+
+def accept(fn: CallableTrait[[int], str]):
+    pass
+accept(pointer)  #! 'Function[Tuple[int],int]' does not match expected type
+
+#%% callable_matching_keyword_only_error,barebones
+# A positional callable signature cannot supply a required keyword-only argument.
+def required_keyword(value: int, *, amount: int) -> int:
+    return value + amount
+fn: CallableTrait[[int], int] = required_keyword  #! 'CallableTrait[[int],int]' does not match expected type
+
+#%% callable_matching_factory_generics
+# Checking raw factory return types can alias method and enclosing class generics.
+# Preparing a factory overload must leave the class parameters available to later ones.
+from collections import defaultdict
+
+lists = defaultdict(list)
+lists['first'].append(1)
+assert lists['first'] == [1]
+assert lists['second'] == []
+counts = defaultdict(int)
+counts['first'] += 2
+assert counts['first'] == 2 and counts['second'] == 0
+print('callable factory generics ok')  #: callable factory generics ok

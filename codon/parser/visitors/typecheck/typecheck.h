@@ -258,7 +258,15 @@ private:
   findBestMethod(types::ClassType *typ, const std::string &member,
                  const std::vector<std::pair<std::string, types::Type *>> &args);
   int canCall(types::FuncType *, const std::vector<CallArg> &,
-              types::ClassType * = nullptr, std::vector<bool> * = nullptr);
+              types::ClassType * = nullptr, std::vector<bool> * = nullptr,
+              types::Type::Unification * = nullptr, bool = false);
+  int matchCallable(types::Type *, const std::vector<CallArg> &,
+                    types::Type * = nullptr, types::Type::Unification * = nullptr,
+                    types::ClassType * = nullptr, std::vector<bool> * = nullptr);
+  std::vector<types::Type *> getPartialArgTypes(types::FuncType *,
+                                                types::ClassType *) const;
+  Expr *getCallDefault(const Param &);
+  types::Type *getCallArgType(types::FuncType *, size_t, size_t, types::Type *);
   std::vector<types::FuncType *> findMatchingMethods(
       types::ClassType *typ, const std::vector<types::FuncType *> &methods,
       const std::vector<CallArg> &args, types::ClassType *part = nullptr);

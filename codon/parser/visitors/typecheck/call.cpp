@@ -515,17 +515,13 @@ TypecheckVisitor::getCalleeFn(CallExpr *expr, PartialCallData &part) {
               *(expr->getExpr()->getType()));
     unify(expr->getExpr()->getType(), calleeFn);
 
-    // Unify partial generics with types known thus far
-    auto knownArgTypes = extractClassGeneric(partType, 1)->getClass();
-    for (size_t i = 0, j = 0, k = 0; i < mask.size(); i++)
-      if ((*calleeFn->ast)[i].isGeneric()) {
-        j++;
-      } else if (mask[i] == ClassType::PartialFlag::Included) {
-        unify(extractFuncArgType(calleeFn.get(), i - j),
-              extractClassGeneric(knownArgTypes, k));
-        k++;
-      } else if (mask[i] == ClassType::PartialFlag::Default) {
-        k++;
+    // Bind captured values using the same AST/value index mapping as call probes.
+    auto captured = getPartialArgTypes(calleeFn.get(), partType);
+    for (size_t si = 0, vi = 0; si < mask.size(); ++si)
+      if ((*calleeFn->ast)[si].isValue()) {
+        if (mask[si] == ClassType::PartialFlag::Included)
+          unify(extractFuncArgType(calleeFn.get(), vi), captured[si]);
+        ++vi;
       }
     return {calleeFn, nullptr};
   } else if (!callee->getFunc()) {
@@ -711,17 +707,7 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
                     newMask[si] = ClassType::PartialFlag::Default;
                 } else if (!partial) {
                   // Case 4b: Values / non-Id defaults (None, etc.)
-                  if (cast<NoneExpr>((*calleeFn->ast)[si].getDefault()) &&
-                      !(*calleeFn->ast)[si].type) {
-                    args.emplace_back(realName,
-                                      transform(N<CallExpr>(N<InstantiateExpr>(
-                                          N<IdExpr>(StdlibTypes::Optional),
-                                          N<IdExpr>(StdlibTypes::NoneType)))));
-                  } else {
-                    args.emplace_back(
-                        realName,
-                        transform(clean_clone((*calleeFn->ast)[si].getDefault())));
-                  }
+                  args.emplace_back(realName, getCallDefault((*calleeFn->ast)[si]));
                 } else {
                   args.emplace_back(realName,
                                     transform(N<EllipsisExpr>(EllipsisExpr::PARTIAL)));
@@ -927,33 +913,14 @@ bool TypecheckVisitor::typecheckCallArgs(FuncType *calleeFn, std::vector<CallArg
             // Defaults should not be unified (yet)!
             replacements.push_back(extractFuncArgType(calleeFn, si));
           } else {
-            auto *signature = getFunction(calleeFn->getFuncName())->getType();
-            auto *expected = extractFuncArgType(calleeFn, si);
-            auto *actual = getUnderlyingStaticType(args[si].getExpr()->getType());
-            auto *bindings =
-                calleeFn->ast->getAttribute<BindingsAttribute>(Attr::Bindings);
-            auto *binding = bindings
-                                ? in(bindings->bindings,
-                                     getUnmangledName(
-                                         (*calleeFn->ast)[i].getNameWithStars().second))
-                                : nullptr;
-            // Specialize on a concrete union member instead of boxing it.
-            if (auto *u = expected->getUnion();
-                u && u->canRealize() && actual->canRealize() &&
-                extractFuncArgType(signature, si)->getUnion() &&
-                (!binding || (binding->count == 1 && !binding->isNonlocal)) &&
-                !calleeFn->ast->hasAttribute(Attr::LLVM) &&
-                !calleeFn->ast->hasAttribute(Attr::C))
-              for (auto *member : u->getRealizationTypes())
-                if (member->unify(actual, nullptr) >= 0) {
-                  expected = actual;
-                  // A stored callable may already have an inferred union result.
-                  if (!calleeFn->ast->getReturn() &&
-                      calleeFn->getRetType()->canRealize())
-                    calleeFn->generics[1].type =
-                        instantiateType(signature->getRetType());
-                  break;
-                }
+            auto *original = extractFuncArgType(calleeFn, si);
+            auto *expected =
+                getCallArgType(calleeFn, i, si,
+                               getUnderlyingStaticType(args[si].getExpr()->getType()));
+            if (expected != original && !calleeFn->ast->getReturn() &&
+                calleeFn->getRetType()->canRealize())
+              calleeFn->generics[1].type = instantiateType(
+                  getFunction(calleeFn->getFuncName())->getType()->getRetType());
             if (wrapExpr(&args[si].value, expected, calleeFn)) {
               unify(args[si].getExpr()->getType(), expected);
             } else {
