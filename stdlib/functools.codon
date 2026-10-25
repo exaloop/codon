@@ -34,5 +34,5 @@ class _CmpKey:
         return self.cmp(self.obj, other.obj) >= 0
 
 
-def cmp_to_key(cmp):
-    return lambda obj: _CmpKey(obj, cmp)
+def cmp_to_key(mycmp):
+    return lambda obj: _CmpKey(obj, mycmp)
