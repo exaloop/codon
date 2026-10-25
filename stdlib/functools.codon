@@ -12,6 +12,9 @@ class _CmpKey:
     T: type
     F: type
 
+    def __hash__(self) -> int:
+        raise TypeError("unhashable type: '_CmpKey'")
+
     def __lt__(self, other):
         return self.cmp(self.obj, other.obj) < 0
 
@@ -29,6 +32,7 @@ class _CmpKey:
 
     def __ge__(self, other):
         return self.cmp(self.obj, other.obj) >= 0
+
 
 def cmp_to_key(cmp):
     return lambda obj: _CmpKey(obj, cmp)

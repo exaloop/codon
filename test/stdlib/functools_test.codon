@@ -123,6 +123,35 @@ def test_various_lengths():
         data.sort(key=cmp_to_key(cmp_int))
         assert data == expected
 
+@test
+def test_custom_equality():
+    def compare(a, b):
+        return (a // 10 > b // 10) - (a // 10 < b // 10)
+
+    key = cmp_to_key(compare)
+
+    a = key(11)
+    b = key(12)
+
+    assert a == b
+    assert not (a != b)
+    assert a <= b
+    assert a >= b
+    assert not (a < b)
+    assert not (a > b)
+
+
+@test
+def test_unhashable():
+    key = cmp_to_key(cmp_int)
+
+    caught = False
+    try:
+        hash(key(1))
+    except TypeError:
+        caught = True
+
+    assert caught
 
 test_comparisons()
 test_sort()
@@ -130,3 +159,5 @@ test_stability()
 test_strings()
 test_lambda()
 test_various_lengths()
+test_custom_equality()
+test_unhashable()
