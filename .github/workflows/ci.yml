@@ -56,7 +56,7 @@ jobs:
       - name: Build (Ubuntu)
         if: startsWith(matrix.os, 'ubuntu')
         run: |
-          (cd .github/ci && docker build -t local -f Dockerfile.${{ matrix.arch }} .)
+          sh .github/ci/build-image.sh "${{ matrix.arch }}"
           docker run --rm -v "$PWD:/github/workspace" local /github/workspace ${{ matrix.arch }} no
 
       - name: Build (macOS)
@@ -135,7 +135,7 @@ jobs:
         if: startsWith(matrix.platform.os, 'ubuntu')
         run: |
           set -o pipefail
-          (cd .github/ci && docker build -t local -f Dockerfile.${{ matrix.platform.arch }} .)
+          sh .github/ci/build-image.sh "${{ matrix.platform.arch }}"
           docker run --rm -v "$PWD:/github/workspace" local /github/workspace ${{ matrix.platform.arch }} shard ${{ matrix.shard }} 4 \
             2>&1 | tee test-results/${{ matrix.platform.arch }}/shard-${{ matrix.shard }}.log
 
