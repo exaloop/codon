@@ -243,6 +243,8 @@ std::pair<Expr *, bool> TypecheckVisitor::getAttr(Expr *expr, const std::string 
     return getClassMember(expr, member, type);
   }
 
+  const auto *methodAst = methods.front()->ast;
+  const bool isProperty = methodAst->hasAttribute(Attr::Property);
   // If a method is ambiguous use dispatch
   auto bestMethod =
       methods.size() > 1 ? getDispatch(getRootName(methods.front())) : methods.front();
@@ -251,15 +253,16 @@ std::pair<Expr *, bool> TypecheckVisitor::getAttr(Expr *expr, const std::string 
   if (parentCall)
     e->setAttribute(Attr::ExprDoNotRealize);
 
-  if (isTypeExpr(expr)) {
-    // Static access: `cls.method`
+  if (isTypeExpr(expr) || methodAst->hasAttribute(Attr::StaticMethod)) {
+    // Static access: cls.method or obj.static_method.
+    // A saved lookup with side effects needs a runtime value,
+    // not an unresolved function identifier.
+    if (!parentCall && hasSide)
+      e = N<CallExpr>(e, N<EllipsisExpr>(EllipsisExpr::PARTIAL));
     return {wrapSide(e), true};
   }
 
-  auto vt = expr->getType();
-  auto cls = getClass(vt);
-  if (parentCall && !bestMethod->ast->hasAttribute(Attr::StaticMethod) &&
-      !bestMethod->ast->hasAttribute(Attr::Property)) {
+  if (parentCall && !isProperty) {
     // Instance access: `obj.method` from the call
     // Modify the call to push `self` to the front of the argument list.
     // Avoids creating partial functions.
@@ -269,16 +272,12 @@ std::pair<Expr *, bool> TypecheckVisitor::getAttr(Expr *expr, const std::string 
   } else {
     // Instance access: `obj.method`
     // Transform y.method to a partial call `type(y).method(y, ...)`
-    std::vector<Expr *> methodArgs;
-    // Do not add self if a method is marked with @staticmethod
-    if (!bestMethod->ast->hasAttribute(Attr::StaticMethod))
-      methodArgs.emplace_back(expr);
+    std::vector<Expr *> methodArgs{expr};
     // If a method is marked with @property, just call it directly
-    if (!bestMethod->ast->hasAttribute(Attr::Property))
+    if (!isProperty)
       methodArgs.emplace_back(N<EllipsisExpr>(EllipsisExpr::PARTIAL));
     auto *call = N<CallExpr>(e, methodArgs);
-    if (!bestMethod->ast->hasAttribute(Attr::StaticMethod) &&
-        !bestMethod->ast->hasAttribute(Attr::Property))
+    if (!isProperty)
       call->setAttribute(Attr::ExprVirtual, -1);
     return {transform(call), true};
   }

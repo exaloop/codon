@@ -945,3 +945,152 @@ class Factory[T]:
 assert type(Factory[int]().make()) is list[int]
 assert type(Factory[str]().make()) is list[str]
 print('class templates ok')  #: class templates ok
+
+#%% method_dispatch
+# All declarations remain candidates. The newest compatible overload wins, and
+# dispatcher binding must preserve static methods and property access.
+class Methods:
+    def value(self, old: int = 1) -> int:
+        return -old
+    def value(self, new: int = 2) -> str:
+        return str(new)
+
+    @staticmethod
+    def static(old: int = 1):
+        return -old
+    @staticmethod
+    def static(new: int = 2):
+        return new
+
+    @property
+    def label(self):
+        return 1
+    @property
+    def label(self):
+        return 2
+
+    def typed(self, value: list[int]):
+        return 'old'
+    def typed(self, value: list[int]):
+        return 'ints'
+    def typed(self, value: list[str]):
+        return 'strings'
+
+    def kinds(self, value: int, /):
+        return 'positional'
+    def kinds(self, *, value: int):
+        return 'keyword'
+
+obj = Methods()
+assert obj.value() == '2'
+assert type(obj.value()) is str
+assert obj.value(new=3) == '3'
+assert obj.static() == 2
+assert obj.label == 2
+assert obj.typed([1]) == 'ints'
+assert obj.typed(['a']) == 'strings'
+bound = obj.typed
+assert bound([1]) == 'ints'
+assert bound(['a']) == 'strings'
+assert obj.kinds(1) == 'positional'
+assert obj.kinds(value=1) == 'keyword'
+print('method dispatch ok')  #: method dispatch ok
+
+#%% method_dispatch_keyword_names,barebones
+# Parameter names participate in call matching, without signature-based masking.
+class Renamed:
+    @staticmethod
+    def method(old: int):
+        return old
+    @staticmethod
+    def method(new: int):
+        return new + 1
+assert Renamed.method(old=1) == 1
+assert Renamed.method(new=1) == 2
+obj = Renamed()
+assert obj.method(old=1) == 1
+assert obj.method(new=1) == 2
+callback = obj.method
+assert callback(old=1) == 1
+assert callback(new=1) == 2
+print('method keywords ok')  #: method keywords ok
+
+#%% method_dispatch_static
+# A generated dispatcher has no staticmethod decorator. Binding must still work
+# through classes, instances, inherited methods, and saved callable values.
+class StaticOverloads:
+    @staticmethod
+    def select(value: int):
+        return value + 1
+    @staticmethod
+    def select(value: str):
+        return value + '!'
+    @staticmethod
+    def select(value: int, other: int):
+        return value + other
+    @staticmethod
+    def select(value: int, *, scale: int):
+        return value * scale
+
+obj = StaticOverloads()
+assert StaticOverloads.select(1) == 2
+assert StaticOverloads.select('a') == 'a!'
+assert obj.select(1) == 2
+assert obj.select('a') == 'a!'
+assert obj.select(2, 3) == 5
+assert obj.select(2, scale=3) == 6
+from_class = StaticOverloads.select
+from_instance = obj.select
+assert from_class(1) == 2
+assert from_class('a') == 'a!'
+assert from_instance(1) == 2
+assert from_instance('a') == 'a!'
+assert from_instance(2, 3) == 5
+assert from_instance(2, scale=3) == 6
+
+class Child(StaticOverloads):
+    pass
+assert Child.select(1) == 2
+assert Child().select('a') == 'a!'
+inherited = Child().select
+assert inherited(2, 3) == 5
+
+class Generic[T]:
+    @staticmethod
+    def select(value: T):
+        return value + value
+    @staticmethod
+    def select(value: str):
+        return value + '!'
+assert Generic[int].select(3) == 6
+assert Generic[int]().select('a') == 'a!'
+generic = Generic[int]().select
+assert generic(3) == 6
+assert generic('a') == 'a!'
+print('static dispatch ok')  #: static dispatch ok
+
+#%% method_dispatch_evaluation_order
+# Static lookup through an instance evaluates the receiver once before arguments,
+# including when the overload dispatcher is saved for a later call.
+events = List[str]()
+class StaticOverloads:
+    @staticmethod
+    def select(value: int):
+        return value + 1
+    @staticmethod
+    def select(value: str):
+        return value + '!'
+def receiver():
+    events.append('receiver')
+    return StaticOverloads()
+def argument():
+    events.append('argument')
+    return 3
+assert receiver().select(argument()) == 4
+assert events == ['receiver', 'argument']
+events.clear()
+callback = receiver().select
+assert events == ['receiver']
+assert callback(argument()) == 4
+assert events == ['receiver', 'argument']
+print('static evaluation order ok')  #: static evaluation order ok

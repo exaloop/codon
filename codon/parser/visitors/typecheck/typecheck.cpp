@@ -2,6 +2,7 @@
 
 #include "typecheck.h"
 
+#include <algorithm>
 #include <fmt/format.h>
 #include <memory>
 #include <utility>
@@ -446,7 +447,7 @@ TypecheckVisitor::findBestMethod(ClassType *typ, const std::string &member,
     callArgs.emplace_back("", N<NoneExpr>()); // dummy expression
     callArgs.back().value->setType(a->shared_from_this());
   }
-  auto methods = findMethod(typ, member, false);
+  auto methods = findMethod(typ, member);
   auto m = findMatchingMethods(typ, methods, callArgs);
   return m.empty() ? nullptr : m[0];
 }
@@ -459,7 +460,7 @@ types::FuncType *TypecheckVisitor::findBestMethod(ClassType *typ,
   std::vector<CallArg> callArgs;
   for (auto &a : args)
     callArgs.emplace_back("", a);
-  auto methods = findMethod(typ, member, false);
+  auto methods = findMethod(typ, member);
   auto m = findMatchingMethods(typ, methods, callArgs);
   return m.empty() ? nullptr : m[0];
 }
@@ -474,7 +475,7 @@ types::FuncType *TypecheckVisitor::findBestMethod(
     callArgs.emplace_back(n, N<NoneExpr>()); // dummy expression
     callArgs.back().value->setType(a->shared_from_this());
   }
-  auto methods = findMethod(typ, member, false);
+  auto methods = findMethod(typ, member);
   auto m = findMatchingMethods(typ, methods, callArgs);
   return m.empty() ? nullptr : m[0];
 }
@@ -1654,31 +1655,21 @@ TypecheckVisitor::instantiateType(const SrcInfo &srcInfo, types::Type *root,
 }
 
 std::vector<types::FuncType *> TypecheckVisitor::findMethod(types::ClassType *type,
-                                                            const std::string &method,
-                                                            bool hideShadowed) {
+                                                            const std::string &method) {
   std::vector<types::FuncType *> vv;
-  std::unordered_set<std::string> signatureLoci;
 
   auto populate = [&](const auto &cls) {
     auto t = in(cls.methods, method);
     if (!t)
       return;
 
-    auto mt = getOverloads(*t);
+    const auto &mt = ctx->cache->overloads.at(*t);
     for (int mti = static_cast<int>(mt.size()) - 1; mti >= 0; --mti) {
       const auto &exactMethod = mt[mti];
       auto f = getFunction(exactMethod);
       if (isDispatch(exactMethod) || !f->getType())
         continue;
-      if (hideShadowed) {
-        auto sig = f->ast->getSignature();
-        if (!in(signatureLoci, sig)) {
-          signatureLoci.insert(sig);
-          vv.emplace_back(f->getType());
-        }
-      } else {
-        vv.emplace_back(f->getType());
-      }
+      vv.emplace_back(f->getType());
     }
   };
   if (type && type->is(StdlibTypes::Tuple) && method == "__new__" &&

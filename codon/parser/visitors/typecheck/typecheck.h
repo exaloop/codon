@@ -496,8 +496,7 @@ public:
 
   /// Returns the list of generic methods that correspond to typeName.method.
   std::vector<types::FuncType *> findMethod(types::ClassType *type,
-                                            const std::string &method,
-                                            bool hideShadowed = true);
+                                            const std::string &method);
   /// Returns the generic type of typeName.member, if it exists (nullptr otherwise).
   /// Special cases: __elemsize__ and __atomic__.
   Cache::Class::ClassField *findMember(types::ClassType *, const std::string &) const;

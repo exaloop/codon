@@ -647,16 +647,6 @@ std::string FunctionStmt::toPythonString(bool a, int indent, int level) const {
            (ret ? ret->toPythonString(a, indent, level + 2 * indent) : "None")},
       this, a, indent, indent + level);
 }
-/// TODO: get rid of this fn one day, refactor it away
-std::string FunctionStmt::getSignature() {
-  if (signature.empty()) {
-    std::vector<std::string> s;
-    for (auto &a : items)
-      s.push_back(fmt::format("{}:{}", int(a.kind), a.type ? a.type->toString() : "-"));
-    signature = join(s, ":");
-  }
-  return signature;
-}
 size_t FunctionStmt::getStarArgs() const {
   size_t i = 0;
   while (i < items.size()) {

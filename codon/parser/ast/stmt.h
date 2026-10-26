@@ -514,10 +514,6 @@ struct FunctionStmt : public AcceptorExtend<FunctionStmt, Stmt>, Items<Param> {
       nonInferrableGenerics->clear();
   }
 
-  /// @return a function signature that consists of generics and arguments in a
-  /// S-expression form.
-  /// @li (T U (int 0))
-  std::string getSignature();
   size_t getStarArgs() const;
   size_t getKwStarArgs() const;
   std::string getDocstr() const;
@@ -532,7 +528,6 @@ private:
   SuiteStmt *suite;
   std::vector<Expr *> decorators;
   bool async;
-  std::string signature;
 
   // Cache non-inferrable generics for speed.
   std::shared_ptr<std::unordered_set<std::string>> nonInferrableGenerics;

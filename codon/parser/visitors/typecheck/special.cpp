@@ -183,7 +183,7 @@ void TypecheckVisitor::prepareVTables() {
                          const std::vector<CallArg> &arguments,
                          bool requireOwn) -> FuncType * {
     auto methods =
-        findMatchingMethods(receiver, findMethod(receiver, member, false), arguments);
+        findMatchingMethods(receiver, findMethod(receiver, member), arguments);
     for (auto *method : methods) {
       if (!requireOwn)
         return method;
@@ -710,7 +710,7 @@ SuiteStmt *TypecheckVisitor::generateUnionDispatchAST(FuncType *type) {
         auto function = instantiateType(generic.get());
         inspectSignature(function->getFunc(), partial);
       } else {
-        for (auto method : findMethod(t->getClass(), "__call__", false))
+        for (auto method : findMethod(t->getClass(), "__call__"))
           if (method)
             inspectSignature(instantiateType(method, t->getClass())->getFunc(),
                              nullptr);
@@ -758,7 +758,7 @@ SuiteStmt *TypecheckVisitor::generateUnionDispatchAST(FuncType *type) {
           if (canCall(function->getFunc(), callArgs, partial) < 0)
             return;
         } else {
-          auto methods = findMethod(t->getClass(), "__call__", false);
+          auto methods = findMethod(t->getClass(), "__call__");
           if (findMatchingMethods(t->getClass(), methods, callArgs).empty())
             return;
         }
@@ -1763,7 +1763,7 @@ SuiteStmt *TypecheckVisitor::generateSuperDispatchAST(FuncType *type) {
     callArgs[0].getExpr()->setType(*base);
     auto methods = findMatchingMethods(
         base->get()->getClass(),
-        findMethod(base->get()->getClass(), attr->value, false), callArgs);
+        findMethod(base->get()->getClass(), attr->value), callArgs);
     if (methods.empty())
       continue;
     auto *call = N<CallExpr>(

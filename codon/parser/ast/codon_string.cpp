@@ -701,7 +701,7 @@ STMT_IMPL(ThrowStmt, FIELD("expr", expr), FIELD("from_expr", from),
 STMT_IMPL(GlobalStmt, FIELD("var", var), FIELD("non_local", nonLocal))
 STMT_IMPL(FunctionStmt, FIELD("items", items), FIELD("name", name), FIELD("ret", ret),
           FIELD("suite", suite), FIELD("decorators", decorators),
-          FIELD("async_", async), FIELD("signature", signature))
+          FIELD("async_", async))
 STMT_IMPL(ClassStmt, FIELD("items", items), FIELD("name", name), FIELD("suite", suite),
           FIELD("decorators", decorators), FIELD("base_classes", baseClasses))
 STMT_IMPL(YieldFromStmt, FIELD("expr", expr))
