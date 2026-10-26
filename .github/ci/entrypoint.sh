@@ -70,7 +70,8 @@ rm -rf ${CODON_DIR}/lib/libfmt.a ${CODON_DIR}/lib/pkgconfig ${CODON_DIR}/lib/cma
 tar czf ${CODON_BUILD_ARCHIVE} -C ${WORKSPACE} codon-deploy-${ARCH}/
 du -sh ${CODON_BUILD_ARCHIVE}
 
-set -- "build-${ARCH}/codon" "build-${ARCH}/codon_test" "build-${ARCH}/lib/codon"
+set -- "build-${ARCH}/codon" "build-${ARCH}/codon_test" "build-${ARCH}/lib/codon" \
+  "build-${ARCH}/stdlib"
 for library in build-${ARCH}/*.so build-${ARCH}/*.so.* build-${ARCH}/*.dylib; do
   if [ -e "$library" ]; then
     set -- "$@" "$library"
