@@ -68,6 +68,39 @@ TEST(TypeCoreTest, NewFunctionRealizationIsIncomplete) {
   EXPECT_TRUE(realization->captures.empty());
 }
 
+TEST(TypeCoreTest, ReplacingFunctionArguments) {
+  using namespace codon::ast;
+  using namespace codon::ast::types;
+  auto options = codon::Options::getDefault("build/codon_test");
+  codon::Compiler compiler(*options);
+  auto cache = compiler.getCache();
+  FunctionStmt ast("replace_args", nullptr, {Param("x"), Param("y")});
+  auto before = std::make_shared<ClassType>(cache, "Before");
+  auto after = std::make_shared<ClassType>(cache, "After");
+  auto args = std::make_shared<ClassType>(
+      cache, "Tuple",
+      std::vector<ClassType::Generic>{{"T0", before, 0, Runtime},
+                                      {"T1", before, 1, Runtime}});
+  ClassType base(cache, "Function",
+                 {{"T", args, 2, Runtime}, {"TR", before, 3, Runtime}});
+  FuncType function(&base, &ast), sibling(&base, &ast);
+  // Issue 5: prime both names, then specialize without mutating a shared tuple.
+  auto oldArgsName = args->realizedName();
+  auto oldFunctionName = function.ClassType::realizedName();
+  auto oldSignature = function.realizedName();
+  function.replaceArgTypes({after, nullptr});
+  EXPECT_EQ(function[0], after.get());
+  EXPECT_EQ(function[1], before.get());
+  EXPECT_NE(function.ClassType::realizedName(), oldFunctionName);
+  EXPECT_NE(function.realizedName(), oldSignature);
+  EXPECT_EQ(args->realizedName(), oldArgsName);
+  EXPECT_EQ(sibling[0], before.get());
+  EXPECT_EQ(sibling.ClassType::realizedName(), oldFunctionName);
+  function.replaceArgTypes({before, after});
+  EXPECT_EQ(function[0], before.get());
+  EXPECT_EQ(function[1], after.get());
+}
+
 TEST(TypeCoreTest, ChecksSharedTypeGraphsAndRestoresLevels) {
   using namespace codon::ast::types;
   auto options = codon::Options::getDefault("build/codon_test");

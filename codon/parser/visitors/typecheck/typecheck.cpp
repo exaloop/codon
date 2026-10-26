@@ -263,7 +263,10 @@ Expr *TypecheckVisitor::transform(Expr *expr, bool allowTypes) {
 /// @throw @c ParserException if a node is not a type (use @c transform instead).
 Expr *TypecheckVisitor::transformType(Expr *expr, bool simple) {
   // In annotations, the builtin type describes arbitrary class values
-  if (builtin && builtin->getName() == StdlibTypes::Type) {
+  if (auto builtin = isId(expr, StdlibTypes::Type)
+                         ? ctx->find(StdlibTypes::Type, getTime())
+                         : nullptr;
+      builtin && builtin->getName() == StdlibTypes::Type) {
     auto annotation = N<IdExpr>(StdlibTypes::Type);
     annotation->setType(instantiateType(getStdLibType(StdlibTypes::Type)));
     annotation->setDone();
@@ -560,6 +563,7 @@ int TypecheckVisitor::canCall(FuncType *fn, const std::vector<CallArg> &args,
             fn,
             [&]() {
               int providedGenerics = 0;
+              std::vector<TypePtr> replacements;
               auto wrap = [&](Type *actual, Type *expected) -> TypePtr {
                 auto [done, wrapped, conversion] = canWrapExpr(actual, expected, fn);
                 if (!conversion && !expected->getStaticKind())
@@ -662,13 +666,16 @@ int TypecheckVisitor::canCall(FuncType *fn, const std::vector<CallArg> &args,
                   return -1;
                 if (!probing && selected != expected) {
                   // The signature is private; preserve the call's union specialization.
-                  extractClassGeneric(fn)->getClass()->generics[vi - 1].type =
-                      selected->shared_from_this();
+                  if (replacements.empty())
+                    replacements.resize(fn->size(), nullptr);
+                  replacements[vi - 1] = selected->shared_from_this();
                   if (!fn->ast->getReturn() && fn->getRetType()->canRealize())
                     fn->generics[1].type = instantiateType(
                         getFunction(fn->getFuncName())->getType()->getRetType());
                 }
               }
+              if (!replacements.empty())
+                fn->replaceArgTypes(replacements);
               // Defaults are applied after argument inference, just as at real calls.
               if (!probing && !partial)
                 for (size_t si = 0, gi = 0; si < slots.size(); ++si)

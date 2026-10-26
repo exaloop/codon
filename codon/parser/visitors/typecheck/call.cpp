@@ -509,7 +509,13 @@ TypecheckVisitor::getCalleeFn(CallExpr *expr, PartialCallData &part) {
     } else {
       auto *id = N<IdExpr>(calleeFn->getFuncName());
       id->setAttribute(Attr::ExprDoNotRealize);
-      expr->expr = transform(id);
+      Expr *callee = id;
+      if (hasSideEffect(expr->getExpr())) {
+        // In case this partial is returned from a fn that might have side effects
+        callee = N<StmtExpr>(N<ExprStmt>(expr->getExpr()), id);
+        callee->setAttribute(Attr::ExprDoNotRealize);
+      }
+      expr->expr = transform(callee);
     }
     seqassert(expr->getExpr()->getType()->getFunc(), "not a function: {}",
               *(expr->getExpr()->getType()));
@@ -692,19 +698,29 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
                 // Case 4: Default is present
                 if (auto ai = cast<IdExpr>((*calleeFn->ast)[si].getDefault())) {
                   // Non-values (Ids / .default names)
+                  auto slot = ctx->find(ai->getValue());
+                  // Compiler-owned module slots keep definition-time values
+                  // without storing another copy.
+                  // Local/method defaults and user globals still need capturing.
+                  bool globalDefault = slot && slot->isGlobal() &&
+                                       startswith(ai->getValue(), ".default.") &&
+                                       !calleeFn->ast->hasAttribute(Attr::ParentClass);
+                  if (partial)
+                    newMask[si] = ClassType::PartialFlag::Default;
                   if (!part.known.empty() &&
                       part.known[si] == ClassType::PartialFlag::Default) {
                     // Case 4a/1: Default already captured by partial.
                     args.emplace_back(realName, getPartialArg(pi));
                     pi++;
+                  } else if (partial && globalDefault) {
+                    args.emplace_back(
+                        realName, transform(N<EllipsisExpr>(EllipsisExpr::PARTIAL)));
+                    newMask[si] = ClassType::PartialFlag::Missing;
                   } else {
-                    // TODO: check if the value is toplevel to avoid capturing it
                     auto e = transform(N<IdExpr>(ai->getValue()));
                     seqassert(e->getType()->getLink(), "not a link type");
                     args.emplace_back(realName, e);
                   }
-                  if (partial)
-                    newMask[si] = ClassType::PartialFlag::Default;
                 } else if (!partial) {
                   // Case 4b: Values / non-Id defaults (None, etc.)
                   args.emplace_back(realName, getCallDefault((*calleeFn->ast)[si]));
@@ -856,7 +872,7 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
 bool TypecheckVisitor::typecheckCallArgs(FuncType *calleeFn, std::vector<CallArg> &args,
                                          const PartialCallData &partial) {
   bool wrappingDone = true;         // tracks whether all arguments are wrapped
-  std::vector<Type *> replacements; // list of replacement arguments
+  std::vector<TypePtr> replacements; // list of replacement arguments
 
   // Unify Self with the argument so that generics (e.g. N in Int[N].__lshift__)
   // propagate
@@ -906,12 +922,13 @@ bool TypecheckVisitor::typecheckCallArgs(FuncType *calleeFn, std::vector<CallArg
                 args[si].value = tup;
               }
             }
-            replacements.push_back(args[si].getExpr()->getType());
+            replacements.push_back(args[si].getExpr()->getType()->shared_from_this());
             // else this is empty and is a partial call; leave it for later
           } else if (partial.isPartial && !partial.known.empty() &&
                      partial.known[si] == ClassType::PartialFlag::Default) {
             // Defaults should not be unified (yet)!
-            replacements.push_back(extractFuncArgType(calleeFn, si));
+            replacements.push_back(
+                extractFuncArgType(calleeFn, si)->shared_from_this());
           } else {
             auto *original = extractFuncArgType(calleeFn, si);
             auto *expected =
@@ -926,8 +943,9 @@ bool TypecheckVisitor::typecheckCallArgs(FuncType *calleeFn, std::vector<CallArg
             } else {
               wrappingDone = false;
             }
-            replacements.push_back(!expected->getClass() ? args[si].getExpr()->getType()
-                                                         : expected);
+            replacements.push_back(
+                (!expected->getClass() ? args[si].getExpr()->getType() : expected)
+                    ->shared_from_this());
           }
           si++;
         }
@@ -972,15 +990,7 @@ bool TypecheckVisitor::typecheckCallArgs(FuncType *calleeFn, std::vector<CallArg
         j++;
       }
 
-  // Replace the arguments
-  for (size_t si = 0; si < replacements.size(); si++) {
-    if (replacements[si]) {
-      extractClassGeneric(calleeFn)->getClass()->generics[si].type =
-          replacements[si]->shared_from_this();
-    }
-  }
-  extractClassGeneric(calleeFn)->getClass()->_rn = "";
-  calleeFn->getClass()->_rn = ""; /// TODO: TERRIBLE!
+  calleeFn->replaceArgTypes(replacements);
 
   return done;
 }

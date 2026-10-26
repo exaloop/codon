@@ -2006,3 +2006,71 @@ counts = defaultdict(int)
 counts['first'] += 2
 assert counts['first'] == 2 and counts['second'] == 0
 print('callable factory generics ok')  #: callable factory generics ok
+
+#%% partial_global_defaults,barebones
+# Issue 4: reference stable definition-time slots without storing them in partials.
+events = List[str]()
+def make_default():
+    events.append('default')
+    return List[int]()
+def append(value, bucket=make_default()):
+    bucket.append(value)
+    return bucket
+p = append(1, ...)
+assert len(p.args) == 2  # Captured value and the trailing *args tuple only.
+assert events == ['default']
+assert p() == [1]
+assert append(2) == [1, 2]
+q = p(...)
+assert len(q.args) == 2
+assert q() == [1, 2, 1]
+other = List[int]()
+assert p(bucket=other) is other
+assert other == [1]
+assert events == ['default']
+
+# A callback with only global defaults needs no captured values. Keep evaluation
+# of the expression producing it even when its partial storage becomes empty.
+def whole(bucket=make_default()):
+    bucket.append(9)
+    return bucket
+empty = whole(...)
+assert len(empty.args) == 1
+assert empty() == [9]
+def get_callback():
+    events.append('lookup')
+    return whole
+assert get_callback()() == [9, 9]
+assert events == ['default', 'default', 'lookup']
+
+# Local defaults belong to each factory invocation and must remain captured.
+def factory(seed):
+    def collect(value, bucket=[seed]):
+        bucket.append(value)
+        return bucket
+    return collect
+first, second = factory(10), factory(20)
+assert first(1) == [10, 1]
+assert second(2) == [20, 2]
+assert first(3) == [10, 1, 3]
+
+# A user global is not a stable compiler-owned slot; keep its captured value.
+original = [10]
+def user_default(value, bucket=original):
+    bucket.append(value)
+    return bucket
+saved = user_default(1, ...)
+original = [20]
+assert saved() == [10, 1]
+print('partial defaults ok')  #: partial defaults ok
+
+#%% partial_conditional_defaults,barebones
+# Issue 4: a default slot written by a repeated definition is not stable.
+callbacks = []
+for seed in range(2):
+    def append(value, bucket=[seed]):
+        bucket.append(value)
+        return bucket
+    callbacks.append(append(7, ...))
+assert callbacks[0]() == [0, 7]
+assert callbacks[1]() == [1, 7]

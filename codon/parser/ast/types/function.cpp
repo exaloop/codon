@@ -208,6 +208,16 @@ std::string FuncType::realizedName() const {
 
 Type *FuncType::getRetType() const { return generics[1].type.get(); }
 
+void FuncType::replaceArgTypes(const std::vector<TypePtr> &replacements) {
+  seqassert(replacements.size() == size(), "function argument count mismatch");
+  auto args = std::make_shared<ClassType>(generics[0].type->getClass());
+  for (size_t i = 0; i < replacements.size(); ++i)
+    if (replacements[i])
+      args->generics[i].type = replacements[i];
+  generics[0].type = std::move(args);
+  _rn.clear();
+}
+
 std::string FuncType::getFuncName() const { return ast->getName(); }
 
 Type *FuncType::operator[](size_t i) const {
