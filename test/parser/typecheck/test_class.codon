@@ -1094,3 +1094,88 @@ assert events == ['receiver']
 assert callback(argument()) == 4
 assert events == ['receiver', 'argument']
 print('static evaluation order ok')  #: static evaluation order ok
+
+
+#%% class_object_type,barebones
+# Class values report their metaclass; instance introspection keeps its class.
+class A: pass
+class B(A): pass
+assert type(A) is type
+assert A.__class__ is type
+assert type(A()) is A
+assert A().__class__ is A
+assert type(B) is type
+assert type(B()) is B
+assert type(type) is type
+assert type.__class__ is type
+assert type(A).__name__ == 'type'
+assert A.__class__.__name__ == 'type'
+assert type.__name__ == 'type'
+assert A.__name__ == 'A'
+assert type(int) is type
+assert int.__class__ is type
+assert type(list) is type
+assert list.__class__ is type
+Alias = A
+assert type(Alias) is type
+Meta = type(A)
+assert Meta is type
+assert Meta.__name__ == 'type'
+assert type(Meta) is type
+assert Meta(A()) is A
+
+def describe(T: type):
+    assert type(T) is type
+    assert T.__class__ is type
+    return T.__name__
+assert describe(A) == 'A'
+
+def describe_value(value):
+    assert type(value) is type
+    assert value.__class__ is type
+    return value.__name__
+assert describe_value(A) == 'A'
+assert describe(type) == 'type'
+assert describe_value(type) == 'type'
+
+def factory() -> type: return A
+assert factory() is A
+assert type(factory()) is type
+
+assert isinstance(A, type)
+assert isinstance(Alias, Meta)
+assert isinstance(type, type)
+assert not isinstance(A(), type)
+
+def is_class(value):
+    return isinstance(value, type)
+assert is_class(A)
+assert is_class(type)
+assert not is_class(A())
+
+@tuple
+class Record[T]:
+    value: T
+assert type(Record) is type
+assert type(Record[int]) is type
+assert Record[int].__class__ is type
+assert type(Record(1)) is Record[int]
+assert Record(1).__class__ is Record[int]
+assert describe(Record[int]) == 'Record[int]'
+assert describe_value(Record[int]) == 'Record[int]'
+
+#%% class_object_type_shadow,barebones
+metaclass = type
+def factory():
+    type = str
+    value: type = 'text'
+    assert metaclass(int) is metaclass
+    assert int.__class__ is metaclass
+    assert (1).__class__ is int
+    return value
+assert factory() == 'text'
+
+def describe[T]():
+    return T.__name__, type(T).__name__
+assert describe(type) == ('type', 'type')
+assert describe(int) == ('int', 'type')

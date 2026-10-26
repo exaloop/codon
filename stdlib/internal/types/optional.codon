@@ -132,7 +132,7 @@ class Optional:
     def __unwrap__(self) -> T:
         if self.__has__():
             return self.__val__()
-        raise ValueError(f"optional unpack failed: expected {T.__class__.__name__}, got None")
+        raise ValueError(f"optional unpack failed: expected {T.__name__}, got None")
 
 optional = Optional
 

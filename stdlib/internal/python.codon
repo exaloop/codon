@@ -1133,14 +1133,14 @@ def _exception_to_python(error: BaseException) -> pyobj:
             return python_type(native.message)
         return python_type(native.status)
     for native_type in (UnicodeDecodeError, UnicodeEncodeError, UnicodeTranslateError):
-        if isinstance(error, type(native_type).T):
-            native = type._force_cast(error, type(native_type).T)
+        if isinstance(error, native_type.T):
+            native = type._force_cast(error, native_type.T)
             result = python_type(*native.args)
             result._setattr("object", native.object)
             result._setattr("start", native.start)
             result._setattr("end", native.end)
             result._setattr("reason", native.reason)
-            if type(native_type).T is not UnicodeTranslateError:
+            if native_type.T is not UnicodeTranslateError:
                 result._setattr("encoding", native.encoding)
             return result
     if isinstance(error, OSError):

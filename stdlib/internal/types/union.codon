@@ -60,7 +60,7 @@ class Union:
                     elif isinstance(TU.T, T):
                         if member is not None:
                             return member.__val__()
-        raise TypeError(f"invalid union getter for type '{T.__class__.__name__}'")
+        raise TypeError(f"invalid union getter for type '{T.__name__}'")
 
     def _isinstance(union, T: type) -> bool:
         for tag, TU in static.vars_types(union, with_index=True):

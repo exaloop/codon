@@ -322,9 +322,11 @@ types::Type *TypecheckVisitor::realizeType(types::ClassType *type) {
   rn = type->ClassType::realizedName();
   auto rt = std::static_pointer_cast<ClassType>(realized->generalize(0));
   auto val = std::make_shared<TypecheckItem>(rn, "", ctx->getModule(), rt);
-  if (!val->type->is(StdlibTypes::Type))
+  if (!val->type->is(StdlibTypes::Type) || isMetaclassType(val->type.get()))
     val->type = instantiateTypeVar(realized);
-  ctx->addAlwaysVisible(val, true);
+  // The zero-argument metaclass must not replace the type[T] compiler template.
+  if (!isMetaclassType(type))
+    ctx->addAlwaysVisible(val, true);
   auto realization = getClass(realized)->realizations[rn] =
       std::make_shared<Cache::Class::ClassRealization>();
   realization->type = rt;
@@ -467,7 +469,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
         un = un.substr(1);
         auto g = type->funcGenerics[gi];
         auto t = g.type;
-        if (!g.staticKind && !t->is(StdlibTypes::Type))
+        if (!g.staticKind && (!t->is(StdlibTypes::Type) || isMetaclassType(t.get())))
           t = instantiateTypeVar(t.get());
         auto v = ctx->addType(un, varName, t);
         v->generic = true;

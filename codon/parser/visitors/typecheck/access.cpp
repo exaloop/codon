@@ -40,7 +40,14 @@ void TypecheckVisitor::visit(IdExpr *expr) {
   expr->value = val->getName();
 
   // Set up type
-  unify(expr->getType(), instantiateType(val->getType()));
+  auto valueType = instantiateType(val->getType());
+  // the builtin type object has no argument.
+  // type[T] remains the representation of a class value.
+  if (expr->getValue() == StdlibTypes::Type) {
+    auto metaclass = getMetaclassType();
+    valueType = instantiateTypeVar(metaclass.get());
+  }
+  unify(expr->getType(), valueType.get());
   if (auto f = expr->getType()->getFunc()) {
     expr->value = f->getFuncName(); // resolve overloads
   }
@@ -145,8 +152,9 @@ void TypecheckVisitor::visit(DotExpr *expr) {
 
   // Special case: obj.__class__
   if (expr->getMember() == "__class__") {
-    /// TODO: prevent cls.__class__ and type(cls)
-    resultExpr = transform(N<CallExpr>(N<IdExpr>(StdlibTypes::Type), expr->getExpr()));
+    resultExpr = transform(
+        N<CallExpr>(N<IdExpr>(getMangledMethod("", StdlibTypes::Type, "__new__")),
+                    expr->getExpr()));
     return;
   }
   expr->expr = transform(expr->getExpr());

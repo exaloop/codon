@@ -14,7 +14,7 @@ def f(i: int) -> int:
 print a.y.__class__.__name__ #: int
 f(a.y)
 print a.__class__.__name__ #: XX[int]
-print XX[bool].__class__.__name__ #: XX[bool]
+print XX[bool].__name__ #: XX[bool]
 
 #%% map_unify
 def map[T,S](l: List[T], f: CallableTrait[[T], S]):
@@ -556,7 +556,7 @@ a, b = tee(it)
 
 #%% new_syntax,barebones
 def foo[T,U](x: type, y, z: Literal[int] = 10):
-    print T.__class__.__name__, U.__class__.__name__, x.__class__.__name__, y.__class__.__name__, Int[z+1].__class__.__name__
+    print T.__name__, U.__name__, x.__name__, y.__class__.__name__, Int[z+1].__name__
     return List[x]()
 print foo(T=int,U=str,...).__fn_name__ #: foo[x,z,int,str;T1]
 print foo(T=int,U=str,z=5,x=bool,...).__fn_name__ #: foo[bool,5,int,str;T1]
@@ -571,12 +571,12 @@ class Foo[T,U: Literal[int]]:
     d: type
     e: List[d]
     f: UInt[b]
-print Foo[5,int,float,6].__class__.__name__ #: Foo[5,int,float,6]
+print Foo[5,int,float,6].__name__ #: Foo[5,int,float,6]
 print Foo(1.1, 10i32, [False], 10u66).__class__.__name__ #: Foo[66,bool,float,32]
 
 
 def foo2[N: Literal[int]]():
-    print Int[N].__class__.__name__, N
+    print Int[N].__name__, N
 x: Literal[int] = 5
 y: Literal[int] = 105 - x * 2
 foo2(y-x) #: Int[90] 90
@@ -589,7 +589,7 @@ x : Literal[int] = 3
 print x #: 3
 
 def fox(N: Literal[int] = 4):
-    print Int[N].__class__.__name__, N
+    print Int[N].__name__, N
 fox(5) #: Int[5] 5
 fox() #: Int[4] 4
 
@@ -601,7 +601,7 @@ class Foo[T,U: Literal[int]]:
     d: type
     e: List[d]
     f: UInt[b]
-print Foo[float,6].__class__.__name__ #! Foo takes 4 generics (2 given)
+print Foo[float,6].__name__ #! Foo takes 4 generics (2 given)
 
 #%% type_arg_transform,barebones
 print list(map(str, range(5)))
@@ -877,14 +877,15 @@ assert values[1].value == 'second'
 
 #%% generic_type_printing
 # printing generic type expressions must not leave compiler-only calls.
-assert str(type(list)) == str(type(list[NoneType]))
-assert str(type(dict)) == str(type(dict[NoneType, NoneType]))
-assert str(type(list[int])) == "<class 'List[int]'>"
+assert str(list) == str(list[NoneType])
+assert str(dict) == str(dict[NoneType, NoneType])
+assert str(list[int]) == "<class 'List[int]'>"
+assert str(type(list[int])) == "<class 'type'>"
 @tuple
 class Box:
     value: T
     T: type = NoneType
-assert str(type(Box)) == str(type(Box[NoneType]))
+assert str(Box) == str(Box[NoneType])
 print('generic types ok')  #: generic types ok
 
 #%% union_iterables
@@ -1126,15 +1127,15 @@ f.x = (3, 4)
 print(f.x)
 #: (3, 4)
 
-print(Tuple[int, int].__class__.__name__)
+print(Tuple[int, int].__name__)
 #: Tuple[int,int]
-print(Tuple[3, int].__class__.__name__)
+print(Tuple[3, int].__name__)
 #: Tuple[int,int,int]
-print(Tuple[0].__class__.__name__)
+print(Tuple[0].__name__)
 #: Tuple
-print(Tuple[-5, int].__class__.__name__)
+print(Tuple[-5, int].__name__)
 #: Tuple
-print(Tuple[5, int, str].__class__.__name__)
+print(Tuple[5, int, str].__name__)
 #: Tuple[int,str,int,str,int,str,int,str,int,str]
 
 def foo(t: Tuple[N, int], N: Literal[int]):
@@ -1205,18 +1206,17 @@ def foo(a):
     print(a().__class__.__name__, a())
 
 foo(float)
-#: float <class 'float'>
+#: type <class 'float'>
 #: float 0.0
 print(float)
 #: <class 'float'>
 foo(list[int])
-#: List[int] <class 'List[int]'>
+#: type <class 'List[int]'>
 #: List[int] []
 print(list[int])
 #: <class 'List[int]'>
-foo(type(list[int]))
-#: List[int] <class 'List[int]'>
-#: List[int] []
+print(type(list[int]))
+#: <class 'type'>
 
 print(list)
 #: <class 'List[NoneType]'>
@@ -1246,7 +1246,7 @@ print(repr(List[int]))
 print(repr(type(int)))
 #: <class 'List[int]'>
 #: <class 'List[int]'>
-#: <class 'int'>
+#: <class 'type'>
 
 
 #%% tuple_heterogenous_1,barebones

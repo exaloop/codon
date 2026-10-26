@@ -383,6 +383,8 @@ public:
   types::TypePtr instantiateTypeVar(types::Type *t);
   void registerGlobal(const std::string &s) const;
   types::ClassType *getStdLibType(const std::string &type) const;
+  std::shared_ptr<types::ClassType> getMetaclassType() const;
+  static bool isMetaclassType(types::Type *type);
   types::Type *extractClassGeneric(types::Type *t, size_t idx = 0) const;
   types::Type *extractFuncGeneric(types::Type *t, size_t idx = 0) const;
   types::Type *extractFuncArgType(types::Type *t, size_t idx = 0) const;

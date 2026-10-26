@@ -262,6 +262,13 @@ Expr *TypecheckVisitor::transform(Expr *expr, bool allowTypes) {
 /// Special case: replace `None` with `NoneType`
 /// @throw @c ParserException if a node is not a type (use @c transform instead).
 Expr *TypecheckVisitor::transformType(Expr *expr, bool simple) {
+  // In annotations, the builtin type describes arbitrary class values
+  if (builtin && builtin->getName() == StdlibTypes::Type) {
+    auto annotation = N<IdExpr>(StdlibTypes::Type);
+    annotation->setType(instantiateType(getStdLibType(StdlibTypes::Type)));
+    annotation->setDone();
+    return annotation;
+  }
   if (cast<NoneExpr>(expr)) {
     auto ne = N<IdExpr>(StdlibTypes::NoneType);
     ne->setSrcInfo(expr->getSrcInfo());
@@ -1229,7 +1236,7 @@ TypecheckVisitor::getClassFieldTypes(types::ClassType *cls) {
 }
 
 types::Type *TypecheckVisitor::extractType(types::Type *t) const {
-  while (t && t->is(StdlibTypes::Type))
+  while (t && t->is(StdlibTypes::Type) && !isMetaclassType(t))
     t = extractClassGeneric(t);
   return t;
 }
@@ -1414,7 +1421,7 @@ TypecheckVisitor::addClassGenerics(types::ClassType *typ, bool func, bool onlyMa
     }
     seqassert(!g.staticKind || t->getStaticKind(), "{} not a static: {}", g.name,
               *(g.type));
-    if (!g.staticKind && !t->is(StdlibTypes::Type))
+    if (!g.staticKind && (!t->is(StdlibTypes::Type) || isMetaclassType(t.get())))
       t = instantiateTypeVar(t.get());
     auto n = onlyMangled ? g.name : getUnmangledName(g.name);
     auto v = ctx->addType(n, g.name, t);
@@ -1469,6 +1476,18 @@ types::ClassType *TypecheckVisitor::getStdLibType(const std::string &type) const
   if (type == StdlibTypes::Type)
     return t->getClass();
   return extractClassType(t);
+}
+
+/// Create the concrete type metaclass without the type[T] wrapper's generic.
+std::shared_ptr<types::ClassType> TypecheckVisitor::getMetaclassType() const {
+  auto metaclass = std::make_shared<ClassType>(getStdLibType(StdlibTypes::Type));
+  metaclass->generics.clear();
+  return metaclass;
+}
+
+/// Identify the concrete, zero-argument type metaclass.
+bool TypecheckVisitor::isMetaclassType(types::Type *type) {
+  return type && type->is(StdlibTypes::Type) && type->getClass()->generics.empty();
 }
 
 types::Type *TypecheckVisitor::extractClassGeneric(types::Type *t, size_t idx) const {

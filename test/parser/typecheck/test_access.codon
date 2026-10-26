@@ -608,7 +608,7 @@ def fox(a: int, b: int, c: int, dtype: type = int):
 
 @overload
 def fox(a: int, b: int, dtype: type = int):
-    print('fox 2:', a, b, dtype.__class__.__name__)
+    print('fox 2:', a, b, dtype.__name__)
 
 fox(1, 2, float)
 #: fox 2: 1 2 float

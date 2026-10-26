@@ -543,7 +543,7 @@ f3()
 
 #%% call_arguments_partial,barebones
 def doo[R, T](a: CallableTrait[[T], R], b: Generator[T], c: Optional[T], d: T):
-    print R.__class__.__name__, T.__class__.__name__
+    print R.__name__, T.__name__
     print a.__class__.__name__[:8], b.__class__.__name__
     for i in b:
         print a(i)
@@ -863,7 +863,7 @@ print a.__class__.__name__ #: Ptr[int]
 a = 5
 z = []
 z.append(6)
-print z.__class__.__name__, z, type(1.1).__class__.__name__  #: List[int] [6] float
+print z.__class__.__name__, z, type(1.1).__name__  #: List[int] [6] float
 
 #%% ptr,barebones
 v = 5
@@ -1046,7 +1046,7 @@ Foo.foo(1)
 #! during the realization of foo(a: int)
 
 #%% static_getitem
-print Int[static.len("ee")].__class__.__name__ #: Int[2]
+print Int[static.len("ee")].__name__ #: Int[2]
 
 y = [1, 2]
 print getattr(y, "_len") #: 2
@@ -1074,7 +1074,7 @@ def foo(f, x):
     f(x, type(x))
     print f.__class__.__name__
 def bar[T](x):
-    print x, T.__class__.__name__
+    print x, T.__name__
 foo(bar, 1)
 #: 1 int
 #: bar(...,...)
@@ -1096,7 +1096,7 @@ def foo(f, x):
     f(x, type(x))
     print f.__class__.__name__
 def bar[T](x):
-    print x, T.__class__.__name__
+    print x, T.__name__
 foo(bar(T=int,...), 1)
 #! bar() takes 2 arguments (2 given)
 #! during the realization of foo(f: bar(...,int), x: int)
@@ -1113,7 +1113,7 @@ print sorted([1,2,3,4,5], key=foo(y=-2, ...))
 #%% type_loc,barebones
 a = 1
 T = type(a)
-print T.__class__.__name__  #: int
+print T.__name__  #: int
 
 #%% methodcaller,barebones
 def foo():
@@ -1168,7 +1168,7 @@ class B(A):
     def baz(self): return 'B.baz'
 class M[T]:
     m: T
-    def moo(self): return (f'M_{T.__class__.__name__}', self.m)
+    def moo(self): return (f'M_{T.__name__}', self.m)
 class X(B,M[int]):
     def foo(self, a): return (f'X({self.a},{self.b},{self.m})', a + self.b + self.m)
     def bar(self): return 'X.bar'
@@ -1195,7 +1195,7 @@ moo(X(1,2,3))
 
 class A[T]:
     def __init__(self):
-        print("init A", T.__class__.__name__)
+        print("init A", T.__name__)
 class Ho:
     def __init__(self):
         print("init Ho")
@@ -1203,7 +1203,7 @@ class Ho:
 class B[U](A[U], Ho):
     def __init__(self):
         super().__init__()
-        print("init B", U.__class__.__name__)
+        print("init B", U.__name__)
 B[Ho]()
 #: init A Ho
 #: init B Ho
@@ -1656,12 +1656,12 @@ for i, o in enumerate(la):
 
 #%% side_effects,barebones
 def foo(a, b, T: type, N: Literal[int]):
-    print(a, b, N, T.__class__.__name__)
+    print(a, b, N, T.__name__)
 def side(x):
     print('side', x)
     return x
 def side_T(T: type) -> type:
-    print('side_T', T.__class__.__name__)
+    print('side_T', T.__name__)
     return List[T]
 def side_N(N: Literal[int]) -> Literal[int]:
     print('side_N', N)

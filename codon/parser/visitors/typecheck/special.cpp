@@ -1088,8 +1088,9 @@ Expr *TypecheckVisitor::transformIsInstance(CallExpr *expr) {
   }
 
   auto tei = cast<IdExpr>(typExpr);
-  if (tei && tei->getValue() == "type") {
-    return transform(N<BoolExpr>(isTypeExpr(expr->begin()->value)));
+  if (isTypeExpr(typExpr) && extractType(typExpr)->is(StdlibTypes::Type)) {
+    return transform(N<BoolExpr>(isTypeExpr(expr->begin()->value) ||
+                                 typ->is(StdlibTypes::TypeWrap)));
   } else if (tei && tei->getValue() == "type[Tuple]") {
     return transform(N<BoolExpr>(typ->is(StdlibTypes::Tuple)));
   } else if (tei && tei->getValue() == "type[ByVal]") {
@@ -1365,12 +1366,18 @@ Expr *TypecheckVisitor::transformTupleFn(CallExpr *expr) {
 /// Transform type function to a type IdExpr identifier.
 Expr *TypecheckVisitor::transformTypeFn(CallExpr *expr) {
   expr->begin()->value = transform(expr->begin()->getExpr());
-  auto valueType = expr->begin()->getExpr()->getType();
+  auto value = expr->begin()->getExpr();
+  auto valueType = value->getType();
   if (valueType->is(StdlibTypes::Optional) && valueType->hasUnbounds(false))
     return nullptr;
+  // Metaclass is type[] w/o parameters: type(type) is type
+  std::shared_ptr<ClassType> metaclass;
+  if (isTypeExpr(value) || valueType->is(StdlibTypes::TypeWrap)) {
+    metaclass = getMetaclassType();
+    valueType = metaclass.get();
+  }
   unify(expr->getType(), instantiateTypeVar(valueType));
-  // Generic type expressions have no runtime constructor to realize.
-  if (!realize(expr->getType()) && !isTypeExpr(expr->begin()->getExpr()))
+  if (!realize(expr->getType()))
     return nullptr;
 
   auto e = N<IdExpr>(expr->getType()->realizedName());
