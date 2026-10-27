@@ -51,6 +51,8 @@ struct InitializedFields {
 class FieldInitializationVisitor : public CallbackASTVisitor<void, void> {
   /// Provides specialized helper bodies after call resolution.
   Cache *cache;
+  /// Concrete receiver realization used to resolve cooperative super() dispatch.
+  Cache::Class::ClassRealization *receiver;
   /// Shared recursion guard keyed by helper body and tracked parameter position.
   std::set<std::pair<FunctionStmt *, size_t>> &active;
   /// Reuse completed summaries across shared helper paths. A recursion guard alone
@@ -99,9 +101,10 @@ class FieldInitializationVisitor : public CallbackASTVisitor<void, void> {
 public:
   /// Share cached summaries and the recursion guard, but keep helper dataflow local.
   FieldInitializationVisitor(
-      Cache *cache, std::set<std::pair<FunctionStmt *, size_t>> &active,
+      Cache *cache, Cache::Class::ClassRealization *receiver,
+      std::set<std::pair<FunctionStmt *, size_t>> &active,
       std::map<std::pair<FunctionStmt *, size_t>, InitializedFields> &summaries)
-      : cache(cache), active(active), summaries(summaries) {}
+      : cache(cache), receiver(receiver), active(active), summaries(summaries) {}
 
   /// Summarize normal exits with the receiver bound to an AST parameter index.
   /// Recursive re-entry contributes no new facts rather than assuming a write.
@@ -165,6 +168,12 @@ public:
     auto function = type ? type->getFunc() : nullptr;
     if (!function)
       return;
+    if (auto dispatch = expr->getAttribute<ir::IntValueAttribute>(Attr::ExprVirtual);
+        dispatch && dispatch->value >= 0 && !expr->empty() &&
+        isInstance(expr->front().getExpr())) {
+      if (auto target = in(receiver->vtable, dispatch->value))
+        function = target->get();
+    }
     auto cached = in(cache->functions, function->getFuncName());
     if (!cached)
       return;
@@ -179,7 +188,7 @@ public:
         break;
       if (!isInstance((*expr)[argument++].getExpr()))
         continue;
-      FieldInitializationVisitor helper(cache, active, summaries);
+      FieldInitializationVisitor helper(cache, receiver, active, summaries);
       auto initialized = helper.analyze(body, parameter);
       state.fields.insert(initialized.fields.begin(), initialized.fields.end());
       state.reachable &= initialized.reachable;
@@ -286,7 +295,8 @@ void TypecheckVisitor::checkFieldInitialization(types::FuncType *type,
     return;
   std::set<std::pair<FunctionStmt *, size_t>> active;
   std::map<std::pair<FunctionStmt *, size_t>, InitializedFields> summaries;
-  FieldInitializationVisitor visitor(ctx->cache, active, summaries);
+  FieldInitializationVisitor visitor(ctx->cache, getClassRealization(parent), active,
+                                     summaries);
   auto initialized = visitor.analyze(function, 0);
   if (!initialized.reachable)
     return;

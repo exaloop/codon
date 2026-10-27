@@ -438,6 +438,11 @@ void TypecheckVisitor::prepareVTables() {
       added |= realize_descendant_supers(id, signature.get());
     added |= realize_value_methods();
   }
+
+  for (const auto &[name, function] : sorted_view(ctx->cache->functions))
+    for (const auto &[key, realization] : sorted_view(function.realizations))
+      if (realization->ast && realization->ir)
+        checkFieldInitialization(realization->getType(), realization->ast);
 }
 
 SuiteStmt *TypecheckVisitor::generateFunctionCallInternalAST(FuncType *type) {

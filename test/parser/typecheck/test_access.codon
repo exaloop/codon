@@ -498,7 +498,8 @@ print A.B.C[Optional[int]].f(False).__class__.__name__ #: Tuple[int,str,bool]
 #%% rec_class_1_NOPY,barebones
 class A:
     y: A
-    def __init__(self): pass  # necessary to prevent recursive instantiation!
+    def __init__(self):
+        self.y = self
 x = A()
 print(x.__class__.__name__, x.y.__class__.__name__) #: A A
 
@@ -507,7 +508,13 @@ class A[T]:
     a: T
     b: A[T]
     c: A[str]
-    def __init__(self): pass
+    def __init__(self):
+        self.a = T()
+        self.b = self
+        if T is str:
+            self.c = self
+        else:
+            self.c = A[str]()
 a = A[int]()
 print a.__class__.__name__, a.b.__class__.__name__, a.c.__class__.__name__, a.b.b.__class__.__name__, a.b.c.__class__.__name__
 #: A[int] A[int] A[str] A[int] A[str]
@@ -518,7 +525,9 @@ print a.c.b.__class__.__name__, a.c.c.__class__.__name__, a.b.b.b.b.b.b.b.b.b.b.
 class X:
     x: int
     rec: X
-    def __init__(self): pass
+    def __init__(self):
+        self.x = 0
+        self.rec = self
     def foo(x: X, y: int):
         return y
     class Y:
@@ -542,12 +551,21 @@ class A[T]:
     a: T
     b: A[T]
     c: A[str]
-    def __init__(self): pass
+    def __init__(self):
+        self.a = T()
+        self.b = self
+        if T is str:
+            self.c = self
+        else:
+            self.c = A[str]()
 class B[T]:
     a: T
     b: A[T]
     c: B[T]
-    def __init__(self): pass
+    def __init__(self):
+        self.a = T()
+        self.b = A[T]()
+        self.c = self
     class Nest1[U]:
         n: U
     class Nest2[T, U]:

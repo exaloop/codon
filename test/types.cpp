@@ -220,6 +220,89 @@ Value(1).__init__()
   EXPECT_EQ(warnings.find("field 'ValueError."), std::string::npos) << warnings;
 }
 
+TEST(FieldInitializationTest, ChecksCooperativeSuperInitialization) {
+  for (bool cooperative : {false, true}) {
+    for (bool debug : {false, true}) {
+      SCOPED_TRACE(cooperative ? "cooperative super" : "skipped right base");
+      auto options = codon::Options::getDefault("build/codon_test");
+      options->debug = debug;
+      codon::Compiler compiler(*options);
+      std::string source = R"(
+class Base:
+  value: int
+  def __init__(self, value: int):
+    self.value = value
+class Left(Base):
+  left: int
+  def __init__(self, value: int):
+)";
+      source += cooperative ? "    super().__init__(value)\n"
+                            : "    Base.__init__(self, value)\n";
+      source += R"(
+    self.left = value + 1
+class Right(Base):
+  right: int
+  def __init__(self, value: int):
+    super().__init__(value)
+    self.right = value + 2
+class Both(Left, Right):
+  own: int
+  def __init__(self, value: int):
+    super().__init__(value)
+    self.own = value + 3
+instance = Both(10)
+assert instance.value == 10
+assert instance.left == 11
+assert instance.right == 12
+assert instance.own == 13
+)";
+      auto error = compiler.parseCode("field_initialization_super.codon", source);
+      if (cooperative) {
+        ASSERT_FALSE(bool(error)) << llvm::toString(std::move(error));
+      } else {
+        ASSERT_TRUE(bool(error));
+        EXPECT_NE(llvm::toString(std::move(error))
+                      .find("field 'Both.right' may be uninitialized"),
+                  std::string::npos);
+      }
+    }
+  }
+}
+
+TEST(FieldInitializationTest, ChecksLateRealizations) {
+  for (bool pyext : {false, true}) {
+    for (bool initialized : {false, true}) {
+      SCOPED_TRACE(pyext ? "Python export" : "late SDK realization");
+      auto options = codon::Options::getDefault("build/codon_test");
+      options->pyext = pyext;
+      codon::Compiler compiler(*options);
+      std::string source = R"(
+class Late:
+  value: int
+  def __init__(self):
+)";
+      source += initialized ? "    self.value = 42\n" : "    pass\n";
+      source += R"(
+def make() -> int:
+  return Late().value
+)";
+      auto error = compiler.parseCode("field_initialization_late.codon", source);
+      if (pyext && !initialized) {
+        ASSERT_TRUE(bool(error));
+        EXPECT_NE(llvm::toString(std::move(error))
+                      .find("field 'Late.value' may be uninitialized"),
+                  std::string::npos);
+      } else {
+        ASSERT_FALSE(bool(error)) << llvm::toString(std::move(error));
+        if (!pyext)
+          EXPECT_EQ(compiler.getCache()->module->getOrRealizeFunc("make", {}) !=
+                        nullptr,
+                    initialized);
+      }
+    }
+  }
+}
+
 TEST(FieldInitializationTest, ReusesSharedHelperSummaries) {
   // Each level has two edges to the same helper, but the graph has only 25 helpers.
   // Without completed summaries, analysis repeats exponentially despite having no

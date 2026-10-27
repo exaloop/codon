@@ -611,8 +611,6 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
                       std::vector<Expr *>{}, ast->isAsync());
   r->ast->setSrcInfo(ast->getSrcInfo());
   r->ast->cloneAttributesFrom(ast);
-  // Resolved helper bodies and receiver wrappers are available only after typing.
-  checkFieldInitialization(type, r->ast);
 
   auto newType = std::static_pointer_cast<types::FuncType>(type->generalize(0));
   auto newKey = newType->realizedName();
