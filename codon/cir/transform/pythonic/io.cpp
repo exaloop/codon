@@ -54,21 +54,46 @@ void optimizePrint(CallInstr *v) {
 }
 
 void optimizeWrite(CallInstr *v) {
+  if (v->numArgs() != 2)
+    return;
   auto *M = v->getModule();
 
   auto it = v->begin();
   auto *file = *it++;
 
+  auto *writeFunc = util::getFunc(v->getCallee());
+  if (!writeFunc || !writeFunc->getParentType() ||
+      !writeFunc->getParentType()->is(file->getType()))
+    return;
+
   auto *cat = cast<CallInstr>(*it++);
-  if (!cat)
+  if (!cat || cat->numArgs() != 1)
     return;
   auto *catFunc = util::getFunc(cat->getCallee());
-  if (!catFunc || catFunc->getUnmangledName() != "cat")
+  if (!catFunc || catFunc->getUnmangledName() != "cat" || !catFunc->getParentType() ||
+      !catFunc->getParentType()->is(M->getStringType()))
+    return;
+
+  auto *piecesType = cast<RecordType>(cat->front()->getType());
+  if (!piecesType)
+    return;
+  std::vector<Type *> pieceTypes;
+  for (const auto &field : *piecesType) {
+    if (!field.getType()->is(M->getStringType()))
+      return;
+    pieceTypes.push_back(field.getType());
+  }
+  if (!piecesType->is(M->getTupleType(pieceTypes)))
     return;
 
   auto *realCat =
       M->getOrRealizeMethod(M->getStringType(), "cat", {cat->front()->getType()});
-  if (realCat->getId() != catFunc->getId())
+  if (!realCat || realCat->getId() != catFunc->getId())
+    return;
+
+  auto *realWrite = M->getOrRealizeMethod(file->getType(), "write",
+                                          {file->getType(), cat->getType()});
+  if (!realWrite || realWrite->getId() != writeFunc->getId())
     return;
 
   util::CloneVisitor cv(M);
@@ -80,7 +105,7 @@ void optimizeWrite(CallInstr *v) {
 
   auto *replacement = M->getOrRealizeMethod(file->getType(), "__file_write_gen__",
                                             {args[0]->getType(), args[1]->getType()});
-  if (!replacement)
+  if (!replacement || !util::getReturnType(replacement)->is(v->getType()))
     return;
 
   v->replaceAll(util::call(replacement, args));

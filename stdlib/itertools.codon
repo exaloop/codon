@@ -13,7 +13,7 @@ def count(start: T = 0, step: T = 1, T: type) -> Generator[T]:
         n += step
 
 @inline
-def cycle(iterable: Generator[T], T: type) -> Generator[T]:
+def cycle(iterable: Generator[T], /, T: type) -> Generator[T]:
     saved = []
     for element in iterable:
         yield element
@@ -34,7 +34,7 @@ def repeat(object: T, times: Optional[int] = None, T: type) -> Generator[T]:
 # Iterators terminating on the shortest input sequence
 
 @inline
-def accumulate(iterable: Generator[T], func=lambda a, b: a + b, initial=0, T: type):
+def accumulate(iterable: Generator[T], func=lambda a, b: a + b, *, initial=0, T: type):
     total = initial
     yield total
     for element in iterable:
@@ -59,7 +59,7 @@ class chain:
                 yield element
 
     @inline
-    def from_iterable(iterables):
+    def from_iterable(iterables, /):
         for it in iterables:
             for element in it:
                 yield element
@@ -74,7 +74,7 @@ def compress(
 
 @inline
 def dropwhile(
-    predicate: CallableTrait[[T], bool], iterable: Generator[T], T: type
+    predicate: CallableTrait[[T], bool], iterable: Generator[T], /, T: type
 ) -> Generator[T]:
     b = False
     for x in iterable:
@@ -85,7 +85,7 @@ def dropwhile(
 
 @inline
 def filterfalse(
-    predicate: CallableTrait[[T], bool], iterable: Generator[T], T: type
+    predicate: CallableTrait[[T], bool], iterable: Generator[T], /, T: type
 ) -> Generator[T]:
     for x in iterable:
         if not predicate(x):
@@ -108,7 +108,7 @@ def groupby(iterable, key=None):
     if currkey is not None:
         yield unwrap(currkey), group
 
-def islice(iterable: Generator[T], stop: Optional[int], T: type) -> Generator[T]:
+def islice(iterable: Generator[T], stop: Optional[int], /, T: type) -> Generator[T]:
     if stop is not None and stop.__val__() < 0:
         raise ValueError(
             "Indices for islice() must be None or an integer: 0 <= x <= sys.maxsize."
@@ -127,7 +127,7 @@ def islice(
     iterable: Generator[T],
     start: Optional[int],
     stop: Optional[int],
-    step: Optional[int] = None,
+    step: Optional[int] = None, /,
     T: type,
 ) -> Generator[T]:
     from sys import maxsize
@@ -156,13 +156,13 @@ def islice(
             return
 
 @inline
-def starmap(function, iterable):
+def starmap(function, iterable, /):
     for args in iterable:
         yield function(*args)
 
 @inline
 def takewhile(
-    predicate: CallableTrait[[T], bool], iterable: Generator[T], T: type
+    predicate: CallableTrait[[T], bool], iterable: Generator[T], /, T: type
 ) -> Generator[T]:
     for x in iterable:
         if predicate(x):
@@ -170,7 +170,7 @@ def takewhile(
         else:
             break
 
-def tee(iterable: Generator[T], n: int = 2, T: type) -> List[Generator[T]]:
+def tee(iterable: Generator[T], n: int = 2, /, T: type) -> List[Generator[T]]:
     from collections import deque
 
     it = iter(iterable)
@@ -407,8 +407,10 @@ def combinations(pool, r: int):
 
 @overload
 def combinations(pool, r: Literal[int]):
+    @pure
+    @llvm
     def empty(T: type) -> T:
-        pass
+        ret {=T} zeroinitializer
 
     if r < 0:
         compile_error("r must be non-negative")
@@ -493,8 +495,10 @@ def combinations_with_replacement(pool, r: int):
 
 @overload
 def combinations_with_replacement(pool, r: Literal[int]):
+    @pure
+    @llvm
     def empty(T: type) -> T:
-        pass
+        ret {=T} zeroinitializer
 
     if r < 0:
         compile_error("r must be non-negative")
@@ -604,8 +608,10 @@ def _permutations_non_static(pool, r = None):
             break
 
 def _permutations_static(pool, r: Literal[int]):
+    @pure
+    @llvm
     def empty(T: type) -> T:
-        pass
+        ret {=T} zeroinitializer
 
     pool_list = List._as_list(pool)
     n = len(pool)

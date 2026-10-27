@@ -53,6 +53,8 @@ public:
   FuncType *getFunc() override { return this; }
 
   Type *getRetType() const;
+  /// Replace non-null argument types, preserving shared tuples and cached names.
+  void replaceArgTypes(const std::vector<TypePtr> &replacements);
   Type *getParentType() const { return funcParent.get(); }
   std::string getFuncName() const;
 

@@ -57,6 +57,59 @@ q = Point(5, 6, p)
 print(q)  # (5, 6) -> (3, 4)
 ```
 
+## Field initialization
+
+Codon reports a compile-time error when a field may be uninitialized when
+`__init__` returns normally.
+The check follows calls to known helper functions and methods, including base
+constructors called through `super()`. Initialization can therefore be split
+across helpers:
+
+``` python
+class Buffer:
+    values: list[int]
+
+    def __init__(self):
+        self.initialize()
+
+    def initialize(self):
+        self.values = []
+```
+
+The analysis is conservative: assignments on only one branch do not guarantee
+initialization, and initialization that cannot be verified statically may still
+produce an error. The check applies to regular classes; tuple classes and
+compiler-internal classes are exempt. Tuple classes return complete tuple values
+from `__new__` rather than initializing fields through `__init__`.
+
+This check does not initialize storage or add runtime checks. Every
+field must still be initialized before it is read.
+
+## Self
+
+An unannotated instance-method argument named `self` has type `Self`. Codon binds
+`Self` to the receiver's static type, so an inherited method can use the derived
+type without upcasting to the class that defined the method:
+
+``` python
+class A:
+    def foo(self):
+        return f"{type(self)} ({Self})"
+class B(A):
+    pass
+
+print(A().foo())  # <class 'A'> (<class 'A'>)
+print(B().foo())  # <class 'B'> (<class 'B'>)
+```
+
+Return types are inferred normally. A method can also explicitly annotate its
+return type as `Self` if needed. An explicit `self` annotation such as `self: Context`
+keeps that annotation and does not default to `Self`.
+
+`Self` also works for tuple classes and can be declared explicitly as a generic
+parameter (`Self: type`), including in static methods. It does not itself make
+a method virtual.
+
 ## Overloading methods
 
 In Python, class methods can be defined to take arguments of arbitrary types,

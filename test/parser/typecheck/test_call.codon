@@ -1,3 +1,309 @@
+#%% explicit_none_iterator_result
+def forward(*iterables, key=None):
+    return iter(iterables[0])
+
+left = List[int]()
+right = List[int]()
+merged = forward(left, right, key=None)
+print(list(merged))  #: []
+absent = None
+merged = forward(left, right, key=absent)
+print(list(merged))  #: []
+assert list(forward(List[int](), key=None)) == List[int]()
+assert list(forward([1, 2], key=None)) == [1, 2]
+assert list(forward(["a", "b"], key=None)) == ["a", "b"]
+assert list(forward([1, 2])) == [1, 2]
+print("explicit None inference ok")  #: explicit None inference ok
+
+#%% stdlib_signature_keywords
+import math
+import json
+import random
+assert math.isclose(a=1.0, b=1.0, rel_tol=1e-8, abs_tol=0.0)
+assert math.prod([2, 3], start=4) == 24
+assert sum([1, 2], start=3) == 6
+assert sorted([3, 1, 2], reverse=True) == [3, 2, 1]
+values = [3, 1, 2]
+values.sort(key=lambda value: -value, reverse=True)
+assert values == [1, 2, 3]
+assert int("10", base=2) == 2
+assert "aaa".replace("a", "b", count=1) == "baa"
+assert "a,b,c".split(sep=",", maxsplit=1) == ["a", "b,c"]
+assert b"ab".hex(sep=":", bytes_per_sep=1) == "61:62"
+assert json.loads('"a\nb"', strict=False).as_str() == "a\nb"
+assert json.dumps({"value": 1}, separators=(",", ":")) == '{"value":1}'
+assert json.JSONDecoder(strict=False).decode('"a\nb"').as_str() == "a\nb"
+assert random.choices([7], cum_weights=[1], k=3) == [7, 7, 7]
+assert {"value": 1}.pop("missing", 2) == 2
+print("stdlib signatures ok")  #: stdlib signatures ok
+
+#%% stdlib_signature_len_keyword
+len(x=[1])
+#! 'x' is an invalid keyword argument for len
+
+#%% stdlib_signature_math_keyword
+import math
+math.sqrt(x=4.0)
+#! 'x' is an invalid keyword argument for sqrt
+
+#%% stdlib_signature_math_tolerance
+import math
+math.isclose(1.0, 1.0, 1e-8)
+#! isclose() takes 2 arguments (3 given)
+
+#%% stdlib_signature_prod_start
+import math
+math.prod([2, 3], 4)
+#! prod() takes 1 arguments (2 given)
+
+#%% stdlib_signature_operator_default
+import operator
+operator.length_hint([1], default=0)
+#! 'default' is an invalid keyword argument for length_hint
+
+#%% stdlib_signature_sorted_options
+sorted([2, 1], None)
+#! no function 'sorted'
+
+#%% stdlib_signature_dict_pop
+{"value": 1}.pop("missing", missing=2)
+#! no function 'OrderedDict.pop'
+
+#%% stdlib_signature_range_keyword
+range(stop=3)
+#! no function 'range.__new__'
+
+#%% stdlib_signature_json_loads
+import json
+json.loads("null", False)
+#! loads() takes 1 arguments (2 given)
+
+#%% stdlib_signature_json_dumps
+import json
+json.dumps([1], False)
+#! dumps() takes 1 arguments (2 given)
+
+#%% stdlib_signature_random_choices
+import random
+random.choices([1], None, None, 2)
+#! choices() takes 2 arguments (4 given)
+
+#%% stdlib_signature_module_keywords
+import datetime
+import itertools
+import os
+import pathlib
+import re
+import statistics
+assert list(itertools.accumulate([1, 2], initial=3)) == [3, 4, 6]
+assert list(itertools.repeat(object=7, times=2)) == [7, 7]
+assert len(statistics.quantiles([1, 2, 3, 4], n=4, method="inclusive")) == 3
+assert statistics.correlation([1, 2, 3], [2, 4, 6], method="linear") == 1.0
+assert datetime.date.fromisocalendar(year=2020, week=1, day=1) == datetime.date(2019, 12, 30)
+assert datetime.date(2020, 1, 1).replace(year=2021) == datetime.date(2021, 1, 1)
+assert datetime.time(hour=1).isoformat(timespec="minutes") == "01:00"
+assert re.compile("a").search(string="ba", pos=1).start() == 1
+assert pathlib.Path("a/b").relative_to("a", walk_up=True) == pathlib.Path("b")
+assert pathlib.Path("sample.py").match("*.PY", case_sensitive=False)
+assert os.path.realpath(".", strict=True) == os.getcwd()
+assert "{value}".format_map({"value": 7}) == "7"
+print("module signatures ok")  #: module signatures ok
+
+#%% stdlib_signature_statistics_options
+import statistics
+statistics.quantiles([1, 2, 3], 2)
+#! quantiles() takes 1 arguments (2 given)
+
+#%% stdlib_signature_itertools_initial
+import itertools
+itertools.accumulate([1, 2], lambda first, second: first + second, 3)
+#! no function 'accumulate'
+
+#%% stdlib_signature_os_stat
+import os
+os.stat(".", False)
+#! no function 'stat'
+
+#%% stdlib_signature_realpath
+import os
+os.path.realpath(".", True)
+#! realpath() takes 1 arguments (2 given)
+
+#%% stdlib_signature_asyncio_options
+import asyncio
+async def value():
+    return 1
+asyncio.run(value(), False)
+#! run() takes 1 arguments (2 given)
+
+#%% stdlib_signature_integer_constructor
+int(what=1)
+#! no function 'Int.__new__'
+
+#%% stdlib_signature_string_format_map
+"{value}".format_map(mapping={"value": 7})
+#! 'mapping' is an invalid keyword argument for format_map
+
+#%% stdlib_signature_exception_message
+ValueError(message="invalid")
+#! no function 'BaseException.__init__'
+#! during the realization of _dispatch
+#! during the realization of __init__
+#! during the realization of _dispatch
+#! during the realization of __init__
+
+#%% stdlib_signature_file_write
+with open("build/signature-output.txt", "w") as output:
+    output.write(s="value")
+#! 's' is an invalid keyword argument for write
+
+#%% stdlib_signature_operator_callable
+import operator
+operator.itemgetter(0)(o=[1, 2])
+#! 'o' is an invalid keyword argument
+
+#%% parameter_separators,barebones
+def mixed(first: int, /, second: int = 2, *, third: int, fourth: int = 4):
+    return first, second, third, fourth
+assert mixed(1, third=3) == (1, 2, 3, 4)
+assert mixed(1, 20, fourth=40, third=30) == (1, 20, 30, 40)
+assert mixed(1, second=20, third=30) == (1, 20, 30, 4)
+def unpack(**kwargs):
+    return mixed(*(1, 20), **kwargs)
+assert unpack(third=30, fourth=40) == (1, 20, 30, 40)
+
+def shadow(name, /, **kwargs):
+    return name, kwargs.name
+assert shadow(1, name=2) == (1, 2)
+def defaults(first=1, /, second=2, *, third=3, fourth):
+    return first, second, third, fourth
+assert defaults(fourth=4) == (1, 2, 3, 4)
+def variadic(first=1, /, *args, optional=2, required, **kwargs):
+    return first, args, optional, required, kwargs.extra
+assert variadic(10, 20, 30, required=40, extra=50) == (10, (20, 30), 2, 40, 50)
+
+f = lambda first, /, second=2, *, third: first + second + third
+assert f(1, third=3) == 6
+partial = mixed(1, ...)
+assert partial(third=3) == (1, 2, 3, 4)
+def closure(offset):
+    def inner(first, /, *, second):
+        return offset + first + second
+    return inner
+assert closure(10)(1, second=2) == 13
+
+class Example:
+    def method(self, /, first, *, second):
+        return first + second
+bound = Example().method
+assert bound(1, second=2) == 3
+
+def choose(first: int, /):
+    return 'positional'
+@overload
+def choose(*, first: int):
+    return 'keyword'
+assert choose(1) == 'positional'
+assert choose(first=1) == 'keyword'
+def generic[T](first: T, /, *, second: T):
+    return first + second
+assert generic(1, second=2) == 3
+print('parameter separators ok')  #: parameter separators ok
+
+#%% parameter_virtual_separators,barebones
+class Base:
+    def compute(self, /, value: int, *, offset: int = 1) -> int:
+        return value + offset
+class Derived(Base):
+    def compute(self, /, value: int, *, offset: int = 1) -> int:
+        return value + offset + 10
+base: Base = Derived()
+assert base.compute(2, offset=3) == 15
+assert base.compute(2) == 13
+bound = base.compute
+assert bound(2, offset=3) == 15
+
+# Force the adapter path with a covariant result.
+class Result:
+    value: int
+class DetailedResult(Result):
+    extra: int
+class Factory:
+    def create(self, /, *, value: int) -> Result:
+        return Result(value)
+class DetailedFactory(Factory):
+    def create(self, /, *, value) -> DetailedResult:
+        return DetailedResult(value=value, extra=1)
+factory: Factory = DetailedFactory()
+assert factory.create(value=42).value == 42
+assert isinstance(factory.create(value=42), DetailedResult)
+print('virtual parameter separators ok')  #: virtual parameter separators ok
+
+#%% parameter_positional_only_error,barebones
+def positional(value, /):
+    return value
+positional(value=1)
+#! 'value' is an invalid keyword argument for positional
+
+#%% parameter_keyword_only_error,barebones
+def keyword(*, value):
+    return value
+keyword(1)
+#! keyword() takes 0 arguments (1 given)
+
+#%% parameter_keyword_missing_error,barebones
+def keyword(*, value):
+    return value
+keyword()
+#! keyword() missing 1 required keyword-only argument: 'value'
+
+#%% parameter_keyword_after_kwargs_error,barebones
+def keyword(*, value, **kwargs):
+    return value
+keyword(1)
+#! keyword() takes 0 arguments (1 given)
+
+#%% parameter_positional_only_missing_error,barebones
+def positional(value, /, **kwargs):
+    return value
+positional(value=1)
+#! positional() missing 1 required positional argument: 'value'
+
+#%% parameter_slash_first_error,barebones
+def bad(/, value): pass
+#! '/' must follow positional parameters and precede '*'
+
+#%% parameter_slash_twice_error,barebones
+def bad(first, /, second, /): pass
+#! '/' must follow positional parameters and precede '*'
+
+#%% parameter_slash_after_star_error,barebones
+def bad(*args, /): pass
+#! '/' must follow positional parameters and precede '*'
+
+#%% parameter_bare_star_error,barebones
+def bad(value, *): pass
+#! named arguments must follow bare '*'
+
+#%% parameter_bare_star_kwargs_error,barebones
+def bad(*, **kwargs): pass
+#! named arguments must follow bare '*'
+
+#%% parameter_star_twice_error,barebones
+def bad(*, first, *, second): pass
+#! '*' may appear only once
+
+#%% parameter_star_vararg_error,barebones
+def bad(*, first, *args): pass
+#! '*' may appear only once
+
+#%% parameter_generic_bare_star_error,barebones
+def bad[T](*): pass
+#! named arguments must follow bare '*'
+
+#%% parameter_lambda_bare_star_error,barebones
+bad = lambda *: 1
+#! named arguments must follow bare '*'
 
 #%% call_ptr,barebones
 v = 5
@@ -237,7 +543,7 @@ f3()
 
 #%% call_arguments_partial,barebones
 def doo[R, T](a: CallableTrait[[T], R], b: Generator[T], c: Optional[T], d: T):
-    print R.__class__.__name__, T.__class__.__name__
+    print R.__name__, T.__name__
     print a.__class__.__name__[:8], b.__class__.__name__
     for i in b:
         print a(i)
@@ -452,7 +758,7 @@ print hasattr(int, "__getitem__")
 print hasattr([1, 2], "__getitem__") #: True
 print hasattr([1, 2], "__getitem__", int) #: True
 print hasattr([1, 2], "__getitem__", str) #: False
-print hasattr([1, 2], "__getitem__", idx=int) #: True
+print hasattr([1, 2], "__getitem__", idx=int) #: False
 print hasattr([1, 2], "__getitem__", idx=str) #: False
 
 def kw(**kwargs):
@@ -461,6 +767,63 @@ kw(yes=1)  #: True False
 kw()  #: False False
 kw(no=1)  #: False True
 kw(no=1, yes=1)  #: True True
+
+#%% static_wrap_args,barebones
+def unary(value: int):
+    assert False, 'wrapped function executed'
+    return value
+
+print static.function.wrap_args(unary, 7)  #: (7,)
+
+def target(value: float, offset: int = 3):
+    assert False, 'wrapped function executed'
+    return value + offset
+
+print static.function.wrap_args(target, 7)  #: (7.0, 3)
+print static.function.wrap_args(target, 7, offset=4)  #: (7.0, 4)
+wrapped = static.function.wrap_args(target, offset=5, value=8)
+assert isinstance(wrapped, Tuple[float, int])
+print wrapped  #: (8.0, 5)
+
+effects = []
+def argument(value: int):
+    effects.append(value)
+    return value
+
+print static.function.wrap_args(target, offset=argument(4), value=argument(9))
+#: (9.0, 4)
+print effects  #: [4, 9]
+partial = target(argument(12), ...)
+print static.function.wrap_args(partial, offset=argument(6))  #: (12.0, 6)
+print effects  #: [4, 9, 12, 6]
+
+def generic_default(Element: type, value: int = 13):
+    return value
+
+print static.function.args(generic_default)  #: ('value',)
+assert static.function.has_type(generic_default, 0)
+assert static.function.get_type(generic_default, 0) is int
+assert static.function.has_default(generic_default, 0)
+print static.function.get_default(generic_default, 0)  #: 13
+
+#%% static_method_metadata,barebones
+@dataclass(init=False)
+class WrappedMethod:
+    value: int
+
+    def __init__(self, value: int = 5):
+        self.value = value
+
+instance = WrappedMethod()
+for method in static.function.overloads(WrappedMethod, '__init__'):
+    print static.function.args(method)  #: ('self', 'value')
+    assert static.function.has_type(method, 0)
+    assert static.function.get_type(method, 0) is WrappedMethod
+    assert static.function.has_default(method, 1)
+    print static.function.get_default(method, 1)  #: 5
+    wrapped = static.function.wrap_args(method, instance)
+    assert wrapped[0] is instance
+    print wrapped[1]  #: 5
 
 #%% isinstance_inheritance,barebones
 class AX[T]:
@@ -500,7 +863,7 @@ print a.__class__.__name__ #: Ptr[int]
 a = 5
 z = []
 z.append(6)
-print z.__class__.__name__, z, type(1.1).__class__.__name__  #: List[int] [6] float
+print z.__class__.__name__, z, type(1.1).__name__  #: List[int] [6] float
 
 #%% ptr,barebones
 v = 5
@@ -683,7 +1046,7 @@ Foo.foo(1)
 #! during the realization of foo(a: int)
 
 #%% static_getitem
-print Int[static.len("ee")].__class__.__name__ #: Int[2]
+print Int[static.len("ee")].__name__ #: Int[2]
 
 y = [1, 2]
 print getattr(y, "_len") #: 2
@@ -711,7 +1074,7 @@ def foo(f, x):
     f(x, type(x))
     print f.__class__.__name__
 def bar[T](x):
-    print x, T.__class__.__name__
+    print x, T.__name__
 foo(bar, 1)
 #: 1 int
 #: bar(...,...)
@@ -733,7 +1096,7 @@ def foo(f, x):
     f(x, type(x))
     print f.__class__.__name__
 def bar[T](x):
-    print x, T.__class__.__name__
+    print x, T.__name__
 foo(bar(T=int,...), 1)
 #! bar() takes 2 arguments (2 given)
 #! during the realization of foo(f: bar(...,int), x: int)
@@ -750,7 +1113,7 @@ print sorted([1,2,3,4,5], key=foo(y=-2, ...))
 #%% type_loc,barebones
 a = 1
 T = type(a)
-print T.__class__.__name__  #: int
+print T.__name__  #: int
 
 #%% methodcaller,barebones
 def foo():
@@ -805,7 +1168,7 @@ class B(A):
     def baz(self): return 'B.baz'
 class M[T]:
     m: T
-    def moo(self): return (f'M_{T.__class__.__name__}', self.m)
+    def moo(self): return (f'M_{T.__name__}', self.m)
 class X(B,M[int]):
     def foo(self, a): return (f'X({self.a},{self.b},{self.m})', a + self.b + self.m)
     def bar(self): return 'X.bar'
@@ -832,7 +1195,7 @@ moo(X(1,2,3))
 
 class A[T]:
     def __init__(self):
-        print("init A", T.__class__.__name__)
+        print("init A", T.__name__)
 class Ho:
     def __init__(self):
         print("init Ho")
@@ -840,7 +1203,7 @@ class Ho:
 class B[U](A[U], Ho):
     def __init__(self):
         super().__init__()
-        print("init B", U.__class__.__name__)
+        print("init B", U.__name__)
 B[Ho]()
 #: init A Ho
 #: init B Ho
@@ -1293,12 +1656,12 @@ for i, o in enumerate(la):
 
 #%% side_effects,barebones
 def foo(a, b, T: type, N: Literal[int]):
-    print(a, b, N, T.__class__.__name__)
+    print(a, b, N, T.__name__)
 def side(x):
     print('side', x)
     return x
 def side_T(T: type) -> type:
-    print('side_T', T.__class__.__name__)
+    print('side_T', T.__name__)
     return List[T]
 def side_N(N: Literal[int]) -> Literal[int]:
     print('side_N', N)
@@ -1372,3 +1735,342 @@ def consume(values: Generator[int]):
 def consume(values: Generator[Tuple[int, int]]):
     return "pairs"
 print(consume([1, 2]), consume([(1, 2), (3, 4)]))  #: ints pairs
+
+#%% union_argument_specialization
+def identity(value: int | str = 1):
+    return value
+
+assert type(identity(42)) is int
+assert type(identity('hello')) is str
+assert identity(42) == 42 and identity('hello') == 'hello'
+assert type(identity()) is int
+assert type(identity(value='named')) is str
+partial = identity(...)
+assert type(partial(2)) is int
+assert type(partial('partial')) is str
+alias = identity
+assert type(alias(3)) is int
+assert type(alias('alias')) is str
+
+# Binding T to a union must retain its storage layout.
+def constrained(value: T, T: type): return value
+assert type(constrained(42, T=int | str)) is (int | str)
+
+@llvm
+def fixed(value: int | str) -> int | str:
+    ret {=int | str} %value
+assert type(fixed(42)) is (int | str)
+
+def argument_type(value: int | str):
+    return type(value).__name__
+
+assert argument_type(42) == 'int'
+assert argument_type('hello') == 'str'
+value: int | str = 42
+assert type(identity(value)) is (int | str)
+assert argument_type(value) == 'Union[int|str]'
+assert type(identity(7)) is int
+
+def boxed(value: int | str) -> int | str:
+    return value
+assert type(boxed(42)) is (int | str)
+
+class Methods:
+    def member(self, value: int | str): return value
+    @staticmethod
+    def static(value: int | str): return value
+assert type(Methods().member(42)) is int
+assert type(Methods.static('static')) is str
+bound = Methods().member
+assert type(bound('bound')) is str
+
+try:
+    identity(1.5)
+    assert False
+except TypeError:
+    pass
+
+def normalize(value: int | str, replace: bool):
+    if replace:
+        value = 'changed'
+    return str(value)
+assert normalize(7, False) == '7'
+assert normalize(7, True) == 'changed'
+assert normalize('original', False) == 'original'
+normalize_alias = normalize
+assert normalize_alias(7, True) == 'changed'
+normalize_partial = normalize(replace=True, ...)
+assert normalize_partial(7) == 'changed'
+
+def normalize_number(value: int | str, replace: bool):
+    if replace:
+        value = 42
+    return str(value)
+assert normalize_number('original', False) == 'original'
+assert normalize_number('original', True) == '42'
+
+class Normalized:
+    value: int | str
+    def __init__(self, value: int | str):
+        if isinstance(value, int) and value == 0:
+            value = 'default'
+        self.value = value
+assert Normalized(0).value == 'default'
+assert Normalized(7).value == 7
+assert Normalized('text').value == 'text'
+
+def loop_rebind(value: int | str):
+    for replacement in ['loop']:
+        value = replacement
+    return str(value)
+assert loop_rebind(7) == 'loop'
+
+def unpack_rebind(value: int | str, replace: bool):
+    if replace:
+        value, other = ('unpacked', 1)
+    return str(value)
+assert unpack_rebind(7, True) == 'unpacked'
+assert unpack_rebind(7, False) == '7'
+
+def captured_rebind(value: int | str):
+    def replace():
+        nonlocal value
+        value = 'captured'
+    replace()
+    return str(value)
+assert captured_rebind(7) == 'captured'
+
+print('union specialization ok')  #: union specialization ok
+
+#%% bound_callable_trait_generics
+# itertools_test passes Set.__contains__ to filter's CallableTrait. The implicit
+# Self generic must not make the last value parameter look like *args/**kwargs.
+assert list(filter({1, 2}.__contains__, [1, 3, 2])) == [1, 2]
+contains = {'a', 'b'}.__contains__
+assert list(filter(contains, ['c', 'b', 'a'])) == ['b', 'a']
+
+class Box[T]:
+    value: T
+    def matches(self, value: T) -> bool:
+        return self.value == value
+
+assert list(filter(Box(2).matches, [1, 2, 3])) == [2]
+print('bound callable traits ok')  #: bound callable traits ok
+
+#%% callable_matching_defaults_variadics
+# Trait constraints and can_call must bind the same defaults, captured arguments,
+# and typed variadics as a normal call, including implicit Self/type parameters.
+import internal.static as static
+
+def apply(fn: CallableTrait[[int], R], R: type):
+    return fn(5)
+
+def defaulted(value: int, amount: int = 2):
+    return value + amount
+assert apply(defaulted) == 7
+assert apply(defaulted(amount=9, ...)) == 14
+
+def positional(value: int, /, *, amount: int = 3):
+    return value + amount
+assert apply(positional) == 8
+assert static.function.can_call(positional, 5)
+assert not static.function.can_call(positional, value=5)
+
+def convert(value: int, T: type = float):
+    return T(value)
+assert apply(convert) == 5.0
+assert apply(convert(T=int, ...)) == 5
+
+def variadic(*values: float, **kw: float):
+    return sum(values) + sum(kw.args)
+assert static.function.can_call(variadic, 1, extra=2)
+assert not static.function.can_call(variadic, 'bad')
+assert not static.function.can_call(variadic, extra='bad')
+assert apply(variadic) == 5.0
+partial = variadic(1, extra=2, ...)
+assert apply(partial) == 8.0
+assert static.function.can_call(partial, 5, extra=4)
+assert not static.function.can_call(partial, extra='bad')
+assert partial(5, extra=4) == 10.0
+
+class Box[T]:
+    value: T
+    def add(self, value: T, *rest: int, extra: int = 2):
+        return self.value + value + sum(rest) + extra
+assert apply(Box(10).add) == 17
+assert static.function.can_call(Box(10).add, 5, 1, 2)
+assert not static.function.can_call(Box(10).add, 5, 'bad')
+print('callable defaults and variadics ok')  #: callable defaults and variadics ok
+
+#%% callable_matching_probes
+# A probe needs correlated type variables, but must undo its temporary bindings
+# after both successful and failed matches and must not typecheck function bodies.
+import internal.static as static
+
+def same[T](first: T, second: T):
+    return first
+assert static.function.can_call(same, 1, 2)
+assert not static.function.can_call(same, 1, 's')
+assert static.function.can_call(same, 'a', 'b')
+assert same('a', 'b') == 'a'
+
+def uncalled(value):
+    compile_error('can_call must not realize this body')
+assert static.function.can_call(uncalled, 1)
+assert static.function.can_call(uncalled, 's')
+assert not static.function.can_call(uncalled)
+
+def receives_callback(fn: CallableTrait[[int], int]):
+    compile_error('a nested callable constraint must not realize this body')
+assert static.function.can_call(receives_callback, uncalled)
+
+def required_keyword(value: int, *, amount: int):
+    return value + amount
+assert not static.function.can_call(required_keyword, 5)
+assert static.function.can_call(required_keyword, 5, amount=2)
+
+def increment(value: int) -> int:
+    return value + 2
+pointer: Function[[int], int] = increment
+assert static.function.can_call(pointer, 1)
+assert not static.function.can_call(pointer, 'bad')
+assert not static.function.can_call(pointer, 1, 2)
+from internal.attributes import no_argument_wrap
+@no_argument_wrap
+def unwrapped(value: int) -> int:
+    return value
+assert static.function.can_call(unwrapped, 1)
+assert not static.function.can_call(unwrapped, 'bad')
+print('callable probes ok')  #: callable probes ok
+
+#%% callable_matching_adapters
+# Callable adapters use the same matcher as traits, including default parameters
+# and bound methods. Different adaptations of a template need distinct proxies.
+def defaulted(value: int, amount: int = 2):
+    return value + amount
+
+def apply(fn: Callable[[int], int]):
+    return fn(5)
+assert apply(defaulted) == 7
+
+class Box:
+    value: int
+    def add(self, value: int, *, amount: int = 2):
+        return self.value + value + amount
+assert apply(Box(10).add) == 17
+
+def identity(value):
+    return value
+integer = Callable[[int], int](identity)
+string = Callable[[str], str](identity)
+assert integer(7) == 7
+assert string('s') == 's'
+print('callable adapters ok')  #: callable adapters ok
+
+#%% callable_matching_pointer_argument_error,barebones
+# A raw Function has no AST; its argument types must still satisfy the trait.
+def increment(value: int) -> int:
+    return value + 1
+pointer: Function[[int], int] = increment
+
+def accept(fn: CallableTrait[[str], int]):
+    pass
+accept(pointer)  #! 'Function[Tuple[int],int]' does not match expected type
+
+#%% callable_matching_pointer_return_error,barebones
+# Raw Function return types must also be checked even when accept never calls it.
+def increment(value: int) -> int:
+    return value + 1
+pointer: Function[[int], int] = increment
+
+def accept(fn: CallableTrait[[int], str]):
+    pass
+accept(pointer)  #! 'Function[Tuple[int],int]' does not match expected type
+
+#%% callable_matching_keyword_only_error,barebones
+# A positional callable signature cannot supply a required keyword-only argument.
+def required_keyword(value: int, *, amount: int) -> int:
+    return value + amount
+fn: CallableTrait[[int], int] = required_keyword  #! 'CallableTrait[[int],int]' does not match expected type
+
+#%% callable_matching_factory_generics
+# Checking raw factory return types can alias method and enclosing class generics.
+# Preparing a factory overload must leave the class parameters available to later ones.
+from collections import defaultdict
+
+lists = defaultdict(list)
+lists['first'].append(1)
+assert lists['first'] == [1]
+assert lists['second'] == []
+counts = defaultdict(int)
+counts['first'] += 2
+assert counts['first'] == 2 and counts['second'] == 0
+print('callable factory generics ok')  #: callable factory generics ok
+
+#%% partial_global_defaults,barebones
+# Issue 4: reference stable definition-time slots without storing them in partials.
+events = List[str]()
+def make_default():
+    events.append('default')
+    return List[int]()
+def append(value, bucket=make_default()):
+    bucket.append(value)
+    return bucket
+p = append(1, ...)
+assert len(p.args) == 2  # Captured value and the trailing *args tuple only.
+assert events == ['default']
+assert p() == [1]
+assert append(2) == [1, 2]
+q = p(...)
+assert len(q.args) == 2
+assert q() == [1, 2, 1]
+other = List[int]()
+assert p(bucket=other) is other
+assert other == [1]
+assert events == ['default']
+
+# A callback with only global defaults needs no captured values. Keep evaluation
+# of the expression producing it even when its partial storage becomes empty.
+def whole(bucket=make_default()):
+    bucket.append(9)
+    return bucket
+empty = whole(...)
+assert len(empty.args) == 1
+assert empty() == [9]
+def get_callback():
+    events.append('lookup')
+    return whole
+assert get_callback()() == [9, 9]
+assert events == ['default', 'default', 'lookup']
+
+# Local defaults belong to each factory invocation and must remain captured.
+def factory(seed):
+    def collect(value, bucket=[seed]):
+        bucket.append(value)
+        return bucket
+    return collect
+first, second = factory(10), factory(20)
+assert first(1) == [10, 1]
+assert second(2) == [20, 2]
+assert first(3) == [10, 1, 3]
+
+# A user global is not a stable compiler-owned slot; keep its captured value.
+original = [10]
+def user_default(value, bucket=original):
+    bucket.append(value)
+    return bucket
+saved = user_default(1, ...)
+original = [20]
+assert saved() == [10, 1]
+print('partial defaults ok')  #: partial defaults ok
+
+#%% partial_conditional_defaults,barebones
+# Issue 4: a default slot written by a repeated definition is not stable.
+callbacks = []
+for seed in range(2):
+    def append(value, bucket=[seed]):
+        bucket.append(value)
+        return bucket
+    callbacks.append(append(7, ...))
+assert callbacks[0]() == [0, 7]
+assert callbacks[1]() == [1, 7]

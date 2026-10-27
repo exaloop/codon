@@ -547,8 +547,8 @@ def test_simple_hierarchy():
     assert getattr(dog, "legs") == 4
     assert getattr(poodle, "size") == "toy"
 
-    assert getattr(dog, "wings", default=None) is None
-    assert getattr(dog, "wings", default="absent") == "absent"
+    assert getattr(dog, "wings", None) is None
+    assert getattr(dog, "wings", "absent") == "absent"
 
     try:
         getattr(dog, "wings")  # no default argument

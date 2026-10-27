@@ -2,16 +2,20 @@
 
 #include "cache.h"
 
+#include <algorithm>
 #include <chrono>
 #include <ranges>
 #include <string>
 #include <vector>
+
+#include "llvm/ADT/ScopeExit.h"
 
 #include "codon/cir/pyextension.h"
 #include "codon/cir/util/irtools.h"
 #include "codon/compiler/compiler.h"
 #include "codon/parser/common.h"
 #include "codon/parser/peg/peg.h"
+#include "codon/parser/visitors/scoping/scoping.h"
 #include "codon/parser/visitors/translate/translate.h"
 #include "codon/parser/visitors/typecheck/ctx.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
@@ -146,7 +150,12 @@ ir::Func *Cache::realizeFunction(types::FuncType *type,
   }
   ir::Func *f = nullptr;
   if (auto rtv = tv.realize(t.get())) {
-    if (!pendingRealizations.empty())
+    auto realization =
+        functions[rtv->getFunc()->getFuncName()].realizations.at(rtv->realizedName());
+    bool checkInitialization =
+        tv.getUnmangledName(rtv->getFunc()->getFuncName()) == "__init__";
+    realization->checkInitialization |= checkInitialization;
+    if (!pendingRealizations.empty() || checkInitialization)
       tv.prepareVTables();
     auto pr = pendingRealizations; // copy it as it might be modified
     for (const auto &key : pr | std::views::keys)
@@ -218,13 +227,34 @@ std::vector<ir::SeriesFlow *> Cache::parseCode(const std::string &code) {
   if (!nodeOrErr)
     throw exc::ParserException(nodeOrErr.takeError());
   auto sctx = imports[MAIN_IMPORT].ctx;
+  if (auto err = ast::ScopingVisitor::apply(this, *nodeOrErr, &sctx->globalShadows))
+    throw exc::ParserException(std::move(err));
   auto node = ast::TypecheckVisitor::apply(sctx, *nodeOrErr);
-  auto old = codegenCtx->series;
-  codegenCtx->series.clear();
-  ast::TranslateVisitor(codegenCtx).initializeGlobals();
-  ast::TranslateVisitor(codegenCtx).translateStmts(node);
-  std::swap(old, codegenCtx->series);
-  return old;
+  ast::TypecheckVisitor(sctx).prepareVTables();
+
+  // New imports emit module initialization statements, so use empty block.
+  auto *block = module->Nr<ir::SeriesFlow>("parsed");
+  {
+    auto oldSeries = codegenCtx->series;
+    auto oldBases = codegenCtx->bases;
+    auto restore = llvm::make_scope_exit([&] {
+      codegenCtx->series = std::move(oldSeries);
+      codegenCtx->bases = std::move(oldBases);
+    });
+    codegenCtx->series = {block};
+    codegenCtx->bases = {codegenCtx->mainFunc};
+    ast::TranslateVisitor(codegenCtx).translateStmts(node);
+  }
+
+  // Module::parseCode discards the returned block, so attach initialization to
+  // main (or the current JIT cell), after the runtime preamble and before users
+  // can call the newly parsed helpers. Definitions alone leave main unchanged.
+  if (block->begin() != block->end()) {
+    auto *body = ir::cast<ir::SeriesFlow>(codegenCtx->mainFunc->getBody());
+    auto pos = std::find(body->begin(), body->end(), codegenCtx->mainUserStart);
+    body->insert(pos, block);
+  }
+  return {block};
 }
 
 std::vector<std::shared_ptr<types::ClassType>>

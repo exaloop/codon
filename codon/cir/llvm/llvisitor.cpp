@@ -33,6 +33,10 @@ const std::string NOINLINE_ATTR =
     ast::getMangledFunc("std.internal.attributes", "noinline");
 const std::string LLVM_MEMORY_NONE_ATTR =
     ast::getMangledFunc("std.internal.attributes", "llvm_memory_none");
+const std::string LLVM_NO_CAPTURE_ATTR =
+    ast::getMangledFunc("std.internal.attributes", "llvm_nocapture");
+const std::string LLVM_NO_FREE_ATTR =
+    ast::getMangledFunc("std.internal.attributes", "llvm_nofree");
 const std::string GPU_KERNEL_ATTR = ast::getMangledFunc("std.internal.gpu", "kernel");
 
 const std::string MAIN_UNCLASH = ".main.unclash";
@@ -522,11 +526,25 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
                                     const std::string &argv0, bool library,
                                     const std::vector<std::string> &libs,
                                     const std::string &lflags) {
+  llvm::SmallVector<llvm::StringRef> userFlags(16);
+  llvm::StringRef(lflags).split(userFlags, " ", /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+  bool pie = false;
+  for (auto &flag : userFlags) {
+    if (flag == "--pie")
+      flag = "-pie";
+    if (flag == "-pie")
+      pie = true;
+    else if (flag == "-no-pie")
+      pie = false;
+  }
+  if (library && pie)
+    compilationError("PIE is only supported for executables");
+
   if (library && options->ctor != Options::GlobalCTORMode::No)
     setupGlobalCtor();
 
   const std::string objFile = filename + ".o";
-  writeToObjectFile(objFile, /*pic=*/library);
+  writeToObjectFile(objFile, /*pic=*/library || pie);
 
   const std::string base = ast::Filesystem::executable_path(argv0.c_str());
   auto path = llvm::SmallString<128>(llvm::sys::path::parent_path(base));
@@ -608,18 +626,15 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
     command.push_back(arg);
   }
 
-  llvm::SmallVector<llvm::StringRef> userFlags(16);
-  llvm::StringRef(lflags).split(userFlags, " ", /*MaxSplit=*/-1, /*KeepEmpty=*/false);
-
   for (const auto &uflag : userFlags) {
     if (!uflag.empty())
       command.push_back(uflag.str());
   }
 
-  // Avoid "relocation R_X86_64_32 against `.bss' can not be used when making a PIE
-  // object" complaints by gcc when it is built with --enable-default-pie
+  // PIE links require the PIC object generated above. Otherwise retain -no-pie
+  // for default-PIE GCC to avoid R_X86_64_32 relocations against .bss.
   if (!library)
-    command.push_back("-no-pie");
+    command.push_back(pie ? "-pie" : "-no-pie");
 
   executeCommand(command);
 
@@ -1726,6 +1741,14 @@ void LLVMVisitor::visit(const ExternalFunc *x) {
   func->setWillReturn();
   if (util::hasAttribute(x, LLVM_MEMORY_NONE_ATTR))
     func->setDoesNotAccessMemory();
+  if (util::hasAttribute(x, LLVM_NO_FREE_ATTR))
+    func->addFnAttr(llvm::Attribute::NoFree);
+  if (util::hasAttribute(x, LLVM_NO_CAPTURE_ATTR)) {
+    for (auto &argument : func->args()) {
+      if (argument.getType()->isPointerTy())
+        argument.addAttr(llvm::Attribute::NoCapture);
+    }
+  }
 }
 
 void LLVMVisitor::visit(const InternalFunc *x) {
@@ -2189,22 +2212,20 @@ llvm::Type *LLVMVisitor::getLLVMType(Type *t) {
 
   if (auto *x = cast<UnionType>(t)) {
     auto &layout = M->getDataLayout();
-    llvm::Type *largest = nullptr;
+    llvm::Type *alignmentType = B->getInt8Ty();
     size_t maxSize = 0;
 
-    for (auto *t : *x) {
-      auto *llvmType = getLLVMType(t);
-      size_t size = layout.getTypeAllocSizeInBits(llvmType);
-      if (!largest || size > maxSize) {
-        largest = llvmType;
-        maxSize = size;
-      }
+    for (auto *member : *x) {
+      auto *llvmType = getLLVMType(member);
+      maxSize = std::max(maxSize, size_t(layout.getTypeAllocSize(llvmType)));
+      if (layout.getABITypeAlign(llvmType) > layout.getABITypeAlign(alignmentType))
+        alignmentType = llvmType;
     }
 
-    if (!largest)
-      largest = llvm::StructType::get(*context, {});
-
-    return llvm::StructType::get(*context, {B->getInt8Ty(), largest});
+    auto *storage = llvm::StructType::get(
+        *context, {llvm::ArrayType::get(alignmentType, 0),
+                   llvm::ArrayType::get(B->getInt8Ty(), maxSize)});
+    return llvm::StructType::get(*context, {B->getInt8Ty(), storage});
   }
 
   if (auto *x = cast<dsl::CustomType>(t)) {

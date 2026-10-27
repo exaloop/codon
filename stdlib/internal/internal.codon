@@ -160,7 +160,7 @@ class __magic__:
     # @dataclass parameter: pickle=True
     def unpickle(src: Ptr[u8], T: type) -> T:
         if isinstance(T, ByVal):
-            return type._force_value_cast(tuple(type(t).__unpickle__(src) for t in static.vars_types(T)), T)
+            return type._force_value_cast(tuple(t.__unpickle__(src) for t in static.vars_types(T)), T)
         else:
             obj = T.__new__()
             for k, v in static.vars(obj):
@@ -178,7 +178,7 @@ class __magic__:
     def from_py(src: Ptr[u8], T: type) -> T:
         if isinstance(T, ByVal):
             return type._force_value_cast(tuple(
-                type(t).__from_py__(pyobj._tuple_get(src, i))
+                t.__from_py__(pyobj._tuple_get(src, i))
                 for i, t in static.vars_types(T, with_index=True)
             ), T)
         else:
@@ -216,7 +216,7 @@ class __magic__:
 
     # @dataclass parameter: repr=False
     def repr_default(slf) -> str:
-        return f'<{type(slf).__class__.__name__} object at {slf.__raw__()}>'
+        return f'<{type(slf).__name__} object at {slf.__raw__()}>'
 
     # @dataclass parameter: repr=True
     def str(slf) -> str:

@@ -158,12 +158,19 @@ CPMAddPackage(
 
 if(NOT APPLE AND NOT SYSTEM_BLAS)
     enable_language(Fortran)
+    set(OPENBLAS_TARGET_OPTIONS "")
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
+        set(OPENBLAS_TARGET_OPTIONS "TARGET PRESCOTT")
+    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")
+        set(OPENBLAS_TARGET_OPTIONS "TARGET ARMV8")
+    endif()
     CPMAddPackage(
         NAME openblas
         GITHUB_REPOSITORY "OpenMathLib/OpenBLAS"
         GIT_TAG v0.3.33
         EXCLUDE_FROM_ALL YES
-        OPTIONS "DYNAMIC_ARCH ON"
+        OPTIONS ${OPENBLAS_TARGET_OPTIONS}
+                "DYNAMIC_ARCH ON"
                 "BUILD_TESTING OFF"
                 "BUILD_BENCHMARKS OFF"
                 "INTERFACE64 ON"

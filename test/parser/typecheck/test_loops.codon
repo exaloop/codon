@@ -115,7 +115,7 @@ for i in e:
 
 #%% static_for,barebones
 def foo(i: Literal[int]):
-    print('static', i, Int[i].__class__.__name__)
+    print('static', i, Int[i].__name__)
 
 for i in static.tuple(1, 2, 3, 4, 5):
     foo(i)
@@ -143,7 +143,7 @@ print tuple(Int[i+10](i) for i in static.tuple(1, 2, 3)).__class__.__name__
 for i in static.range(0, 10):
     if i % 2 == 0: continue
     if i > 8: break
-    print('xyz', Int[i].__class__.__name__)
+    print('xyz', Int[i].__name__)
 print('whoa')
 #: xyz Int[1]
 #: xyz Int[3]
@@ -154,7 +154,7 @@ print('whoa')
 for i in static.range(15):
     if i % 2 == 0: continue
     if i > 8: break
-    print('xyz', Int[i].__class__.__name__)
+    print('xyz', Int[i].__name__)
 print('whoa')
 #: xyz Int[1]
 #: xyz Int[3]
@@ -168,7 +168,7 @@ print tuple(Int[i-10](i) for i in static.range(30,33)).__class__.__name__
 for i in static.tuple(0, 2, 4, 7, 11, 12, 13):
     if i % 2 == 0: continue
     if i > 8: break
-    print('xyz', Int[i].__class__.__name__)
+    print('xyz', Int[i].__name__)
 print('whoa')
 #: xyz Int[7]
 #: whoa

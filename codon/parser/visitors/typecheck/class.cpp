@@ -1,5 +1,6 @@
 // Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
+#include <map>
 #include <string>
 #include <tuple>
 
@@ -18,6 +19,408 @@ namespace codon::ast {
 
 using namespace types;
 using namespace matcher;
+
+namespace {
+/// Initialization facts for the tracked receiver on a modeled control-flow path.
+struct InitializedFields {
+  /// Fields assigned on every reachable path merged into this state.
+  std::set<std::string> fields;
+  /// Local names known to refer to the receiver, including supported wrappers.
+  std::set<std::string> aliases;
+  /// Whether execution can continue along the current path.
+  bool reachable = true;
+
+  /// Keep only facts shared by continuing paths; terminated paths impose no facts.
+  void intersect(const InitializedFields &other) {
+    if (!other.reachable)
+      return;
+    if (!reachable) {
+      *this = other;
+      return;
+    }
+    std::erase_if(fields,
+                  [&](const auto &field) { return !other.fields.count(field); });
+    std::erase_if(aliases,
+                  [&](const auto &alias) { return !other.aliases.count(alias); });
+  }
+};
+
+class ReboundLocalsVisitor : public CallbackASTVisitor<void, void> {
+public:
+  std::set<std::string> names;
+
+  void transform(Expr *expr) override {
+    if (expr)
+      expr->accept(*this);
+  }
+
+  void transform(Stmt *stmt) override {
+    if (stmt)
+      stmt->accept(*this);
+  }
+
+  void visit(FunctionStmt *) override {}
+  void visit(ClassStmt *) override {}
+
+  void visit(AssignStmt *stmt) override {
+    if (auto target = cast<IdExpr>(stmt->getLhs()))
+      names.insert(target->getValue());
+    CallbackASTVisitor<void, void>::visit(stmt);
+  }
+
+  void visit(ForStmt *stmt) override {
+    if (auto target = cast<IdExpr>(stmt->getVar()))
+      names.insert(target->getValue());
+    CallbackASTVisitor<void, void>::visit(stmt);
+  }
+
+  void visit(ExceptStmt *stmt) override {
+    names.insert(stmt->getVar());
+    CallbackASTVisitor<void, void>::visit(stmt);
+  }
+};
+
+/// Conservatively track constructor field writes in a realized, typed AST.
+/// Follow known helper bodies so delegated initialization is not spuriously rejected;
+/// this analysis emits diagnostics only and does not insert runtime field guards.
+class FieldInitializationVisitor : public CallbackASTVisitor<void, void> {
+  /// Provides specialized helper bodies after call resolution.
+  Cache *cache;
+  /// Concrete receiver realization used to resolve cooperative super() dispatch.
+  Cache::Class::ClassRealization *receiver;
+  /// Shared recursion guard keyed by helper body and tracked parameter position.
+  std::set<std::pair<FunctionStmt *, size_t>> &active;
+  /// Reuse completed summaries across shared helper paths. A recursion guard alone
+  /// does not prevent exponential work when both branches call the same next helper.
+  /// The parameter index distinguishes writes to different receivers in one helper.
+  std::map<std::pair<FunctionStmt *, size_t>, InitializedFields> &summaries;
+  /// Facts at the current point in the body being analyzed.
+  InitializedFields state;
+  enum class ExitKind { Return, Break, Continue };
+  struct Exit {
+    ExitKind kind;
+    InitializedFields state;
+  };
+  /// Pending abrupt exits, intercepted by enclosing loops and finally blocks.
+  std::vector<Exit> exits;
+  /// Facts shared by potential exceptions in each enclosing protected region.
+  std::vector<InitializedFields> exceptions;
+
+  void recordException() {
+    if (state.reachable && !exceptions.empty())
+      exceptions.back().intersect(state);
+  }
+
+  void forgetReboundAliases(Stmt *stmt) {
+    ReboundLocalsVisitor rebound;
+    rebound.transform(stmt);
+    for (const auto &name : rebound.names)
+      state.aliases.erase(name);
+  }
+
+  void analyzeLoopBody(Stmt *body) {
+    auto incoming = state;
+    auto previousExits = exits.size();
+    transform(body);
+    std::vector<Exit> pending(exits.begin() + previousExits, exits.end());
+    exits.resize(previousExits);
+    state = incoming;
+    for (const auto &exit : pending) {
+      if (exit.kind == ExitKind::Break)
+        state.intersect(exit.state);
+      else if (exit.kind == ExitKind::Return)
+        exits.push_back(exit);
+    }
+  }
+
+  /// Recognize receiver aliases through known casts and lowered super() wrappers.
+  /// Super.__getattr__ captures the receiver in a Partial's first bound argument;
+  /// its dispatcher extracts Super._obj before calling the base implementation.
+  bool isInstance(Expr *expr) const {
+    auto identifier = cast<IdExpr>(expr);
+    if (identifier)
+      return state.aliases.count(identifier->getValue());
+    if (auto member = cast<DotExpr>(expr)) {
+      if (member->getMember() == "_obj" && member->getExpr()->getType()->is("Super"))
+        return isInstance(member->getExpr());
+      if (auto arguments = cast<DotExpr>(member->getExpr());
+          arguments && member->getMember() == "item1" &&
+          arguments->getMember() == "args" &&
+          arguments->getExpr()->getType()->is("Partial"))
+        return isInstance(arguments->getExpr());
+    }
+    if (auto call = cast<CallExpr>(expr); call && !call->empty()) {
+      auto type = call->getExpr()->getType();
+      auto function = type ? type->getFunc() : nullptr;
+      if (!function)
+        return false;
+      auto name = function->getFuncName();
+      if (startswith(name, getMangledFunc("std.internal.types.rtti", "force_cast")) ||
+          startswith(name, getMangledMethod("", "type", "_force_cast")) ||
+          startswith(name, getMangledMethod("", "Super", "__getattr__")))
+        return isInstance(call->front().getExpr());
+      if (startswith(name, getMangledMethod("", "Super", "__new__")))
+        for (const auto &argument : *call)
+          if (isInstance(argument.getExpr()))
+            return true;
+    }
+    return false;
+  }
+
+public:
+  /// Share cached summaries and the recursion guard, but keep helper dataflow local.
+  FieldInitializationVisitor(
+      Cache *cache, Cache::Class::ClassRealization *receiver,
+      std::set<std::pair<FunctionStmt *, size_t>> &active,
+      std::map<std::pair<FunctionStmt *, size_t>, InitializedFields> &summaries)
+      : cache(cache), receiver(receiver), active(active), summaries(summaries) {}
+
+  /// Summarize normal exits with the receiver bound to an AST parameter index.
+  /// Recursive re-entry contributes no new facts rather than assuming a write.
+  /// Publish a summary only after merging all exits, never from a partial traversal.
+  InitializedFields analyze(FunctionStmt *function, size_t argument) {
+    if (function->isAsync() || function->hasAttribute(Attr::IsGenerator))
+      return {};
+    auto key = std::make_pair(function, argument);
+    if (auto summary = summaries.find(key); summary != summaries.end())
+      return summary->second;
+    if (!active.insert(key).second)
+      return state;
+    state.aliases.insert((*function)[argument].getName());
+    transform(function->getSuite());
+    for (const auto &exit : exits)
+      if (exit.kind == ExitKind::Return)
+        state.intersect(exit.state);
+    active.erase(key);
+    summaries.emplace(key, state);
+    return state;
+  }
+
+  /// Ignore expression effects on paths that have already terminated.
+  void transform(Expr *expr) override {
+    if (expr && state.reachable)
+      expr->accept(*this);
+  }
+
+  /// Stop traversing statements after an abrupt control-flow transfer.
+  void transform(Stmt *stmt) override {
+    if (stmt && state.reachable)
+      stmt->accept(*this);
+  }
+
+  /// Declaring a nested function does not execute its initialization helpers.
+  void visit(FunctionStmt *) override {}
+  /// Nested class bodies do not initialize the tracked receiver.
+  void visit(ClassStmt *) override {}
+
+  /// Track local receiver aliases, discarding them when reassigned to other values.
+  void visit(AssignStmt *stmt) override {
+    transform(stmt->getRhs());
+    if (auto target = cast<IdExpr>(stmt->getLhs()); target && stmt->getRhs()) {
+      if (isInstance(stmt->getRhs()))
+        state.aliases.insert(target->getValue());
+      else
+        state.aliases.erase(target->getValue());
+    }
+  }
+
+  /// Credit writes to the receiver only after evaluating their operands.
+  void visit(AssignMemberStmt *stmt) override {
+    transform(stmt->getLhs());
+    transform(stmt->getRhs());
+    if (isInstance(stmt->getLhs()))
+      state.fields.insert(stmt->getMember());
+  }
+
+  /// Incorporate guaranteed writes from known helpers receiving the receiver.
+  /// Typed calls omit generic arguments, so match only value parameters in the AST.
+  void visit(CallExpr *expr) override {
+    CallbackASTVisitor<void, void>::visit(expr);
+    if (!state.reachable)
+      return;
+    recordException();
+    auto type = expr->getExpr()->getType();
+    auto function = type ? type->getFunc() : nullptr;
+    if (!function)
+      return;
+    if (auto dispatch = expr->getAttribute<ir::IntValueAttribute>(Attr::ExprVirtual)) {
+      size_t thunk = 0;
+      if (dispatch->value >= 0) {
+        thunk = dispatch->value;
+      } else {
+        TypecheckVisitor visitor(cache->typeCtx);
+        if (visitor.isPolymorphic(function)) {
+          auto key = in(cache->thunkIds, visitor.vTableSignature(function));
+          if (!key)
+            return;
+          thunk = *key;
+        }
+      }
+      if (thunk) {
+        if (expr->empty() || !isInstance(expr->front().getExpr()))
+          return;
+        auto target = in(receiver->vtable, thunk);
+        if (!target)
+          return;
+        function = target->get();
+      }
+    }
+    auto cached = in(cache->functions, function->getFuncName());
+    if (!cached)
+      return;
+    auto realization = in(cached->realizations, function->realizedName());
+    if (!realization || !(*realization)->ast)
+      return;
+    auto body = (*realization)->ast;
+    for (size_t parameter = 0, argument = 0; parameter < body->size(); ++parameter) {
+      if (!(*body)[parameter].isValue())
+        continue;
+      if (argument >= expr->size())
+        break;
+      if (!isInstance((*expr)[argument++].getExpr()))
+        continue;
+      FieldInitializationVisitor helper(cache, receiver, active, summaries);
+      auto initialized = helper.analyze(body, parameter);
+      state.fields.insert(initialized.fields.begin(), initialized.fields.end());
+      state.reachable &= initialized.reachable;
+    }
+  }
+
+  /// Merge branch facts without requiring initialization on terminated paths.
+  void visit(IfStmt *stmt) override {
+    transform(stmt->getCond());
+    auto incoming = state;
+    transform(stmt->getIf());
+    auto first = state;
+    state = incoming;
+    transform(stmt->getElse());
+    state.intersect(first);
+  }
+
+  /// Conditional expressions may invoke different initialization helpers.
+  void visit(IfExpr *expr) override {
+    transform(expr->getCond());
+    auto incoming = state;
+    transform(expr->getIf());
+    auto first = state;
+    state = incoming;
+    transform(expr->getElse());
+    state.intersect(first);
+  }
+
+  /// Collect body returns without assuming that the loop executes an iteration.
+  void visit(WhileStmt *stmt) override {
+    forgetReboundAliases(stmt);
+    transform(stmt->getCond());
+    analyzeLoopBody(stmt->getSuite());
+  }
+
+  /// Collect body returns while allowing an empty iterable to skip all writes.
+  void visit(ForStmt *stmt) override {
+    transform(stmt->getIter());
+    forgetReboundAliases(stmt);
+    recordException();
+    analyzeLoopBody(stmt->getSuite());
+  }
+
+  /// Exclude statements after a break from the current loop-body path.
+  void visit(BreakStmt *) override {
+    exits.push_back({ExitKind::Break, state});
+    state.reachable = false;
+  }
+  /// Exclude statements after a continue from the current loop-body path.
+  void visit(ContinueStmt *) override {
+    exits.push_back({ExitKind::Continue, state});
+    state.reachable = false;
+  }
+
+  /// Save normal-return facts, including writes performed by the return expression.
+  void visit(ReturnStmt *stmt) override {
+    transform(stmt->getExpr());
+    if (state.reachable)
+      exits.push_back({ExitKind::Return, state});
+    state.reachable = false;
+  }
+
+  /// Exceptional exits do not require a fully initialized returned instance.
+  void visit(ThrowStmt *stmt) override {
+    transform(stmt->getExpr());
+    recordException();
+    state.reachable = false;
+  }
+
+  /// Merge exception-site facts and apply finally to every pending exit kind.
+  void visit(TryStmt *stmt) override {
+    auto previousExits = exits.size();
+    exceptions.push_back({{}, {}, false});
+    transform(stmt->getSuite());
+    auto thrown = exceptions.back();
+    exceptions.back() = {{}, {}, false};
+    transform(stmt->getElse());
+    auto normal = state;
+    bool catchesAll = false;
+    for (auto handler : *stmt) {
+      state = thrown;
+      state.aliases.erase(handler->getVar());
+      transform(handler->getSuite());
+      normal.intersect(state);
+      if (!handler->getException() ||
+          TypecheckVisitor(cache->typeCtx)
+              .extractType(handler->getException()->getType())
+              ->is(StdlibTypes::BaseException))
+        catchesAll = true;
+    }
+    if (!catchesAll)
+      exceptions.back().intersect(thrown);
+    auto unhandled = exceptions.back();
+    exceptions.pop_back();
+    std::vector<Exit> pending(exits.begin() + previousExits, exits.end());
+    exits.resize(previousExits);
+    for (const auto &exit : pending) {
+      state = exit.state;
+      transform(stmt->getFinally());
+      if (state.reachable)
+        exits.push_back({exit.kind, state});
+    }
+    state = unhandled;
+    transform(stmt->getFinally());
+    recordException();
+    state = normal;
+    transform(stmt->getFinally());
+  }
+};
+} // namespace
+
+/// Reject fields not proven initialized at a realized __init__'s normal exits.
+/// Tuple classes & internal classes are exempt.
+void TypecheckVisitor::checkFieldInitialization(types::FuncType *type,
+                                                FunctionStmt *function) {
+  if (!type->getParentType() || getUnmangledName(type->getFuncName()) != "__init__" ||
+      function->size() == 0)
+    return;
+  auto parent = type->getParentType()->getClass();
+  if (parent->isTuple)
+    return;
+  auto cls = getClass(parent);
+  if (!cls || !cls->ast || cls->ast->hasAttribute(Attr::Internal))
+    return;
+  std::set<std::pair<FunctionStmt *, size_t>> active;
+  std::map<std::pair<FunctionStmt *, size_t>, InitializedFields> summaries;
+  auto receiverType = extractFuncArgType(type)->getClass();
+  FieldInitializationVisitor visitor(
+      ctx->cache, getClassRealization(receiverType ? receiverType : parent), active,
+      summaries);
+  auto initialized = visitor.analyze(function, 0);
+  if (!initialized.reachable)
+    return;
+  for (const auto &field : getClassFields(parent)) {
+    if (!initialized.fields.count(field.name)) {
+      E(Error::CUSTOM, function,
+        "field '{}.{}' may be uninitialized when __init__ returns",
+        getUnmangledName(parent->name), field.name);
+    }
+  }
+}
 
 /// Parse a class (type) declaration and add a (generic) type to the context.
 void TypecheckVisitor::visit(ClassStmt *stmt) {
@@ -281,7 +684,8 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         for (auto *&dc : fp->decorators) {
           // Handle @setter setters
           if (match(dc, M<DotExpr>(M<IdExpr>(fp->getName()), "setter")) &&
-              fp->size() == 2) {
+              std::ranges::count_if(*fp, [](const Param &p) { return p.isValue(); }) ==
+                  2) {
             fp->name = fmt::format("{}{}", FN_SETTER_SUFFIX, fp->getName());
             dc = nullptr;
             break;
@@ -303,22 +707,10 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     if (stmt->hasAttribute(Attr::Tuple))
       addLater.emplace_back(ctx->forceFind(name));
 
-    // Mark functions as virtual:
+    // Mark functions as virtual
     auto banned = std::set<std::string>{"__init__", "__new__", "__raw__",
                                         "__tuplesize__", "__repr_default__"};
     for (const auto &[method, root] : sorted_view(cls.methods)) {
-      // class_inherited_self / enum_test: an inherited __SELF__ method needs
-      // runtime receiver specialization even when a subclass does not override it.
-      if (!stmt->isRecord() && !in(banned, method))
-        for (const auto &overload : getOverloads(root)) {
-          auto *f = getFunction(overload)->getType();
-          if (f && !f->funcGenerics.empty() && !f->ast->empty() &&
-              getUnmangledName(f->ast->front().getName()) == "self" &&
-              getUnmangledName(f->funcGenerics.front().name) == "__SELF__" &&
-              !f->ast->hasAttribute(Attr::StaticMethod) &&
-              !f->ast->hasAttribute(Attr::Property))
-            cls.virtuals.insert(method);
-        }
       for (size_t mi = 1; mi < cls.mro.size(); mi++) {
         // ... in the current class
         auto b = cls.mro[mi]->name;
@@ -560,8 +952,6 @@ std::vector<Stmt *> TypecheckVisitor::prepareEnum(ClassStmt *stmt, ClassType *ty
         nullptr, AssignStmt::Update));
 
   stmt->eraseAttribute(Attr::ClassDeduce);
-  // enum_test: inherit Enum's __new__ and no-op __init__; all enum behavior
-  // lives in the base class rather than compiler-generated method bodies.
   if (auto magic = stmt->getAttribute<ir::StringListAttribute>(Attr::ClassMagic))
     std::erase_if(magic->values,
                   [](const auto &name) { return name == "init" || name == "new"; });

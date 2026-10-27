@@ -18,7 +18,7 @@ tau = 6.28318530717958647693
 inf = _inf()
 nan = _nan()
 
-def factorial(x: int) -> int:
+def factorial(x: int, /) -> int:
     @pure
     @llvm
     def lookup(index: int) -> int:
@@ -31,7 +31,7 @@ def factorial(x: int) -> int:
         raise ValueError("factorial is only supported for 0 <= x <= 20")
     return lookup(x)
 
-def isnan(x: float) -> bool:
+def isnan(x: float, /) -> bool:
     @pure
     @llvm
     def f(x: float) -> bool:
@@ -41,7 +41,7 @@ def isnan(x: float) -> bool:
 
     return f(x)
 
-def isinf(x: float) -> bool:
+def isinf(x: float, /) -> bool:
     @pure
     @llvm
     def f(x: float) -> bool:
@@ -53,7 +53,7 @@ def isinf(x: float) -> bool:
 
     return f(x)
 
-def isfinite(x: float) -> bool:
+def isfinite(x: float, /) -> bool:
     return not (isnan(x) or isinf(x))
 
 def _check1(arg: float, r: float, can_overflow: bool = False):
@@ -82,7 +82,7 @@ def _check2(x: float, y: float, r: float, can_overflow: bool = False):
 
     return r
 
-def ceil(x: float) -> int:
+def ceil(x: float, /) -> int:
     @pure
     @llvm
     def f(x: float) -> float:
@@ -92,7 +92,7 @@ def ceil(x: float) -> int:
 
     return int(f(x))
 
-def floor(x: float) -> int:
+def floor(x: float, /) -> int:
     @pure
     @llvm
     def f(x: float) -> float:
@@ -102,7 +102,7 @@ def floor(x: float) -> int:
 
     return int(f(x))
 
-def fabs(x: float) -> float:
+def fabs(x: float, /) -> float:
     @pure
     @llvm
     def f(x: float) -> float:
@@ -112,7 +112,7 @@ def fabs(x: float) -> float:
 
     return f(x)
 
-def fmod(x: float, y: float) -> float:
+def fmod(x: float, y: float, /) -> float:
     @pure
     @llvm
     def f(x: float, y: float) -> float:
@@ -121,7 +121,7 @@ def fmod(x: float, y: float) -> float:
 
     return f(x, y)
 
-def exp(x: float) -> float:
+def exp(x: float, /) -> float:
     @pure
     @llvm
     def f(x: float) -> float:
@@ -131,13 +131,13 @@ def exp(x: float) -> float:
 
     return _check1(x, f(x), True)
 
-def expm1(x: float) -> float:
+def expm1(x: float, /) -> float:
     return _check1(x, _C.expm1(x), True)
 
-def ldexp(x: float, i: int) -> float:
+def ldexp(x: float, i: int, /) -> float:
     return _check1(x, _C.ldexp(x, i32(i)), True)
 
-def log(x: float, base: float = e) -> float:
+def log(x: float, base: float = e, /) -> float:
     @pure
     @llvm
     def f(x: float) -> float:
@@ -150,7 +150,7 @@ def log(x: float, base: float = e) -> float:
     else:
         return _check1(x, f(x)) / _check1(base, f(base))
 
-def log2(x: float) -> float:
+def log2(x: float, /) -> float:
     @pure
     @llvm
     def f(x: float) -> float:
@@ -160,7 +160,7 @@ def log2(x: float) -> float:
 
     return _check1(x, f(x))
 
-def log10(x: float) -> float:
+def log10(x: float, /) -> float:
     @pure
     @llvm
     def f(x: float) -> float:
@@ -170,15 +170,15 @@ def log10(x: float) -> float:
 
     return _check1(x, f(x))
 
-def degrees(x: float) -> float:
+def degrees(x: float, /) -> float:
     radToDeg = 180.0 / pi
     return x * radToDeg
 
-def radians(x: float) -> float:
+def radians(x: float, /) -> float:
     degToRad = pi / 180.0
     return x * degToRad
 
-def sqrt(x: float) -> float:
+def sqrt(x: float, /) -> float:
     @pure
     @llvm
     def f(x: float) -> float:
@@ -188,7 +188,7 @@ def sqrt(x: float) -> float:
 
     return _check1(x, f(x))
 
-def pow(x: float, y: float) -> float:
+def pow(x: float, y: float, /) -> float:
     @pure
     @llvm
     def f(x: float, y: float) -> float:
@@ -198,19 +198,19 @@ def pow(x: float, y: float) -> float:
 
     return _check2(x, y, f(x, y), True)
 
-def acos(x: float) -> float:
+def acos(x: float, /) -> float:
     return _check1(x, _C.acos(x))
 
-def asin(x: float) -> float:
+def asin(x: float, /) -> float:
     return _check1(x, _C.asin(x))
 
-def atan(x: float) -> float:
+def atan(x: float, /) -> float:
     return _check1(x, _C.atan(x))
 
-def atan2(y: float, x: float) -> float:
+def atan2(y: float, x: float, /) -> float:
     return _check2(x, y, _C.atan2(y, x))
 
-def cos(x: float) -> float:
+def cos(x: float, /) -> float:
     @pure
     @llvm
     def f(x: float) -> float:
@@ -220,7 +220,7 @@ def cos(x: float) -> float:
 
     return _check1(x, f(x))
 
-def sin(x: float) -> float:
+def sin(x: float, /) -> float:
     @pure
     @llvm
     def f(x: float) -> float:
@@ -230,31 +230,31 @@ def sin(x: float) -> float:
 
     return _check1(x, f(x))
 
-def hypot(x: float, y: float) -> float:
+def hypot(x: float, y: float, /) -> float:
     return _check2(x, y, _C.hypot(x, y), True)
 
-def tan(x: float) -> float:
+def tan(x: float, /) -> float:
     return _check1(x, _C.tan(x))
 
-def cosh(x: float) -> float:
+def cosh(x: float, /) -> float:
     return _check1(x, _C.cosh(x), True)
 
-def sinh(x: float) -> float:
+def sinh(x: float, /) -> float:
     return _check1(x, _C.sinh(x), True)
 
-def tanh(x: float) -> float:
+def tanh(x: float, /) -> float:
     return _check1(x, _C.tanh(x))
 
-def acosh(x: float) -> float:
+def acosh(x: float, /) -> float:
     return _check1(x, _C.acosh(x))
 
-def asinh(x: float) -> float:
+def asinh(x: float, /) -> float:
     return _check1(x, _C.asinh(x))
 
-def atanh(x: float) -> float:
+def atanh(x: float, /) -> float:
     return _check1(x, _C.atanh(x))
 
-def copysign(x: float, y: float) -> float:
+def copysign(x: float, y: float, /) -> float:
     @pure
     @llvm
     def f(x: float, y: float) -> float:
@@ -264,10 +264,10 @@ def copysign(x: float, y: float) -> float:
 
     return _check2(x, y, f(x, y))
 
-def log1p(x: float) -> float:
+def log1p(x: float, /) -> float:
     return _check1(x, _C.log1p(x))
 
-def trunc(x: float) -> int:
+def trunc(x: float, /) -> int:
     @pure
     @llvm
     def f(x: float) -> float:
@@ -277,19 +277,19 @@ def trunc(x: float) -> int:
 
     return int(_check1(x, f(x)))
 
-def erf(x: float) -> float:
+def erf(x: float, /) -> float:
     return _check1(x, _C.erf(x))
 
-def erfc(x: float) -> float:
+def erfc(x: float, /) -> float:
     return _check1(x, _C.erfc(x))
 
-def gamma(x: float) -> float:
+def gamma(x: float, /) -> float:
     return _check1(x, _C.tgamma(x), True)
 
-def lgamma(x: float) -> float:
+def lgamma(x: float, /) -> float:
     return _check1(x, _C.lgamma(x), True)
 
-def remainder(x: float, y: float) -> float:
+def remainder(x: float, y: float, /) -> float:
     return _check2(x, y, _C.remainder(x, y))
 
 def _gcd2(a, b):
@@ -337,18 +337,18 @@ def lcm(*args):
     return res
 
 @pure
-def frexp(x: float) -> Tuple[float, int]:
+def frexp(x: float, /) -> Tuple[float, int]:
     tmp = i32(0)
     res = _C.frexp(float(x), __ptr__(tmp))
     return (res, int(tmp))
 
 @pure
-def modf(x: float) -> Tuple[float, float]:
+def modf(x: float, /) -> Tuple[float, float]:
     tmp = 0.0
     res = _C.modf(float(x), __ptr__(tmp))
     return (res, tmp)
 
-def isclose(a: float, b: float, rel_tol: float = 1e-09, abs_tol: float = 0.0) -> bool:
+def isclose(a: float, b: float, *, rel_tol: float = 1e-09, abs_tol: float = 0.0) -> bool:
     # short circuit exact equality -- needed to catch two
     # infinities of the same sign. And perhaps speeds things
     # up a bit sometimes.
@@ -374,7 +374,7 @@ def isclose(a: float, b: float, rel_tol: float = 1e-09, abs_tol: float = 0.0) ->
         diff <= abs_tol
     )
 
-def fsum(seq):
+def fsum(seq, /):
     def _fsum_realloc(p: Ptr[float], ps: Ptr[float], n: int, m: int):
         from internal.gc import realloc, sizeof
         v = Ptr[float]()
@@ -465,7 +465,7 @@ def fsum(seq):
 
     return hi
 
-def prod(iterable, start = 1):
+def prod(iterable, /, *, start = 1):
     def prod_generator(iterable: Generator[T], start, T: type):
         if T is float:
             result = float(start)

@@ -94,7 +94,7 @@ def expanduser(path: str) -> str:
             free(pointer)
     return home.rstrip("/") + path[end:] or "/"
 
-def realpath(path: str, strict: bool = False) -> str:
+def realpath(path: str, *, strict: bool = False) -> str:
     if static.platform() == "win32":
         from os import _win32
         return _win32.realpath(path, strict)

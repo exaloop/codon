@@ -125,7 +125,7 @@ def _envkey(key: str) -> cobj:
         raise ValueError("illegal environment variable name")
     return _cstring(key)
 
-def putenv(key: str, value: str):
+def putenv(key: str, value: str, /):
     """Set the process environment without updating the `environ` mapping."""
     if static.platform() == "win32":
         return _win32.putenv(key, value)
@@ -133,7 +133,7 @@ def putenv(key: str, value: str):
     if setenv(_envkey(key), _cstring(value), i32(1)) != i32(0):
         _error("setenv")
 
-def unsetenv(key: str):
+def unsetenv(key: str, /):
     """Remove a process variable without updating the `environ` mapping."""
     if static.platform() == "win32":
         return _win32.unsetenv(key)
@@ -283,7 +283,7 @@ class _Environ:
         for key in list(self._data):
             del self[key]
 
-    def update(self, *args, **kwargs):
+    def update(self, /, *args, **kwargs):
         # The optional mapping is positional-only: update(other="value") must
         # set the environment variable named "other", not consume the value.
         if static.len(args) > 1:
@@ -332,7 +332,7 @@ class _Environ:
                 return False
         return True
 
-    def __ne__(self, other) -> bool:
+    def __ne__(self, other, /) -> bool:
         return not self.__eq__(other)
 
 environ = _Environ(_make_env_map(), copy=False)
@@ -356,12 +356,12 @@ class stat_result:
     st_ctime_ns: int
     st_rdev: int
 
-    def __init__(self, fields: List[int]):
+    def __init__(self, /, fields: List[int]):
         if len(fields) < 14:
             raise IndexError("list index out of range")
         self.__init__(fields._ptr)
 
-    def __init__(self, fields: Ptr[int]):
+    def __init__(self, /, fields: Ptr[int]):
         self.st_mode = fields[0]
         self.st_ino = fields[1]
         self.st_dev = fields[2]
@@ -377,20 +377,20 @@ class stat_result:
         self.st_ctime_ns = fields[9] * 1000000000 + fields[12]
         self.st_rdev = fields[13]
 
-    def __len__(self) -> int:
+    def __len__(self, /) -> int:
         return 10
 
-    def __getitem__(self, index: int) -> int:
+    def __getitem__(self, index: int, /) -> int:
         return (self.st_mode, self.st_ino, self.st_dev, self.st_nlink,
                 self.st_uid, self.st_gid, self.st_size,
                 self.st_atime_ns // 1000000000, self.st_mtime_ns // 1000000000,
                 self.st_ctime_ns // 1000000000)[index]
 
-    def __iter__(self):
+    def __iter__(self, /):
         for index in range(10):
             yield self[index]
 
-    def __repr__(self) -> str:
+    def __repr__(self, /) -> str:
         return (f"os.stat_result(st_mode={self.st_mode}, st_ino={self.st_ino}, "
                 f"st_dev={self.st_dev}, st_nlink={self.st_nlink}, "
                 f"st_uid={self.st_uid}, st_gid={self.st_gid}, st_size={self.st_size}, "
@@ -409,7 +409,7 @@ def _stat_status(path: str, follow_symlinks: bool = True) -> Tuple[Ptr[int], _St
         return Ptr[int](), _status(errno=_errno())
     return fields, _status()
 
-def stat(path: str, follow_symlinks: bool = True) -> stat_result:
+def stat(path: str, *, follow_symlinks: bool = True) -> stat_result:
     fields, error = _stat_status(path, follow_symlinks)
     error.raise_error("stat" if follow_symlinks else "lstat", path)
     return stat_result(fields)
@@ -644,7 +644,7 @@ def access(path: str, mode: int) -> bool:
     from C import access(cobj, i32) -> i32
     return access(_cstring(path), _fd(mode)) == i32(0)
 
-def chmod(path: str, mode: int, follow_symlinks: bool = True):
+def chmod(path: str, mode: int, *, follow_symlinks: bool = True):
     if static.platform() == "win32":
         if not follow_symlinks:
             raise NotImplementedError("chmod without following symlinks is not supported on Windows")
@@ -697,7 +697,7 @@ def close(fd: int):
     if close(_fd(fd)) != i32(0):
         _error("close")
 
-def read(fd: int, n: int) -> bytes:
+def read(fd: int, n: int, /) -> bytes:
     if static.platform() == "win32":
         return _win32.read(fd, n)
     from C import read(i32, cobj, int) -> int
@@ -710,7 +710,7 @@ def read(fd: int, n: int) -> bytes:
         _error("read")
     return bytes(buffer, count)
 
-def write(fd: int, data: bytes) -> int:
+def write(fd: int, data: bytes, /) -> int:
     if static.platform() == "win32":
         return _win32.write(fd, data)
     from C import write(i32, cobj, int) -> int
@@ -719,7 +719,7 @@ def write(fd: int, data: bytes) -> int:
         _error("write")
     return count
 
-def lseek(fd: int, pos: int, how: int) -> int:
+def lseek(fd: int, pos: int, how: int, /) -> int:
     if static.platform() == "win32":
         return _win32.lseek(fd, pos, how)
     from C import lseek(i32, int, i32) -> int
@@ -735,7 +735,7 @@ def fsync(fd: int):
     if fsync(_fd(fd)) != i32(0):
         _error("fsync")
 
-def ftruncate(fd: int, length: int):
+def ftruncate(fd: int, length: int, /):
     if static.platform() == "win32":
         return _win32.ftruncate(fd, length)
     from C import ftruncate(i32, int) -> i32

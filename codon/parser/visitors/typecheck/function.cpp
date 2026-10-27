@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <string>
 #include <tuple>
+#include <unordered_set>
 
 #include "codon/cir/attribute.h"
 #include "codon/parser/ast.h"
@@ -108,6 +109,7 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
   if (!ctx->inFunction())
     E(Error::FN_OUTSIDE_ERROR, stmt, "return");
   auto isAsync = ctx->getBase()->func->isAsync();
+  bool hasEmptyReturn = !stmt->expr;
 
   if (!stmt->expr && ctx->getBase()->func->hasAttribute(Attr::IsGenerator)) {
     stmt->setDone();
@@ -117,9 +119,10 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
     if (!stmt->expr)
       stmt->expr = N<CallExpr>(N<IdExpr>(StdlibTypes::NoneType));
     stmt->expr = transform(stmt->getExpr());
+    bool canRealize = stmt->getExpr()->getType()->canRealize();
 
     // Wrap expression to match the return type
-    if (!ctx->getBase()->returnType->getUnbound())
+    if (!ctx->getBase()->inferReturnType && !ctx->getBase()->returnType->getUnbound())
       if (!wrapExpr(&stmt->expr, ctx->getBase()->returnType.get())) {
         return;
       }
@@ -145,9 +148,16 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
       unify(ctx->getBase()->returnType.get(),
             instantiateType(getStdLibType(StdlibTypes::Coroutine),
                             {stmt->getExpr()->getType()}));
+    } else if (ctx->getBase()->inferReturnType) {
+      auto &returns = ctx->getBase()->returnStatements;
+      if (std::ranges::none_of(
+              returns, [stmt](const auto &entry) { return entry.first == stmt; }))
+        returns.emplace_back(stmt, hasEmptyReturn);
     } else {
       unify(ctx->getBase()->returnType.get(), stmt->getExpr()->getType());
     }
+    if (!canRealize && stmt->getExpr()->getType()->canRealize())
+      ctx->changedNodes++;
   }
 
   // If we are not within conditional block, ignore later statements in this function.
@@ -155,7 +165,8 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
   if (!ctx->blockLevel)
     ctx->returnEarly = true;
 
-  if (!stmt->getExpr() || stmt->getExpr()->isDone())
+  if (!ctx->getBase()->inferReturnType &&
+      (!stmt->getExpr() || stmt->getExpr()->isDone()))
     stmt->setDone();
 }
 
@@ -425,7 +436,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
         }
       }
       args.emplace_back(std::string(stars, '*') + name, a.getType(), defaultValue,
-                        a.status);
+                        a.status, a.kind);
 
       // Add generics to the context
       if (!a.isValue()) {
@@ -495,22 +506,17 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       if (!(*stmt)[ai].isValue())
         continue;
       auto [_, canName] = (*stmt)[ai].getNameWithStars();
-      if (!(*stmt)[ai].getType()) {
-        if (parentClass && ai == 0 && (*stmt)[ai].getName() == "self") {
-          // Special case: self in methods
-          auto *st = unify(extractClassGeneric(argType, aj), parentClass);
-          if (getClass(parentClass->name)->ast->hasAttribute(Attr::ClassDeduce) &&
-              stmt->hasAttribute(Attr::ClassDeduce) && stmt->getName() == "__init__") {
-            for (auto &u : st->getUnbounds(true)) {
-              stmt->setAttribute(Attr::AllowPassThrough);
-              // log("pass-through: {}.__init__ / {}", parentClass->name,
-              //     u->debugString(2));
-              u->getLink()->passThrough = true;
-            }
-          }
-        } else {
-          generics.push_back(extractClassGeneric(argType, aj)->shared_from_this());
+      // Mark __init__ generics as AllowPassThrough
+      if (parentClass && ai == 0 && stmt->hasAttribute(Attr::HasSelf) &&
+          getClass(parentClass->name)->ast->hasAttribute(Attr::ClassDeduce) &&
+          stmt->hasAttribute(Attr::ClassDeduce) && stmt->getName() == "__init__") {
+        for (auto &u : parentClass->getUnbounds(true)) {
+          stmt->setAttribute(Attr::AllowPassThrough);
+          u->getLink()->passThrough = true;
         }
+      }
+      if (!(*stmt)[ai].getType()) {
+        generics.push_back(extractClassGeneric(argType, aj)->shared_from_this());
       } else if (startswith((*stmt)[ai].getName(), "*")) {
         // Special case: `*args: type` and `**kwargs: type`. Do not add this type to the
         // signature (as the real type is `Tuple[type, ...]`); it will be used during
@@ -536,10 +542,16 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     }
     ctx->typecheckLevel--;
 
+    // Callable factory constraints can link a method generic to a class generic
+    // (defaultdict.__new__). Generalizing the method must not mutate that outer slot.
+    std::unordered_set<int> parentGenerics;
+    if (parentClass)
+      for (auto u : parentClass->getUnbounds(true))
+        parentGenerics.insert(u->getLink()->id);
     // Generalize generics and remove them from the context
     for (const auto &g : generics) {
       for (auto &u : g->getUnbounds(false))
-        if (u->getUnbound()) {
+        if (u->getUnbound() && !in(parentGenerics, u->getUnbound()->id)) {
           u->getUnbound()->kind = LinkType::Generic;
         }
     }

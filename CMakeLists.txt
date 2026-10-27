@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.14)
 project(
   Codon
-  VERSION "0.20.4"
+  VERSION "0.20.5"
   HOMEPAGE_URL "https://github.com/exaloop/codon"
   DESCRIPTION "high-performance, extensible Python compiler")
-set(CODON_JIT_PYTHON_VERSION "0.5.4")
+set(CODON_JIT_PYTHON_VERSION "0.5.5")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.h.in"
                "${PROJECT_SOURCE_DIR}/codon/config/config.h")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.py.in"
@@ -275,6 +275,7 @@ set(CODON_HPPFILES
   codon/cir/transform/lowering/await.h
   codon/cir/transform/lowering/imperative.h
   codon/cir/transform/lowering/pipeline.h
+  codon/cir/transform/lowering/return.h
   codon/cir/transform/lowering/throw.h
   codon/cir/transform/manager.h
   codon/cir/transform/parallel/openmp.h
@@ -389,6 +390,7 @@ set(CODON_CPPFILES
   codon/cir/transform/lowering/await.cpp
   codon/cir/transform/lowering/imperative.cpp
   codon/cir/transform/lowering/pipeline.cpp
+  codon/cir/transform/lowering/return.cpp
   codon/cir/transform/lowering/throw.cpp
   codon/cir/transform/manager.cpp
   codon/cir/transform/parallel/openmp.cpp
@@ -558,6 +560,7 @@ set(CODON_TEST_CPPFILES
     test/cir/instr.cpp
     test/cir/llvm/optimize.cpp
     test/cir/module.cpp
+    test/cir/parse_code.cpp
     test/cir/transform/enumerate.cpp
     test/cir/transform/format.cpp
     test/cir/transform/manager.cpp
@@ -637,7 +640,11 @@ foreach(unicode_file IN LISTS CODON_UNICODE_GENERATED_FILES)
   get_filename_component(unicode_directory "${unicode_relative}" DIRECTORY)
   install(FILES "${unicode_file}" DESTINATION "lib/codon/${unicode_directory}")
 endforeach()
-install(DIRECTORY ${CMAKE_SOURCE_DIR}/jit/ DESTINATION python)
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/jit/ DESTINATION python
+  PATTERN "build" EXCLUDE
+  PATTERN "dist" EXCLUDE
+  PATTERN "*.egg-info" EXCLUDE
+  PATTERN "__pycache__" EXCLUDE)
 install(DIRECTORY DESTINATION lib/codon/plugins)
 
 install(CODE [[

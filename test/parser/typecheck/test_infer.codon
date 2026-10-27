@@ -7,14 +7,15 @@ print [1]+[1]  #: [1, 1]
 #%% late_unify_2,barebones
 class XX[T]:
     y: T
-    def __init__(self): pass
+    def __init__(self):
+        self.y = T()
 a = XX()
 def f(i: int) -> int:
     return i
 print a.y.__class__.__name__ #: int
 f(a.y)
 print a.__class__.__name__ #: XX[int]
-print XX[bool].__class__.__name__ #: XX[bool]
+print XX[bool].__name__ #: XX[bool]
 
 #%% map_unify
 def map[T,S](l: List[T], f: CallableTrait[[T], S]):
@@ -191,6 +192,58 @@ def rec3(x, y): #- ('a, 'b) -> 'b
 rec3(1, 's')
 #! 'int' does not match expected type 'str'
 #! during the realization of rec3(x: int, y: str)
+
+#%% optional_canonicalization
+# redundant optional layers and optional None share canonical types.
+value: Optional[Optional[int]] = 42
+empty: Optional[None] = None
+assert type(value) is Optional[int]
+assert type(empty) is NoneType
+assert type(None) is NoneType
+assert NoneType is not Optional
+assert Optional[Optional[Optional[int]]] is Optional[int]
+assert Optional[NoneType] is NoneType
+assert Optional[Optional[NoneType]] is NoneType
+
+def identity(value: Optional[Optional[int]]) -> Optional[Optional[int]]:
+    return value
+assert identity(42) == 42
+assert identity(None) is None
+assert type(identity(None)) is Optional[int]
+def make_empty(T: type) -> Optional[T]:
+    return None
+assert type(make_empty(Optional[int])) is Optional[int]
+assert type(make_empty(NoneType)) is NoneType
+assert type(Optional(None)) is NoneType
+assert Optional[int](None) is None
+assert type(Optional(what=None)) is NoneType
+wrapped = Optional(Optional(42))
+assert type(wrapped) is Optional[int] and wrapped == 42
+assert Optional(Optional[int]()) is None
+# Empty constructors retain their payload slot until surrounding uses constrain it.
+deferred = [Optional()]
+deferred.append(7)
+assert type(deferred) is list[Optional[int]]
+assert deferred[0] is None and deferred[1] == 7
+typed_empty: Optional[int] = Optional()
+assert typed_empty is None and type(typed_empty) is Optional[int]
+events: list[int] = []
+def empty_expression(events):
+    events.append(1)
+nullable: Optional[int] = empty_expression(events)
+assert nullable is None and events == [1]
+# Constructor normalization must also evaluate its argument exactly once.
+constructed = Optional[int](what=empty_expression(events))
+assert constructed is None and type(constructed) is Optional[int]
+assert events == [1, 1]
+def optional_expression(events):
+    events.append(2)
+    return Optional(42)
+assert Optional(what=optional_expression(events)) == 42
+assert events == [1, 1, 2]
+values = [None, 42, None]
+assert values[0] is None and values[1] == 42 and values[2] is None
+print('optional canonicalization ok')  #: optional canonicalization ok
 
 #%% optionals,barebones
 y = None
@@ -399,8 +452,9 @@ class A[T]:
     def foo(self, y): self.y = y
 a = A()
 a.foo(1)
-#! 'Optional[int]' does not match expected type 'Optional[NoneType]'
-#! during the realization
+#! 'int' does not match expected type 'NoneType'
+# The receiver's implicit Self generic is included in realization diagnostics.
+#! during the realization of foo(self: A[NoneType], y: int, Self: A[NoneType])
 
 #%% return_deduction,barebones
 def fun[T, R](x, y: T) -> R:
@@ -468,7 +522,8 @@ def foof(l: List[int], x, f: CallableTrait[[int], int]):
     return [f(i)+x for i in l]
 test('qsort', foof(x=3, ...), lambda x: x+1) #: qsort [5, 6, 7, 8]
 
-#%% mutually_recursive_error,barebones
+#%% mutually_recursive_return_type,barebones
+# infer return payloads before finalizing mutually recursive signatures.
 def bl(x):
     return True
 def frec(x, y):
@@ -476,8 +531,7 @@ def frec(x, y):
         return frec(y, x)
     return grec(x, y) if bl(y) else 2
 print frec(1, 2).__class__.__name__, frec('s', 1).__class__.__name__
-#! 'NoneType' does not match expected type 'int'
-#! during the realization of frec(x: int, y: int)
+#: int int
 
 #%% type_error_reporting
 # TODO: improve this certainly
@@ -503,7 +557,7 @@ a, b = tee(it)
 
 #%% new_syntax,barebones
 def foo[T,U](x: type, y, z: Literal[int] = 10):
-    print T.__class__.__name__, U.__class__.__name__, x.__class__.__name__, y.__class__.__name__, Int[z+1].__class__.__name__
+    print T.__name__, U.__name__, x.__name__, y.__class__.__name__, Int[z+1].__name__
     return List[x]()
 print foo(T=int,U=str,...).__fn_name__ #: foo[x,z,int,str;T1]
 print foo(T=int,U=str,z=5,x=bool,...).__fn_name__ #: foo[bool,5,int,str;T1]
@@ -518,12 +572,12 @@ class Foo[T,U: Literal[int]]:
     d: type
     e: List[d]
     f: UInt[b]
-print Foo[5,int,float,6].__class__.__name__ #: Foo[5,int,float,6]
+print Foo[5,int,float,6].__name__ #: Foo[5,int,float,6]
 print Foo(1.1, 10i32, [False], 10u66).__class__.__name__ #: Foo[66,bool,float,32]
 
 
 def foo2[N: Literal[int]]():
-    print Int[N].__class__.__name__, N
+    print Int[N].__name__, N
 x: Literal[int] = 5
 y: Literal[int] = 105 - x * 2
 foo2(y-x) #: Int[90] 90
@@ -536,7 +590,7 @@ x : Literal[int] = 3
 print x #: 3
 
 def fox(N: Literal[int] = 4):
-    print Int[N].__class__.__name__, N
+    print Int[N].__name__, N
 fox(5) #: Int[5] 5
 fox() #: Int[4] 4
 
@@ -548,7 +602,7 @@ class Foo[T,U: Literal[int]]:
     d: type
     e: List[d]
     f: UInt[b]
-print Foo[float,6].__class__.__name__ #! Foo takes 4 generics (2 given)
+print Foo[float,6].__name__ #! Foo takes 4 generics (2 given)
 
 #%% type_arg_transform,barebones
 print list(map(str, range(5)))
@@ -822,6 +876,195 @@ for value in values:
 print(values[0].value)  #: first
 assert values[1].value == 'second'
 
+#%% generic_type_printing
+# printing generic type expressions must not leave compiler-only calls.
+assert str(list) == str(list[NoneType])
+assert str(dict) == str(dict[NoneType, NoneType])
+assert str(list[int]) == "<class 'List[int]'>"
+assert str(type(list[int])) == "<class 'type'>"
+@tuple
+class Box:
+    value: T
+    T: type = NoneType
+assert str(Box) == str(Box[NoneType])
+print('generic types ok')  #: generic types ok
+
+#%% union_iterables
+# Join iterator element types, not generator objects, for heterogeneous alternatives.
+def collect(values: Union[list[int], list[str]]):
+    return [value for value in values]
+
+assert type(collect([1, 2])) is list[int]
+assert type(collect(['a', 'b'])) is list[str]
+# A union-valued argument still joins the iterator element types.
+mixed: Union[list[int], list[str]] = [1, 2]
+assert type(collect(mixed)) is list[Union[int, str]]
+assert ','.join(str(value) for value in collect([1, 2])) == '1,2'
+assert ','.join(str(value) for value in collect(['a', 'b'])) == 'a,b'
+assert len(collect(list[int]())) == 0
+assert len(collect(list[str]())) == 0
+
+# Different container types alone must not introduce a union element type.
+def same_elements(values: Union[list[int], set[int]]):
+    return [value for value in values]
+
+assert type(same_elements([1])) is list[int]
+assert same_elements([1, 2]) == [1, 2]
+assert same_elements({3}) == [3]
+
+#%% union_iterator_acquisition
+class Iterable:
+    events: list[int]
+    def __iter__(self):
+        self.events.append(1)
+        return iter([7])
+
+events: list[int] = []
+value: Union[Iterable, list[str], int] = Iterable(events)
+iterator = iter(value)
+assert events == [1]
+assert type(iterator) is Generator[Union[int, str]]
+assert next(iterator) == 7
+assert events == [1]
+assert list(iterator) == []
+value: Union[Iterable, list[str], int] = ['a', 'b']
+assert ','.join(str(item) for item in value) == 'a,b'
+value: Union[Iterable, list[str], int] = 1
+try:
+    iter(value)
+    assert False
+except TypeError:
+    pass
+
+class FailingIterable:
+    def __iter__(self) -> Generator[int]:
+        raise ValueError('iterator acquisition')
+
+failing: Union[FailingIterable, list[int]] = FailingIterable()
+try:
+    iter(failing)
+    assert False
+except ValueError as error:
+    assert error.message == 'iterator acquisition'
+
+mixed: Union[list[int], int] = [1, 2]
+assert list(mixed) == [1, 2]
+mixed: Union[list[int], int] = 1
+try:
+    for item in mixed:
+        assert False
+    assert False
+except TypeError:
+    pass
+
+#%% union_nullable
+Choice = Union[int, str, NoneType]
+assert not isinstance(Choice, int)
+assert not isinstance(Choice, NoneType)
+assert Choice is not None
+assert not (Choice is None)
+
+def add_one(value: int):
+    return value + 1
+
+def suffix(value: str):
+    return value + '!'
+
+def null_value(value: NoneType):
+    return 7
+
+def record(events, value: Choice) -> Choice:
+    events.append(1)
+    return value
+
+values: list[Choice] = [None, 42, 'hello', NoneType(), Optional[int](0),
+                        Optional[str](''), Optional[int](), Optional[str]()]
+for index in [0, 3, 6, 7]:
+    assert values[index] is None
+    assert not (values[index] is not None)
+    assert isinstance(values[index], NoneType)
+    assert not isinstance(values[index], int)
+    assert not isinstance(values[index], str)
+    assert null_value(values[index]) == 7
+for index in [1, 4]:
+    assert values[index] is not None
+    assert isinstance(values[index], int)
+    assert not isinstance(values[index], str)
+    assert not isinstance(values[index], NoneType)
+for index in [2, 5]:
+    assert values[index] is not None
+    assert isinstance(values[index], str)
+    assert not isinstance(values[index], int)
+    assert not isinstance(values[index], NoneType)
+assert add_one(values[1]) == 43
+assert add_one(values[4]) == 1
+assert suffix(values[2]) == 'hello!'
+assert suffix(values[5]) == '!'
+
+results: list[str] = []
+for value in values:
+    if value is None:
+        results.append('null')
+    elif isinstance(value, int):
+        results.append(str(add_one(value)))
+    elif isinstance(value, str):
+        results.append(suffix(value))
+assert results == ['null', '43', 'hello!', 'null', '1', '!', 'null', 'null']
+
+failures = 0
+for index in [0, 2]:
+    try:
+        print(add_one(values[index]))
+    except TypeError:
+        failures += 1
+try:
+    print(suffix(values[1]))
+except TypeError:
+    failures += 1
+try:
+    print(null_value(values[1]))
+except TypeError:
+    failures += 1
+assert failures == 4
+
+events: list[int] = []
+assert record(events, None) is None
+assert record(events, 0) is not None
+assert isinstance(record(events, ''), str)
+assert not isinstance(record(events, None), int)
+assert events == [1, 1, 1, 1]
+plain: list[int | str] = [1, 'two']
+assert isinstance(plain[0], int) and isinstance(plain[1], str)
+print('nullable unions ok')  #: nullable unions ok
+
+#%% union_storage
+from simd import Vec
+
+@noinline
+def keep(value: Union[Tuple[bool, int], int]):
+    return value
+
+for original in [42, 256, 0x1122334455667788, -1]:
+    assert type(keep(original)) is int
+    stored: Union[Tuple[bool, int], int] = original
+    assert Union._get(keep(stored), int) == original
+
+@llvm
+def payload_offset(U: type) -> int:
+    %payload = getelementptr {=U}, ptr null, i64 0, i32 1
+    %offset = ptrtoint ptr %payload to i64
+    ret i64 %offset
+
+@llvm
+def member_alignment(T: type) -> int:
+    %member = getelementptr {i8, {=T}}, ptr null, i64 0, i32 1
+    %offset = ptrtoint ptr %member to i64
+    ret i64 %offset
+
+Buffer = Tuple[u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8]
+assert payload_offset(Union[Buffer, Vec[int, 2]]) == member_alignment(Vec[int, 2])
+print('union storage ok')  #: union storage ok
+
 #%% union_error,barebones
 a: int|str = 123
 print(123 == a)  #: True
@@ -885,15 +1128,15 @@ f.x = (3, 4)
 print(f.x)
 #: (3, 4)
 
-print(Tuple[int, int].__class__.__name__)
+print(Tuple[int, int].__name__)
 #: Tuple[int,int]
-print(Tuple[3, int].__class__.__name__)
+print(Tuple[3, int].__name__)
 #: Tuple[int,int,int]
-print(Tuple[0].__class__.__name__)
+print(Tuple[0].__name__)
 #: Tuple
-print(Tuple[-5, int].__class__.__name__)
+print(Tuple[-5, int].__name__)
 #: Tuple
-print(Tuple[5, int, str].__class__.__name__)
+print(Tuple[5, int, str].__name__)
 #: Tuple[int,str,int,str,int,str,int,str,int,str]
 
 def foo(t: Tuple[N, int], N: Literal[int]):
@@ -964,18 +1207,17 @@ def foo(a):
     print(a().__class__.__name__, a())
 
 foo(float)
-#: float <class 'float'>
+#: type <class 'float'>
 #: float 0.0
 print(float)
 #: <class 'float'>
 foo(list[int])
-#: List[int] <class 'List[int]'>
+#: type <class 'List[int]'>
 #: List[int] []
 print(list[int])
 #: <class 'List[int]'>
-foo(type(list[int]))
-#: List[int] <class 'List[int]'>
-#: List[int] []
+print(type(list[int]))
+#: <class 'type'>
 
 print(list)
 #: <class 'List[NoneType]'>
@@ -1005,7 +1247,7 @@ print(repr(List[int]))
 print(repr(type(int)))
 #: <class 'List[int]'>
 #: <class 'List[int]'>
-#: <class 'int'>
+#: <class 'type'>
 
 
 #%% tuple_heterogenous_1,barebones

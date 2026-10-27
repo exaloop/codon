@@ -74,8 +74,15 @@ void TypecheckVisitor::visit(IfExpr *expr) {
                                  ->getStatic()
                                  ->getNonStaticType()
                                  ->shared_from_this());
-  wrapExpr(&expr->elsexpr, expr->getIf()->getType(), nullptr, /*allowUnwrap*/ false);
-  wrapExpr(&expr->ifexpr, expr->getElse()->getType(), nullptr, /*allowUnwrap*/ false);
+  // Select the same nullable target as explicit returns, then coerce each branch once.
+  auto nullable =
+      joinNullableTypes(expr->getIf()->getType(), expr->getElse()->getType());
+  wrapExpr(&expr->elsexpr, nullable ? nullable.get() : expr->getIf()->getType(),
+           nullptr,
+           /*allowUnwrap*/ false);
+  wrapExpr(&expr->ifexpr, nullable ? nullable.get() : expr->getElse()->getType(),
+           nullptr,
+           /*allowUnwrap*/ false);
 
   // Types not compatible! Check if an union can be made
   if (expr->getIf()->getType()->unify(expr->getElse()->getType(), nullptr) < 0 &&

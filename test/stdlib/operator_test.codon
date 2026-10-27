@@ -586,7 +586,7 @@ def test_sequence_ops():
     assert length_hint(B1()) == 101
     assert length_hint(B2()) == 303
     assert length_hint(B3()) == 0
-    assert length_hint(B3(), default=404) == 404
+    assert length_hint(B3(), 404) == 404
 
     assert itemgetter(-1)([11, 22, 33]) == 33
     assert itemgetter(-1, -2, -3)([11, 22, 33]) == (33, 22, 11)

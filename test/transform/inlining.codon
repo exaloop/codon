@@ -79,3 +79,27 @@ def inline_test_nested_while_finally():
     assert checkpoint3
 
 inline_test_nested_while_finally()
+
+def record_none_return(events, label: str):
+  events.append(label)
+  return None
+
+def inline_me_none_return(events):
+  return record_none_return(events, 'simple')
+
+def inline_me_aggressive_none_return(events, flag: bool):
+  if flag:
+    return record_none_return(events, 'early')
+  return record_none_return(events, 'late')
+
+@test
+def inlining_none_return_test():
+  events: list[str] = []
+  inline_me_none_return(events)
+  assert events == ['simple']
+  inline_me_aggressive_none_return(events, True)
+  assert events == ['simple', 'early']
+  inline_me_aggressive_none_return(events, False)
+  assert events == ['simple', 'early', 'late']
+
+inlining_none_return_test()

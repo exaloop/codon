@@ -87,6 +87,10 @@ struct TypeContext : public Context<TypecheckItem> {
     /// Only set for functions.
     FunctionStmt *func = nullptr;
     Stmt *suite = nullptr;
+    /// Collect reached returns before committing to a result type or wrapping them.
+    bool inferReturnType = false;
+    /// Reached returns and whether each was originally bare, for nullable joining.
+    std::vector<std::pair<ReturnStmt *, bool>> returnStatements;
     /// Index of the parent base
     int parent = 0;
 
@@ -122,6 +126,7 @@ struct TypeContext : public Context<TypecheckItem> {
     };
     std::vector<Loop> loops;
 
+    static constexpr int NONE_ARGUMENT_DEFAULT_PRIORITY = -1;
     std::map<int, std::set<types::TypePtr>> pendingDefaults;
     std::set<types::TypePtr> recursiveDependencies;
 

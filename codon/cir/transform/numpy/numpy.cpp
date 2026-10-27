@@ -68,9 +68,7 @@ bool isUFuncType(Type *t) {
               ast::getMangledClass("std.numpy.ufunc", "BinaryUFunc") + "[", 0) == 0);
 }
 
-bool isNoneType(Type *t, NumPyPrimitiveTypes &T) {
-  return t && (t->is(T.none) || t->is(T.optnone));
-}
+bool isNoneType(Type *t, NumPyPrimitiveTypes &T) { return t && t->is(T.none); }
 
 bool isCopyIndexType(Type *type, NumPyPrimitiveTypes &types) {
   auto index = NumPyType::get(type, types);
@@ -122,13 +120,12 @@ void setLifetimeTag(Value *value, const std::string &tag) {
 const std::string FUSION_MODULE = "std.numpy.fusion";
 
 NumPyPrimitiveTypes::NumPyPrimitiveTypes(Module *M)
-    : none(M->getNoneType()), optnone(M->getOptionalType(none)),
-      bool_(M->getBoolType()), i8(M->getIntType(8, true)), u8(M->getIntType(8, false)),
-      i16(M->getIntType(16, true)), u16(M->getIntType(16, false)),
-      i32(M->getIntType(32, true)), u32(M->getIntType(32, false)),
-      i64(M->getIntType(64, true)), u64(M->getIntType(64, false)),
-      f16(M->getFloat16Type()), f32(M->getFloat32Type()), f64(M->getFloatType()),
-      c64(M->getType(ast::StdlibTypes::Complex64)),
+    : none(M->getNoneType()), bool_(M->getBoolType()), i8(M->getIntType(8, true)),
+      u8(M->getIntType(8, false)), i16(M->getIntType(16, true)),
+      u16(M->getIntType(16, false)), i32(M->getIntType(32, true)),
+      u32(M->getIntType(32, false)), i64(M->getIntType(64, true)),
+      u64(M->getIntType(64, false)), f16(M->getFloat16Type()), f32(M->getFloat32Type()),
+      f64(M->getFloatType()), c64(M->getType(ast::StdlibTypes::Complex64)),
       c128(M->getType(ast::StdlibTypes::Complex)) {}
 
 NumPyType::NumPyType(TypeCode dtype, int64_t ndim) : dtype(dtype), ndim(ndim) {

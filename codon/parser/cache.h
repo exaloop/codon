@@ -265,6 +265,9 @@ struct Cache {
       ir::Func *ir;
       /// Resolved captures
       std::vector<std::string> captures;
+      /// Whether this constructor requires an independent field-initialization check.
+      /// Targets realized only for super() dispatch are checked through the caller.
+      bool checkInitialization = false;
 
       types::FuncType *getType() const { return type.get(); }
     };

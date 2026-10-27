@@ -149,6 +149,53 @@ def test_encoded_newline_buffer_ownership():
                 assert value.encode("utf-8") == original
     remove(path.c_str())
 
+def _assert_concatenated_write(writer):
+    assert writer.write(str.cat()) == 0
+    assert writer.write(str.cat("A\n", _latin1_value())) == 6
+    assert writer.write(f"{_latin1_value()}!") == 5
+
+def _assert_concatenated_write_error(writer):
+    try:
+        writer.write(str.cat("prefix", _latin1_value()))
+        assert False
+    except UnicodeEncodeError as error:
+        assert error.object == "prefix" + _latin1_value()
+        assert error.start == 9 and error.end == 10
+
+@test
+def test_concatenated_write_semantics():
+    path = PREFIX + "-concatenated-write"
+    try:
+        for encoding in ["utf-8", "utf-16-le"]:
+            expected = ("A\r\n" + _latin1_value() * 2 + "!").encode(encoding)
+            with open(path, "w", encoding=encoding, newline="\r\n") as writer:
+                _assert_concatenated_write(writer)
+            with open(path, "rb") as reader:
+                assert reader.read() == expected
+            with gzip.open(path, "wt", encoding=encoding, newline="\r\n") as writer:
+                _assert_concatenated_write(writer)
+            with gzip.open(path, "rb") as reader:
+                assert reader.read() == expected
+            with bz2.open(path, "wt", encoding=encoding, newline="\r\n") as writer:
+                _assert_concatenated_write(writer)
+            with bz2.open(path, "rb") as reader:
+                assert reader.read() == expected
+
+        with open(path, "w", encoding="ascii") as writer:
+            _assert_concatenated_write_error(writer)
+        with open(path, "rb") as reader:
+            assert reader.read() == b""
+        with gzip.open(path, "wt", encoding="ascii") as writer:
+            _assert_concatenated_write_error(writer)
+        with gzip.open(path, "rb") as reader:
+            assert reader.read() == b""
+        with bz2.open(path, "wt", encoding="ascii") as writer:
+            _assert_concatenated_write_error(writer)
+        with bz2.open(path, "rb") as reader:
+            assert reader.read() == b""
+    finally:
+        remove(path.c_str())
+
 def _assert_stateful_text_reads(reader):
     first = reader.read(1)
     assert reader.read(0) == ""
@@ -1797,6 +1844,7 @@ def test_invalid_modes_and_operation_permissions():
 
 
 test_encoded_newline_buffer_ownership()
+test_concatenated_write_semantics()
 test_regular_file_basics()
 test_regular_file_modes_and_read_boundaries()
 test_large_read_chunks_do_not_alias()

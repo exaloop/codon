@@ -28,20 +28,7 @@ jobs:
           python scripts/unicode_tables.py regenerate --ucd-dir build/unicode-16.0.0 --output-dir build/unicode-check
           python scripts/unicode_tables.py check --input-dir build/unicode-check
 
-  create_release:
-    name: GitHub Release
-    runs-on: ubuntu-latest
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
-    permissions:
-      contents: write
-    steps:
-      - name: Create Release
-        if: contains(github.ref, 'tags/v')
-        id: create_release
-        uses: ncipollo/release-action@v1
-
-  build:
+  compile:
     strategy:
       matrix:
         include:
@@ -53,16 +40,11 @@ jobs:
             arch: linux-aarch64
           - os: ubuntu-24.04-arm
             arch: manylinux2014-aarch64
-          - os: macos-15-intel
-            arch: darwin-x86_64
           - os: macos-14
             arch: darwin-arm64
     runs-on: ${{ matrix.os }}
-    name: Build Codon
-    needs: [create_release, unicode_tables]
-    permissions:
-      contents: write
-      id-token: write
+    name: Compile Codon
+    needs: unicode_tables
     steps:
       - uses: actions/checkout@v7
 
@@ -74,17 +56,17 @@ jobs:
       - name: Build (Ubuntu)
         if: startsWith(matrix.os, 'ubuntu')
         run: |
-          (cd .github/build-linux && docker build -t local -f Dockerfile.${{ matrix.arch }} .)
-          docker run -v $(pwd):/github/workspace local /github/workspace ${{ matrix.arch }} yes
+          sh .github/ci/build-image.sh "${{ matrix.arch }}"
+          docker run --rm -v "$PWD:/github/workspace" local /github/workspace ${{ matrix.arch }} no
 
       - name: Build (macOS)
         if: startsWith(matrix.os, 'macos')
         run: |
           sudo mkdir -p /opt/llvm-codon
-          sudo chown -R $(whoami) /opt/llvm-codon
+          sudo chown -R "$(whoami)" /opt/llvm-codon
           curl -L https://github.com/exaloop/llvm-project/releases/download/codon-20.1.7/llvm-codon-20.1.7-${{ matrix.arch }}.tar.bz2 | tar jxf - -C /opt
           brew install gcc
-          bash .github/build-linux/entrypoint.sh ${{ github.workspace }} ${{ matrix.arch }} yes
+          bash .github/ci/entrypoint.sh ${{ github.workspace }} ${{ matrix.arch }} no
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v7
@@ -92,25 +74,151 @@ jobs:
           name: codon-${{ matrix.arch }}.tar.gz
           path: codon-${{ matrix.arch }}.tar.gz
 
-      - name: Upload Release Asset
-        if: contains(github.ref, 'tags/v')
-        uses: actions/upload-release-asset@v1.0.2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload Test Bundle
+        uses: actions/upload-artifact@v7
         with:
-          upload_url: ${{ needs.create_release.outputs.upload_url }}
-          asset_path: ./codon-${{ matrix.arch }}.tar.gz
-          asset_name: codon-${{ matrix.arch }}.tar.gz
-          asset_content_type: application/gzip
+          name: codon-tests-${{ matrix.arch }}
+          path: codon-tests-${{ matrix.arch }}.tar.gz
+          retention-days: 3
+
+      - name: Upload Python Distribution
+        if: matrix.arch == 'linux-x86_64'
+        uses: actions/upload-artifact@v7
+        with:
+          name: codon-python
+          path: dist/
+
+  test:
+    name: Test Codon (${{ matrix.platform.arch }}, shard ${{ matrix.shard }})
+    needs: compile
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+        platform:
+          - os: ubuntu-latest
+            arch: linux-x86_64
+          - os: ubuntu-latest
+            arch: manylinux2014-x86_64
+          - os: ubuntu-24.04-arm
+            arch: linux-aarch64
+          - os: ubuntu-24.04-arm
+            arch: manylinux2014-aarch64
+          - os: macos-14
+            arch: darwin-arm64
+    runs-on: ${{ matrix.platform.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - name: Download SDK
+        uses: actions/download-artifact@v8
+        with:
+          name: codon-${{ matrix.platform.arch }}.tar.gz
+
+      - name: Download Test Bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: codon-tests-${{ matrix.platform.arch }}
+
+      - name: Restore Build
+        run: |
+          tar xzf codon-${{ matrix.platform.arch }}.tar.gz
+          tar xzf codon-tests-${{ matrix.platform.arch }}.tar.gz
+          mkdir -p test-results/${{ matrix.platform.arch }}
+
+      - name: Test (Ubuntu)
+        if: startsWith(matrix.platform.os, 'ubuntu')
+        run: |
+          set -o pipefail
+          sh .github/ci/build-image.sh "${{ matrix.platform.arch }}"
+          docker run --rm -v "$PWD:/github/workspace" local /github/workspace ${{ matrix.platform.arch }} shard ${{ matrix.shard }} 4 \
+            2>&1 | tee test-results/${{ matrix.platform.arch }}/shard-${{ matrix.shard }}.log
+
+      - name: Test (macOS)
+        if: startsWith(matrix.platform.os, 'macos')
+        run: |
+          set -o pipefail
+          sudo mkdir -p /opt/llvm-codon
+          sudo chown -R "$(whoami)" /opt/llvm-codon
+          curl -L https://github.com/exaloop/llvm-project/releases/download/codon-20.1.7/llvm-codon-20.1.7-${{ matrix.platform.arch }}.tar.bz2 | tar jxf - -C /opt
+          brew install gcc
+          bash .github/ci/entrypoint.sh ${{ github.workspace }} ${{ matrix.platform.arch }} shard ${{ matrix.shard }} 4 \
+            2>&1 | tee test-results/${{ matrix.platform.arch }}/shard-${{ matrix.shard }}.log
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-${{ matrix.platform.arch }}-${{ matrix.shard }}
+          path: test-results/${{ matrix.platform.arch }}/
+
+  build:
+    name: Build Codon
+    if: always()
+    needs: [compile, test]
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: linux-x86_64
+          - os: ubuntu-latest
+            arch: manylinux2014-x86_64
+          - os: ubuntu-24.04-arm
+            arch: linux-aarch64
+          - os: ubuntu-24.04-arm
+            arch: manylinux2014-aarch64
+          - os: macos-14
+            arch: darwin-arm64
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require Successful Builds and Tests
+        env:
+          COMPILE_RESULT: ${{ needs.compile.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+        run: test "$COMPILE_RESULT" = success && test "$TEST_RESULT" = success
+
+  publish:
+    name: Publish Codon
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags')
+    needs: [build, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Download SDKs
+        uses: actions/download-artifact@v8
+        with:
+          pattern: codon-*.tar.gz
+          path: release/
+          merge-multiple: true
+
+      - name: Download Python Distribution
+        uses: actions/download-artifact@v8
+        with:
+          name: codon-python
+          path: dist/
+
+      - name: Create Release and Upload SDKs
+        if: contains(github.ref, 'tags/v')
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: release/codon-*.tar.gz
+          artifactContentType: application/gzip
+          artifactErrorsFailBuild: true
 
       - name: Publish PyPI Package
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags') && matrix.arch == 'linux-x86_64'
         uses: pypa/gh-action-pypi-publish@release/v1
 
   build_documentation:
     name: Build Docs
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, test]
     permissions:
       contents: write
     steps:
@@ -145,7 +253,7 @@ jobs:
           mv downloaded-artifact/* .
           tar -xvzf codon-linux-x86_64.tar.gz
           codon-deploy-linux-x86_64/bin/codon doc codon-deploy-linux-x86_64/lib/codon/stdlib > docs.json
-          python scripts/docgen.py docs.json docs/libraries/api $(pwd)/codon-deploy-linux-x86_64/lib/codon/stdlib
+          python scripts/docgen.py docs.json docs/libraries/api "$PWD/codon-deploy-linux-x86_64/lib/codon/stdlib"
 
       - name: Build MkDocs site
         run: properdocs build --strict

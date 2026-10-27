@@ -1,43 +1,85 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
+from internal.ops import _is_primitive_comparison
+
+def _bisect_unchecked(data: Ptr[T], x: S, lo: int, hi: int,
+                      right: Literal[bool], T: type, S: type) -> int:
+    while lo < hi:
+        mid = lo + (hi - lo).cdiv(2)
+        if right:
+            move_hi = x < data[mid]
+        else:
+            move_hi = not (data[mid] < x)
+        if move_hi:
+            hi = mid
+        else:
+            lo = mid + 1
+    return lo
+
 def bisect_left(
-    a: List[T], x: S, lo: int = 0, hi: Optional[int] = None, T: type, S: type
+    a: List[T], x: S, lo: int = 0, hi: Optional[int] = None, *, key=None, T: type, S: type
 ) -> int:
     if lo < 0:
         raise ValueError("lo must be non-negative")
-    hi: int = len(a) if hi is None else hi
+    hi: int = len(a) if hi is None or hi == -1 else hi
+    if key is None and _is_primitive_comparison(T) and _is_primitive_comparison(S):
+        if hi <= len(a):
+            return _bisect_unchecked(a._ptr, x, lo, hi, False)
     while lo < hi:
-        mid = (lo + hi).cdiv(2)
-        if a[mid] < x:
+        mid = lo + (hi - lo).cdiv(2)
+        if mid >= len(a):
+            raise IndexError("list index out of range")
+        value = a._ptr[mid]
+        if key is None:
+            less = value < x
+        else:
+            less = key(value) < x
+        if less:
             lo = mid + 1
         else:
             hi = mid
     return lo
 
 def bisect_right(
-    a: List[T], x: S, lo: int = 0, hi: Optional[int] = None, T: type, S: type
+    a: List[T], x: S, lo: int = 0, hi: Optional[int] = None, *, key=None, T: type, S: type
 ) -> int:
     if lo < 0:
         raise ValueError("lo must be non-negative")
-    hi: int = len(a) if hi is None else hi
+    hi: int = len(a) if hi is None or hi == -1 else hi
+    if key is None and _is_primitive_comparison(T) and _is_primitive_comparison(S):
+        if hi <= len(a):
+            return _bisect_unchecked(a._ptr, x, lo, hi, True)
     while lo < hi:
-        mid = (lo + hi).cdiv(2)
-        if x < a[mid]:
+        mid = lo + (hi - lo).cdiv(2)
+        if mid >= len(a):
+            raise IndexError("list index out of range")
+        value = a._ptr[mid]
+        if key is None:
+            less = x < value
+        else:
+            less = x < key(value)
+        if less:
             hi = mid
         else:
             lo = mid + 1
     return lo
 
 def insort_left(
-    a: List[T], x: S, lo: int = 0, hi: Optional[int] = None, T: type, S: type
+    a: List[T], x: S, lo: int = 0, hi: Optional[int] = None, *, key=None, T: type, S: type
 ):
-    lo = bisect_left(a, x, lo, hi)
+    if key is None:
+        lo = bisect_left(a, x, lo, hi)
+    else:
+        lo = bisect_left(a, key(x), lo, hi, key=key)
     a.insert(lo, x)
 
 def insort_right(
-    a: List[T], x: S, lo: int = 0, hi: Optional[int] = None, T: type, S: type
+    a: List[T], x: S, lo: int = 0, hi: Optional[int] = None, *, key=None, T: type, S: type
 ):
-    lo = bisect_right(a, x, lo, hi)
+    if key is None:
+        lo = bisect_right(a, x, lo, hi)
+    else:
+        lo = bisect_right(a, key(x), lo, hi, key=key)
 
     if lo == len(a):
         a.append(x)

@@ -4,8 +4,15 @@ set -x
 
 WORKSPACE="${1}"
 ARCH="$2"
+SHARD_INDEX=${3:-0}
+SHARD_COUNT=${4:-1}
 
-echo "Workspace: ${WORKSPACE}; arch: ${ARCH}"
+if ! [ "$SHARD_COUNT" -gt 0 ] || ! [ "$SHARD_INDEX" -ge 0 ] || ! [ "$SHARD_INDEX" -lt "$SHARD_COUNT" ]; then
+  echo "Invalid test shard: $SHARD_INDEX of $SHARD_COUNT" >&2
+  exit 1
+fi
+
+echo "Workspace: ${WORKSPACE}; arch: ${ARCH}; shard: ${SHARD_INDEX}/${SHARD_COUNT}"
 cd "$WORKSPACE"
 
 if [ "$(uname -s)" = "Linux" ]; then
@@ -25,15 +32,13 @@ export CODON_DIR=$(pwd)/codon-deploy-${ARCH}
 
 echo "=> Unit tests..."
 mkdir -p build  # needed for some tests that write into this directory
-if [ "${ARCH}" = "darwin-x86_64" ]; then
-  # Disable numpy tests on Intel macOS since it breaks on macOS 13
-  # (macOS 14 Intel runners are not free).
-  # arithmetic.codon fails in debug mode on x86 due to float16 (TODO: why?)
-  export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
-  time build-${ARCH}/codon_test --gtest_filter="-*numpy*:*core_arithmetic_codon_debug*"
-  # :*python*:*core_arithmetic*:*stdlib_random_test*"
-else
-  time build-${ARCH}/codon_test
+RESULTS_DIR="${WORKSPACE}/test-results/${ARCH}"
+mkdir -p "$RESULTS_DIR"
+GTEST_TOTAL_SHARDS="$SHARD_COUNT" GTEST_SHARD_INDEX="$SHARD_INDEX" \
+  build-${ARCH}/codon_test --gtest_output="xml:${RESULTS_DIR}/unit-${SHARD_INDEX}.xml"
+
+if [ "$SHARD_INDEX" -ne 0 ]; then
+  exit 0
 fi
 
 echo "=> OS differential tests..."
@@ -52,7 +57,7 @@ echo "=> pyext release test..."
 (cd test/python && python setup.py build_ext --inplace --force && python pyext.py)
 
 # GPU test; only on select platforms
-if command -v nvcc &> /dev/null; then
+if command -v nvcc > /dev/null 2>&1; then
   echo "=> CUDA test..."
   nvcc_version=$(nvcc --version | grep "release" | awk '{print $NF}')
   echo "CUDA Version: $nvcc_version"

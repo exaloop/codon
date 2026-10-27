@@ -141,14 +141,6 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
     return;
   }
 
-  // Replace for (i, j) in ... { ... } with for tmp in ...: { i, j = tmp ; ... }
-  if (!cast<IdExpr>(stmt->getVar())) {
-    auto var = N<IdExpr>(ctx->cache->getTemporaryVar("for"));
-    auto ns = unpackAssignment(stmt->getVar(), var);
-    stmt->suite = N<SuiteStmt>(ns, stmt->getSuite());
-    stmt->var = var;
-  }
-
   // Case: iterating a non-generator. Wrap with `__iter__`
   bool isGenerator =
       iterType->name == (stmt->isAsync() ? "AsyncGenerator" : "Generator");
@@ -159,6 +151,17 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
     if (!iterType)
       return;
     isGenerator = iterType->name == (stmt->isAsync() ? "AsyncGenerator" : "Generator");
+  }
+
+  // Delay target unpacking until the yielded type is known. A compiler-owned
+  // tuple temporary needs neither a copy nor a runtime check for matching arity.
+  if (!cast<IdExpr>(stmt->getVar())) {
+    auto var = N<IdExpr>(ctx->cache->getTemporaryVar("for"));
+    if (isGenerator)
+      var->setType(extractClassGeneric(iterType)->shared_from_this());
+    auto ns = unpackAssignment(stmt->getVar(), var, true);
+    stmt->suite = N<SuiteStmt>(ns, stmt->getSuite());
+    stmt->var = var;
   }
 
   ctx->getBase()->loops.emplace_back(breakVar);

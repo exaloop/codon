@@ -712,15 +712,15 @@ def _tan_impl(z):
     r = complex(s.imag, -s.real)
     return r
 
-def phase(x):
+def phase(x, /):
     z = complex(x)
     return z._phase()
 
-def polar(x):
+def polar(x, /):
     z = complex(x)
     return complex(x)._polar()
 
-def rect(r, phi):
+def rect(r, phi, /):
     z_real = 0.
     z_imag = 0.
     if (not _isfinite(r)) or (not _isfinite(phi)):
@@ -758,11 +758,11 @@ def rect(r, phi):
         # errno = 0
     return complex(z_real, z_imag)
 
-def exp(x):
+def exp(x, /):
     z = complex(x)
     return _exp_impl(z)
 
-def log(x, base = e):
+def log(x, base = e, /):
     z = complex(x)
     y = complex(base)
     r = _c_log(z)
@@ -771,75 +771,75 @@ def log(x, base = e):
     else:
         return r/_c_log(y)
 
-def log10(x):
+def log10(x, /):
     z = complex(x)
     return _log10_impl(z)
 
-def sqrt(x):
+def sqrt(x, /):
     z = complex(x)
     return _sqrt_impl(z)
 
-def asin(x):
+def asin(x, /):
     z = complex(x)
     return _asin_impl(z)
 
-def acos(x):
+def acos(x, /):
     z = complex(x)
     return _acos_impl(z)
 
-def atan(x):
+def atan(x, /):
     z = complex(x)
     return _atan_impl(z)
 
-def sin(x):
+def sin(x, /):
     z = complex(x)
     return _sin_impl(z)
 
-def cos(x):
+def cos(x, /):
     z = complex(x)
     return _cos_impl(z)
 
-def tan(x):
+def tan(x, /):
     z = complex(x)
     return _tan_impl(z)
 
-def asinh(x):
+def asinh(x, /):
     z = complex(x)
     return _asinh_impl(z)
 
-def acosh(x):
+def acosh(x, /):
     z = complex(x)
     return _acosh_impl(z)
 
-def atanh(x):
+def atanh(x, /):
     z = complex(x)
     return _atanh_impl(z)
 
-def sinh(x):
+def sinh(x, /):
     z = complex(x)
     return _sinh_impl(z)
 
-def cosh(x):
+def cosh(x, /):
     z = complex(x)
     return _cosh_impl(z)
 
-def tanh(x):
+def tanh(x, /):
     z = complex(x)
     return _tanh_impl(z)
 
-def isfinite(x):
+def isfinite(x, /):
     z = complex(x)
     return _isfinite(z.real) and _isfinite(z.imag)
 
-def isinf(x):
+def isinf(x, /):
     z = complex(x)
     return _isinf(z.real) or _isinf(z.imag)
 
-def isnan(x):
+def isnan(x, /):
     z = complex(x)
     return _isnan(z.real) or _isnan(z.imag)
 
-def isclose(a, b, rel_tol: float = 1e-09, abs_tol: float = 0.0):
+def isclose(a, b, *, rel_tol: float = 1e-09, abs_tol: float = 0.0):
     if rel_tol < 0. or abs_tol < 0.:
         raise ValueError("tolerances must be non-negative")
 

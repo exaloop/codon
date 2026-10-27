@@ -3,7 +3,7 @@
 import internal.static as static
 from internal.unicode.generated.properties import unicode_is_space
 
-def getattr(obj, attr: Literal[str], default, typ: type=NoneType):
+def getattr(obj, attr: Literal[str], default, /, typ: type=NoneType):
     try:
         return _getattr(obj, attr, type(default) if typ is NoneType else typ)
     except AttributeError:
@@ -13,10 +13,10 @@ def getattr(obj, attr: Literal[str], default, typ: type=NoneType):
             return default
 
 @overload
-def getattr(obj, attr: Literal[str], type: type=NoneType):
+def getattr(obj, attr: Literal[str], /, type: type=NoneType):
     return _getattr(obj, attr, type)
 
-def id(x) -> int:
+def id(x, /) -> int:
     if isinstance(x, ByRef):
         return int(x.__raw__())
     else:
@@ -43,7 +43,7 @@ def print(*args, sep: str = " ", end: str = "\n", file=None, flush: bool = False
     if flush:
         _C.fflush(fp)
 
-def input(prompt: str = "") -> str:
+def input(prompt: str = "", /) -> str:
     stdout = _C.seq_stdout()
     stderr = _C.seq_stderr()
     stdin = _C.seq_stdin()
@@ -155,19 +155,19 @@ def max(*args, key=None, default=None):
                     m = i
         return m
 
-def len(x) -> int:
+def len(x, /) -> int:
     return x.__len__()
 
-def iter(x):
+def iter(x, /):
     return x.__iter__()
 
-def abs(x):
+def abs(x, /):
     return x.__abs__()
 
-def hash(x) -> int:
+def hash(x, /) -> int:
     return x.__hash__()
 
-def ord(character: str) -> int:
+def ord(character: str, /) -> int:
     n = len(character)
     if n != 1:
         raise TypeError(
@@ -175,13 +175,13 @@ def ord(character: str) -> int:
         )
     return character._load_codepoint(0)
 
-def divmod(a, b):
+def divmod(a, b, /):
     if hasattr(a, "__divmod__"):
         return a.__divmod__(b)
     else:
         return (a // b, a % b)
 
-def chr(codepoint: int) -> str:
+def chr(codepoint: int, /) -> str:
     if codepoint < 0 or codepoint > 0x10FFFF:
         raise ValueError("chr() arg not in range(0x110000)")
 
@@ -199,7 +199,7 @@ def chr(codepoint: int) -> str:
         data[offset] = u8(codepoint >> (8 * offset))
     return str(data, 1 | (kind << 56))
 
-def next(g: Generator[T], default: Optional[T] = None, T: type) -> T:
+def next(g: Generator[T], default: Optional[T] = None, /, T: type) -> T:
     if not g._advance():
         if default is not None:
             return default.__val__()
@@ -207,13 +207,13 @@ def next(g: Generator[T], default: Optional[T] = None, T: type) -> T:
             raise StopIteration()
     return g._get()
 
-def any(x: Generator[T], T: type) -> bool:
+def any(x: Generator[T], /, T: type) -> bool:
     for a in x:
         if a:
             return True
     return False
 
-def all(x: Generator[T], T: type) -> bool:
+def all(x: Generator[T], /, T: type) -> bool:
     for a in x:
         if not a:
             return False
@@ -247,12 +247,12 @@ def zip(*args):
                 result = set_result(result, iterator._get(), index)
             yield result
 
-def filter(f: CallableTrait[[T], bool], x: Generator[T], T: type) -> Generator[T]:
+def filter(f: CallableTrait[[T], bool], x: Generator[T], /, T: type) -> Generator[T]:
     for a in x:
         if f(a):
             yield a
 
-def map(f, *args):
+def map(f, /, *args):
     if static.len(args) == 0:
         compile_error("map() expects at least one iterator")
     elif static.len(args) == 1:
@@ -272,7 +272,7 @@ def echo(x):
     print x
     return x
 
-def reversed(x):
+def reversed(x, /):
     if hasattr(x, "__reversed__"):
         return x.__reversed__()
 
@@ -296,7 +296,7 @@ def round(x, ndigits=None):
             compile_error("'ndigits' argument must be an int or None")
         return x.__round__(ndigits)
 
-def sum(x, start=0):
+def sum(x, /, start=0):
     if ((isinstance(x, List[int]) and isinstance(start, int)) or
         (isinstance(x, List[int]) and isinstance(start, float)) or
         (isinstance(x, List[float]) and isinstance(start, float))):
@@ -347,7 +347,7 @@ def sum(x, start=0):
 
         return s
 
-def repr(x):
+def repr(x, /):
     if isinstance(x, type):
         return __type_repr__(x)
     if type(x) is Super:
@@ -394,16 +394,16 @@ def _int_format(a: int, base: Literal[int], prefix: str = ""):
 
     return str(p, sz)
 
-def bin(n):
+def bin(n, /):
     return _int_format(n.__index__(), 2, "0b")
 
-def oct(n):
+def oct(n, /):
     return _int_format(n.__index__(), 8, "0o")
 
-def hex(n):
+def hex(n, /):
     return _int_format(n.__index__(), 16, "0x")
 
-def format(value, format_spec: str = ""):
+def format(value, format_spec: str = "", /):
     if hasattr(value, "__format__"):
         return value.__format__(format_spec)
     else:

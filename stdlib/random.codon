@@ -161,7 +161,7 @@ class Random:
         self.gen.setstate(gen_state)
         self.gauss_next = gauss_next
 
-    def getrandbits(self, k: int) -> int:
+    def getrandbits(self, k: int, /) -> int:
         if k == 0:
             return 0
 
@@ -228,7 +228,7 @@ class Random:
     def randint(self, a: int, b: int):
         return self.randrange(a, b + 1, 1)
 
-    def random(self) -> float:
+    def random(self, /) -> float:
         return self.gen.genrand_res53()
 
     def choice(self, sequence: Generator[T], T: type) -> T:
@@ -444,6 +444,7 @@ class Random:
         self,
         population,
         weights: Optional[List[T]],
+        *,
         cum_weights: Optional[List[T]],
         k: int,
         T: type
@@ -482,7 +483,7 @@ _rnd = Random()
 def seed(a: int):
     _rnd.seed(a)
 
-def getrandbits(k: int):
+def getrandbits(k: int, /):
     return _rnd.getrandbits(k)
 
 def randrange(start: int, stop: Optional[int] = None, step: int = 1):
@@ -497,11 +498,12 @@ def choice(s):
 def choices(
     population,
     weights: Optional[List[T]] = None,
+    *,
     cum_weights: Optional[List[T]] = None,
     k: int = 1,
     T: type = int
 ):
-    return _rnd.choices(population, weights, cum_weights, k)
+    return _rnd.choices(population, weights, cum_weights=cum_weights, k=k)
 
 def shuffle(s):
     _rnd.shuffle(s)

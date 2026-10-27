@@ -547,7 +547,7 @@ struct ReductionIdentifier : public util::Operator {
     auto *ptrType = cast<PointerType>(shared->getType());
     seqassertn(ptrType, "expected shared var to be of pointer type");
     auto *type = ptrType->getBase();
-    auto *noneType = M->getOptionalType(M->getNoneType());
+    auto *noneType = M->getNoneType();
 
     // double-check the call
     if (!util::isCallOf(v, Module::SETITEM_MAGIC_NAME,

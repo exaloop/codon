@@ -40,7 +40,14 @@ void TypecheckVisitor::visit(IdExpr *expr) {
   expr->value = val->getName();
 
   // Set up type
-  unify(expr->getType(), instantiateType(val->getType()));
+  auto valueType = instantiateType(val->getType());
+  // the builtin type object has no argument.
+  // type[T] remains the representation of a class value.
+  if (expr->getValue() == StdlibTypes::Type) {
+    auto metaclass = getMetaclassType();
+    valueType = instantiateTypeVar(metaclass.get());
+  }
+  unify(expr->getType(), valueType.get());
   if (auto f = expr->getType()->getFunc()) {
     expr->value = f->getFuncName(); // resolve overloads
   }
@@ -137,14 +144,17 @@ void TypecheckVisitor::visit(DotExpr *expr) {
     expr->expr = dot->getExpr();
     expr->member = dot->getMember();
   } else {
+    if (expr->hasAttribute(Attr::ExprDoNotRealize))
+      final->setAttribute(Attr::ExprDoNotRealize);
     resultExpr = transform(final);
     return;
   }
 
   // Special case: obj.__class__
   if (expr->getMember() == "__class__") {
-    /// TODO: prevent cls.__class__ and type(cls)
-    resultExpr = transform(N<CallExpr>(N<IdExpr>(StdlibTypes::Type), expr->getExpr()));
+    resultExpr = transform(
+        N<CallExpr>(N<IdExpr>(getMangledMethod("", StdlibTypes::Type, "__new__")),
+                    expr->getExpr()));
     return;
   }
   expr->expr = transform(expr->getExpr());
@@ -162,11 +172,14 @@ void TypecheckVisitor::visit(DotExpr *expr) {
 std::pair<Expr *, bool> TypecheckVisitor::getAttr(Expr *expr, const std::string &member,
                                                   types::Type *type,
                                                   CallExpr *parentCall) {
+  if (expr->getType()->is(StdlibTypes::Optional) && expr->getType()->hasUnbounds(false))
+    return {nullptr, true};
   bool hasSide = hasSideEffect(expr);
   auto wrapSide = [&](Expr *e) -> Expr * {
-    if (hasSide) {
-      return transform(N<StmtExpr>(N<ExprStmt>(expr), e));
-    }
+    if (hasSide)
+      e = N<StmtExpr>(N<ExprStmt>(expr), e);
+    if (parentCall)
+      e->setAttribute(Attr::ExprDoNotRealize);
     return transform(e);
   };
 
@@ -238,21 +251,26 @@ std::pair<Expr *, bool> TypecheckVisitor::getAttr(Expr *expr, const std::string 
     return getClassMember(expr, member, type);
   }
 
+  const auto *methodAst = methods.front()->ast;
+  const bool isProperty = methodAst->hasAttribute(Attr::Property);
   // If a method is ambiguous use dispatch
   auto bestMethod =
       methods.size() > 1 ? getDispatch(getRootName(methods.front())) : methods.front();
   Expr *e = N<IdExpr>(bestMethod->getFuncName());
   e->setType(instantiateType(bestMethod, typ));
+  if (parentCall)
+    e->setAttribute(Attr::ExprDoNotRealize);
 
-  if (isTypeExpr(expr)) {
-    // Static access: `cls.method`
+  if (isTypeExpr(expr) || methodAst->hasAttribute(Attr::StaticMethod)) {
+    // Static access: cls.method or obj.static_method.
+    // A saved lookup with side effects needs a runtime value,
+    // not an unresolved function identifier.
+    if (!parentCall && hasSide)
+      e = N<CallExpr>(e, N<EllipsisExpr>(EllipsisExpr::PARTIAL));
     return {wrapSide(e), true};
   }
 
-  auto vt = expr->getType();
-  auto cls = getClass(vt);
-  if (parentCall && !bestMethod->ast->hasAttribute(Attr::StaticMethod) &&
-      !bestMethod->ast->hasAttribute(Attr::Property)) {
+  if (parentCall && !isProperty) {
     // Instance access: `obj.method` from the call
     // Modify the call to push `self` to the front of the argument list.
     // Avoids creating partial functions.
@@ -262,16 +280,12 @@ std::pair<Expr *, bool> TypecheckVisitor::getAttr(Expr *expr, const std::string 
   } else {
     // Instance access: `obj.method`
     // Transform y.method to a partial call `type(y).method(y, ...)`
-    std::vector<Expr *> methodArgs;
-    // Do not add self if a method is marked with @staticmethod
-    if (!bestMethod->ast->hasAttribute(Attr::StaticMethod))
-      methodArgs.emplace_back(expr);
+    std::vector<Expr *> methodArgs{expr};
     // If a method is marked with @property, just call it directly
-    if (!bestMethod->ast->hasAttribute(Attr::Property))
+    if (!isProperty)
       methodArgs.emplace_back(N<EllipsisExpr>(EllipsisExpr::PARTIAL));
     auto *call = N<CallExpr>(e, methodArgs);
-    if (!bestMethod->ast->hasAttribute(Attr::StaticMethod) &&
-        !bestMethod->ast->hasAttribute(Attr::Property))
+    if (!isProperty)
       call->setAttribute(Attr::ExprVirtual, -1);
     return {transform(call), true};
   }
@@ -553,11 +567,14 @@ std::pair<Expr *, bool> TypecheckVisitor::getClassMember(Expr *expr,
       if (realize(generic->getType()))
         return {wrapSide(generic->type->getStatic()->getStaticExpr()), true};
     } else {
-      auto t = instantiateTypeVar(generic->getType());
+      auto payload = generic->type;
+      if (typ->is(StdlibTypes::UnrealizedType))
+        payload = instantiateType(payload.get());
+      auto t = instantiateTypeVar(payload.get());
       if (type)
         unify(type, t.get());
       if (realize(t.get()))
-        return {wrapSide(N<IdExpr>(generic->getType()->realizedName())), true};
+        return {wrapSide(N<IdExpr>(payload->realizedName())), true};
     }
     return {nullptr, true};
   }
@@ -592,8 +609,13 @@ std::pair<Expr *, bool> TypecheckVisitor::getClassMember(Expr *expr,
   auto u = instantiateUnbound();
   u->staticKind = LiteralKind::String;
   if (auto m = findBestMethod(typ, "__getattr__", {typ, u.get()})) {
-    if (m->funcGenerics.size() == 1 &&
-        extractFuncGeneric(m)->getStaticKind() == LiteralKind::String) {
+    if (std::ranges::count_if(m->funcGenerics,
+                              [&](const auto &generic) {
+                                return getUnmangledName(generic.name) != "Self";
+                              }) == 1 &&
+        std::ranges::any_of(m->funcGenerics, [](const auto &generic) {
+          return generic.getType()->getStaticKind() == LiteralKind::String;
+        })) {
       return {transform(
                   N<CallExpr>(N<DotExpr>(expr, "__getattr__"), N<StringExpr>(member))),
               true};

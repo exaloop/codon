@@ -314,7 +314,9 @@ public:
   /// @param c the cache
   void setCache(ast::Cache *c) { cache = c; }
 
-  /// Parse a codon code block.
+  /// Parse a Codon code block. Top-level statements run before user code in main
+  /// (or in the current JIT cell), after the runtime preamble.
+  /// Call before optimization passes remove/restructure the user entry statement.
   void parseCode(const std::string &code);
 
   /// Gets or realizes a method.
@@ -374,9 +376,9 @@ public:
   /// @param base the base type
   /// @return a generator type that yields the base
   Type *getGeneratorType(Type *base);
-  /// Gets an optional type.
+  /// Gets a canonical optional type, collapsing optional and NoneType bases.
   /// @param base the base type
-  /// @return an optional type that contains the base
+  /// @return the base for Optional or NoneType, otherwise Optional[base]
   Type *getOptionalType(Type *base);
   /// Gets a function type.
   /// @param rType the return type
@@ -438,7 +440,7 @@ public:
   /// @return a generator type that yields the base
   Type *unsafeGetGeneratorType(Type *base);
   /// Gets an optional type. Should generally not be used as no type-checker
-  /// information is generated.
+  /// information is generated and optional layers are not canonicalized.
   /// @param base the base type
   /// @return an optional type that contains the base
   Type *unsafeGetOptionalType(Type *base);

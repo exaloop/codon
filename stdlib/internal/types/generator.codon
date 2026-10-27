@@ -28,12 +28,12 @@ class Generator:
         else:
             return self.__promise__()[0]
 
-    def __next__(self: Generator[T]) -> T:
+    def __next__(self: Generator[T], /) -> T:
         if not self._advance():
             raise StopIteration()
         return self._get()
 
-    def __iter__(self) -> Generator[T]:
+    def __iter__(self, /) -> Generator[T]:
         return self
 
     @pure
@@ -67,10 +67,10 @@ class Generator:
         call void @llvm.coro.resume(ptr %self)
         ret {} {}
 
-    def __repr__(self) -> str:
+    def __repr__(self, /) -> str:
         return Ptr._ptr_to_str(self.__raw__(), "generator")
 
-    def send(self, what: T) -> T:
+    def send(self, what: T, /) -> T:
         if self.__done__():
             raise StopIteration()
         if not isinstance(T, None):

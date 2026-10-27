@@ -6,56 +6,53 @@ from internal.types.collections.dict import DictEntry, OrderedDict
 _DENSE_MAX_SLOTS: Literal[int] = 4096
 _DENSE_MAX_SLOTS_PER_MEMBER: Literal[int] = 4
 
+@dataclass(init=False)
 class Enum:
-    """Base class for native enumerations with named, singleton members."""
+    """Native singleton members, initialized by _make_member before lookup."""
 
     _name_: str
 
     @staticmethod
-    def __new__(value, __SELF__: type = Enum):
-        # enum_test: inherited methods bind __SELF__ to the concrete enum type.
-        if __SELF__ is Enum:
+    def __new__(value, Self: type = Enum):
+        # enum_test: inherited methods bind Self to the concrete enum type.
+        if Self is Enum:
             compile_error("cannot instantiate Enum directly")
-        return _from_value(__SELF__, value)
+        return _from_value(Self, value)
 
     @staticmethod
-    def __iter__(__SELF__: type = Enum):
-        return _iter_members(__SELF__)
+    def __iter__(Self: type = Enum):
+        return _iter_members(Self)
 
     @staticmethod
-    def __len__(__SELF__: type = Enum):
-        return _member_count(__SELF__)
+    def __len__(Self: type = Enum):
+        return _member_count(Self)
 
     @staticmethod
-    def __reversed__(__SELF__: type = Enum):
-        return _reversed_members(__SELF__)
+    def __reversed__(Self: type = Enum):
+        return _reversed_members(Self)
 
     @staticmethod
-    def __getitem__(name: str, __SELF__: type = Enum):
-        return __SELF__.__members__[name]
+    def __getitem__(name: str, Self: type = Enum):
+        return Self.__members__[name]
 
     @staticmethod
-    def __contains__(value, __SELF__: type = Enum):
-        return _contains(__SELF__, value)
-
-    def __init__(self, value):
-        # Lookup in __new__ returns an existing member, so initialization is a no-op.
-        pass
+    def __contains__(value, Self: type = Enum):
+        return _contains(Self, value)
 
     @property
     def name(self):
         return self._name_
 
     @property
-    def value(self: __SELF__, __SELF__: type):
+    def value(self):
         return self._value_
 
-    def __eq__(self, other):
+    def __eq__(self, other, /):
         if isinstance(other, Enum):
             return self is other
         return False
 
-    def __ne__(self, other):
+    def __ne__(self, other, /):
         return not self.__eq__(other)
 
     def __hash__(self):
@@ -68,16 +65,16 @@ class Enum:
         name = RTTIType._typeinfo(self).nice_name.rsplit(".", 1)[-1]
         return name + "." + self._name_
 
-    def __repr__(self: __SELF__, __SELF__: type):
-        if hasattr(__SELF__, "_value_"):
+    def __repr__(self):
+        if hasattr(Self, "_value_"):
             name = RTTIType._typeinfo(self).nice_name.rsplit(".", 1)[-1]
             return "<" + name + "." + self.name + ": " + repr(self._value_) + ">"
         return self.__str__()
 
-    def __copy__(self: __SELF__, __SELF__: type) -> __SELF__:
+    def __copy__(self) -> Self:
         return self
 
-    def __deepcopy__(self: __SELF__, __SELF__: type) -> __SELF__:
+    def __deepcopy__(self) -> Self:
         return self
 
 
