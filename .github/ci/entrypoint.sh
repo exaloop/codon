@@ -66,7 +66,7 @@ cp -rf ${CODON_DIR}/python/dist .
 ls -lah dist/
 # Clean-up useless install artefacts
 rm -rf ${CODON_DIR}/lib/libfmt.a ${CODON_DIR}/lib/pkgconfig ${CODON_DIR}/lib/cmake \
-       ${CODON_DIR}/python/codon.egg-info ${CODON_DIR}/python/dist ${CODON_DIR}/python/build
+       ${CODON_DIR}/python/*.egg-info ${CODON_DIR}/python/dist
 tar czf ${CODON_BUILD_ARCHIVE} -C ${WORKSPACE} codon-deploy-${ARCH}/
 du -sh ${CODON_BUILD_ARCHIVE}
 

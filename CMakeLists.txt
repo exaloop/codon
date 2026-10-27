@@ -640,7 +640,11 @@ foreach(unicode_file IN LISTS CODON_UNICODE_GENERATED_FILES)
   get_filename_component(unicode_directory "${unicode_relative}" DIRECTORY)
   install(FILES "${unicode_file}" DESTINATION "lib/codon/${unicode_directory}")
 endforeach()
-install(DIRECTORY ${CMAKE_SOURCE_DIR}/jit/ DESTINATION python)
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/jit/ DESTINATION python
+  PATTERN "build" EXCLUDE
+  PATTERN "dist" EXCLUDE
+  PATTERN "*.egg-info" EXCLUDE
+  PATTERN "__pycache__" EXCLUDE)
 install(DIRECTORY DESTINATION lib/codon/plugins)
 
 install(CODE [[
