@@ -45,6 +45,41 @@ struct InitializedFields {
   }
 };
 
+class ReboundLocalsVisitor : public CallbackASTVisitor<void, void> {
+public:
+  std::set<std::string> names;
+
+  void transform(Expr *expr) override {
+    if (expr)
+      expr->accept(*this);
+  }
+
+  void transform(Stmt *stmt) override {
+    if (stmt)
+      stmt->accept(*this);
+  }
+
+  void visit(FunctionStmt *) override {}
+  void visit(ClassStmt *) override {}
+
+  void visit(AssignStmt *stmt) override {
+    if (auto target = cast<IdExpr>(stmt->getLhs()))
+      names.insert(target->getValue());
+    CallbackASTVisitor<void, void>::visit(stmt);
+  }
+
+  void visit(ForStmt *stmt) override {
+    if (auto target = cast<IdExpr>(stmt->getVar()))
+      names.insert(target->getValue());
+    CallbackASTVisitor<void, void>::visit(stmt);
+  }
+
+  void visit(ExceptStmt *stmt) override {
+    names.insert(stmt->getVar());
+    CallbackASTVisitor<void, void>::visit(stmt);
+  }
+};
+
 /// Conservatively track constructor field writes in a realized, typed AST.
 /// Follow known helper bodies so delegated initialization is not spuriously rejected;
 /// this analysis emits diagnostics only and does not insert runtime field guards.
@@ -61,8 +96,42 @@ class FieldInitializationVisitor : public CallbackASTVisitor<void, void> {
   std::map<std::pair<FunctionStmt *, size_t>, InitializedFields> &summaries;
   /// Facts at the current point in the body being analyzed.
   InitializedFields state;
-  /// Explicit normal-return states, merged with fallthrough by analyze().
-  std::vector<InitializedFields> exits;
+  enum class ExitKind { Return, Break, Continue };
+  struct Exit {
+    ExitKind kind;
+    InitializedFields state;
+  };
+  /// Pending abrupt exits, intercepted by enclosing loops and finally blocks.
+  std::vector<Exit> exits;
+  /// Facts shared by potential exceptions in each enclosing protected region.
+  std::vector<InitializedFields> exceptions;
+
+  void recordException() {
+    if (state.reachable && !exceptions.empty())
+      exceptions.back().intersect(state);
+  }
+
+  void forgetReboundAliases(Stmt *stmt) {
+    ReboundLocalsVisitor rebound;
+    rebound.transform(stmt);
+    for (const auto &name : rebound.names)
+      state.aliases.erase(name);
+  }
+
+  void analyzeLoopBody(Stmt *body) {
+    auto incoming = state;
+    auto previousExits = exits.size();
+    transform(body);
+    std::vector<Exit> pending(exits.begin() + previousExits, exits.end());
+    exits.resize(previousExits);
+    state = incoming;
+    for (const auto &exit : pending) {
+      if (exit.kind == ExitKind::Break)
+        state.intersect(exit.state);
+      else if (exit.kind == ExitKind::Return)
+        exits.push_back(exit);
+    }
+  }
 
   /// Recognize receiver aliases through known casts and lowered super() wrappers.
   /// Super.__getattr__ captures the receiver in a Partial's first bound argument;
@@ -110,6 +179,8 @@ public:
   /// Recursive re-entry contributes no new facts rather than assuming a write.
   /// Publish a summary only after merging all exits, never from a partial traversal.
   InitializedFields analyze(FunctionStmt *function, size_t argument) {
+    if (function->isAsync() || function->hasAttribute(Attr::IsGenerator))
+      return {};
     auto key = std::make_pair(function, argument);
     if (auto summary = summaries.find(key); summary != summaries.end())
       return summary->second;
@@ -118,7 +189,8 @@ public:
     state.aliases.insert((*function)[argument].getName());
     transform(function->getSuite());
     for (const auto &exit : exits)
-      state.intersect(exit);
+      if (exit.kind == ExitKind::Return)
+        state.intersect(exit.state);
     active.erase(key);
     summaries.emplace(key, state);
     return state;
@@ -164,15 +236,34 @@ public:
   /// Typed calls omit generic arguments, so match only value parameters in the AST.
   void visit(CallExpr *expr) override {
     CallbackASTVisitor<void, void>::visit(expr);
+    if (!state.reachable)
+      return;
+    recordException();
     auto type = expr->getExpr()->getType();
     auto function = type ? type->getFunc() : nullptr;
     if (!function)
       return;
-    if (auto dispatch = expr->getAttribute<ir::IntValueAttribute>(Attr::ExprVirtual);
-        dispatch && dispatch->value >= 0 && !expr->empty() &&
-        isInstance(expr->front().getExpr())) {
-      if (auto target = in(receiver->vtable, dispatch->value))
+    if (auto dispatch = expr->getAttribute<ir::IntValueAttribute>(Attr::ExprVirtual)) {
+      size_t thunk = 0;
+      if (dispatch->value >= 0) {
+        thunk = dispatch->value;
+      } else {
+        TypecheckVisitor visitor(cache->typeCtx);
+        if (visitor.isPolymorphic(function)) {
+          auto key = in(cache->thunkIds, visitor.vTableSignature(function));
+          if (!key)
+            return;
+          thunk = *key;
+        }
+      }
+      if (thunk) {
+        if (expr->empty() || !isInstance(expr->front().getExpr()))
+          return;
+        auto target = in(receiver->vtable, thunk);
+        if (!target)
+          return;
         function = target->get();
+      }
     }
     auto cached = in(cache->functions, function->getFuncName());
     if (!cached)
@@ -219,61 +310,81 @@ public:
 
   /// Collect body returns without assuming that the loop executes an iteration.
   void visit(WhileStmt *stmt) override {
+    forgetReboundAliases(stmt);
     transform(stmt->getCond());
-    auto incoming = state;
-    transform(stmt->getSuite());
-    state = incoming;
+    analyzeLoopBody(stmt->getSuite());
   }
 
   /// Collect body returns while allowing an empty iterable to skip all writes.
   void visit(ForStmt *stmt) override {
     transform(stmt->getIter());
-    auto incoming = state;
-    transform(stmt->getSuite());
-    state = incoming;
+    forgetReboundAliases(stmt);
+    recordException();
+    analyzeLoopBody(stmt->getSuite());
   }
 
   /// Exclude statements after a break from the current loop-body path.
-  void visit(BreakStmt *) override { state.reachable = false; }
+  void visit(BreakStmt *) override {
+    exits.push_back({ExitKind::Break, state});
+    state.reachable = false;
+  }
   /// Exclude statements after a continue from the current loop-body path.
-  void visit(ContinueStmt *) override { state.reachable = false; }
+  void visit(ContinueStmt *) override {
+    exits.push_back({ExitKind::Continue, state});
+    state.reachable = false;
+  }
 
   /// Save normal-return facts, including writes performed by the return expression.
   void visit(ReturnStmt *stmt) override {
     transform(stmt->getExpr());
     if (state.reachable)
-      exits.push_back(state);
+      exits.push_back({ExitKind::Return, state});
     state.reachable = false;
   }
 
   /// Exceptional exits do not require a fully initialized returned instance.
   void visit(ThrowStmt *stmt) override {
     transform(stmt->getExpr());
+    recordException();
     state.reachable = false;
   }
 
-  /// Merge normal try/handler exits and apply finally to returns and fallthrough.
-  /// Handlers start with entry facts because earlier operations may have thrown.
+  /// Merge exception-site facts and apply finally to every pending exit kind.
   void visit(TryStmt *stmt) override {
-    auto incoming = state;
     auto previousExits = exits.size();
+    exceptions.push_back({{}, {}, false});
     transform(stmt->getSuite());
+    auto thrown = exceptions.back();
+    exceptions.back() = {{}, {}, false};
     transform(stmt->getElse());
     auto normal = state;
+    bool catchesAll = false;
     for (auto handler : *stmt) {
-      state = incoming;
+      state = thrown;
+      state.aliases.erase(handler->getVar());
       transform(handler->getSuite());
       normal.intersect(state);
+      if (!handler->getException() ||
+          TypecheckVisitor(cache->typeCtx)
+              .extractType(handler->getException()->getType())
+              ->is(StdlibTypes::BaseException))
+        catchesAll = true;
     }
-    std::vector<InitializedFields> returning(exits.begin() + previousExits,
-                                             exits.end());
+    if (!catchesAll)
+      exceptions.back().intersect(thrown);
+    auto unhandled = exceptions.back();
+    exceptions.pop_back();
+    std::vector<Exit> pending(exits.begin() + previousExits, exits.end());
     exits.resize(previousExits);
-    for (const auto &exit : returning) {
-      state = exit;
+    for (const auto &exit : pending) {
+      state = exit.state;
       transform(stmt->getFinally());
       if (state.reachable)
-        exits.push_back(state);
+        exits.push_back({exit.kind, state});
     }
+    state = unhandled;
+    transform(stmt->getFinally());
+    recordException();
     state = normal;
     transform(stmt->getFinally());
   }
@@ -295,8 +406,10 @@ void TypecheckVisitor::checkFieldInitialization(types::FuncType *type,
     return;
   std::set<std::pair<FunctionStmt *, size_t>> active;
   std::map<std::pair<FunctionStmt *, size_t>, InitializedFields> summaries;
-  FieldInitializationVisitor visitor(ctx->cache, getClassRealization(parent), active,
-                                     summaries);
+  auto receiverType = extractFuncArgType(type)->getClass();
+  FieldInitializationVisitor visitor(
+      ctx->cache, getClassRealization(receiverType ? receiverType : parent), active,
+      summaries);
   auto initialized = visitor.analyze(function, 0);
   if (!initialized.reachable)
     return;

@@ -269,6 +269,168 @@ assert instance.own == 13
   }
 }
 
+TEST(FieldInitializationTest, TracksVirtualInitialization) {
+  for (bool baseWrites : {false, true}) {
+    for (bool childWrites : {false, true}) {
+      for (bool debug : {false, true}) {
+        SCOPED_TRACE(baseWrites ? "base writes" : "base skips");
+        SCOPED_TRACE(childWrites ? "child writes" : "child skips");
+        auto options = codon::Options::getDefault("build/codon_test");
+        options->debug = debug;
+        codon::Compiler compiler(*options);
+        std::string source = R"(
+class Base:
+  value: int
+  def __init__(self):
+    initialize_base(self)
+  def initialize(self):
+)";
+        source += baseWrites ? "    self.value = 1\n" : "    pass\n";
+        source += "class Child(Base):\n  def initialize(self):\n";
+        source += childWrites ? "    self.value = 42\n" : "    pass\n";
+        source += R"(
+def initialize_base(instance: Base):
+  instance.initialize()
+Child()
+)";
+        auto error = compiler.parseCode("field_initialization_virtual.codon", source);
+        if (childWrites) {
+          ASSERT_FALSE(bool(error)) << llvm::toString(std::move(error));
+          if (!baseWrites) {
+            auto *module = compiler.getCache()->module;
+            auto *base = module->getOrRealizeType("Base.0");
+            ASSERT_NE(base, nullptr);
+            EXPECT_EQ(module->getOrRealizeMethod(base, "__init__", {base}), nullptr);
+          }
+        } else {
+          ASSERT_TRUE(bool(error));
+          EXPECT_NE(
+              llvm::toString(std::move(error)).find(".value' may be uninitialized"),
+              std::string::npos);
+        }
+      }
+    }
+  }
+}
+
+TEST(FieldInitializationTest, RejectsDeferredWrites) {
+  for (bool asynchronous : {false, true}) {
+    for (bool constructor : {false, true}) {
+      for (bool debug : {false, true}) {
+        SCOPED_TRACE(asynchronous ? "coroutine" : "generator");
+        SCOPED_TRACE(constructor ? "constructor" : "helper");
+        auto options = codon::Options::getDefault("build/codon_test");
+        options->debug = debug;
+        codon::Compiler compiler(*options);
+        std::string source = "class Record:\n  value: int\n";
+        if (!constructor)
+          source += "  def __init__(self):\n    self.initialize()\n";
+        source += asynchronous ? "  async def " : "  def ";
+        source += constructor ? "__init__" : "initialize";
+        source += "(self):\n    self.value = 42\n";
+        if (!asynchronous)
+          source += "    yield 1\n";
+        source += "Record()\n";
+        auto error = compiler.parseCode("field_initialization_deferred.codon", source);
+        ASSERT_TRUE(bool(error));
+        EXPECT_NE(llvm::toString(std::move(error))
+                      .find("field 'Record.value' may be uninitialized"),
+                  std::string::npos);
+      }
+    }
+  }
+}
+
+TEST(FieldInitializationTest, RejectsReboundAliases) {
+  const std::vector<std::string> bodies = {
+      "      for unused in range(1):\n        target = other\n"
+      "      target.value = 42\n",
+      "      active = True\n      while active:\n        target = other\n"
+      "        active = False\n      target.value = 42\n",
+      "      for index in range(2):\n        if index == 1:\n"
+      "          target.value = 42\n          return\n        target = other\n"
+      "      self.value = 99\n",
+      "      for target in [other]:\n        target.value = 42\n        return\n"
+      "      self.value = 99\n",
+      "      try:\n        target = other\n        raise ValueError()\n"
+      "      except ValueError:\n        target.value = 42\n",
+      "      try:\n        fail(target := other)\n"
+      "      except ValueError:\n        target.value = 42\n",
+      "      try:\n        for target in instances(other):\n          pass\n"
+      "      except ValueError:\n        target.value = 42\n",
+  };
+  for (const auto &body : bodies) {
+    for (bool debug : {false, true}) {
+      SCOPED_TRACE(body);
+      auto options = codon::Options::getDefault("build/codon_test");
+      options->debug = debug;
+      codon::Compiler compiler(*options);
+      auto error = compiler.parseCode("field_initialization_alias.codon", R"(
+def fail(instance):
+  raise ValueError()
+def instances(instance):
+  yield instance
+  raise ValueError()
+class Record:
+  value: int
+  def __init__(self, other=None):
+    if other is None:
+      self.value = 1
+    else:
+      target = self
+)" + body + "Record(Record())\n");
+      ASSERT_TRUE(bool(error));
+      EXPECT_NE(llvm::toString(std::move(error))
+                    .find("field 'Record.value' may be uninitialized"),
+                std::string::npos);
+    }
+  }
+}
+
+TEST(FieldInitializationTest, ChecksFinallyExitOverrides) {
+  const std::vector<std::pair<std::string, bool>> bodies = {
+      {"    try:\n      raise ValueError()\n    finally:\n      return\n", false},
+      {"    try:\n      fail()\n    finally:\n      return\n", false},
+      {"    for unused in range(1):\n      try:\n        break\n"
+       "      finally:\n        return\n    self.value = 42\n",
+       false},
+      {"    for unused in range(1):\n      try:\n        continue\n"
+       "      finally:\n        return\n    self.value = 42\n",
+       false},
+      {"    try:\n      raise ValueError()\n    finally:\n"
+       "      self.value = 42\n      return\n",
+       true},
+      {"    try:\n      return\n    finally:\n      self.value = 42\n", true},
+      {"    try:\n      raise ValueError()\n    except:\n      self.value = 42\n"
+       "    finally:\n      return\n",
+       true},
+      {"    try:\n      raise ValueError()\n    except BaseException:\n"
+       "      self.value = 42\n    finally:\n      return\n",
+       true},
+  };
+  for (const auto &[body, valid] : bodies) {
+    for (bool debug : {false, true}) {
+      SCOPED_TRACE(body);
+      auto options = codon::Options::getDefault("build/codon_test");
+      options->debug = debug;
+      codon::Compiler compiler(*options);
+      auto error = compiler.parseCode("field_initialization_finally.codon",
+                                      "def fail():\n  raise ValueError()\n"
+                                      "class Record:\n  value: int\n"
+                                      "  def __init__(self):\n" +
+                                          body + "Record()\n");
+      if (valid) {
+        ASSERT_FALSE(bool(error)) << llvm::toString(std::move(error));
+      } else {
+        ASSERT_TRUE(bool(error));
+        EXPECT_NE(llvm::toString(std::move(error))
+                      .find("field 'Record.value' may be uninitialized"),
+                  std::string::npos);
+      }
+    }
+  }
+}
+
 TEST(FieldInitializationTest, ChecksLateRealizations) {
   for (bool pyext : {false, true}) {
     for (bool initialized : {false, true}) {
