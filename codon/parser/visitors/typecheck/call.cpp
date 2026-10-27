@@ -871,7 +871,7 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
 ///   `foo(1, 2)` -> `foo(1, Optional(2), T=int)`
 bool TypecheckVisitor::typecheckCallArgs(FuncType *calleeFn, std::vector<CallArg> &args,
                                          const PartialCallData &partial) {
-  bool wrappingDone = true;         // tracks whether all arguments are wrapped
+  bool wrappingDone = true;          // tracks whether all arguments are wrapped
   std::vector<TypePtr> replacements; // list of replacement arguments
 
   // Unify Self with the argument so that generics (e.g. N in Int[N].__lshift__)

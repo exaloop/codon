@@ -1543,6 +1543,7 @@ Expr *TypecheckVisitor::transformStaticFnHasDefault(CallExpr *expr) {
       return transform(N<BoolExpr>(argument.getDefault() != nullptr));
   }
   E(Error::CUSTOM, getSrcInfo(), "argument out of bounds");
+  return nullptr;
 }
 
 Expr *TypecheckVisitor::transformStaticFnGetDefault(CallExpr *expr) {
@@ -1560,6 +1561,7 @@ Expr *TypecheckVisitor::transformStaticFnGetDefault(CallExpr *expr) {
       return transform(argument.getDefault());
   }
   E(Error::CUSTOM, getSrcInfo(), "argument out of bounds");
+  return nullptr;
 }
 
 Expr *TypecheckVisitor::transformStaticFnWrapCallArgs(CallExpr *expr) {
@@ -1768,9 +1770,9 @@ SuiteStmt *TypecheckVisitor::generateSuperDispatchAST(FuncType *type) {
   for (auto base = std::next(mro.begin()); base != mro.end(); ++base) {
     realize(base->get());
     callArgs[0].getExpr()->setType(*base);
-    auto methods = findMatchingMethods(
-        base->get()->getClass(),
-        findMethod(base->get()->getClass(), attr->value), callArgs);
+    auto methods =
+        findMatchingMethods(base->get()->getClass(),
+                            findMethod(base->get()->getClass(), attr->value), callArgs);
     if (methods.empty())
       continue;
     auto *call = N<CallExpr>(
