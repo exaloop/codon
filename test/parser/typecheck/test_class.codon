@@ -316,6 +316,9 @@ class Bar[T]:
     def bar(self):
         return f'bar {self.y}/{self.y.__class__.__name__}'
 class FooBarBaz[T](Foo, Bar[T]):
+    def __init__(self):
+        Foo.__init__(self)
+        Bar[T].__init__(self)
     def baz(self):
         return f'baz! {self.foo()} {self.bar()}'
 # warning: cannot realize superclass Bar[T] of Foo; ignoring its super
@@ -407,9 +410,11 @@ print(f.__class__.__name__, f.x, f.y)
 
 class Bar:
     def __init__(self, y: float):
+        self.x = NoneType()
         self.y = Foo(y)
     def __init__(self, y: str):
         self.x = Foo(y)
+        self.y = NoneType()
 
 b = Bar(3.1)
 print(b.x.__class__.__name__, b.y.__class__.__name__, b.y.x, b.__class__.__name__)
@@ -526,6 +531,7 @@ class C(B):
     placeholder: str
     def __init__(self):
         super().__init__()
+        self.placeholder = ''
 test = C()
 
 #%% inherit_optional,barebones
@@ -671,6 +677,7 @@ class Factory:
     def __init__(self, value: int, offset: int = 0):
         events.append("init")
         assert self.value == value + offset
+        self.value = value + offset
 def argument():
     events.append("arg")
     return 10

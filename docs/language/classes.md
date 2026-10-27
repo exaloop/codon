@@ -59,7 +59,8 @@ print(q)  # (5, 6) -> (3, 4)
 
 ## Field initialization
 
-Codon warns when a field may be uninitialized when `__init__` returns normally.
+Codon reports a compile-time error when a field may be uninitialized when
+`__init__` returns normally.
 The check follows calls to known helper functions and methods, including base
 constructors called through `super()`. Initialization can therefore be split
 across helpers:
@@ -77,11 +78,11 @@ class Buffer:
 
 The analysis is conservative: assignments on only one branch do not guarantee
 initialization, and initialization that cannot be verified statically may still
-produce a warning. The check applies to regular classes; tuple classes and
+produce an error. The check applies to regular classes; tuple classes and
 compiler-internal classes are exempt. Tuple classes return complete tuple values
 from `__new__` rather than initializing fields through `__init__`.
 
-These warnings do not initialize storage or add runtime checks. Every
+This check does not initialize storage or add runtime checks. Every
 field must still be initialized before it is read.
 
 ## Self

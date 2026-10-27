@@ -139,18 +139,39 @@ TEST(TypeCoreTest, ChecksSharedTypeGraphsAndRestoresLevels) {
   EXPECT_EQ(leaf->level, 5);
 }
 
-// Missing or conditional writes warn, while initialization through aliases, generic
+// Missing or conditional writes are errors; initialization through aliases, generic
 // helpers, and super() is recognized. Decorator opt-outs suppress field diagnostics.
+TEST(FieldInitializationTest, RejectsUninitializedFields) {
+  const std::vector<std::pair<std::string, std::string>> constructors = {
+      {"Missing", "    pass\n"},
+      {"Conditional", "    if flag:\n      self.values = [1]\n"},
+      {"EarlyReturn", "    if flag:\n      return\n    self.values = [1]\n"},
+  };
+  for (const auto &[name, body] : constructors) {
+    for (bool debug : {false, true}) {
+      SCOPED_TRACE(name + (debug ? " debug" : " release"));
+      auto options = codon::Options::getDefault("build/codon_test");
+      options->debug = debug;
+      codon::Compiler compiler(*options);
+      auto error = compiler.parseCode("field_initialization.codon",
+                                      "class " + name +
+                                          ":\n  values: list[int]\n"
+                                          "  def __init__(self, flag: bool):\n" +
+                                          body + name + "(False)\n");
+      ASSERT_TRUE(bool(error));
+      EXPECT_NE(llvm::toString(std::move(error))
+                    .find("field '" + name +
+                          ".values' may be uninitialized when __init__ returns"),
+                std::string::npos);
+    }
+  }
+}
+
 TEST(FieldInitializationTest, TracksHelpersAndSupportsOptOut) {
   auto options = codon::Options::getDefault("build/codon_test");
   codon::Compiler compiler(*options);
   testing::internal::CaptureStderr();
   auto error = compiler.parseCode("field_initialization.codon", R"(
-class Missing:
-  values: list[int]
-  def __init__(self):
-    pass
-
 def initialize_values(Element: type, instance):
   target = instance
   target.values = [Element(1)]
@@ -161,12 +182,6 @@ class ThroughHelpers:
     self.initialize()
   def initialize(self):
     initialize_values(int, self)
-
-class Conditional:
-  values: list[int]
-  def __init__(self, flag: bool):
-    if flag:
-      self.values = [1]
 
 class Parent:
   value: int
@@ -189,21 +204,13 @@ class Value:
   def __init__(self):
     pass
 
-Missing()
 ThroughHelpers()
-Conditional(False)
 Inherits()
 Unchecked()
 Value(1).__init__()
 )");
   auto warnings = testing::internal::GetCapturedStderr();
   ASSERT_FALSE(bool(error)) << llvm::toString(std::move(error));
-  EXPECT_NE(warnings.find("field 'Missing.values' may be uninitialized"),
-            std::string::npos)
-      << warnings;
-  EXPECT_NE(warnings.find("field 'Conditional.values' may be uninitialized"),
-            std::string::npos)
-      << warnings;
   EXPECT_EQ(warnings.find("field 'ThroughHelpers.values'"), std::string::npos)
       << warnings;
   EXPECT_EQ(warnings.find("field 'Unchecked.values'"), std::string::npos) << warnings;

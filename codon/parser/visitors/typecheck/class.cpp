@@ -46,7 +46,7 @@ struct InitializedFields {
 };
 
 /// Conservatively track constructor field writes in a realized, typed AST.
-/// Follow known helper bodies so delegated initialization does not spuriously warn;
+/// Follow known helper bodies so delegated initialization is not spuriously rejected;
 /// this analysis emits diagnostics only and does not insert runtime field guards.
 class FieldInitializationVisitor : public CallbackASTVisitor<void, void> {
   /// Provides specialized helper bodies after call resolution.
@@ -271,7 +271,7 @@ public:
 };
 } // namespace
 
-/// Warn about fields not proven initialized at a realized __init__'s normal exits.
+/// Reject fields not proven initialized at a realized __init__'s normal exits.
 /// Tuple classes & internal classes are exempt.
 void TypecheckVisitor::checkFieldInitialization(types::FuncType *type,
                                                 FunctionStmt *function) {
@@ -292,11 +292,9 @@ void TypecheckVisitor::checkFieldInitialization(types::FuncType *type,
     return;
   for (const auto &field : getClassFields(parent)) {
     if (!initialized.fields.count(field.name)) {
-      auto source = function->getSrcInfo();
-      compilationWarning(
-          fmt::format("field '{}.{}' may be uninitialized when __init__ returns",
-                      getUnmangledName(parent->name), field.name),
-          source.file, source.line, source.col);
+      E(Error::CUSTOM, function,
+        "field '{}.{}' may be uninitialized when __init__ returns",
+        getUnmangledName(parent->name), field.name);
     }
   }
 }
