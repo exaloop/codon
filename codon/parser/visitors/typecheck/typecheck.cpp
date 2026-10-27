@@ -699,6 +699,14 @@ int TypecheckVisitor::matchCallable(Type *type, const std::vector<CallArg> &args
                                     Type *returnType, Type::Unification *us,
                                     ClassType *captured,
                                     std::vector<bool> *preserveUnions) {
+  return matchCallableImpl(type, args, returnType, us, captured, preserveUnions, false);
+}
+
+int TypecheckVisitor::matchCallableImpl(Type *type, const std::vector<CallArg> &args,
+                                        Type *returnType, Type::Unification *us,
+                                        ClassType *captured,
+                                        std::vector<bool> *preserveUnions,
+                                        bool instantiated) {
   // Nested CallableTrait::unify calls carry the journal, but no matching options.
   // Keep their probe mode here, without adding state to Unification or the context.
   static thread_local std::unordered_set<Type::Unification *> probes;
@@ -723,7 +731,9 @@ int TypecheckVisitor::matchCallable(Type *type, const std::vector<CallArg> &args
         return -1;
       function = instantiateType(methods.front(), cls);
     } else if (cls->getFunc()) {
-      function = instantiateType(cls);
+      // Overload candidates are already private instantiations with receiver
+      // generics bound. The probe journal still undoes any argument bindings.
+      function = instantiated ? cls->shared_from_this() : instantiateType(cls);
     }
     if (function) {
       auto fn = function->getFunc();
@@ -779,7 +789,8 @@ std::vector<types::FuncType *> TypecheckVisitor::findMatchingMethods(
     if (!mi)
       continue; // avoid overloads that have not been seen yet
     auto method = instantiateType(mi, typ);
-    int score = canCall(method->getFunc(), args, part);
+    int score = matchCallableImpl(method.get(), args, nullptr, nullptr, part,
+                                  nullptr, true);
     if (score != -1) {
       results.push_back(mi);
     }

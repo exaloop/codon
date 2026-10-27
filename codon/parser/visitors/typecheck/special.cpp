@@ -360,8 +360,10 @@ void TypecheckVisitor::prepareVTables() {
         auto oldLevel = getLogger().level;
         auto oldErrors = ctx->cache->errors;
         std::vector<std::pair<std::shared_ptr<TypeContext>, TypeContext>> contexts;
+        contexts.reserve(ctx->cache->imports.size());
+        std::unordered_set<TypeContext *> savedContexts;
         for (const auto &[name, imported] : ctx->cache->imports)
-          if (imported.ctx)
+          if (imported.ctx && savedContexts.insert(imported.ctx.get()).second)
             contexts.emplace_back(imported.ctx, *imported.ctx);
         std::set<std::pair<std::string, std::string>> incomplete;
         for (const auto &[name, function] : ctx->cache->functions)

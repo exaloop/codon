@@ -170,7 +170,7 @@ elseif(SYSTEM_BLAS)
     PRIVATE -Wl,--whole-archive $<TARGET_FILE:zlibstatic> $<TARGET_FILE:gc>
             $<TARGET_FILE:bz2> $<TARGET_FILE:liblzma> $<TARGET_FILE:re2>
             $<TARGET_FILE:hwy> $<TARGET_FILE:hwy_contrib>
-            $<TARGET_FILE:codonfloat> -Wl,--no-whole-archive)
+            -Wl,--no-whole-archive)
   find_package(BLAS REQUIRED)
   target_link_libraries(codonrt PUBLIC BLAS::BLAS)
 else()
