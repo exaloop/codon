@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include "llvm/ADT/SmallVector.h"
+#include <algorithm>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -49,6 +51,40 @@ struct Attribute {
 
 private:
   virtual std::ostream &doFormat(std::ostream &os) const { return os; }
+};
+
+/// Most AST nodes carry only source information and a few flags. Keep those
+/// entries adjacent to the node instead of allocating hash nodes and buckets.
+class AttributeMap {
+  llvm::SmallVector<std::pair<int, std::unique_ptr<Attribute>>, 2> values;
+
+public:
+  auto begin() { return values.begin(); }
+  auto end() { return values.end(); }
+  auto begin() const { return values.begin(); }
+  auto end() const { return values.end(); }
+  auto find(int key) {
+    return std::find_if(begin(), end(),
+                        [key](const auto &v) { return v.first == key; });
+  }
+  auto find(int key) const {
+    return std::find_if(begin(), end(),
+                        [key](const auto &v) { return v.first == key; });
+  }
+  std::unique_ptr<Attribute> &operator[](int key) {
+    auto entry = find(key);
+    if (entry != end())
+      return entry->second;
+    values.emplace_back(key, nullptr);
+    return values.back().second;
+  }
+  void erase(int key) {
+    auto entry = find(key);
+    if (entry != end())
+      values.erase(entry);
+  }
+  size_t size() const { return values.size(); }
+  void reserve(size_t size) { values.reserve(size); }
 };
 
 /// Attribute containing SrcInfo
@@ -348,8 +384,7 @@ private:
 
 } // namespace ir
 
-std::unordered_map<int, std::unique_ptr<ir::Attribute>>
-clone(const std::unordered_map<int, std::unique_ptr<ir::Attribute>> &t);
+ir::AttributeMap clone(const ir::AttributeMap &t);
 
 } // namespace codon
 

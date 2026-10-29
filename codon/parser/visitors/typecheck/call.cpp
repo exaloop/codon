@@ -585,8 +585,8 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
 
   // Handle reordered arguments (see @c reorderNamedArgs for details)
   bool partial = false;
-  auto reorderFn = [&](int starArgIndex, int kwstarArgIndex,
-                       const std::vector<std::vector<int>> &slots, bool _partial) {
+  auto reorderFn = [&](int starArgIndex, int kwstarArgIndex, const CallArgSlots &slots,
+                       bool _partial) {
     partial = _partial;
     return withClassGenerics(
         calleeFn,

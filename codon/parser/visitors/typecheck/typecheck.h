@@ -347,6 +347,7 @@ public:
   bool hasOverloads(const std::string &root) const;
   std::vector<std::string> getOverloads(const std::string &root) const;
   std::string getUnmangledName(const std::string &s) const;
+  const std::string &getUnmangledNameRef(const std::string &s) const;
   std::string getUserFacingName(const std::string &s) const;
   Cache::Class *getClass(const std::string &t) const;
   Cache::Class *getClass(types::Type *t) const;
@@ -362,10 +363,10 @@ public:
   static bool isDispatch(types::Type *f);
   bool isPolymorphic(types::FuncType *) const;
   bool isHeterogenous(types::Type *);
-  std::unordered_set<std::string> addClassGenerics(types::ClassType *typ,
-                                                   bool func = false,
-                                                   bool onlyMangled = false,
-                                                   bool instantiate = false);
+  llvm::SmallVector<std::string_view, 8> addClassGenerics(types::ClassType *typ,
+                                                          bool func = false,
+                                                          bool onlyMangled = false,
+                                                          bool instantiate = false);
   template <typename F>
   auto withClassGenerics(types::ClassType *typ, F fn, bool func = false,
                          bool onlyMangled = false, bool instantiate = false) {
@@ -375,7 +376,7 @@ public:
     // do not remove stuff that was added in the meantime, potentially by AssignExpr
     std::vector<std::pair<std::string, std::shared_ptr<TypecheckItem>>> addLater;
     for (auto &i : ctx->getBlock())
-      if (!in(added, i)) {
+      if (std::find(added.begin(), added.end(), std::string_view(i)) == added.end()) {
         addLater.emplace_back(i, ctx->forceFind(i));
       }
     ctx->popBlock();
@@ -508,8 +509,8 @@ public:
   /// Return list of instantiated base classes for a given type.
   std::vector<types::TypePtr> getBaseClasses(types::ClassType *type);
 
-  using ReorderDoneFn =
-      std::function<int(int, int, const std::vector<std::vector<int>> &, bool)>;
+  using CallArgSlots = llvm::SmallVector<llvm::SmallVector<int, 1>, 8>;
+  using ReorderDoneFn = std::function<int(int, int, const CallArgSlots &, bool)>;
   using ReorderErrorFn = std::function<int(error::Error, const SrcInfo &, std::string)>;
   /// Reorders a given vector or named arguments (consisting of names and the
   /// corresponding types) according to the signature of a given function.
@@ -521,6 +522,9 @@ public:
   int reorderNamedArgs(const types::FuncType *func, const std::vector<CallArg> &args,
                        const ReorderDoneFn &onDone, const ReorderErrorFn &onError,
                        const std::string &known = "") const;
+  void prepareCallLayout(FunctionStmt *ast) const;
+  bool acceptsCallShape(const types::FuncType *func,
+                        const std::vector<CallArg> &args) const;
 
   static bool isCanonicalName(const std::string &name);
   static types::FuncType *extractFunction(types::Type *t);

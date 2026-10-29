@@ -730,168 +730,21 @@ class ndarray[dtype, ndim: Literal[int]]:
                     ptrs = tuple(incr_ptr(ptrs[i], strides[i][0])
                                  for i in static.range(static.len(ptrs)))
 
-        def reorder_loops(strides):
-            if static.len(strides) == 0:
-                return ()
-
-            if static.len(strides) == 1:
-                return (0,)
-
-            if static.len(strides) == 2:
-                s0 = strides[0]
-                s1 = strides[1]
-                if s0 and abs(s0) < abs(s1):
-                    return (1, 0)
-                return (0, 1)
-
-            perm = util.tuple_range(static.len(strides))
-            perm, _ = util.sort_by_stride(perm, strides)
-            return perm
-
-        def broadcast_shapes(args, check: Literal[bool]):
-            def largest(args):
-                if static.len(args) == 1:
-                    return args[0]
-
-                a = args[0]
-                b = largest(args[1:])
-                if static.len(b) > static.len(a):
-                    return b
-                else:
-                    return a
-
-            if static.len(args) == 0:
-                return ()
-
-            t = largest(args)
-            N: Literal[int] = static.len(t)
-            ans = (0,) * N
-            p = Ptr[int](__ptr__(ans).as_byte())
-
-            for i in static.range(N):
-                p[i] = t[i]
-
-            for a in args:
-                for i in static.range(static.len(a)):
-                    x = a[len(a) - 1 - i]
-                    q = p + (len(t) - 1 - i)
-                    y = q[0]
-
-                    if y == 1:
-                        q[0] = x
-                    elif check and x != 1 and x != y:
-                        raise ValueError('shape mismatch: objects cannot be broadcast to a single shape')
-
-            return ans
-
-        def broadcast_to(x, shape, check: Literal[bool]):
-            N: Literal[int] = x.ndim
-            substrides = (0,) * N
-            p = Ptr[int](__ptr__(substrides).as_byte())
-            shape1, shape2 = shape[:-N], shape[-N:]
-
-            for i in static.range(N):
-                a = x.shape[i]
-                b = shape2[i]
-                if a == b:
-                    p[i] = x.strides[i]
-                else:
-                    if check:
-                        if a != 1:
-                            raise ValueError(f'cannot broadcast array of shape {x.shape} to shape {shape}')
-                    p[i] = 0
-
-            z = (0,) * (static.len(shape) - x.ndim)
-            new_strides = (*z, *substrides)
-            return ndarray(shape, new_strides, x.data)
-
-        def broadcast_arrays(arrays, check: Literal[bool]):
-            shape = broadcast_shapes(tuple(arr.shape for arr in arrays), check=check)
-            return tuple(broadcast_to(arr, shape, check=False) for arr in arrays)
-
-        def min_dim(arrays):
-            if static.len(arrays) == 0:
-                compile_error("[internal error] arrays empty")
-            elif static.len(arrays) == 1:
-                return arrays[0]
-            else:
-                arrays0 = arrays[0]
-                arrays1 = min_dim(arrays[1:])
-                if arrays1.ndim < arrays0.ndim:
-                    return arrays1
-                else:
-                    return arrays0
-
-        def max_dim(arrays):
-            if static.len(arrays) == 0:
-                compile_error("[internal error] arrays empty")
-            elif static.len(arrays) == 1:
-                return arrays[0]
-            else:
-                arrays0 = arrays[0]
-                arrays1 = max_dim(arrays[1:])
-                if arrays1.ndim > arrays0.ndim:
-                    return arrays1
-                else:
-                    return arrays0
-
-        def all_contiguous(arrays):
-            min_arr = min_dim(arrays)
-            max_arr = max_dim(arrays)
-            if min_arr.ndim == max_arr.ndim:
-                sh = True
-                cc = True
-                fc = True
-
-                for i in static.range(static.len(arrays)):
-                    arr = arrays[i]
-                    if i > 0:
-                        sh = sh and (arr.shape == arrays[0].shape)
-                    cc1, fc1 = arr._contig
-                    cc = cc and cc1
-                    fc = fc and fc1
-
-                return sh and (cc or fc), cc
-            else:
-                return False, False
-
-        def alloc_array(count, perm_shape, dtype: type):
-            p = Ptr[dtype](count)
-            strides = ndarray(perm_shape, p).strides
-            return (p, strides)
-
-        def broadcast_args(arrays, broadcast: Literal[str], check: Literal[bool]):
-            if broadcast == 'none':
-                shape = arrays[0].shape
-                strides = tuple(arr.strides for arr in arrays)
-            elif broadcast == 'first':
-                shape = arrays[0].shape
-                arrays1 = arrays[:1] + tuple(broadcast_to(arr, shape, check=check) for arr in arrays[1:])
-                strides = tuple(arr.strides for arr in arrays1)
-            elif broadcast == 'all':
-                arrays1 = broadcast_arrays(arrays, check=check)
-                shape = arrays1[0].shape
-                strides = tuple(arr.strides for arr in arrays1)
-            else:
-                compile_error("'broadcast' argument must be 'none', 'first' or 'all'")
-
-            return shape, strides
-
         if static.len(arrays) == 0:
             return
 
-        all_contig, ccontig = all_contiguous(arrays)
-        min_arr = min_dim(arrays)
-        max_arr = max_dim(arrays)
+        all_contig, ccontig = _loop_all_contiguous(arrays)
+        min_arr = _loop_min_dim(arrays)
+        max_arr = _loop_max_dim(arrays)
 
         if min_arr.ndim == max_arr.ndim:
             if all_contig:
                 shape = arrays[0].shape
                 strides = tuple(arr.strides for arr in arrays)
             else:
-                shape, strides = broadcast_args(arrays, broadcast, check)
+                shape, strides = _loop_broadcast_args(arrays, broadcast, check)
         else:
-            shape, strides = broadcast_args(arrays, broadcast, check)
+            shape, strides = _loop_broadcast_args(arrays, broadcast, check)
 
         alloc_tuple = util.zero(alloc)
 
@@ -909,7 +762,7 @@ class ndarray[dtype, ndim: Literal[int]]:
             elif all_contig:
                 output_strides = ndarray(shape, Ptr[u8](), fcontig=not ccontig).strides
             else:
-                perm = reorder_loops(max_arr.strides) if optimize_order else None
+                perm = _loop_reorder_loops(max_arr.strides) if optimize_order else None
                 perm_shape = util.tuple_perm(shape, perm)
                 output_strides = ndarray(perm_shape, Ptr[u8]()).strides
                 if perm is not None:
@@ -918,13 +771,13 @@ class ndarray[dtype, ndim: Literal[int]]:
 
         if static.len(alloc_tuple) > 0:
             if optimize_order:
-                perm0 = reorder_loops(max_arr.strides)
+                perm0 = _loop_reorder_loops(max_arr.strides)
             else:
                 perm0 = None
             count = util.count(shape)
             perm_shape = util.tuple_perm(shape, perm0)
             # `allocated` is a tuple of (ptr, strides) pairs
-            allocated = tuple(alloc_array(count, perm_shape, type(alloc_tuple[i]))
+            allocated = tuple(_loop_alloc_array(count, perm_shape, type(alloc_tuple[i]))
                               for i in static.range(static.len(alloc_tuple)))
         else:
             perm0 = None
@@ -948,7 +801,7 @@ class ndarray[dtype, ndim: Literal[int]]:
 
         if optimize_order:
             if perm0 is None:
-                perm = reorder_loops(max_arr.strides)
+                perm = _loop_reorder_loops(max_arr.strides)
             else:
                 perm = perm0
             shape = util.tuple_perm(shape, perm)
@@ -1452,3 +1305,152 @@ class ndarray[dtype, ndim: Literal[int]]:
 
     def _set_flat(self, idx: int, val, check: Literal[bool]):
         self._ptr_flat(idx, check=check)[0] = util.cast(val, dtype)
+
+
+# Layout helpers are kept at module scope to allow their reuse across different _loop specializations
+def _loop_reorder_loops(strides):
+    if static.len(strides) == 0:
+        return ()
+
+    if static.len(strides) == 1:
+        return (0,)
+
+    if static.len(strides) == 2:
+        s0 = strides[0]
+        s1 = strides[1]
+        if s0 and abs(s0) < abs(s1):
+            return (1, 0)
+        return (0, 1)
+
+    perm = util.tuple_range(static.len(strides))
+    perm, _ = util.sort_by_stride(perm, strides)
+    return perm
+
+def _loop_broadcast_shapes(args, check: Literal[bool]):
+    def largest(args):
+        if static.len(args) == 1:
+            return args[0]
+
+        a = args[0]
+        b = largest(args[1:])
+        if static.len(b) > static.len(a):
+            return b
+        else:
+            return a
+
+    if static.len(args) == 0:
+        return ()
+
+    t = largest(args)
+    N: Literal[int] = static.len(t)
+    ans = (0,) * N
+    p = Ptr[int](__ptr__(ans).as_byte())
+
+    for i in static.range(N):
+        p[i] = t[i]
+
+    for a in args:
+        for i in static.range(static.len(a)):
+            x = a[len(a) - 1 - i]
+            q = p + (len(t) - 1 - i)
+            y = q[0]
+
+            if y == 1:
+                q[0] = x
+            elif check and x != 1 and x != y:
+                raise ValueError('shape mismatch: objects cannot be broadcast to a single shape')
+
+    return ans
+
+def _loop_broadcast_to(x, shape, check: Literal[bool]):
+    N: Literal[int] = x.ndim
+    substrides = (0,) * N
+    p = Ptr[int](__ptr__(substrides).as_byte())
+    shape1, shape2 = shape[:-N], shape[-N:]
+
+    for i in static.range(N):
+        a = x.shape[i]
+        b = shape2[i]
+        if a == b:
+            p[i] = x.strides[i]
+        else:
+            if check:
+                if a != 1:
+                    raise ValueError(f'cannot broadcast array of shape {x.shape} to shape {shape}')
+            p[i] = 0
+
+    z = (0,) * (static.len(shape) - x.ndim)
+    new_strides = (*z, *substrides)
+    return ndarray(shape, new_strides, x.data)
+
+def _loop_broadcast_arrays(arrays, check: Literal[bool]):
+    shape = _loop_broadcast_shapes(tuple(arr.shape for arr in arrays), check=check)
+    return tuple(_loop_broadcast_to(arr, shape, check=False) for arr in arrays)
+
+def _loop_min_dim(arrays):
+    if static.len(arrays) == 0:
+        compile_error("[internal error] arrays empty")
+    elif static.len(arrays) == 1:
+        return arrays[0]
+    else:
+        arrays0 = arrays[0]
+        arrays1 = _loop_min_dim(arrays[1:])
+        if arrays1.ndim < arrays0.ndim:
+            return arrays1
+        else:
+            return arrays0
+
+def _loop_max_dim(arrays):
+    if static.len(arrays) == 0:
+        compile_error("[internal error] arrays empty")
+    elif static.len(arrays) == 1:
+        return arrays[0]
+    else:
+        arrays0 = arrays[0]
+        arrays1 = _loop_max_dim(arrays[1:])
+        if arrays1.ndim > arrays0.ndim:
+            return arrays1
+        else:
+            return arrays0
+
+def _loop_all_contiguous(arrays):
+    min_arr = _loop_min_dim(arrays)
+    max_arr = _loop_max_dim(arrays)
+    if min_arr.ndim == max_arr.ndim:
+        sh = True
+        cc = True
+        fc = True
+
+        for i in static.range(static.len(arrays)):
+            arr = arrays[i]
+            if i > 0:
+                sh = sh and (arr.shape == arrays[0].shape)
+            cc1, fc1 = arr._contig
+            cc = cc and cc1
+            fc = fc and fc1
+
+        return sh and (cc or fc), cc
+    else:
+        return False, False
+
+def _loop_alloc_array(count, perm_shape, dtype: type):
+    p = Ptr[dtype](count)
+    strides = ndarray(perm_shape, p).strides
+    return (p, strides)
+
+def _loop_broadcast_args(arrays, broadcast: Literal[str], check: Literal[bool]):
+    if broadcast == 'none':
+        shape = arrays[0].shape
+        strides = tuple(arr.strides for arr in arrays)
+    elif broadcast == 'first':
+        shape = arrays[0].shape
+        arrays1 = arrays[:1] + tuple(_loop_broadcast_to(arr, shape, check=check) for arr in arrays[1:])
+        strides = tuple(arr.strides for arr in arrays1)
+    elif broadcast == 'all':
+        arrays1 = _loop_broadcast_arrays(arrays, check=check)
+        shape = arrays1[0].shape
+        strides = tuple(arr.strides for arr in arrays1)
+    else:
+        compile_error("'broadcast' argument must be 'none', 'first' or 'all'")
+
+    return shape, strides

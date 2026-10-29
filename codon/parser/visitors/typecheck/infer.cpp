@@ -321,6 +321,7 @@ types::Type *TypecheckVisitor::realizeType(types::ClassType *type) {
   // Realizations should always be visible, so add them to the toplevel
   rn = type->ClassType::realizedName();
   auto rt = std::static_pointer_cast<ClassType>(realized->generalize(0));
+  rt->freeze();
   auto val = std::make_shared<TypecheckItem>(rn, "", ctx->getModule(), rt);
   if (!val->type->is(StdlibTypes::Type) || isMetaclassType(val->type.get()))
     val->type = instantiateTypeVar(realized);
@@ -397,6 +398,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
 
   auto oldCtx = this->ctx;
   this->ctx = imp->ctx;
+  ctx->prepareCheckpoint();
   if (ctx->getRealizationDepth() > MAX_REALIZATION_DEPTH) {
     E(Error::MAX_REALIZATION, getSrcInfo(), getUserFacingName(type->getFuncName()));
   }

@@ -45,7 +45,7 @@ public:
   int unify(Type *typ, Unification *undo) override;
   TypePtr generalize(int atLevel) const override;
   TypePtr instantiate(int atLevel, int *unboundCount,
-                      std::unordered_map<int, TypePtr> *cache) const override;
+                      InstantiationCache *cache) const override;
 
 public:
   Type *follow() override;

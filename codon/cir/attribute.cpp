@@ -196,9 +196,9 @@ std::ostream &PartialFunctionAttribute::doFormat(std::ostream &os) const {
 
 } // namespace ir
 
-std::unordered_map<int, std::unique_ptr<ir::Attribute>>
-clone(const std::unordered_map<int, std::unique_ptr<ir::Attribute>> &t) {
-  std::unordered_map<int, std::unique_ptr<ir::Attribute>> r;
+ir::AttributeMap clone(const ir::AttributeMap &t) {
+  ir::AttributeMap r;
+  r.reserve(t.size());
   for (auto &[k, v] : t)
     r[k] = v->clone();
   return r;

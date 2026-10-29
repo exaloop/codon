@@ -3,8 +3,10 @@
 #pragma once
 
 #include <deque>
+#include <functional>
 #include <list>
 #include <memory>
+#include <optional>
 #include <stack>
 #include <string>
 #include <unordered_map>
@@ -23,9 +25,10 @@ namespace codon::ast {
 template <typename T> class Context : public std::enable_shared_from_this<Context<T>> {
 public:
   using Item = std::shared_ptr<T>;
+  using BindingStack = llvm::SmallVector<Item, 2>;
 
 protected:
-  using Map = std::unordered_map<std::string, std::list<Item>>;
+  using Map = std::unordered_map<std::string, BindingStack>;
   /// Maps a identifier to a stack of objects that share the same identifier.
   /// Each object is represented by a nesting level and a pointer to that object.
   /// Top of the stack is the current block; the bottom is the outer-most block.
@@ -34,7 +37,7 @@ protected:
   Map map;
   /// Stack of blocks and their corresponding identifiers. Top of the stack is the
   /// current block.
-  std::deque<std::list<std::string>> stack;
+  std::deque<std::vector<std::string>> stack;
 
 private:
   /// Set of current context flags.
@@ -47,14 +50,103 @@ private:
 public:
   explicit Context(std::string filename) : filename(std::move(filename)) {
     /// Add a top-level block to the stack.
-    stack.push_front(std::list<std::string>());
+    stack.emplace_front();
   }
   virtual ~Context() = default;
+  Context(const Context &) = default;
+  Context &operator=(const Context &) = default;
+  Context(Context &&) noexcept = default;
+  Context &operator=(Context &&) noexcept = default;
+
+  /// Record only bindings changed during a speculative realization. Context stacks
+  /// and other inference state are saved separately by TypeContext.
+  class BindingCheckpoint {
+    Context *context;
+    BindingCheckpoint *previous;
+    std::unordered_map<std::string, std::optional<BindingStack>> bindings;
+    std::function<void()> saveState;
+    bool prepared = false;
+    friend class Context;
+
+  public:
+    explicit BindingCheckpoint(Context *context, std::function<void()> saveState = {})
+        : context(context), saveState(std::move(saveState)) {
+      auto &entry = checkpoints[context];
+      previous = entry;
+      entry = this;
+    }
+    BindingCheckpoint(const BindingCheckpoint &) = delete;
+    void prepare() {
+      if (!prepared) {
+        prepared = true;
+        if (saveState)
+          saveState();
+      }
+    }
+    ~BindingCheckpoint() {
+      if (previous)
+        checkpoints[context] = previous;
+      else
+        checkpoints.erase(context);
+    }
+    template <typename Preserve> void rollback(Preserve preserve) {
+      for (auto &[name, saved] : bindings) {
+        if (saved) {
+          context->map[name] = std::move(*saved);
+        } else {
+          auto current = context->map.find(name);
+          if (current != context->map.end() && !current->second.empty() &&
+              preserve(current->second.back())) {
+            auto item = current->second.back();
+            current->second.clear();
+            current->second.push_back(std::move(item));
+          } else {
+            context->map.erase(name);
+          }
+        }
+      }
+    }
+  };
+
+protected:
+  inline static thread_local std::unordered_map<Context *, BindingCheckpoint *>
+      checkpoints;
+  void recordBinding(const std::string &name) {
+    if (checkpoints.empty())
+      return;
+    auto found = checkpoints.find(this);
+    if (found == checkpoints.end())
+      return;
+    for (auto *checkpoint = found->second; checkpoint;
+         checkpoint = checkpoint->previous) {
+      checkpoint->prepare();
+      if (checkpoint->bindings.count(name))
+        continue;
+      auto current = map.find(name);
+      if (current == map.end())
+        checkpoint->bindings.emplace(name, std::nullopt);
+      else
+        checkpoint->bindings.emplace(name, current->second);
+    }
+  }
+
+public:
+  void prepareCheckpoint() {
+    if (checkpoints.empty())
+      return;
+    auto found = checkpoints.find(this);
+    if (found != checkpoints.end())
+      for (auto *checkpoint = found->second; checkpoint;
+           checkpoint = checkpoint->previous)
+        checkpoint->prepare();
+  }
 
   /// Add an object to the top of the stack.
   virtual void add(const std::string &name, const Item &var) {
     seqassertn(!name.empty(), "adding an empty identifier");
-    map[name].push_front(var);
+    recordBinding(name);
+    auto &bindings = map[name];
+    bindings.insert(bindings.begin(), var);
     stack.front().push_back(name);
   }
   /// Remove the top-most object with a given identifier.
@@ -74,19 +166,23 @@ public:
     return it != map.end() ? it->second.front() : nullptr;
   }
   /// Return all objects that share a common identifier or nullptr if it does not exist.
-  virtual std::list<Item> *find_all(const std::string &name) {
+  virtual BindingStack *find_all(const std::string &name) {
     auto it = map.find(name);
     return it != map.end() ? &(it->second) : nullptr;
   }
   /// Add a new block (i.e. adds a stack level).
-  virtual void addBlock() { stack.push_front(std::list<std::string>()); }
+  virtual void addBlock() {
+    if (!checkpoints.empty())
+      prepareCheckpoint();
+    stack.emplace_front();
+  }
   /// Remove the top-most block and all variables it holds.
   virtual void popBlock() {
     for (auto &name : stack.front())
       removeFromMap(name);
     stack.pop_front();
   }
-  std::list<std::string> getBlock() { return stack.front(); }
+  const std::vector<std::string> &getBlock() const { return stack.front(); }
 
   void removeFromTopStack(const std::string &name) {
     auto it = std::ranges::find(stack.front(), name);
@@ -112,8 +208,9 @@ protected:
     auto i = map.find(name);
     if (i == map.end())
       return;
+    recordBinding(name);
     seqassertn(i->second.size(), "identifier {} not found in the map", name);
-    i->second.pop_front();
+    i->second.erase(i->second.begin());
     if (!i->second.size())
       map.erase(name);
   }

@@ -10,6 +10,14 @@
 #include "llvm/Support/Error.h"
 #include <fmt/format.h>
 
+template <>
+struct fmt::formatter<codon::SourceFile> : fmt::formatter<std::string_view> {
+  template <typename Context>
+  auto format(const codon::SourceFile &file, Context &ctx) const {
+    return fmt::formatter<std::string_view>::format(file.str(), ctx);
+  }
+};
+
 namespace codon {
 namespace error {
 

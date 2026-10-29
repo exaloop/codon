@@ -1,11 +1,33 @@
 // Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
 #include "error.h"
+#include <mutex>
+#include <unordered_set>
 
 namespace codon {
 
-SrcInfo::SrcInfo(std::string file, int line, int col, int len)
-    : file(std::move(file)), line(line), col(col), len(len), id(0) {
+InternedString::InternedString(std::string_view file) {
+  if (file.empty())
+    return;
+  // Parsing usually creates many consecutive locations in the same file.
+  static thread_local const std::string *last = nullptr;
+  if (last && *last == file) {
+    value = last;
+    return;
+  }
+  struct Pool {
+    std::mutex mutex;
+    std::unordered_set<std::string> files;
+  };
+  // Locations can outlive compiler instances and static destructors.
+  static auto *pool = new Pool;
+  std::lock_guard<std::mutex> lock(pool->mutex);
+  auto [entry, inserted] = pool->files.emplace(file);
+  value = last = &*entry;
+}
+
+SrcInfo::SrcInfo(std::string_view file, int line, int col, int len)
+    : file(file), line(line), col(col), len(len), id(0) {
   if (this->file.empty() && line != 0)
     line++;
   static int nextId = 0;

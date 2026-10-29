@@ -285,7 +285,7 @@ std::unique_ptr<llvm::Module> LLVMVisitor::makeModule(llvm::LLVMContext &context
   B = std::make_unique<llvm::IRBuilder<>>(context);
 
   auto *srcInfo = src ? src : getDefaultSrcInfo();
-  M->setSourceFileName(srcInfo->file);
+  M->setSourceFileName(srcInfo->file.str());
   // debug info setup
   db.builder = std::make_unique<llvm::DIBuilder>(*M);
   auto *file = db.getFile(srcInfo->file);

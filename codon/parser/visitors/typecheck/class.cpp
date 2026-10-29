@@ -528,13 +528,13 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         ctx->addAlwaysVisible(classItem);
       }
       // Create a cached AST.
-      stmt->setAttribute(Attr::Module, ctx->moduleName.status == ImportFile::STDLIB
+      stmt->setAttribute(Attr::Module, ctx->getModuleInfo().status == ImportFile::STDLIB
                                            ? STDLIB_IMPORT
-                                           : ctx->moduleName.path);
+                                           : ctx->getModuleInfo().path);
       cls.ast = N<ClassStmt>(canonicalName, args, N<SuiteStmt>());
       cls.ast->cloneAttributesFrom(stmt);
       cls.ast->baseClasses = stmt->baseClasses;
-      cls.module = ctx->moduleName.path;
+      cls.module = ctx->getModuleInfo().path;
       cls.jitCell = ctx->cache->jitCell;
 
       // Codegen default magic methods
@@ -1282,6 +1282,7 @@ types::ClassType *TypecheckVisitor::generateTuple(size_t n, bool generateNew) {
 
     llvm::cantFail(ScopingVisitor::apply(ctx->cache, ext));
     auto rctx = getImport(STDLIB_IMPORT)->ctx;
+    rctx->prepareCheckpoint();
     auto oldBases = rctx->bases;
     rctx->bases.clear();
     rctx->bases.push_back(oldBases[0]);

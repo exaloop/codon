@@ -47,7 +47,7 @@ Stmt *TypecheckVisitor::apply(
   cache->imports[file].update(MAIN_IMPORT, file, ctx);
   cache->imports[MAIN_IMPORT] = cache->imports[file];
   ctx->setFilename(file);
-  ctx->moduleName = {ImportFile::PACKAGE, file, MODULE_MAIN};
+  ctx->setModule({ImportFile::PACKAGE, file, MODULE_MAIN});
 
   // Prepare the code
   auto tv = TypecheckVisitor(ctx, preamble);
@@ -122,7 +122,7 @@ void TypecheckVisitor::loadStdLibrary(
 
   // Load the standard library
   stdlib->isStdlibLoading = true;
-  stdlib->moduleName = {ImportFile::STDLIB, stdlibPath->path, "__init__"};
+  stdlib->setModule({ImportFile::STDLIB, stdlibPath->path, "__init__"});
   stdlib->setFilename(stdlibPath->path);
 
   // 1. Core definitions
@@ -185,6 +185,7 @@ void TypecheckVisitor::loadStdLibrary(
 /// Simplify an AST node. Assumes that the standard library is loaded.
 Stmt *TypecheckVisitor::apply(const std::shared_ptr<TypeContext> &ctx, Stmt *node,
                               const std::string &file, bool sweepForceRealize) {
+  ctx->prepareCheckpoint();
   auto oldFilename = ctx->getFilename();
   ctx->setFilename(file);
   auto preamble = ctx->cache->N<ast::SuiteStmt>();
@@ -557,8 +558,7 @@ int TypecheckVisitor::canCall(FuncType *fn, const std::vector<CallArg> &args,
   const auto &niGenerics = fn->ast->getNonInferrableGenerics();
   return reorderNamedArgs(
       fn, args,
-      [&](int star, int kwstar, const std::vector<std::vector<int>> &slots,
-          bool partial) {
+      [&](int star, int kwstar, const CallArgSlots &slots, bool partial) {
         return withClassGenerics(
             fn,
             [&]() {
@@ -691,7 +691,7 @@ int TypecheckVisitor::canCall(FuncType *fn, const std::vector<CallArg> &args,
             },
             true);
       },
-      [](error::Error, const SrcInfo &, const std::string &) { return -1; }, known);
+      {}, known);
 }
 
 /// Shared entry for CallableTrait, Callable adapters, and static call probes.
@@ -709,12 +709,13 @@ int TypecheckVisitor::matchCallableImpl(Type *type, const std::vector<CallArg> &
                                         bool instantiated) {
   // Nested CallableTrait::unify calls carry the journal, but no matching options.
   // Keep their probe mode here, without adding state to Unification or the context.
-  static thread_local std::unordered_set<Type::Unification *> probes;
+  static thread_local llvm::SmallVector<Type::Unification *, 8> probes;
   Type::Unification probe;
   auto changes = us ? us : &probe;
   if (!us)
-    probes.insert(changes);
-  const bool probing = probes.count(changes);
+    probes.push_back(changes);
+  const bool probing =
+      !us || std::find(probes.begin(), probes.end(), changes) != probes.end();
   auto match = [&]() -> int {
     auto cls = type->getClass();
     if (!cls || (!cls->is(StdlibTypes::Function) && !cls->getPartial() &&
@@ -763,7 +764,7 @@ int TypecheckVisitor::matchCallableImpl(Type *type, const std::vector<CallArg> &
   };
   auto undo = [&]() {
     if (!us) {
-      probes.erase(changes);
+      probes.pop_back();
       probe.undo();
     }
   };
@@ -788,6 +789,10 @@ std::vector<types::FuncType *> TypecheckVisitor::findMatchingMethods(
   for (const auto &mi : methods) {
     if (!mi)
       continue; // avoid overloads that have not been seen yet
+    // Captured/partial arguments need the full reorder path. Other calls can
+    // reject impossible shapes before allocating a type
+    if (!part && !(typ && typ->getPartial()) && !acceptsCallShape(mi, args))
+      continue;
     auto method = instantiateType(mi, typ);
     int score = matchCallableImpl(method.get(), args, nullptr, nullptr, part,
                                   nullptr, true);
@@ -865,8 +870,6 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     return {true, type, fn};
   }
 
-  std::unordered_set<std::string> hints = {StdlibTypes::Generator, "float",
-                                           StdlibTypes::Optional, "pyobj"};
   if (!expectedType || !expectedType->getStaticKind()) {
     if (exprType->getStaticKind()) {
       exprType = getUnderlyingStaticType(exprType);
@@ -875,7 +878,10 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     }
   }
 
-  if (!exprClass && expectedClass && in(hints, expectedClass->name)) {
+  if (!exprClass && expectedClass &&
+      (expectedClass->name == StdlibTypes::Generator ||
+       expectedClass->name == "float" || expectedClass->name == StdlibTypes::Optional ||
+       expectedClass->name == "pyobj")) {
     return {false, nullptr, nullptr}; // argument type not yet known.
   }
 
@@ -1303,9 +1309,12 @@ std::vector<std::string> TypecheckVisitor::getOverloads(const std::string &root)
 }
 
 std::string TypecheckVisitor::getUnmangledName(const std::string &s) const {
-  if (in(ctx->cache->reverseIdentifierLookup, s))
-    return ctx->cache->rev(s);
-  return s;
+  return getUnmangledNameRef(s);
+}
+
+const std::string &TypecheckVisitor::getUnmangledNameRef(const std::string &s) const {
+  auto found = ctx->cache->reverseIdentifierLookup.find(s);
+  return found == ctx->cache->reverseIdentifierLookup.end() ? s : found->second;
 }
 
 std::string TypecheckVisitor::getUserFacingName(const std::string &s) const {
@@ -1423,10 +1432,10 @@ bool TypecheckVisitor::isHeterogenous(types::Type *type) {
   return false;
 }
 
-std::unordered_set<std::string>
+llvm::SmallVector<std::string_view, 8>
 TypecheckVisitor::addClassGenerics(types::ClassType *typ, bool func, bool onlyMangled,
                                    bool instantiate) {
-  std::unordered_set<std::string> added;
+  llvm::SmallVector<std::string_view, 8> added;
   auto addGen = [&](const types::ClassType::Generic &g) {
     auto t = g.type;
     if (instantiate) {
@@ -1441,11 +1450,11 @@ TypecheckVisitor::addClassGenerics(types::ClassType *typ, bool func, bool onlyMa
               *(g.type));
     if (!g.staticKind && (!t->is(StdlibTypes::Type) || isMetaclassType(t.get())))
       t = instantiateTypeVar(t.get());
-    auto n = onlyMangled ? g.name : getUnmangledName(g.name);
+    const auto &n = onlyMangled ? g.name.str() : getUnmangledNameRef(g.name.str());
     auto v = ctx->addType(n, g.name, t);
-    added.insert(n);
+    added.push_back(n);
     if (n != g.name)
-      added.insert(g.name);
+      added.push_back(g.name.str());
     v->generic = true;
   };
 
@@ -1636,7 +1645,7 @@ types::TypePtr TypecheckVisitor::instantiateType(const SrcInfo &srcInfo,
                                                  types::Type *type,
                                                  types::ClassType *generics) const {
   seqassert(type, "type is null");
-  std::unordered_map<int, types::TypePtr> genericCache;
+  types::InstantiationCache genericCache;
   if (generics) {
     generics = getUnderlyingStaticType(generics)->getClass();
     for (auto &g : generics->hiddenGenerics)
@@ -1658,7 +1667,7 @@ types::TypePtr TypecheckVisitor::instantiateType(const SrcInfo &srcInfo,
   }
   auto t = type->instantiate(ctx->typecheckLevel, &(ctx->cache->unboundCount),
                              &genericCache);
-  for (auto &val : genericCache | std::views::values) {
+  for (auto &[id, val] : genericCache) {
     if (auto l = val->getLink()) {
       val->setSrcInfo(srcInfo);
       if (l->defaultType) {
@@ -1755,126 +1764,154 @@ std::vector<types::TypePtr> TypecheckVisitor::getBaseClasses(types::ClassType *t
   return bases;
 }
 
+bool TypecheckVisitor::acceptsCallShape(const FuncType *func,
+                                        const std::vector<CallArg> &args) const {
+  // Ellipsis/captured calls have additional slot rules. Leave them to the
+  // existing full matcher, without making a speculative arity decision here.
+  for (const auto &arg : args)
+    if (cast<EllipsisExpr>(arg.value))
+      return true;
+  const auto &layout = func->ast->getCallLayout();
+  size_t positional = 0;
+  for (const auto &arg : args)
+    positional += arg.name.empty();
+  if (positional > layout.positionalLimit && layout.star == -1)
+    return false;
+  llvm::SmallVector<int, 8> namedSlots;
+  for (const auto &arg : args) {
+    if (arg.name.empty())
+      continue;
+    int slot = -1;
+    for (auto i = layout.keywords.rbegin(); i != layout.keywords.rend(); ++i)
+      if (i->first == arg.name) {
+        slot = i->second;
+        break;
+      }
+    if (slot == -1) {
+      if (layout.kwstar == -1)
+        return false;
+    } else {
+      if (slot < std::min<size_t>(positional, layout.positionalLimit))
+        return false;
+      namedSlots.push_back(slot);
+    }
+  }
+  for (auto slot : layout.requiredValues)
+    if (slot >= positional &&
+        std::find(namedSlots.begin(), namedSlots.end(), slot) == namedSlots.end())
+      return false;
+  return true;
+}
+
 int TypecheckVisitor::reorderNamedArgs(const types::FuncType *func,
                                        const std::vector<CallArg> &args,
                                        const ReorderDoneFn &onDone,
                                        const ReorderErrorFn &onError,
                                        const std::string &known) const {
-  // See https://docs.python.org/3.6/reference/expressions.html#calls for details.
-  // Final score:
-  //  - +1 for each matched argument
-  //  -  0 for *args/**kwargs/default arguments
-  //  - -1 for failed match
-  int score = 0;
-
-  // 0. Find *args and **kwargs
-  // True if there is a trailing ellipsis (full partial: fn(all_args, ...))
+  // Preserve argument ordering/scoring for ordinary calls and partials. Probe
+  // callers leave onError empty, avoiding diagnostic construction on rejection.
   bool partial = !args.empty() && args.back().name.empty() &&
                  cast<EllipsisExpr>(args.back().value) &&
                  cast<EllipsisExpr>(args.back().value)->isPartial();
-
-  int starArgIndex = -1, kwstarArgIndex = -1;
-  int positionalLimit = func->ast->size();
-  for (int i = 0; i < func->ast->size(); i++) {
-    if ((*func->ast)[i].kind == Param::KeywordOnly ||
-        startswith((*func->ast)[i].name, "*"))
-      positionalLimit = std::min(positionalLimit, i);
-    if (startswith((*func->ast)[i].name, "**"))
-      kwstarArgIndex = i, score -= 2;
-    else if (startswith((*func->ast)[i].name, "*"))
-      starArgIndex = i, score -= 2;
-  }
-
-  // 1. Assign positional arguments to slots
-  // Each slot contains a list of arg's indices
-  std::vector<std::vector<int>> slots(func->ast->size());
-  seqassert(known.empty() || func->ast->size() == known.size(), "bad 'known' string");
-  std::vector<int> extra;
-  std::map<std::string, int> namedArgs,
-      extraNamedArgs; // keep the map---we need it sorted!
-  for (int ai = 0, si = 0; ai < args.size() - partial; ai++) {
+  const auto &layout = func->ast->getCallLayout();
+  const int starArgIndex = layout.star, kwstarArgIndex = layout.kwstar;
+  const int positionalLimit = layout.positionalLimit;
+  int score = layout.variadicPenalty +
+              2 * static_cast<int>(func->ast->size() - func->funcGenerics.size());
+  CallArgSlots slots(func->ast->size());
+  seqassert(known.empty() || slots.size() == known.size(), "bad 'known' string");
+  llvm::SmallVector<int, 4> extra;
+  using NamedArgs = llvm::SmallVector<std::pair<std::string_view, int>, 8>;
+  NamedArgs namedArgs, extraNamedArgs;
+  for (int ai = 0, si = 0; ai < args.size() - partial; ++ai) {
     if (args[ai].name.empty()) {
       while (!known.empty() && si < slots.size() &&
              known[si] == ClassType::PartialFlag::Included)
-        si++;
+        ++si;
       if (si < positionalLimit)
-        slots[si++] = {ai};
+        slots[si++].push_back(ai);
       else
-        extra.emplace_back(ai);
+        extra.push_back(ai);
     } else {
-      namedArgs[args[ai].name] = ai;
-    }
-  }
-  score += 2 * static_cast<int>(slots.size() - func->funcGenerics.size());
-
-  for (auto ai : std::vector<int>{std::max(starArgIndex, kwstarArgIndex),
-                                  std::min(starArgIndex, kwstarArgIndex)})
-    if (ai != -1 && !slots[ai].empty()) {
-      extra.insert(extra.begin(), ai);
-      slots[ai].clear();
-    }
-
-  // 2. Assign named arguments to slots
-  if (!namedArgs.empty()) {
-    std::map<std::string, int> slotNames;
-    for (int i = 0; i < func->ast->size(); i++)
-      if ((*func->ast)[i].kind != Param::PositionalOnly &&
-          (known.empty() || known[i] != ClassType::PartialFlag::Included)) {
-        auto [_, n] = (*func->ast)[i].getNameWithStars();
-        slotNames[getUnmangledName(n)] = i;
-      }
-    for (auto &n : namedArgs) {
-      if (!in(slotNames, n.first))
-        extraNamedArgs[n.first] = n.second;
-      else if (slots[slotNames[n.first]].empty())
-        slots[slotNames[n.first]].push_back(n.second);
+      auto previous =
+          std::find_if(namedArgs.begin(), namedArgs.end(),
+                       [&](const auto &v) { return v.first == args[ai].name; });
+      if (previous == namedArgs.end())
+        namedArgs.emplace_back(args[ai].name, ai);
       else
-        return onError(Error::CALL_REPEATED_NAME, args[n.second].value->getSrcInfo(),
-                       Emsg(Error::CALL_REPEATED_NAME, n.first));
+        previous->second = ai; // same last-value behavior as the original map
     }
   }
-
-  // 3. Fill in *args, if present
-  if (!extra.empty() && starArgIndex == -1)
+  std::sort(namedArgs.begin(), namedArgs.end(),
+            [](const auto &a, const auto &b) { return a.first < b.first; });
+  for (auto index :
+       {std::max(starArgIndex, kwstarArgIndex), std::min(starArgIndex, kwstarArgIndex)})
+    if (index != -1 && !slots[index].empty()) {
+      extra.insert(extra.begin(), index);
+      slots[index].clear();
+    }
+  for (const auto &[name, argument] : namedArgs) {
+    int slot = -1;
+    for (auto i = layout.keywords.rbegin(); i != layout.keywords.rend(); ++i)
+      if (i->first == name &&
+          (known.empty() || known[i->second] != ClassType::PartialFlag::Included)) {
+        slot = i->second;
+        break;
+      }
+    if (slot == -1) {
+      extraNamedArgs.emplace_back(name, argument);
+    } else if (slots[slot].empty()) {
+      slots[slot].push_back(argument);
+    } else {
+      if (!onError)
+        return -1;
+      return onError(Error::CALL_REPEATED_NAME, args[argument].value->getSrcInfo(),
+                     Emsg(Error::CALL_REPEATED_NAME, name));
+    }
+  }
+  if (!extra.empty() && starArgIndex == -1) {
+    if (!onError)
+      return -1;
     return onError(Error::CALL_ARGS_MANY, getSrcInfo(),
                    Emsg(Error::CALL_ARGS_MANY, getUserFacingName(func->ast->getName()),
                         positionalLimit, args.size() - partial));
-
+  }
   if (starArgIndex != -1)
-    slots[starArgIndex] = extra;
-
-  // 4. Fill in **kwargs, if present
-  if (!extraNamedArgs.empty() && kwstarArgIndex == -1)
+    slots[starArgIndex].assign(extra.begin(), extra.end());
+  if (!extraNamedArgs.empty() && kwstarArgIndex == -1) {
+    if (!onError)
+      return -1;
     return onError(Error::CALL_ARGS_INVALID,
-                   args[extraNamedArgs.begin()->second].value->getSrcInfo(),
-                   Emsg(Error::CALL_ARGS_INVALID, extraNamedArgs.begin()->first,
+                   args[extraNamedArgs.front().second].value->getSrcInfo(),
+                   Emsg(Error::CALL_ARGS_INVALID, extraNamedArgs.front().first,
                         getUnmangledName(func->ast->getName())));
+  }
   if (kwstarArgIndex != -1)
-    for (auto &val : extraNamedArgs | std::views::values)
-      slots[kwstarArgIndex].push_back(val);
-
-  // 5. Fill in the default arguments
-  for (auto i = 0; i < func->ast->size(); i++)
-    if (slots[i].empty() && i != starArgIndex && i != kwstarArgIndex) {
-      if (((*func->ast)[i].isValue() &&
-           ((*func->ast)[i].getDefault() ||
-            (!known.empty() && known[i] == ClassType::PartialFlag::Included))) ||
-          startswith((*func->ast)[i].getName(), "$")) {
-        score -= 2;
-      } else if (!partial && (*func->ast)[i].isValue()) {
-        auto [_, n] = (*func->ast)[i].getNameWithStars();
-        return onError(
-            Error::CALL_ARGS_MISSING, getSrcInfo(),
-            (*func->ast)[i].kind == Param::KeywordOnly
-                ? fmt::format("{}() missing 1 required keyword-only argument: '{}'",
-                              getUnmangledName(func->ast->getName()),
-                              getUnmangledName(n))
-                : Emsg(Error::CALL_ARGS_MISSING, getUnmangledName(func->ast->getName()),
-                       getUnmangledName(n)));
-      }
+    for (const auto &[name, argument] : extraNamedArgs)
+      slots[kwstarArgIndex].push_back(argument);
+  for (int i = 0; i < slots.size(); ++i) {
+    if (!slots[i].empty() || i == starArgIndex || i == kwstarArgIndex)
+      continue;
+    const auto &parameter = (*func->ast)[i];
+    if (layout.optional[i] || (parameter.isValue() && !known.empty() &&
+                               known[i] == ClassType::PartialFlag::Included)) {
+      score -= 2;
+    } else if (!partial && parameter.isValue()) {
+      if (!onError)
+        return -1;
+      auto [stars, name] = parameter.getNameWithStars();
+      return onError(
+          Error::CALL_ARGS_MISSING, getSrcInfo(),
+          parameter.kind == Param::KeywordOnly
+              ? fmt::format("{}() missing 1 required keyword-only argument: '{}'",
+                            getUnmangledName(func->ast->getName()),
+                            getUnmangledName(name))
+              : Emsg(Error::CALL_ARGS_MISSING, getUnmangledName(func->ast->getName()),
+                     getUnmangledName(name)));
     }
-  auto s = onDone(starArgIndex, kwstarArgIndex, slots, partial);
-  return s != -1 ? score + s : -1;
+  }
+  auto result = onDone(starArgIndex, kwstarArgIndex, slots, partial);
+  return result != -1 ? score + result : -1;
 }
 
 bool TypecheckVisitor::isCanonicalName(const std::string &name) {

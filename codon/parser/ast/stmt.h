@@ -493,13 +493,23 @@ private:
 /// @li: @decorator
 ///           def foo[T=int, U: int](a, b: int = 0) -> list[T]: pass
 struct FunctionStmt : public AcceptorExtend<FunctionStmt, Stmt>, Items<Param> {
+  /// Argument structure computed once for the normalized declaration.
+  struct CallLayout {
+    int positionalLimit = 0;
+    int star = -1, kwstar = -1;
+    int variadicPenalty = 0;
+    std::vector<std::pair<std::string, int>> keywords;
+    std::vector<int> requiredValues;
+    std::vector<bool> optional;
+  };
+
   FunctionStmt(std::string name = "", Expr *ret = nullptr, std::vector<Param> args = {},
                Stmt *suite = nullptr, std::vector<Expr *> decorators = {},
                bool async = false);
   FunctionStmt(const FunctionStmt &, bool);
   static std::vector<Param> parseParams(std::vector<Param>);
 
-  std::string getName() const { return name; }
+  const std::string &getName() const { return name; }
   void setName(const std::string &n) { name = n; }
   Expr *getReturn() const { return ret; }
   SuiteStmt *getSuite() const { return suite; }
@@ -509,6 +519,7 @@ struct FunctionStmt : public AcceptorExtend<FunctionStmt, Stmt>, Items<Param> {
   bool isAsync() const { return async; }
   void setAsync() { async = true; }
   void addParam(const Param &p) {
+    seqassertn(!callLayout, "cannot add a parameter to a finalized function");
     items.push_back(p);
     if (nonInferrableGenerics)
       nonInferrableGenerics->clear();
@@ -519,6 +530,10 @@ struct FunctionStmt : public AcceptorExtend<FunctionStmt, Stmt>, Items<Param> {
   std::string getDocstr() const;
   const std::unordered_set<std::string> &getNonInferrableGenerics();
   bool hasFunctionAttribute(const std::string &attr) const;
+  const CallLayout &getCallLayout() const {
+    seqassertn(callLayout, "function call layout was not initialized");
+    return *callLayout;
+  }
 
   ACCEPT(FunctionStmt, ASTVisitor, name, items, ret, suite, decorators, async);
 
@@ -531,6 +546,9 @@ private:
 
   // Cache non-inferrable generics for speed.
   std::shared_ptr<std::unordered_set<std::string>> nonInferrableGenerics;
+
+  /// Only canonical declarations have a layout; AST clones start without one.
+  std::unique_ptr<CallLayout> callLayout;
 
   friend struct Cache;
 };
@@ -546,7 +564,7 @@ struct ClassStmt : public AcceptorExtend<ClassStmt, Stmt>, Items<Param> {
             const std::vector<Expr *> &baseClasses = {});
   ClassStmt(const ClassStmt &, bool);
 
-  std::string getName() const { return name; }
+  const std::string &getName() const { return name; }
   SuiteStmt *getSuite() const { return suite; }
   const std::vector<Expr *> &getDecorators() const { return decorators; }
   void setDecorators(const std::vector<Expr *> &d) { decorators = d; }
