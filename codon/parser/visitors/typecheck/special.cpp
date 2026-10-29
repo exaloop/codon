@@ -195,8 +195,9 @@ void TypecheckVisitor::prepareVTables() {
     return nullptr;
   };
   auto realize_target = [&](FuncType *target, const std::vector<CallArg> &arguments) {
-    auto *call = cast<CallExpr>(
-        transform(N<CallExpr>(N<IdExpr>(target->getFuncName()), arguments)));
+    auto *request = N<CallExpr>(N<IdExpr>(target->getFuncName()), arguments);
+    request->setAttribute(Attr::Internal);
+    auto *call = cast<CallExpr>(transform(request));
     auto *returnType = realize(call->getType());
     seqassert(returnType, "cannot realize dispatch return type");
     auto *resolved = call->getExpr()->getType()->getFunc();
@@ -455,6 +456,11 @@ void TypecheckVisitor::prepareVTables() {
       added |= realize_descendant_supers(id, signature.get());
     added |= realize_value_methods();
   }
+
+  for (const auto &[name, function] : sorted_view(ctx->cache->functions))
+    for (const auto &[key, realization] : sorted_view(function.realizations))
+      if (realization->checkInitialization && realization->ast && realization->ir)
+        checkFieldInitialization(realization->getType(), realization->ast);
 }
 
 SuiteStmt *TypecheckVisitor::generateFunctionCallInternalAST(FuncType *type) {

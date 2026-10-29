@@ -151,7 +151,12 @@ ir::Func *Cache::realizeFunction(types::FuncType *type,
   }
   ir::Func *f = nullptr;
   if (auto rtv = tv.realize(t.get())) {
-    if (!pendingRealizations.empty())
+    auto realization =
+        functions[rtv->getFunc()->getFuncName()].realizations.at(rtv->realizedName());
+    bool checkInitialization =
+        tv.getUnmangledName(rtv->getFunc()->getFuncName()) == "__init__";
+    realization->checkInitialization |= checkInitialization;
+    if (!pendingRealizations.empty() || checkInitialization)
       tv.prepareVTables();
     auto pr = pendingRealizations; // copy it as it might be modified
     for (const auto &key : pr | std::views::keys)

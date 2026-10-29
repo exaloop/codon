@@ -247,8 +247,14 @@ void TypecheckVisitor::visit(CallExpr *expr) {
     unify(expr->getType(), calleeFn->getRetType());
     if (done) {
       if (auto *thunk = expr->getAttribute<ir::IntValueAttribute>(Attr::ExprVirtual);
-          thunk && thunk->value != -1)
+          thunk && thunk->value != -1) {
         ctx->cache->superCallSignatures[thunk->value] = calleeFn;
+      } else if (!expr->hasAttribute(Attr::Internal) &&
+                 getUnmangledName(calleeFn->getFuncName()) == "__init__") {
+        if (auto realization =
+                in(getFunction(calleeFn.get())->realizations, calleeFn->realizedName()))
+          (*realization)->checkInitialization = true;
+      }
       expr->setDone();
     }
   }
