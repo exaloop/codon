@@ -45,53 +45,64 @@ struct CaptureContext;
 
 bool extractVars(CaptureContext &cc, const Value *v, std::vector<const Var *> &result);
 
-bool reachable(CFBlock *start, CFBlock *end, std::unordered_set<CFBlock *> &seen) {
-  if (start == end)
-    return true;
+// Cache ordering only for the immutable CFG used by one CaptureTracker.
+// This is conditional ordering, not dominance: in "(if _: B); A", B must
+// precede A when encountered, even though B does not dominate A. Back edges
+// can reverse encounter order even within a block or under dominance, so
+// ordering also requires the absence of a nonempty path back to 'before'.
+struct OrderCache {
+  CFGraph *cfg;
+  std::unordered_map<id_t, std::unordered_map<id_t, size_t>> positions;
+  std::unordered_map<id_t, std::unordered_map<id_t, bool>> blockOrder;
 
-  if (seen.count(start))
-    return false;
+  explicit OrderCache(CFGraph *cfg) : cfg(cfg) {}
 
-  seen.insert(start);
-  for (auto it = start->successors_begin(); it != start->successors_end(); ++it) {
-    if (reachable(*it, end, seen))
-      return true;
-  }
+  bool happensBefore(const Value *before, const Value *after) {
+    auto *beforeBlock = cfg->getBlock(before);
+    auto *afterBlock = cfg->getBlock(after);
+    if (!beforeBlock || !afterBlock)
+      return false;
 
-  return false;
-}
-
-// Check if one value must always be encountered before another, if
-// it is to be encountered at all. This is NOT the same as domination
-// since we can have "(if _: B) ; A", where B does not dominate A yet
-// must always occur before A is it does occur.
-bool happensBefore(const Value *before, const Value *after, CFGraph *cfg,
-                   DominatorInspector *dom) {
-  auto *beforeBlock = cfg->getBlock(before);
-  auto *afterBlock = cfg->getBlock(after);
-
-  if (!beforeBlock || !afterBlock)
-    return false;
-
-  // If values are in the same block we just need to see
-  // which one shows up first.
-  if (beforeBlock == afterBlock) {
-    for (auto *val : *beforeBlock) {
-      if (val->getId() == before->getId())
-        return true;
-      else if (val->getId() == after->getId())
+    if (beforeBlock == afterBlock) {
+      auto [entry, inserted] = positions.try_emplace(beforeBlock->getId());
+      auto &indices = entry->second;
+      if (inserted) {
+        size_t index = 0;
+        for (auto *value : *beforeBlock)
+          indices.emplace(value->getId(), index++);
+      }
+      auto beforeIndex = indices.find(before->getId());
+      auto afterIndex = indices.find(after->getId());
+      seqassertn(beforeIndex != indices.end() || afterIndex != indices.end(),
+                 "could not find values in CFG block");
+      if (beforeIndex == indices.end() ||
+          (afterIndex != indices.end() && beforeIndex->second > afterIndex->second))
         return false;
     }
-    seqassertn(false, "could not find values in CFG block");
-    return false;
-  }
 
-  // If we have different blocks, then either 'before' dominates
-  // 'after', in which case the answer is true, or there must be
-  // no paths from 'afterBlock' to 'beforeBlock'.
-  std::unordered_set<CFBlock *> seen;
-  return dom->isDominated(after, before) || !reachable(afterBlock, beforeBlock, seen);
-}
+    auto &answers = blockOrder[beforeBlock->getId()];
+    auto found = answers.find(afterBlock->getId());
+    if (found != answers.end())
+      return found->second;
+    bool answer = true;
+    std::unordered_set<CFBlock *> seen;
+    std::vector<CFBlock *> pending(afterBlock->successors_begin(),
+                                   afterBlock->successors_end());
+    while (!pending.empty()) {
+      auto *block = pending.back();
+      pending.pop_back();
+      if (block == beforeBlock) {
+        answer = false;
+        break;
+      }
+      if (!seen.insert(block).second)
+        continue;
+      pending.insert(pending.end(), block->successors_begin(), block->successors_end());
+    }
+    answers.emplace(afterBlock->getId(), answer);
+    return answer;
+  }
+};
 
 struct RDManager {
   struct IDPairHash {
@@ -382,12 +393,12 @@ struct CaptureTracker : public util::Operator {
   CaptureContext &cc;
   CFGraph *cfg;
   RDManager rd;
-  DominatorInspector *dom;
+  OrderCache order;
   std::vector<DerivedSet> dsets;
 
   CaptureTracker(CaptureContext &cc, const Func *func, bool isArg)
       : Operator(), cc(cc), cfg(cc.getCFGraph(func)), rd(cc.getRDInspector(func)),
-        dom(cc.getDomInspector(func)), dsets() {}
+        order(cfg), dsets() {}
 
   CaptureTracker(CaptureContext &cc, const BodiedFunc *func)
       : CaptureTracker(cc, func, /*isArg=*/true) {
@@ -479,7 +490,7 @@ struct CaptureTracker : public util::Operator {
 
       for (auto *toCause : toCauses) {
         if (isA<AssignInstr>(toCause) || isA<SyntheticAssignInstr>(toCause) ||
-            happensBefore(toCause, cause, cfg, dom))
+            order.happensBefore(toCause, cause))
           continue;
 
         bool derived = false;
