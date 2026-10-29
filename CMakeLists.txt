@@ -171,6 +171,11 @@ elseif(SYSTEM_BLAS)
             $<TARGET_FILE:bz2> $<TARGET_FILE:liblzma> $<TARGET_FILE:re2>
             $<TARGET_FILE:hwy> $<TARGET_FILE:hwy_contrib>
             -Wl,--no-whole-archive)
+  if(CMAKE_VERSION VERSION_LESS 3.22)
+    message(FATAL_ERROR "SYSTEM_BLAS requires CMake 3.22+ for ILP64 selection")
+  endif()
+  # The numpy BLAS/LAPACK bindings use 64-bit integers (fint = i64).
+  set(BLA_SIZEOF_INTEGER 8)
   find_package(BLAS REQUIRED)
   target_link_libraries(codonrt PUBLIC BLAS::BLAS)
 else()
