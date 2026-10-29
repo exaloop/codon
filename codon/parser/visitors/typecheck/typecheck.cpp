@@ -794,8 +794,8 @@ std::vector<types::FuncType *> TypecheckVisitor::findMatchingMethods(
     if (!part && !(typ && typ->getPartial()) && !acceptsCallShape(mi, args))
       continue;
     auto method = instantiateType(mi, typ);
-    int score = matchCallableImpl(method.get(), args, nullptr, nullptr, part,
-                                  nullptr, true);
+    int score =
+        matchCallableImpl(method.get(), args, nullptr, nullptr, part, nullptr, true);
     if (score != -1) {
       results.push_back(mi);
     }

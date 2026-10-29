@@ -263,9 +263,9 @@ private:
   int matchCallable(types::Type *, const std::vector<CallArg> &,
                     types::Type * = nullptr, types::Type::Unification * = nullptr,
                     types::ClassType * = nullptr, std::vector<bool> * = nullptr);
-  int matchCallableImpl(types::Type *, const std::vector<CallArg> &,
-                        types::Type *, types::Type::Unification *,
-                        types::ClassType *, std::vector<bool> *, bool);
+  int matchCallableImpl(types::Type *, const std::vector<CallArg> &, types::Type *,
+                        types::Type::Unification *, types::ClassType *,
+                        std::vector<bool> *, bool);
   std::vector<types::Type *> getPartialArgTypes(types::FuncType *,
                                                 types::ClassType *) const;
   Expr *getCallDefault(const Param &);

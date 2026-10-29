@@ -360,7 +360,8 @@ void TypecheckVisitor::prepareVTables() {
         auto oldContext = ctx;
         auto oldLevel = getLogger().level;
         auto oldErrors = ctx->cache->errors;
-        // TODO: generalize this to be able to typecheck any fn/code blocks with error recovery
+        // TODO: generalize this to be able to typecheck any fn/code blocks with error
+        // recovery
         struct SavedContext {
           std::shared_ptr<TypeContext> active;
           std::unique_ptr<TypeContext> state;

@@ -389,9 +389,10 @@ Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
   Stmt *n = nullptr;
   if (file.module != "internal.core") {
     // str is not defined when loading internal.core; __name__ is not needed anyway
-    n = N<SuiteStmt>(
-        N<AssignStmt>(N<IdExpr>("__name__"), N<StringExpr>(ictx->getModuleInfo().module)),
-        N<AssignStmt>(N<IdExpr>("__file__"), N<StringExpr>(ictx->getModuleInfo().path)));
+    n = N<SuiteStmt>(N<AssignStmt>(N<IdExpr>("__name__"),
+                                   N<StringExpr>(ictx->getModuleInfo().module)),
+                     N<AssignStmt>(N<IdExpr>("__file__"),
+                                   N<StringExpr>(ictx->getModuleInfo().path)));
     ctx->addBlock();
     preamble->addStmt(transform(
         N<AssignStmt>(N<IdExpr>(importVar),
