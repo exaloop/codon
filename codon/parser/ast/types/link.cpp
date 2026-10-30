@@ -118,7 +118,7 @@ TypePtr LinkType::generalize(int atLevel) const {
 }
 
 TypePtr LinkType::instantiate(int atLevel, int *unboundCount,
-                              std::unordered_map<int, TypePtr> *cache) const {
+                              InstantiationCache *cache) const {
   if (kind == Generic) {
     if (TypePtr *res = nullptr; cache && ((res = in(*cache, id))))
       return *res;

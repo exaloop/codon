@@ -22,7 +22,7 @@ struct ClassType : public Type {
    */
   struct Generic {
     // Generic name.
-    std::string name;
+    InternedString name;
     // Unique generic ID.
     int id;
     // Pointer to realized type (or generic LinkType).
@@ -30,37 +30,45 @@ struct ClassType : public Type {
     // Set if this is a static generic
     LiteralKind staticKind;
 
-    Generic(std::string name, TypePtr type, int id, LiteralKind staticKind)
-        : name(std::move(name)), id(id), type(std::move(type)), staticKind(staticKind) {
-    }
+    Generic(std::string_view name, TypePtr type, int id, LiteralKind staticKind)
+        : name(name), id(id), type(std::move(type)), staticKind(staticKind) {}
+    Generic(InternedString name, TypePtr type, int id, LiteralKind staticKind)
+        : name(name), id(id), type(std::move(type)), staticKind(staticKind) {}
 
     types::Type *getType() const { return type.get(); }
     Generic generalize(int atLevel) const;
     Generic instantiate(int atLevel, int *unboundCount,
-                        std::unordered_map<int, TypePtr> *cache) const;
+                        InstantiationCache *cache) const;
     std::string debugString(char mode) const;
     std::string realizedName() const;
   };
 
   /// Canonical type name.
-  std::string name;
+  InternedString name;
   /// List of generics, if present.
   std::vector<Generic> generics;
 
   std::vector<Generic> hiddenGenerics;
 
   bool isTuple = false;
+  /// Fully generalized concrete types should be reused.
+  bool immutable = false;
   std::string _rn;
 
-  explicit ClassType(Cache *cache, std::string name, std::vector<Generic> generics = {},
+  explicit ClassType(Cache *cache, std::string_view name,
+                     std::vector<Generic> generics = {},
+                     std::vector<Generic> hiddenGenerics = {});
+  explicit ClassType(Cache *cache, InternedString name,
+                     std::vector<Generic> generics = {},
                      std::vector<Generic> hiddenGenerics = {});
   explicit ClassType(const ClassType *base);
+  bool freeze();
 
 public:
   int unify(Type *typ, Unification *undo) override;
   TypePtr generalize(int atLevel) const override;
   TypePtr instantiate(int atLevel, int *unboundCount,
-                      std::unordered_map<int, TypePtr> *cache) const override;
+                      InstantiationCache *cache) const override;
 
 public:
   bool hasUnbounds(bool) const override;

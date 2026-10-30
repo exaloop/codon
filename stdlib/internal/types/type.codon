@@ -11,39 +11,37 @@ def __type_repr__(T: type):
 class type:
     @pure
     @derives
-    @llvm
+    @__internal__
     def _force_cast(p, T: type) -> T:
         """
-        Casts p of any reference type to the reference type T.
+        Reinterprets p as T without changing its pointer representation.
 
-        This method is intented for the internal typechecking usage and is completely unsafe.
-        No checks are performed; T is assumed to be a reference type.
-        Any violations will result in LLVM errors.
+        Both types must lower to pointers; nullable class references are supported.
+        This internal operation does not check the runtime object type and is unsafe.
         """
-        ret ptr %p
+        pass
 
     @pure
     @derives
-    @llvm
+    @__internal__
     def _force_value_cast(t, U: type) -> U:
         """
-        Casts t of any type to U. Used for casting tuples into named tuple types.
+        Reinterprets t as U without changing its LLVM representation.
 
-        This method is intented for the internal typechecking usage and is completely unsafe.
-        No checks are performed; t is assumed to be byte-compatible with U.
-        Any violations will result in LLVM errors.
+        Used for casting tuples into named tuple types. The source and destination
+        must have identical LLVM types; equal size alone is insufficient. This
+        internal operation performs no conversion or runtime type check and is unsafe.
         """
-        ret {=U} %t
+        pass
 
     @pure
     @derives
-    @llvm
+    @__internal__
     def _ref_raw(obj) -> Ptr[u8]:
         """
         Casts the reference type to a pointer.
         """
-
-        ret ptr %obj
+        pass
 
     @__internal__
     def _ref_alloc(T: type) -> T:
@@ -57,7 +55,6 @@ class type:
         """
         Allocates a new reference (class) object.
         """
-
         from internal.gc import register_finalizer
 
         obj = type._ref_alloc(T)
@@ -68,7 +65,6 @@ class type:
         """
         Shorthand for `t = T.__new__(); t.__init__(*args, **kwargs); t`
         """
-
         return T(*args, **kwargs)
 
     @pure

@@ -61,7 +61,7 @@ TypePtr FuncType::generalize(int atLevel) const {
 }
 
 TypePtr FuncType::instantiate(int atLevel, int *unboundCount,
-                              std::unordered_map<int, TypePtr> *cache) const {
+                              InstantiationCache *cache) const {
   std::vector<Generic> fg;
   fg.reserve(funcGenerics.size());
   for (auto &t : funcGenerics) {
@@ -218,7 +218,7 @@ void FuncType::replaceArgTypes(const std::vector<TypePtr> &replacements) {
   _rn.clear();
 }
 
-std::string FuncType::getFuncName() const { return ast->getName(); }
+const std::string &FuncType::getFuncName() const { return ast->getName(); }
 
 Type *FuncType::operator[](size_t i) const {
   return generics[0].type->getClass()->generics[i].getType();

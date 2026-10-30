@@ -1,6 +1,7 @@
 // Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
 #include <algorithm>
+#include <memory>
 #include <string>
 #include <tuple>
 #include <unordered_set>
@@ -198,6 +199,36 @@ void TypecheckVisitor::visit(YieldFromStmt *stmt) {
 
 /// Process `global` statements. Remove them upon completion.
 void TypecheckVisitor::visit(GlobalStmt *stmt) { resultStmt = N<SuiteStmt>(); }
+
+/// Finalize the argument structure after captures, names, and defaults are normalized.
+void TypecheckVisitor::prepareCallLayout(FunctionStmt *ast) const {
+  seqassertn(!ast->callLayout, "function call layout was already initialized");
+  auto layout = std::make_unique<FunctionStmt::CallLayout>();
+  layout->positionalLimit = ast->size();
+  layout->optional.reserve(ast->size());
+  for (int i = 0; i < ast->size(); ++i) {
+    const auto &parameter = (*ast)[i];
+    if (parameter.kind == Param::KeywordOnly || startswith(parameter.name, "*"))
+      layout->positionalLimit = std::min(layout->positionalLimit, i);
+    if (startswith(parameter.name, "**")) {
+      layout->kwstar = i;
+      layout->variadicPenalty -= 2;
+    } else if (startswith(parameter.name, "*")) {
+      layout->star = i;
+      layout->variadicPenalty -= 2;
+    }
+    bool optional = (parameter.isValue() && parameter.getDefault()) ||
+                    startswith(parameter.name, "$");
+    layout->optional.push_back(optional);
+    if (parameter.isValue() && !optional && !startswith(parameter.name, "*"))
+      layout->requiredValues.push_back(i);
+    if (parameter.kind != Param::PositionalOnly) {
+      auto [stars, name] = parameter.getNameWithStars();
+      layout->keywords.emplace_back(getUnmangledName(name), i);
+    }
+  }
+  ast->callLayout = std::move(layout);
+}
 
 /// Parse a function stub and create a corresponding generic function type.
 /// Also realize built-ins and extern C functions.
@@ -567,12 +598,13 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       }
     }
   }
-  stmt->setAttribute(Attr::Module, ctx->moduleName.path);
+  stmt->setAttribute(Attr::Module, ctx->getModuleInfo().path);
 
   // Make function AST and cache it for later realization
   auto f = N<FunctionStmt>(canonicalName, ret, args, suite, std::vector<Expr *>{},
                            stmt->isAsync());
   f->cloneAttributesFrom(stmt);
+  prepareCallLayout(f);
   auto &fn = ctx->cache->functions[canonicalName] =
       Cache::Function{ctx->getModulePath(),
                       rootName,

@@ -2,7 +2,9 @@
 
 #include "reaching.h"
 
+#include <algorithm>
 #include <deque>
+#include <limits>
 #include <tuple>
 
 namespace codon {
@@ -237,32 +239,39 @@ std::vector<ReachingDef> RDInspector::getReachingDefinitions(const Var *var,
   if (!blk)
     return {};
   auto &entry = sets[blk->getId()];
-  auto defs = entry.in[var->getId()];
-
-  bool needClear = (blk->getId() == cfg->getEntryBlock()->getId());
-  bool didClear = false;
-
-  auto done = false;
-  for (auto *val : *blk) {
-    if (done)
-      break;
-    if (val->getId() == loc->getId())
-      done = true;
-
-    auto killed = getKilled(val);
-    if (killed == var->getId()) {
-      defs.clear();
-      didClear = true;
+  if (!entry.indexed) {
+    size_t position = 0;
+    for (auto *value : *blk) {
+      entry.positions.emplace(value->getId(), position);
+      auto variable = getKilled(value);
+      if (variable != -1)
+        entry.assignments[variable].emplace_back(position, value);
+      ++position;
     }
-    auto gen = getGenerated(val);
-    if (gen.first == var->getId())
-      defs.insert(gen.second);
+    entry.indexed = true;
   }
 
-  if (needClear && !didClear)
+  auto position = entry.positions.find(loc->getId());
+  auto limit = position == entry.positions.end() ? std::numeric_limits<size_t>::max()
+                                                 : position->second;
+  auto assignments = entry.assignments.find(var->getId());
+  if (assignments != entry.assignments.end()) {
+    auto &values = assignments->second;
+    auto found = std::upper_bound(values.begin(), values.end(), limit,
+                                  [](size_t position, const auto &assignment) {
+                                    return position < assignment.first;
+                                  });
+    if (found != values.begin())
+      return {getGenerated(std::prev(found)->second).second};
+  }
+
+  if (blk == cfg->getEntryBlock())
     return {};
 
-  return std::vector<ReachingDef>(defs.begin(), defs.end());
+  auto incoming = entry.in.find(var->getId());
+  if (incoming == entry.in.end())
+    return {};
+  return std::vector<ReachingDef>(incoming->second.begin(), incoming->second.end());
 }
 
 const std::string RDAnalysis::KEY = "core-analyses-rd";

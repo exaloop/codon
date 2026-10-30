@@ -450,9 +450,11 @@ static uintptr_t readEncodedPointer(const uint8_t **data, uint8_t encoding) {
 
 static bool isinstance(void *obj, seq_int_t type) {
   auto *info = *static_cast<codon::runtime::TypeInfo **>(obj);
+  if (info->id == type)
+    return true;
   if (info->n_mro > codon::runtime::MAX_LINEAR_MRO)
     return std::binary_search(info->sorted_mro, info->sorted_mro + info->n_mro, type);
-  for (seq_int_t index = 0; index < info->n_mro; ++index)
+  for (seq_int_t index = 1; index < info->n_mro; ++index)
     if (info->mro[index] == type)
       return true;
   return false;
@@ -490,8 +492,9 @@ static bool handleActionValue(int64_t *resultAction, uint8_t TTypeEncoding,
       uintptr_t P = readEncodedPointer(&EntryP, TTypeEncoding);
       auto *ThisClassInfo = reinterpret_cast<CodonBaseExceptionType *>(P);
       auto ThisClassType = ThisClassInfo->type;
-      // type=0 means catch-all
-      if (ThisClassType == 0 || isinstance(excp->obj, ThisClassType)) {
+      if (ThisClassType == codon::runtime::CATCH_ALL_SELECTOR ||
+          ThisClassType == codon::runtime::BASE_EXCEPTION_SELECTOR ||
+          isinstance(excp->obj, ThisClassType)) {
         *resultAction = ThisClassType;
         ret = true;
         break;

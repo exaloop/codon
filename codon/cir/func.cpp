@@ -123,6 +123,8 @@ const char *InternalFunc::getIntrinsicName(Intrinsic kind) {
     return "virtual_lookup";
   case Intrinsic::RECORD_NEW:
     return "record_new";
+  case Intrinsic::REPRESENTATION_CAST:
+    return "representation_cast";
   case Intrinsic::GENERATOR_PROMISE:
     return "generator_promise";
   case Intrinsic::SIZEOF:
@@ -184,6 +186,8 @@ bool InternalFunc::hasValidIntrinsicSignature() const {
                         return argument == field.getType();
                       });
   }
+  case Intrinsic::REPRESENTATION_CAST:
+    return intrinsicType && result == intrinsicType && arguments.size() == 1;
   case Intrinsic::GENERATOR_PROMISE: {
     auto *generator = cast<GeneratorType>(intrinsicType);
     auto *pointer = cast<PointerType>(result);
@@ -202,6 +206,7 @@ util::SideEffectStatus InternalFunc::getIntrinsicSideEffectStatus() const {
   case Intrinsic::ALLOCATION_SIZE:
   case Intrinsic::TYPEINFO:
   case Intrinsic::RECORD_NEW:
+  case Intrinsic::REPRESENTATION_CAST:
   case Intrinsic::GENERATOR_PROMISE:
     return util::PURE;
   case Intrinsic::ALLOCATE:
@@ -220,6 +225,7 @@ util::SideEffectStatus InternalFunc::getIntrinsicSideEffectStatus() const {
 
 bool InternalFunc::intrinsicDerivesFromArguments() const {
   return intrinsic == Intrinsic::RECORD_NEW ||
+         intrinsic == Intrinsic::REPRESENTATION_CAST ||
          intrinsic == Intrinsic::GENERATOR_PROMISE;
 }
 

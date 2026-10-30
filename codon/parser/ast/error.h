@@ -2,11 +2,13 @@
 
 #pragma once
 
-#include "llvm/Support/Error.h"
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
+
+#include "codon/cir/llvm/llvm.h"
 
 /**
  * WARNING: do not include anything else in this file, especially format.h
@@ -18,15 +20,62 @@
  */
 
 namespace codon {
+/// Compiler filenames and type identifiers have process lifetime. Copies retain
+/// a pointer instead of allocating repeated copies of the same text.
+class InternedString {
+  const std::string *value = nullptr;
+
+public:
+  InternedString() = default;
+  InternedString(std::string_view value);
+  const std::string &str() const {
+    static const std::string empty;
+    return value ? *value : empty;
+  }
+  operator const std::string &() const { return str(); }
+  operator std::string_view() const { return str(); }
+  bool empty() const { return !value || value->empty(); }
+  const char *c_str() const { return str().c_str(); }
+  InternedString &operator=(std::string_view text) {
+    *this = InternedString(text);
+    return *this;
+  }
+  bool operator==(const InternedString &other) const { return value == other.value; }
+  bool operator==(std::string_view other) const { return str() == other; }
+  bool operator<(const InternedString &other) const { return str() < other.str(); }
+  bool operator<=(const InternedString &other) const { return str() <= other.str(); }
+  size_t size() const { return str().size(); }
+  size_t find(char c) const { return str().find(c); }
+  size_t rfind(char c) const { return str().rfind(c); }
+  std::string substr(size_t pos, size_t count = std::string::npos) const {
+    return str().substr(pos, count);
+  }
+  friend std::string operator+(const InternedString &a, std::string_view b) {
+    std::string result;
+    result.reserve(a.size() + b.size());
+    result.append(a.str());
+    result.append(b);
+    return result;
+  }
+  friend std::string operator+(std::string_view a, const InternedString &b) {
+    std::string result;
+    result.reserve(a.size() + b.size());
+    result.append(a);
+    result.append(b.str());
+    return result;
+  }
+};
+using SourceFile = InternedString;
+
 struct SrcInfo {
-  std::string file;
+  SourceFile file;
   int line;
   int col;
   int len;
   int id; /// used to differentiate different instances
 
   SrcInfo();
-  SrcInfo(std::string file, int line, int col, int len);
+  SrcInfo(std::string_view file, int line, int col, int len);
   bool operator==(const SrcInfo &src) const;
   bool operator<(const SrcInfo &src) const;
   bool operator<=(const SrcInfo &src) const;

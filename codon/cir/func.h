@@ -194,6 +194,8 @@ public:
     VIRTUAL_LOOKUP,
     /// Constructs a record from its field values.
     RECORD_NEW,
+    /// Reinterprets a value as another CIR type with the same LLVM type.
+    REPRESENTATION_CAST,
     /// Gets a pointer to a generator's yielded value.
     GENERATOR_PROMISE,
     /// Queries a type's value size in bytes, not its allocation size.

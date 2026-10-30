@@ -2,6 +2,7 @@
 
 #include "codon/cir/util/irtools.h"
 #include "codon/cir/util/matching.h"
+#include "codon/cir/util/operator.h"
 
 using namespace codon::ir;
 
@@ -93,6 +94,38 @@ TEST_F(CIRCoreTest, InsertInstrCloning) {
   auto *instr = module->Nr<InsertInstr>(lhs, FIELD, rhs);
 
   ASSERT_TRUE(util::match(instr, cv->clone(instr)));
+}
+
+TEST_F(CIRCoreTest, CallOperandTraversalSnapshot) {
+  auto *type = module->unsafeGetFuncType("snapshot", module->getIntType(), {});
+  auto *callee = module->Nr<VarValue>(module->Nr<Var>(type));
+  auto *first = module->getInt(1);
+  auto *second = module->getInt(2);
+  auto *replacement = module->getInt(3);
+  auto *call =
+      module->Nr<CallInstr>(callee, std::vector<Value *>{first, second, first});
+  struct Inspect : util::Operator {
+    CallInstr *call;
+    Value *first;
+    Value *second;
+    Value *replacement;
+    std::vector<Node *> visited;
+    Inspect(CallInstr *call, Value *first, Value *second, Value *replacement)
+        : call(call), first(first), second(second), replacement(replacement) {}
+    void preHook(Node *node) override {
+      visited.push_back(node);
+      if (node == first)
+        call->replaceUsedValue(second, replacement);
+    }
+  } inspect(call, first, second, replacement);
+  inspect.process(call);
+  std::vector<Node *> expected = {call, first, second, callee};
+  EXPECT_EQ(inspect.visited, expected);
+  inspect.reset();
+  inspect.visited.clear();
+  inspect.process(call);
+  expected[2] = replacement;
+  EXPECT_EQ(inspect.visited, expected);
 }
 
 TEST_F(CIRCoreTest, CallInstrQueryAndReplace) {

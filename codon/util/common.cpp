@@ -2,11 +2,12 @@
 
 #include "common.h"
 
-#include "llvm/Support/Path.h"
 #include <cstdlib>
 #include <iostream>
 #include <string>
 #include <vector>
+
+#include "codon/cir/llvm/llvm.h"
 
 namespace codon {
 namespace {
@@ -57,7 +58,8 @@ std::vector<Logger> loggers;
 } // namespace
 
 std::ostream &operator<<(std::ostream &out, const codon::SrcInfo &src) {
-  out << llvm::sys::path::filename(src.file).str() << ":" << src.line << ":" << src.col;
+  out << llvm::sys::path::filename(src.file.str()).str() << ":" << src.line << ":"
+      << src.col;
   return out;
 }
 

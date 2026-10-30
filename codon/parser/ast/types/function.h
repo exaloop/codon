@@ -40,7 +40,7 @@ public:
   int unify(Type *typ, Unification *undo) override;
   TypePtr generalize(int atLevel) const override;
   TypePtr instantiate(int atLevel, int *unboundCount,
-                      std::unordered_map<int, TypePtr> *cache) const override;
+                      InstantiationCache *cache) const override;
 
 public:
   bool hasUnbounds(bool) const override;
@@ -56,7 +56,7 @@ public:
   /// Replace non-null argument types, preserving shared tuples and cached names.
   void replaceArgTypes(const std::vector<TypePtr> &replacements);
   Type *getParentType() const { return funcParent.get(); }
-  std::string getFuncName() const;
+  const std::string &getFuncName() const;
 
   Type *operator[](size_t i) const;
   std::vector<ClassType::Generic>::iterator begin() const;

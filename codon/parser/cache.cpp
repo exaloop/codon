@@ -8,8 +8,7 @@
 #include <string>
 #include <vector>
 
-#include "llvm/ADT/ScopeExit.h"
-
+#include "codon/cir/llvm/llvm.h"
 #include "codon/cir/pyextension.h"
 #include "codon/cir/util/irtools.h"
 #include "codon/compiler/compiler.h"
@@ -27,9 +26,10 @@ const std::string VAR_ARGC = getMangledVar("", "__argc__");
 const std::string FN_OPTIONAL_UNWRAP =
     getMangledFunc("std.internal.types.optional", "unwrap");
 
-Cache::Cache(std::vector<std::unique_ptr<ast::ASTNode>> &nodes, std::string argv0,
-             const std::shared_ptr<IFilesystem> &fs)
-    : fs(fs), _nodes(&nodes) {
+Cache::Cache(std::vector<ASTNodePtr> &nodes, std::string argv0,
+             const std::shared_ptr<IFilesystem> &fs,
+             std::pmr::memory_resource *nodeStorage)
+    : fs(fs), _nodes(&nodes), _nodeStorage(nodeStorage) {
   if (!this->fs) {
     this->fs = std::make_shared<Filesystem>(argv0);
   }

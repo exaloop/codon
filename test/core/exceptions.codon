@@ -171,6 +171,89 @@ def test_native_hierarchy():
 
 test_native_hierarchy()
 
+@test
+def test_base_exception_routing():
+    class RoutingPadding(object):
+        padding: tuple[int, int, int]
+
+    class RoutingError(ValueError, RoutingPadding):
+        payload: int
+
+        def __init__(self):
+            super().__init__("shifted exception")
+            self.padding = (17, 19, 23)
+            self.payload = 29
+
+    @noinline
+    def throw_root(error: BaseException):
+        raise error
+
+    @noinline
+    def route(error: BaseException):
+        try:
+            throw_root(error)
+        except KeyError:
+            return 1
+        except ValueError as caught:
+            assert caught is error
+            return 2
+        except Exception:
+            return 3
+        except BaseException as caught:
+            assert caught is error
+            return 4
+        except:
+            return 5
+        return 0
+
+    assert route(KeyError("key")) == 1
+    assert route(ValueError("value")) == 2
+    assert route(TypeError("type")) == 3
+    assert route(BaseException("base")) == 4
+    assert route(KeyboardInterrupt()) == 4
+    assert route(GeneratorExit()) == 4
+    assert route(SystemExit(7)) == 4
+    padded = RoutingError()
+    assert TypeInfo.cache(RoutingError)._dist_to(BaseException) != TypeInfo.cache(ValueError)._dist_to(BaseException)
+    assert route(padded) == 2
+    assert padded.message == "shifted exception"
+    assert padded.padding == (17, 19, 23) and padded.payload == 29
+
+    @noinline
+    def root_first(error: BaseException):
+        try:
+            throw_root(error)
+        except BaseException:
+            return 1
+        except ValueError:
+            return 2
+        return 0
+
+    assert root_first(padded) == 1
+
+    @noinline
+    def rethrow_root(error: BaseException, events: list[int]):
+        try:
+            try:
+                throw_root(error)
+            except KeyError:
+                assert False
+            finally:
+                events.append(1)
+        except BaseException as caught:
+            assert caught is error
+            events.append(2)
+            raise
+
+    events: list[int] = []
+    try:
+        rethrow_root(padded, events)
+    except:
+        events.append(3)
+    assert events == [1, 2, 3]
+
+test_base_exception_routing()
+
 from internal.types.error import OSError as NativeOSError
 
 class OSError:
@@ -1170,3 +1253,111 @@ def test_finally_bare_raise():
     assert events == ['handled temporary']
 
 test_finally_bare_raise()
+
+@test
+def test_devirtualized_exception_construction():
+    class Marker:
+        marker: int
+
+    class DetailedIndexError(IndexError, Marker):
+        payload: str
+
+        def __init__(self, message: str, marker: int):
+            super().__init__(message)
+            self.payload = message + ":payload"
+            self.marker = marker
+
+        def __str__(self):
+            return self.payload
+
+    @noinline
+    def update(error: IndexError, message: str):
+        error.message = message
+        return str(error)
+
+    @noinline
+    def merge(flag: bool, message: str) -> IndexError:
+        if flag:
+            error: IndexError = IndexError(message)
+        else:
+            error: IndexError = DetailedIndexError(message, 17)
+        error.message = message + ":updated"
+        return error
+
+    @noinline
+    def loop(error: IndexError, count: int):
+        messages: list[str] = []
+        for index in range(count):
+            messages.append(error.message)
+            error = IndexError(str(index))
+        return messages
+
+    for flag in (False, True):
+        error = merge(flag, "original")
+        assert error.message == "original:updated"
+        assert update(error, "changed") == ("changed" if flag else "original:payload")
+        assert error.message == "changed"
+        assert loop(error, 3) == ["changed", "0", "1"]
+        if not flag:
+            if isinstance(error, DetailedIndexError):
+                assert error.marker == 17
+                assert error.payload == "original:payload"
+            else:
+                assert False
+
+    original = DetailedIndexError("alias", 23)
+    alias: IndexError = original
+    original = DetailedIndexError("replacement", 29)
+    alias.message = "retained"
+    assert alias.message == "retained"
+    assert original.message == "replacement"
+    assert str(alias) == "alias:payload"
+
+    @noinline
+    def alternate(first: IndexError, second: IndexError, count: int) -> str:
+        if count:
+            return alternate(second, first, count - 1)
+        return first.message
+
+    @noinline
+    def pack(error: IndexError):
+        return ((error,), 5)
+
+    plain = IndexError("plain")
+    detailed = DetailedIndexError("detailed", 37)
+    assert alternate(plain, detailed, 3) == "detailed"
+    assert alternate(plain, detailed, 4) == "plain"
+    packed = pack(detailed)[0][0]
+    assert packed is detailed
+    assert packed.message == "detailed"
+    assert update(packed, "packed") == "detailed:payload"
+    assert packed.message == "packed"
+
+    def raise_detailed(cause: ValueError):
+        raise DetailedIndexError("raised", 31) from cause
+
+    cause = ValueError("cause")
+    try:
+        raise_detailed(cause)
+    except IndexError as error:
+        assert error.message == "raised"
+        if isinstance(error, DetailedIndexError):
+            assert error.payload == "raised:payload"
+            assert error.marker == 31
+        else:
+            assert False
+        assert error.__cause__ is cause
+        assert "raise_detailed" in error.func
+        assert error.file.endswith("exceptions.codon")
+        assert error.line > 0 and error.col > 0
+
+    for value in ("abc", "a\u0100\U0001f642"):
+        assert value[0] == "a"
+        assert value[-1] == value[len(value) - 1:]
+        try:
+            value[len(value)]
+            assert False
+        except IndexError as error:
+            assert error.message == "string index out of range"
+
+test_devirtualized_exception_construction()

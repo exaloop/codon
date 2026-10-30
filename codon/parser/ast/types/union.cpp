@@ -52,7 +52,7 @@ TypePtr UnionType::generalize(int atLevel) const {
 }
 
 TypePtr UnionType::instantiate(int atLevel, int *unboundCount,
-                               std::unordered_map<int, TypePtr> *cache) const {
+                               InstantiationCache *cache) const {
   auto r = ClassType::instantiate(atLevel, unboundCount, cache);
   auto t = std::make_shared<UnionType>(this->cache, r->getClass()->generics);
   t->setSrcInfo(getSrcInfo());
