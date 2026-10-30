@@ -170,7 +170,7 @@ elseif(SYSTEM_BLAS)
     PRIVATE -Wl,--whole-archive $<TARGET_FILE:zlibstatic> $<TARGET_FILE:gc>
             $<TARGET_FILE:bz2> $<TARGET_FILE:liblzma> $<TARGET_FILE:re2>
             $<TARGET_FILE:hwy> $<TARGET_FILE:hwy_contrib>
-            -Wl,--no-whole-archive)
+            ${COMPILER_RT_LIB} -Wl,--no-whole-archive)
   if(CMAKE_VERSION VERSION_LESS 3.22)
     message(FATAL_ERROR "SYSTEM_BLAS requires CMake 3.22+ for ILP64 selection")
   endif()
