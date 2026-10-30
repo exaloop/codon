@@ -398,11 +398,9 @@ class Partial:
 
     @pure
     @derives
-    @llvm
+    @__internal__
     def __new__(args: T, kwargs: K, M: Literal[str], F: type, T: type, K: type) -> Partial[M, T, K, F]:
-        %0 = insertvalue { {=T}, {=K} } undef, {=T} %args, 0
-        %1 = insertvalue { {=T}, {=K} } %0, {=K} %kwargs, 1
-        ret { {=T}, {=K} } %1
+        pass
 
 
 @__internal__

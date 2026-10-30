@@ -1,11 +1,15 @@
 #include "test.h"
 
+#include "codon/cir/analyze/dataflow/cfg.h"
+#include "codon/cir/analyze/dataflow/reaching.h"
 #include "codon/cir/llvm/llvisitor.h"
 #include "codon/cir/llvm/llvm.h"
 #include "codon/cir/llvm/native/native.h"
 #include "codon/cir/llvm/optimize.h"
+#include "codon/cir/transform/cleanup/devirtualize.h"
 #include "codon/cir/transform/manager.h"
 #include "codon/cir/transform/numpy/numpy.h"
+#include "codon/cir/util/cloning.h"
 #include "codon/cir/util/irtools.h"
 #include "codon/compiler/compiler.h"
 #include "codon/compiler/jit.h"
@@ -200,6 +204,54 @@ protected:
   }
 };
 } // namespace
+
+TEST(LLVMOptimizationTest, InlineAttributes) {
+  ASSERT_EXIT(
+      {
+        for (bool debug : {false, true}) {
+          auto options = Options::getDefault("build/codon_test");
+          options->debug = debug;
+          options->standalone = true;
+          Compiler compiler(*options);
+          llvm::cantFail(
+              compiler.parseCode("inline_attributes.codon",
+                                 "@export\n"
+                                 "def inline_plain(value: int): return value\n"
+                                 "@export\n@inline\n"
+                                 "def inline_enabled(value: int): return value\n"
+                                 "@export\n@noinline\n"
+                                 "def inline_disabled(value: int): return value\n"));
+          llvm::cantFail(compiler.compile());
+          size_t checked = 0;
+          for (auto *variable : *compiler.getModule()) {
+            auto *function = ir::cast<ir::Func>(variable);
+            if (!function)
+              continue;
+            const auto &name = function->getUnmangledName();
+            if (name != "inline_plain" && name != "inline_enabled" &&
+                name != "inline_disabled")
+              continue;
+            EXPECT_EQ(ir::util::isInline(function), name == "inline_enabled");
+            EXPECT_EQ(ir::util::isNoInline(function), name == "inline_disabled");
+            ++checked;
+          }
+          EXPECT_EQ(checked, 3u);
+          auto *module = compiler.getLLVMVisitor()->getModule();
+          EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+          for (const auto *name :
+               {"inline_plain", "inline_enabled", "inline_disabled"}) {
+            auto *function = module->getFunction(name);
+            ASSERT_NE(function, nullptr);
+            EXPECT_EQ(function->hasFnAttribute(llvm::Attribute::AlwaysInline),
+                      std::string(name) == "inline_enabled");
+            EXPECT_EQ(function->hasFnAttribute(llvm::Attribute::NoInline),
+                      std::string(name) == "inline_disabled");
+          }
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
 
 TEST(IntrinsicCodegenTest, TypeQueriesAreConstantsBeforeOptimization) {
   ASSERT_EXIT(
@@ -646,6 +698,145 @@ TEST(IntrinsicCodegenTest, MaterializesSharedAddressTakenQuery) {
       testing::ExitedWithCode(EXIT_SUCCESS), "");
 }
 
+TEST(IntrinsicCodegenTest, RepresentationCastsShareIdentityLowering) {
+  ASSERT_EXIT(
+      {
+        auto options = Options::getDefault("build/codon_test");
+        options->debug = false;
+        options->standalone = true;
+        Compiler compiler(*options);
+        llvm::cantFail(compiler.parseCode(
+            "representation_cast.codon",
+            "class RepresentationBase(object):\n"
+            "    value: int\n"
+            "class RepresentationChild(RepresentationBase):\n"
+            "    extra: int\n"
+            "@tuple\n"
+            "class RepresentationPair:\n"
+            "    first: int\n"
+            "    second: int\n"
+            "@export\n"
+            "def representation_pointer(value: RepresentationBase):\n"
+            "    return type._force_cast(type._ref_raw(value), RepresentationBase)\n"
+            "@export\n"
+            "def representation_optional(value: Optional[RepresentationBase]):\n"
+            "    return type._force_cast(value, Optional[RepresentationBase])\n"
+            "@export\n"
+            "def representation_raw(value: Ptr[u8]):\n"
+            "    return type._force_cast(value, Ptr[u8])\n"
+            "@export\n"
+            "def representation_generator(value: Generator[int]):\n"
+            "    return type._force_cast(value, Generator[int])\n"
+            "@export\n"
+            "def representation_function(value: Function[[int], int]):\n"
+            "    return type._force_cast(value, Function[[int], int])\n"
+            "@export\n"
+            "def representation_record(value: tuple[int, int]):\n"
+            "    return type._force_value_cast(value, RepresentationPair)\n"
+            "@export\n"
+            "def representation_scalar(value: int):\n"
+            "    return type._force_value_cast(value, int)\n"
+            "print(representation_pointer(RepresentationChild(value=7, "
+            "extra=9)).value)\n"));
+        llvm::cantFail(compiler.compile());
+        bool pointer = false;
+        bool raw = false;
+        bool record = false;
+        for (auto *variable : *compiler.getModule()) {
+          auto *function = ir::cast<ir::InternalFunc>(variable);
+          if (!function)
+            continue;
+          const auto &name = function->getName();
+          bool pointerHelper = name.find("._force_cast") != std::string::npos;
+          bool rawHelper = name.find("._ref_raw") != std::string::npos;
+          bool recordHelper = name.find("._force_value_cast") != std::string::npos;
+          if (!pointerHelper && !rawHelper && !recordHelper)
+            continue;
+          EXPECT_EQ(function->getIntrinsic(),
+                    ir::InternalFunc::Intrinsic::REPRESENTATION_CAST);
+          EXPECT_TRUE(function->hasValidIntrinsicSignature());
+          pointer |= pointerHelper;
+          raw |= rawHelper;
+          record |= recordHelper;
+        }
+        EXPECT_TRUE(pointer);
+        EXPECT_TRUE(raw);
+        EXPECT_TRUE(record);
+        auto *module = compiler.getLLVMVisitor()->getModule();
+        ir::optimize(module, options.get());
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        for (const auto *name :
+             {"representation_pointer", "representation_optional", "representation_raw",
+              "representation_generator", "representation_function",
+              "representation_record", "representation_scalar"}) {
+          auto *function = module->getFunction(name);
+          ASSERT_NE(function, nullptr);
+          ASSERT_EQ(function->arg_size(), 1u);
+          ASSERT_EQ(function->size(), 1u);
+          auto *returned =
+              llvm::dyn_cast<llvm::ReturnInst>(function->front().getTerminator());
+          ASSERT_NE(returned, nullptr);
+          EXPECT_EQ(returned->getReturnValue(), function->getArg(0)) << name;
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(IntrinsicCodegenTest, PointerCastHelpersRejectNonPointerTypes) {
+  ASSERT_EXIT(
+      {
+        for (bool debug : {false, true}) {
+          for (const auto *source :
+               {"print(type._force_cast(1, int))\n", "print(type._ref_raw(1))\n",
+                "print(type._force_cast(1, Ptr[u8]))\n",
+                "print(type._force_cast(Ptr[u8](1), int))\n",
+                "@export\ndef invalid(value: Optional[Ptr[u8]]):\n"
+                "    return type._force_cast(value, Optional[Ptr[u8]])\n",
+                "@export\ndef invalid(value: Optional[Generator[int]]):\n"
+                "    return type._force_cast(value, Optional[Generator[int]])\n",
+                "@export\ndef invalid(value: Optional[Function[[int], int]]):\n"
+                "    return type._force_cast(value, Optional[Function[[int], "
+                "int]])\n"}) {
+            auto options = Options::getDefault("build/codon_test");
+            options->debug = debug;
+            options->standalone = true;
+            Compiler compiler(*options);
+            auto error = compiler.parseCode("invalid_pointer_cast.codon", source);
+            EXPECT_TRUE(bool(error)) << source;
+            if (error)
+              EXPECT_NE(llvm::toString(std::move(error))
+                            .find("pointer cast requires pointer-like source and "
+                                  "destination types"),
+                        std::string::npos)
+                  << source;
+          }
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(IntrinsicCodegenTest, RepresentationCastRejectsDifferentLLVMTypes) {
+  for (bool debug : {false, true}) {
+    ASSERT_EXIT(
+        {
+          auto options = Options::getDefault("build/codon_test");
+          options->debug = debug;
+          options->standalone = true;
+          Compiler compiler(*options);
+          llvm::cantFail(
+              compiler.parseCode("invalid_representation_cast.codon",
+                                 "@export\ndef incompatible_cast(value: int):\n"
+                                 "    return type._force_value_cast(value, float)\n"));
+          llvm::cantFail(compiler.compile());
+          std::_Exit(EXIT_SUCCESS);
+        },
+        testing::ExitedWithCode(EXIT_FAILURE),
+        "invalid representation-preserving cast");
+  }
+}
+
 TEST(RTTICodegenTest, FoldsUniformFieldsAndSpecializesCalls) {
   ASSERT_EXIT(
       {
@@ -692,6 +883,509 @@ TEST(RTTICodegenTest, FoldsUniformFieldsAndSpecializesCalls) {
         }
         EXPECT_TRUE(foundFields);
         EXPECT_TRUE(foundDispatch);
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(RTTICodegenTest, DevirtualizesKnownExceptionFields) {
+  ASSERT_EXIT(
+      {
+        auto options = Options::getDefault("build/codon_test");
+        options->debug = false;
+        options->standalone = true;
+        Compiler compiler(*options);
+        llvm::cantFail(compiler.parseCode("devirtualize.codon", R"(
+class LargerIndexError(IndexError):
+    payload: str
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.payload = message
+
+@export
+def known_exception(message: str, choose: bool):
+    if choose:
+        error = IndexError(message)
+    else:
+        error = IndexError("fallback")
+    error.message = message
+    return error.message
+
+@export
+def unknown_exception(error: IndexError, message: str):
+    error.message = message
+    return error.message
+
+print(LargerIndexError("child").payload)
+)"));
+        llvm::cantFail(compiler.compile());
+        auto *module = compiler.getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        auto check = [&](const std::string &name, bool dynamic) {
+          auto *kernel = module->getFunction(name);
+          ASSERT_NE(kernel, nullptr);
+          size_t lookups = 0;
+          size_t specializedConstructors = 0;
+          for (auto &block : *kernel) {
+            for (auto &instruction : block) {
+              auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+              auto *callee = call ? call->getCalledFunction() : nullptr;
+              if (callee && callee->getName().starts_with(".codon.field.offset"))
+                ++lookups;
+              if (!dynamic && call) {
+                EXPECT_NE(callee, nullptr) << name;
+                if (callee &&
+                    callee->getName().starts_with("std.internal.types.error.") &&
+                    callee->getName().contains(".__init__")) {
+                  EXPECT_TRUE(callee->getName().contains(".devirtualized")) << name;
+                  ++specializedConstructors;
+                }
+              }
+            }
+          }
+          EXPECT_EQ(lookups != 0, dynamic) << name;
+          if (!dynamic)
+            EXPECT_EQ(specializedConstructors, 2u);
+          if (testing::Test::HasFailure())
+            kernel->print(llvm::errs());
+        };
+        check("known_exception", false);
+        check("unknown_exception", true);
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(RTTICodegenTest, DevirtualizationRespectsControlFlow) {
+  ASSERT_EXIT(
+      {
+        auto options = Options::getDefault("build/codon_test");
+        options->debug = false;
+        options->standalone = true;
+        Compiler compiler(*options);
+        llvm::cantFail(compiler.parseCode("devirtualize_cfg.codon", R"(
+class FieldBase(object):
+  value: int
+
+class FieldChild(FieldBase):
+  extra: int
+
+class NoInlineRecord(object):
+  value: int
+
+  @noinline
+  def __init__(self, value: int):
+    self.value = value
+
+@export
+def annotated_constructor(number: int):
+  return NoInlineRecord(number).value
+
+@export
+def alias_field(number: int):
+  value = FieldBase(number)
+  alias = value
+  value = FieldBase(number + 1)
+  alias.value += 2
+  return alias.value
+
+@export
+def mixed_field(flag: bool):
+  if flag:
+    value: FieldBase = FieldBase(1)
+  else:
+    value: FieldBase = FieldChild(2, 3)
+  return value.value
+
+@export
+def parameter_field(value: FieldBase, flag: bool):
+  if flag:
+    value = FieldBase(4)
+  return value.value
+
+@export
+def loop_field(value: FieldBase, count: int):
+  total = 0
+  for index in range(count):
+    total += value.value
+    value = FieldBase(index)
+  return total
+
+@export
+def exact_loop_field(count: int):
+  value = FieldBase(0)
+  for index in range(count):
+    value = FieldBase(index)
+  return value.value
+
+@export
+def child_field(number: int):
+  value: FieldBase = FieldChild(number, 17)
+  value.value += 1
+  return value.value
+
+@export
+def escaped_variable(number: int, replacement: FieldBase):
+  value = FieldBase(number)
+  pointer = __ptr__(value)
+  pointer[0] = replacement
+  return value.value
+
+@export
+def caught_field(value: IndexError):
+  try:
+    raise value
+  except IndexError as error:
+    return error.message
+
+@export
+def constructor_named_function(value: FieldBase):
+  return value
+
+@export
+def unknown_factory_field(value: FieldBase):
+  return constructor_named_function(value).value
+)"));
+        llvm::cantFail(compiler.compile());
+        auto *module = compiler.getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        auto check = [&](const std::string &name, bool dynamic) {
+          auto *kernel = module->getFunction(name);
+          ASSERT_NE(kernel, nullptr);
+          size_t lookups = 0;
+          for (auto &block : *kernel) {
+            for (auto &instruction : block) {
+              auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+              auto *callee = call ? call->getCalledFunction() : nullptr;
+              lookups += callee && callee->getName().starts_with(".codon.field.offset");
+            }
+          }
+          EXPECT_EQ(lookups != 0, dynamic) << name;
+          if (testing::Test::HasFailure())
+            kernel->print(llvm::errs());
+        };
+        check("alias_field", false);
+        check("mixed_field", true);
+        check("parameter_field", true);
+        check("loop_field", true);
+        check("exact_loop_field", false);
+        check("child_field", false);
+        check("escaped_variable", true);
+        check("unknown_factory_field", true);
+        auto *annotated = module->getFunction("annotated_constructor");
+        ASSERT_NE(annotated, nullptr);
+        size_t constructors = 0;
+        for (auto &block : *annotated) {
+          for (auto &instruction : block) {
+            auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+            auto *callee = call ? call->getCalledFunction() : nullptr;
+            constructors += callee &&
+                            callee->getName().starts_with("NoInlineRecord.") &&
+                            callee->getName().contains(".__init__");
+          }
+        }
+        EXPECT_EQ(constructors, 1u);
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(RTTICodegenTest, DevirtualizationRejectsSharedEvaluationLocations) {
+  ASSERT_EXIT(
+      {
+        struct CollectFields : ir::util::Operator {
+          std::vector<ir::ExtractInstr *> fields;
+          void handle(ir::ExtractInstr *value) override {
+            if (value->getField() == "value")
+              fields.push_back(value);
+          }
+        };
+        struct ShareValues : ir::transform::Pass {
+          std::string getKey() const override { return "test-share-values"; }
+          void run(ir::Module *module) override {
+            size_t changed = 0;
+            for (auto *variable : *module) {
+              auto *function = ir::cast<ir::BodiedFunc>(variable);
+              if (!function || function->getUnmangledName().find("sharing_") != 0)
+                continue;
+              CollectFields collected;
+              collected.process(function->getBody());
+              ASSERT_EQ(collected.fields.size(), 2u);
+              auto *receiverType = collected.fields.front()->getVal()->getType();
+              ASSERT_EQ(receiverType, collected.fields.back()->getVal()->getType());
+              auto *local = module->N<ir::Var>(function, receiverType);
+              function->push_back(local);
+              auto *read = module->N<ir::VarValue>(function, local);
+              auto *flow = module->N<ir::FlowInstr>(
+                  function, module->N<ir::SeriesFlow>(function), read);
+              ir::util::CloneVisitor clone(module);
+              auto *assignment = module->N<ir::AssignInstr>(
+                  function, local, clone.clone(collected.fields.front()->getVal()));
+              auto *constant = module->getInt(42);
+              auto *reference = module->N<ir::VarValue>(function, function);
+              const auto &name = function->getUnmangledName();
+              for (auto *field : collected.fields) {
+                auto *setup = module->N<ir::SeriesFlow>(field);
+                setup->push_back(constant);
+                setup->push_back(reference);
+                setup->push_back(
+                    module->N<ir::AssignInstr>(field, local, field->getVal()));
+                ir::Value *receiver = module->N<ir::VarValue>(field, local);
+                if (name == "sharing_read")
+                  receiver = read;
+                else if (name == "sharing_flow")
+                  receiver = flow;
+                else if (name == "sharing_assignment")
+                  setup->push_back(assignment);
+                field->setVal(module->N<ir::FlowInstr>(field, setup, receiver));
+              }
+              ++changed;
+            }
+            EXPECT_EQ(changed, 4u);
+          }
+        };
+        auto options = Options::getDefault("build/codon_test");
+        options->debug = false;
+        options->standalone = true;
+        Compiler compiler(*options);
+        compiler.getPassManager()->registerPass(
+            std::make_unique<ShareValues>(),
+            ir::transform::cleanup::DevirtualizationPass::KEY, {},
+            {ir::analyze::dataflow::CFAnalysis::KEY,
+             ir::analyze::dataflow::RDAnalysis::KEY});
+        std::string source =
+            "class SharingBase(object):\n"
+            "    value: int\n"
+            "class SharingChild(SharingBase):\n"
+            "    padding: int\n"
+            "@noinline\n"
+            "def make_sharing_base(number: int) -> SharingBase:\n"
+            "    return SharingBase(value=number)\n"
+            "@noinline\n"
+            "def make_sharing_child(number: int) -> SharingBase:\n"
+            "    return SharingChild(value=number + 1, padding=1000)\n";
+        for (const auto *name : {"sharing_read", "sharing_flow", "sharing_assignment",
+                                 "sharing_distinct"}) {
+          source += "@export\n@noinline\ndef " + std::string(name) +
+                    "(number: int):\n"
+                    "    current: SharingBase = make_sharing_base(number)\n"
+                    "    first = current.value\n"
+                    "    current = make_sharing_child(number)\n"
+                    "    return first + current.value\n";
+        }
+        llvm::cantFail(compiler.parseCode("devirtualize_shared.codon", source));
+        llvm::cantFail(compiler.compile());
+        auto *module = compiler.getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        for (const auto *name : {"sharing_read", "sharing_flow", "sharing_assignment",
+                                 "sharing_distinct"}) {
+          auto *function = module->getFunction(name);
+          ASSERT_NE(function, nullptr);
+          size_t lookups = 0;
+          for (auto &block : *function)
+            for (auto &instruction : block)
+              if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction))
+                if (auto *callee = call->getCalledFunction())
+                  lookups += callee->getName().starts_with(".codon.field.offset");
+          EXPECT_EQ(lookups, std::string(name) == "sharing_distinct" ? 0u : 2u) << name;
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(RTTICodegenTest, SpecializesExactArgumentContextsWithoutInlining) {
+  ASSERT_EXIT(
+      {
+        auto options = Options::getDefault("build/codon_test");
+        options->debug = false;
+        options->standalone = true;
+        Compiler compiler(*options);
+        std::string source =
+            "class ContextBase(object):\n"
+            "    value: int\n"
+            "    def result(self):\n"
+            "        return self.value\n"
+            "class ContextChild(ContextBase):\n"
+            "    extra: int\n"
+            "    def result(self):\n"
+            "        return self.extra\n"
+            "@llvm\n"
+            "def context_opaque_identity(value: ContextBase) -> ContextBase:\n"
+            "    ret ptr %value\n"
+            "@export\n"
+            "def context_opaque(number: int):\n"
+            "    return context_opaque_identity(ContextBase(number)).value\n"
+            "@export\n"
+            "@noinline\n"
+            "def context_local(value: ContextBase):\n"
+            "    return ContextBase(4).result() + value.value\n"
+            R"(
+@export
+@noinline
+def context_read(value: ContextBase):
+    return value.value
+
+@export
+@noinline
+def context_pack(value: ContextBase):
+    return ((value,), 3)
+
+@export
+@noinline
+def context_alternate(value: ContextBase, other: ContextBase, count: int) -> int:
+    if count:
+        return context_alternate(other, value, count - 1)
+    return value.value
+
+@export
+def context_first(number: int):
+    return context_read(ContextBase(number))
+
+@export
+def context_second(number: int):
+    return context_read(ContextBase(number + 1))
+
+@export
+def context_nested(number: int):
+    return context_pack(ContextChild(number, 9))[0][0].value
+
+print(context_read(ContextBase(0)))
+print(context_alternate(ContextBase(7), ContextChild(11, 13), 3))
+print(context_local(ContextChild(5, 7)))
+)";
+        for (int index = 0; index < 12; ++index) {
+          auto name = "ContextVariant" + std::to_string(index);
+          source += "\nclass " + name + "(ContextBase):\n    extra: int\n";
+          source += "print(context_read(" + name + "(1, 2)))\n";
+        }
+        llvm::cantFail(compiler.parseCode("devirtualize_contexts.codon", source));
+        llvm::cantFail(compiler.compile());
+        auto *module = compiler.getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        auto hasLookup = [](llvm::Function *function) {
+          for (auto &block : *function)
+            for (auto &instruction : block)
+              if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction))
+                if (auto *callee = call->getCalledFunction())
+                  if (callee->getName().starts_with(".codon.field.offset"))
+                    return true;
+          return false;
+        };
+        auto readTarget = [&](const char *name) -> llvm::Function * {
+          auto *function = module->getFunction(name);
+          if (!function)
+            return nullptr;
+          for (auto &block : *function)
+            for (auto &instruction : block)
+              if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction))
+                if (auto *callee = call->getCalledFunction())
+                  if (callee->getName().starts_with("context_read"))
+                    return callee;
+          return nullptr;
+        };
+        auto *first = readTarget("context_first");
+        ASSERT_NE(first, nullptr);
+        EXPECT_TRUE(first->getName().contains(".devirtualized"));
+        EXPECT_EQ(first, readTarget("context_second"));
+        auto *original = module->getFunction("context_read");
+        ASSERT_NE(original, nullptr);
+        EXPECT_TRUE(original->hasExternalLinkage());
+        EXPECT_TRUE(hasLookup(original));
+        auto *nested = module->getFunction("context_nested");
+        ASSERT_NE(nested, nullptr);
+        EXPECT_FALSE(hasLookup(nested));
+        auto *opaque = module->getFunction("context_opaque");
+        ASSERT_NE(opaque, nullptr);
+        EXPECT_TRUE(hasLookup(opaque));
+        size_t readVariants = 0;
+        size_t recursiveVariants = 0;
+        size_t localVariants = 0;
+        for (auto &function : *module) {
+          if (!function.getName().contains(".devirtualized"))
+            continue;
+          bool read = function.getName().starts_with("context_read");
+          bool recursive = function.getName().starts_with("context_alternate");
+          bool local = function.getName().starts_with("context_local");
+          if (!read && !recursive && !local)
+            continue;
+          readVariants += read;
+          recursiveVariants += recursive;
+          localVariants += local;
+          EXPECT_TRUE(function.hasPrivateLinkage());
+          EXPECT_TRUE(function.hasFnAttribute(llvm::Attribute::NoInline));
+          EXPECT_FALSE(hasLookup(&function));
+          if (recursive) {
+            bool foundRecursion = false;
+            for (auto &block : function)
+              for (auto &instruction : block)
+                if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction))
+                  if (auto *callee = call->getCalledFunction())
+                    if (callee->getName().starts_with("context_alternate")) {
+                      foundRecursion = true;
+                      EXPECT_NE(callee, &function);
+                      EXPECT_TRUE(callee->getName().contains(".devirtualized"));
+                    }
+            EXPECT_TRUE(foundRecursion);
+          }
+        }
+        EXPECT_EQ(readVariants, 8u);
+        EXPECT_EQ(recursiveVariants, 2u);
+        EXPECT_EQ(localVariants, 1u);
+        if (testing::Test::HasFailure()) {
+          llvm::errs() << "read variants: " << readVariants
+                       << ", recursive variants: " << recursiveVariants << '\n';
+          first->print(llvm::errs());
+          nested->print(llvm::errs());
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(RTTICodegenTest, RemovesExceptionMachineryFromStringIndexing) {
+  ASSERT_EXIT(
+      {
+        auto compiler = compileAndOptimize(R"(
+@export
+def exception_kernel(message: str):
+    return IndexError(message).message
+
+@export
+def character_kernel(value: str, position: int):
+    return value[position]
+)");
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        auto *exception = module->getFunction("exception_kernel");
+        ASSERT_NE(exception, nullptr);
+        size_t instructions = 0;
+        for (auto &block : *exception)
+          instructions += block.size();
+        EXPECT_EQ(instructions, 1u);
+        auto *returned =
+            llvm::dyn_cast<llvm::ReturnInst>(exception->front().getTerminator());
+        ASSERT_NE(returned, nullptr);
+        EXPECT_EQ(returned->getReturnValue(), exception->getArg(0));
+
+        auto *character = module->getFunction("character_kernel");
+        ASSERT_NE(character, nullptr);
+        bool canThrow = false;
+        for (auto &block : *character) {
+          for (auto &instruction : block) {
+            auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+            if (!call)
+              continue;
+            auto *callee = call->getCalledFunction();
+            ASSERT_NE(callee, nullptr);
+            auto name = callee->getName();
+            EXPECT_FALSE(name.contains(".__init__"));
+            EXPECT_FALSE(name.contains(".__getitem__"));
+            EXPECT_FALSE(name.starts_with(".codon.field.offset"));
+            canThrow |= name == "seq_throw";
+          }
+        }
+        EXPECT_TRUE(canThrow);
         std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
       },
       testing::ExitedWithCode(EXIT_SUCCESS), "");
@@ -800,6 +1494,11 @@ TEST(RTTICodegenTest, ReusesJITFieldOwnerOffsets) {
             "def field_loop(value: FieldBase, rounds: int):\n"
             "    for index in range(rounds):\n"
             "        value.balance = (value.balance * 3 + index) & 65535\n"
+            "    return value.balance\n"
+            "@export\n"
+            "def exact_field(number: int):\n"
+            "    value = FieldBase(number, 0)\n"
+            "    value.balance += 2\n"
             "    return value.balance\n"));
         auto *compiler = instance.getCompiler();
         compiler->getPassManager()->run(compiler->getModule());
@@ -850,6 +1549,16 @@ TEST(RTTICodegenTest, ReusesJITFieldOwnerOffsets) {
           }
         }
         EXPECT_EQ(loopLookups, 1u);
+        auto *exact = module->getFunction("exact_field");
+        ASSERT_NE(exact, nullptr);
+        for (auto &block : *exact) {
+          for (auto &instruction : block) {
+            auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+            auto *callee = call ? call->getCalledFunction() : nullptr;
+            if (callee)
+              EXPECT_FALSE(callee->getName().starts_with(".codon.field.offset"));
+          }
+        }
         std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
       },
       testing::ExitedWithCode(EXIT_SUCCESS), "");

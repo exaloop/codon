@@ -257,7 +257,7 @@ private:
   /// @param field the field name
   /// @return the field's address
   llvm::Value *getFieldAddress(llvm::Value *object, RefType *type,
-                               const std::string &field);
+                               const std::string &field, RefType *exactType = nullptr);
   /// Evaluates a type query with this module's target layout.
   /// @param function the valid type-query intrinsic declaration
   /// @return the query result as an LLVM constant

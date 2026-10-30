@@ -1,6 +1,6 @@
+#include "codon/dsl/plugins.h"
 #include "codon/cir/llvm/llvm.h"
 #include "codon/compiler/jit.h"
-#include "codon/dsl/plugins.h"
 #include "gtest/gtest.h"
 
 namespace codon {

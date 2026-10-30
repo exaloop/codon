@@ -18,6 +18,7 @@ namespace ir {
 
 class Func;
 class Value;
+class RefType;
 
 namespace util {
 class CloneVisitor;
@@ -85,6 +86,17 @@ public:
   }
   size_t size() const { return values.size(); }
   void reserve(size_t size) { values.reserve(size); }
+};
+
+struct ExactTypeAttribute : public Attribute {
+  static const int AttributeID;
+  RefType *type;
+
+  explicit ExactTypeAttribute(RefType *type) : type(type) {}
+  bool needsClone() const override { return false; }
+
+private:
+  std::ostream &doFormat(std::ostream &os) const override;
 };
 
 /// Attribute containing SrcInfo

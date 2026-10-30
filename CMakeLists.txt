@@ -270,6 +270,7 @@ set(CODON_HPPFILES
   codon/cir/cir.h
   codon/cir/transform/cleanup/canonical.h
   codon/cir/transform/cleanup/dead_code.h
+  codon/cir/transform/cleanup/devirtualize.h
   codon/cir/transform/cleanup/global_demote.h
   codon/cir/transform/cleanup/replacer.h
   codon/cir/transform/folding/const_fold.h
@@ -386,6 +387,7 @@ set(CODON_CPPFILES
   codon/cir/module.cpp
   codon/cir/transform/cleanup/canonical.cpp
   codon/cir/transform/cleanup/dead_code.cpp
+  codon/cir/transform/cleanup/devirtualize.cpp
   codon/cir/transform/cleanup/global_demote.cpp
   codon/cir/transform/cleanup/replacer.cpp
   codon/cir/transform/folding/const_fold.cpp

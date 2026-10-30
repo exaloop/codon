@@ -2,9 +2,31 @@
 
 #include <algorithm>
 
+#include "codon/cir/util/irtools.h"
 #include "codon/cir/util/matching.h"
 
 using namespace codon::ir;
+
+TEST_F(CIRCoreTest, FunctionExportAttributes) {
+  auto *function = module->Nr<BodiedFunc>();
+  EXPECT_FALSE(util::isExport(function));
+  EXPECT_FALSE(util::isGPUKernel(function));
+  util::setExport(function, false);
+  EXPECT_FALSE(function->hasAttribute<KeyValueAttribute>());
+
+  util::setExport(function);
+  EXPECT_TRUE(util::isExport(function));
+  auto *attributes = function->getAttribute<KeyValueAttribute>();
+  ASSERT_NE(attributes, nullptr);
+  attributes->attributes["custom.attribute"] = "preserved";
+  util::setExport(function);
+  EXPECT_TRUE(util::isExport(function));
+  util::setExport(function, false);
+  util::setExport(function, false);
+  EXPECT_FALSE(util::isExport(function));
+  EXPECT_FALSE(util::isGPUKernel(function));
+  EXPECT_EQ(attributes->get("custom.attribute"), "preserved");
+}
 
 TEST_F(CIRCoreTest, FuncRealizationAndVarInsertionEraseAndIterators) {
   auto *fn = module->Nr<BodiedFunc>();
@@ -126,6 +148,35 @@ TEST_F(CIRCoreTest, TypeInfoMethodLookupContract) {
                                 {module->getIntType(), module->getIntType()}),
       {"info", "id"});
   ASSERT_FALSE(lookup->hasValidIntrinsicSignature());
+}
+
+TEST_F(CIRCoreTest, RepresentationCastIntrinsicContracts) {
+  auto *source = module->unsafeGetMemberedType("cast.source", true);
+  auto *target = module->unsafeGetMemberedType("cast.target", true);
+  auto *function = module->Nr<InternalFunc>("cast.representation");
+  function->realize(module->unsafeGetFuncType("cast.valid", target, {source}),
+                    {"value"});
+  function->setIntrinsic(InternalFunc::Intrinsic::REPRESENTATION_CAST, target);
+  EXPECT_TRUE(function->hasValidIntrinsicSignature());
+  EXPECT_STREQ(InternalFunc::getIntrinsicName(function->getIntrinsic()),
+               "representation_cast");
+  EXPECT_EQ(function->getIntrinsicSideEffectStatus(), util::PURE);
+  EXPECT_TRUE(function->intrinsicDerivesFromArguments());
+  auto *cloned = cast<InternalFunc>(cv->forceClone(function));
+  EXPECT_TRUE(util::match(function, cloned));
+  function->realize(
+      module->unsafeGetFuncType("cast.structural", target, {module->getIntType()}),
+      {"value"});
+  EXPECT_TRUE(function->hasValidIntrinsicSignature());
+  EXPECT_TRUE(function->intrinsicDerivesFromArguments());
+  function->setIntrinsic(InternalFunc::Intrinsic::REPRESENTATION_CAST, source);
+  EXPECT_FALSE(function->hasValidIntrinsicSignature());
+  function->setIntrinsic(InternalFunc::Intrinsic::REPRESENTATION_CAST, target);
+  function->realize(module->unsafeGetFuncType("cast.empty", target, {}), {});
+  EXPECT_FALSE(function->hasValidIntrinsicSignature());
+  function->realize(module->unsafeGetFuncType("cast.extra", target, {source, source}),
+                    {"first", "second"});
+  EXPECT_FALSE(function->hasValidIntrinsicSignature());
 }
 
 TEST_F(CIRCoreTest, RuntimeMetadataDependencies) {

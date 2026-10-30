@@ -2277,9 +2277,7 @@ void NumPyInlinePass::run(Module *module) {
   auto getStatements = [&](BodiedFunc *callee) -> std::vector<Value *> {
     auto *body = cast<SeriesFlow>(callee->getBody());
     if (!body || callee->isGenerator() || callee->isAsync() ||
-        callee->getName().rfind("std.numpy.", 0) == 0 ||
-        util::hasAttribute(callee,
-                           ast::getMangledFunc("std.internal.attributes", "noinline")))
+        callee->getName().rfind("std.numpy.", 0) == 0 || util::isNoInline(callee))
       return {};
     std::vector<Value *> statements;
     std::function<void(SeriesFlow *)> flatten = [&](SeriesFlow *series) {

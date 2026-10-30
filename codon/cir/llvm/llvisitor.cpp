@@ -25,19 +25,12 @@
 namespace codon {
 namespace ir {
 namespace {
-const std::string EXPORT_ATTR =
-    ast::getMangledFunc("std.internal.attributes", "export");
-const std::string INLINE_ATTR =
-    ast::getMangledFunc("std.internal.attributes", "inline");
-const std::string NOINLINE_ATTR =
-    ast::getMangledFunc("std.internal.attributes", "noinline");
 const std::string LLVM_MEMORY_NONE_ATTR =
     ast::getMangledFunc("std.internal.attributes", "llvm_memory_none");
 const std::string LLVM_NO_CAPTURE_ATTR =
     ast::getMangledFunc("std.internal.attributes", "llvm_nocapture");
 const std::string LLVM_NO_FREE_ATTR =
     ast::getMangledFunc("std.internal.attributes", "llvm_nofree");
-const std::string GPU_KERNEL_ATTR = ast::getMangledFunc("std.internal.gpu", "kernel");
 
 const std::string MAIN_UNCLASH = ".main.unclash";
 const std::string MAIN_CTOR = ".main.ctor";
@@ -60,9 +53,9 @@ llvm::DIFile *LLVMVisitor::DebugInfo::getFile(const std::string &path) {
 std::string LLVMVisitor::getGlobalCtorName() { return MAIN_CTOR; }
 
 std::string LLVMVisitor::getNameForFunction(const Func *x) {
-  if (isA<ExternalFunc>(x) || util::hasAttribute(x, EXPORT_ATTR)) {
+  if (isA<ExternalFunc>(x) || util::isExport(x)) {
     return x->getUnmangledName();
-  } else if (util::hasAttribute(x, GPU_KERNEL_ATTR)) {
+  } else if (util::isGPUKernel(x)) {
     return x->getName();
   } else {
     return x->referenceString();
@@ -1887,22 +1880,21 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
   seqassertn(func, "{} not inserted", *x);
   setDebugInfoForNode(x);
 
-  auto *fnAttributes = x->getAttribute<KeyValueAttribute>();
   if (x->isJIT()) {
     func->addFnAttr(llvm::Attribute::get(*context, "jit"));
   }
-  if (x->isJIT() || (fnAttributes && fnAttributes->has(EXPORT_ATTR))) {
+  if (x->isJIT() || util::isExport(x)) {
     func->setLinkage(llvm::GlobalValue::ExternalLinkage);
   } else {
     func->setLinkage(llvm::GlobalValue::PrivateLinkage);
   }
-  if (fnAttributes && fnAttributes->has(INLINE_ATTR)) {
+  if (util::isInline(x)) {
     func->addFnAttr(llvm::Attribute::AttrKind::AlwaysInline);
   }
-  if (fnAttributes && fnAttributes->has(NOINLINE_ATTR)) {
+  if (util::isNoInline(x)) {
     func->addFnAttr(llvm::Attribute::AttrKind::NoInline);
   }
-  if (fnAttributes && fnAttributes->has(GPU_KERNEL_ATTR)) {
+  if (util::isGPUKernel(x)) {
     func->addFnAttr(llvm::Attribute::AttrKind::NoInline);
     func->addFnAttr(llvm::Attribute::get(*context, "kernel"));
     func->setLinkage(llvm::GlobalValue::ExternalLinkage);
@@ -3328,7 +3320,9 @@ void LLVMVisitor::visit(const ExtractInstr *x) {
   process(x->getVal());
   B->SetInsertPoint(block);
   if (auto *refType = cast<RefType>(memberedType)) {
-    auto *address = getFieldAddress(value, refType, x->getField());
+    auto *exact = x->getAttribute<ExactTypeAttribute>();
+    auto *address =
+        getFieldAddress(value, refType, x->getField(), exact ? exact->type : nullptr);
     value = B->CreateLoad(getLLVMType(x->getType()), address);
     return;
   }
@@ -3347,7 +3341,9 @@ void LLVMVisitor::visit(const InsertInstr *x) {
   auto *rhs = value;
 
   B->SetInsertPoint(block);
-  auto *address = getFieldAddress(lhs, refType, x->getField());
+  auto *exact = x->getAttribute<ExactTypeAttribute>();
+  auto *address =
+      getFieldAddress(lhs, refType, x->getField(), exact ? exact->type : nullptr);
   B->CreateStore(rhs, address);
   value = lhs;
 }
@@ -4017,7 +4013,8 @@ llvm::Value *LLVMVisitor::loadRuntimeField(llvm::Value *info, unsigned field) {
 }
 
 llvm::Value *LLVMVisitor::getFieldAddress(llvm::Value *object, RefType *type,
-                                          const std::string &field) {
+                                          const std::string &field,
+                                          RefType *exactType) {
   auto index = type->getMemberIndex(field);
   seqassertn(index >= 0, "unknown field {} of {}", field, type->getName());
   if (!type->isPolymorphic())
@@ -4030,6 +4027,16 @@ llvm::Value *LLVMVisitor::getFieldAddress(llvm::Value *object, RefType *type,
   auto localOffset = M->getDataLayout()
                          .getStructLayout(getOwnLayout(owner))
                          ->getElementOffset(localIndex);
+  if (exactType) {
+    auto *info = exactType->getRuntimeInfo();
+    auto position = std::find(info->mro.begin(), info->mro.end(), owner);
+    seqassertn(position != info->mro.end(), "field owner missing from exact type");
+    auto offset =
+        M->getDataLayout()
+            .getStructLayout(getObjectLayout(exactType))
+            ->getElementOffset(1 + std::distance(info->mro.begin(), position));
+    return B->CreateGEP(B->getInt8Ty(), object, B->getInt64(offset + localOffset));
+  }
   // Address = canonical object + owner's segment offset + field's local offset.
   // Static type Base alone does not fix the segment offset: Derived's own fields
   // precede Base's segment. AOT can prove agreement across all known subtypes;
@@ -4229,6 +4236,11 @@ llvm::Value *LLVMVisitor::codegenIntrinsic(const InternalFunc *function,
       result = B->CreateInsertValue(result, args[index], index);
     return result;
   }
+  case Intrinsic::REPRESENTATION_CAST:
+    if (args.size() != 1 ||
+        args.front()->getType() != getLLVMType(function->getIntrinsicType()))
+      compilationError("invalid representation-preserving cast");
+    return args.front();
   case Intrinsic::GENERATOR_PROMISE: {
     auto *type = cast<GeneratorType>(function->getIntrinsicType());
     seqassertn(type && args.size() == 1, "invalid generator promise access");
