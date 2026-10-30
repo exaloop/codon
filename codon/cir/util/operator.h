@@ -2,7 +2,8 @@
 
 #pragma once
 
-#include <unordered_set>
+#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/SmallVector.h"
 
 #include "codon/cir/cir.h"
 #include "codon/cir/util/visitor.h"
@@ -27,7 +28,7 @@ namespace util {
 class Operator : public Visitor {
 private:
   /// IDs of previously visited nodes
-  std::unordered_set<id_t> seen;
+  llvm::DenseSet<id_t> seen;
   /// stack of IR nodes being visited
   std::vector<Node *> nodeStack;
   /// stack of iterators
@@ -181,11 +182,19 @@ public:
 private:
   void processChildren(Value *v) {
     nodeStack.push_back(v);
-    for (auto *c : v->getUsedValues()) {
-      if (saw(c))
-        continue;
-      see(c);
-      process(c);
+    auto visitChildren = [&](const auto &children) {
+      for (auto *child : children) {
+        if (!seen.insert(child->getId()).second)
+          continue;
+        process(child);
+      }
+    };
+    if (auto *call = cast<CallInstr>(v)) {
+      llvm::SmallVector<Value *, 8> children(call->begin(), call->end());
+      children.push_back(call->getCallee());
+      visitChildren(children);
+    } else {
+      visitChildren(v->getUsedValues());
     }
     nodeStack.pop_back();
   }

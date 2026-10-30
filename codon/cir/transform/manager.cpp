@@ -111,6 +111,8 @@ void PassManager::runPass(Module *module, const std::string &name) {
   auto it = 0;
 
   while (run) {
+    if (!meta.pass->shouldRun(module))
+      break;
     for (auto &dep : meta.reqs) {
       runAnalysis(module, dep);
     }

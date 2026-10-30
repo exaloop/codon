@@ -117,7 +117,8 @@ struct RDManager {
 
   explicit RDManager(RDInspector *rd) : rd(rd), cache() {}
 
-  std::unordered_set<id_t> getReachingDefinitions(const Var *var, const Value *loc) {
+  const std::unordered_set<id_t> &getReachingDefinitions(const Var *var,
+                                                         const Value *loc) {
     auto key = std::make_pair(var->getId(), loc->getId());
     auto it = cache.find(key);
     if (it == cache.end()) {
@@ -126,8 +127,7 @@ struct RDManager {
       for (auto &def : defs) {
         dset.insert(def.assignment->getId());
       }
-      cache.emplace(key, dset);
-      return dset;
+      return cache.emplace(key, std::move(dset)).first->second;
     } else {
       return it->second;
     }
@@ -169,9 +169,9 @@ struct DerivedSet {
     // Make sure the var at this point is reached by
     // at least one definition that has led to a
     // derived value.
-    auto mySet = rd.getReachingDefinitions(v, loc);
+    const auto &mySet = rd.getReachingDefinitions(v, loc);
     for (auto *cause : it->second) {
-      auto otherSet = rd.getReachingDefinitions(v, cause);
+      const auto &otherSet = rd.getReachingDefinitions(v, cause);
       for (auto &elem : mySet) {
         if (otherSet.count(elem))
           return true;
@@ -280,12 +280,16 @@ std::vector<CaptureInfo> makeNoCaptureInfo(const Func *func, bool derives) {
 }
 
 struct CaptureContext {
+  using SummaryMap = std::unordered_map<id_t, std::vector<CaptureInfo>>;
   RDResult *reaching;
   DominatorResult *dominating;
-  std::unordered_map<id_t, std::vector<CaptureInfo>> results;
+  SummaryMap results;
+  const SummaryMap *knownResults;
 
-  CaptureContext(RDResult *reaching, DominatorResult *dominating)
-      : reaching(reaching), dominating(dominating), results() {}
+  CaptureContext(RDResult *reaching, DominatorResult *dominating,
+                 const SummaryMap *knownResults = nullptr)
+      : reaching(reaching), dominating(dominating), results(),
+        knownResults(knownResults) {}
 
   std::vector<CaptureInfo> get(const Func *func);
   void set(const Func *func, const std::vector<CaptureInfo> &result);
@@ -497,8 +501,8 @@ struct CaptureTracker : public util::Operator {
         if (toVar->isGlobal() || rd.isInvalid(toVar)) {
           derived = true;
         } else {
-          auto mySet = rd.getReachingDefinitions(toVar, cause);
-          auto otherSet = rd.getReachingDefinitions(toVar, toCause);
+          const auto &mySet = rd.getReachingDefinitions(toVar, cause);
+          const auto &otherSet = rd.getReachingDefinitions(toVar, toCause);
           for (auto &elem : mySet) {
             if (otherSet.count(elem)) {
               derived = true;
@@ -682,6 +686,11 @@ struct CaptureTracker : public util::Operator {
 };
 
 std::vector<CaptureInfo> CaptureContext::get(const Func *func) {
+  if (knownResults) {
+    auto it = knownResults->find(func->getId());
+    if (it != knownResults->end())
+      return it->second;
+  }
   // Don't know anything about external/LLVM funcs so use annotations.
   if (isA<ExternalFunc>(func) || isA<LLVMFunc>(func)) {
     bool derives = util::hasAttribute(func, util::DERIVES_ATTR);
@@ -789,8 +798,7 @@ CaptureInfo escapes(const BodiedFunc *func, const Value *value, CaptureResult *c
   if (!shouldTrack(value))
     return CaptureInfo::nothing();
 
-  CaptureContext cc(cr->rdResult, cr->domResult);
-  cc.results = cr->results;
+  CaptureContext cc(cr->rdResult, cr->domResult, &cr->results);
   CaptureTracker ct(cc, cast<BodiedFunc>(func), value);
   ct.runToCompletion(func);
   seqassertn(ct.dsets.size() == 1, "unexpected dsets size");

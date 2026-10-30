@@ -5,6 +5,8 @@
 #include <type_traits>
 #include <utility>
 
+#include "llvm/ADT/DenseMap.h"
+
 #include "codon/cir/analyze/dataflow/capture.h"
 #include "codon/cir/util/irtools.h"
 #include "codon/cir/util/operator.h"
@@ -74,6 +76,7 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
   dataflow::CaptureResult *cr;
   bool globalAssignmentHasSideEffects;
   std::unordered_map<id_t, Status> result;
+  llvm::DenseMap<std::pair<id_t, id_t>, bool> escapePurity;
   std::vector<const BodiedFunc *> funcStack;
   Status exprStatus;
   Status funcStatus;
@@ -276,7 +279,7 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
     auto *func = funcStack.back();
     auto it = cr->results.find(func->getId());
     seqassertn(it != cr->results.end(), "function not found in capture results");
-    auto captureInfo = it->second;
+    const auto &captureInfo = it->second;
 
     bool pure = true;
 
@@ -289,9 +292,15 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
 
     if (pure) {
       // make sure the lhs does not escape
-      auto escapeInfo = escapes(func, v->getLhs(), cr);
-      pure = (!escapeInfo || (escapeInfo.returnCaptures && !escapeInfo.externCaptures &&
-                              escapeInfo.argCaptures.empty()));
+      auto entry = escapePurity.try_emplace(
+          std::make_pair(func->getId(), v->getLhs()->getId()), false);
+      if (entry.second) {
+        auto escapeInfo = escapes(func, v->getLhs(), cr);
+        entry.first->second =
+            !escapeInfo || (escapeInfo.returnCaptures && !escapeInfo.externCaptures &&
+                            escapeInfo.argCaptures.empty());
+      }
+      pure = entry.first->second;
     }
 
     set(v, Status::UNKNOWN, pure ? Status::PURE : Status::UNKNOWN);
@@ -367,7 +376,7 @@ std::unique_ptr<Result> SideEffectAnalysis::run(const Module *m) {
   const_cast<Module *>(m)->accept(vua);
   SideEfectAnalyzer sea(vua, capResult, globalAssignmentHasSideEffects);
   m->accept(sea);
-  return std::make_unique<SideEffectResult>(sea.result);
+  return std::make_unique<SideEffectResult>(std::move(sea.result));
 }
 
 } // namespace module

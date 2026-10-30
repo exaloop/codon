@@ -119,6 +119,10 @@ void setLifetimeTag(Value *value, const std::string &tag) {
 
 const std::string FUSION_MODULE = "std.numpy.fusion";
 
+bool NumPyPass::shouldRun(Module *module) const {
+  return std::any_of(module->types_begin(), module->types_end(), isArrayType);
+}
+
 NumPyPrimitiveTypes::NumPyPrimitiveTypes(Module *M)
     : none(M->getNoneType()), bool_(M->getBoolType()), i8(M->getIntType(8, true)),
       u8(M->getIntType(8, false)), i16(M->getIntType(16, true)),
