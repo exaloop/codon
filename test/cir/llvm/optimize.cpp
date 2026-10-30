@@ -1,6 +1,7 @@
 #include "test.h"
 
 #include "codon/cir/llvm/llvisitor.h"
+#include "codon/cir/llvm/llvm.h"
 #include "codon/cir/llvm/native/native.h"
 #include "codon/cir/llvm/optimize.h"
 #include "codon/cir/transform/manager.h"
@@ -12,13 +13,6 @@
 #include "codon/runtime/rtti.h"
 
 #include <cstdlib>
-
-#include <llvm/AsmParser/Parser.h>
-#include <llvm/IR/CFG.h>
-#include <llvm/IR/Verifier.h>
-#include <llvm/Support/CommandLine.h>
-#include <llvm/Support/FileUtilities.h>
-#include <llvm/Support/SourceMgr.h>
 
 using namespace codon;
 

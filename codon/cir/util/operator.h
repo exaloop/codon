@@ -2,10 +2,8 @@
 
 #pragma once
 
-#include "llvm/ADT/DenseSet.h"
-#include "llvm/ADT/SmallVector.h"
-
 #include "codon/cir/cir.h"
+#include "codon/cir/llvm/llvm.h"
 #include "codon/cir/util/visitor.h"
 
 #define LAMBDA_VISIT(x)                                                                \

@@ -6,8 +6,8 @@
 #include <unordered_set>
 #include <vector>
 
+#include "codon/cir/llvm/llvm.h"
 #include "codon/parser/ast/error.h"
-#include "llvm/Support/Error.h"
 #include <fmt/format.h>
 
 template <>

@@ -2,7 +2,6 @@
 
 #pragma once
 
-#include "llvm/ADT/SmallVector.h"
 #include <algorithm>
 #include <iostream>
 #include <map>
@@ -11,6 +10,7 @@
 #include <unordered_map>
 #include <utility>
 
+#include "codon/cir/llvm/llvm.h"
 #include "codon/util/common.h"
 
 namespace codon {

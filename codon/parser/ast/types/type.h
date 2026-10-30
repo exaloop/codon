@@ -2,12 +2,12 @@
 
 #pragma once
 
-#include "llvm/ADT/DenseMap.h"
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
+#include "codon/cir/llvm/llvm.h"
 #include "codon/parser/common.h"
 
 namespace codon::ast {

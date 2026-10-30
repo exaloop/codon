@@ -2,12 +2,13 @@
 
 #pragma once
 
-#include "llvm/Support/Error.h"
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
+
+#include "codon/cir/llvm/llvm.h"
 
 /**
  * WARNING: do not include anything else in this file, especially format.h

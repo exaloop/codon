@@ -5,9 +5,8 @@
 #include <type_traits>
 #include <utility>
 
-#include "llvm/ADT/DenseMap.h"
-
 #include "codon/cir/analyze/dataflow/capture.h"
+#include "codon/cir/llvm/llvm.h"
 #include "codon/cir/util/irtools.h"
 #include "codon/cir/util/operator.h"
 

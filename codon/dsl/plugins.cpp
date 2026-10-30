@@ -6,11 +6,9 @@
 #include <semver.hpp>
 #include <toml++/toml.h>
 
+#include "codon/cir/llvm/llvm.h"
 #include "codon/parser/common.h"
 #include "codon/util/common.h"
-#include "llvm/ADT/SmallString.h"
-#include "llvm/Support/FileSystem.h"
-#include "llvm/Support/Path.h"
 
 namespace codon {
 namespace {

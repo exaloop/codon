@@ -8,8 +8,7 @@
 #include <string>
 #include <vector>
 
-#include "llvm/ADT/ScopeExit.h"
-
+#include "codon/cir/llvm/llvm.h"
 #include "codon/cir/pyextension.h"
 #include "codon/cir/util/irtools.h"
 #include "codon/compiler/compiler.h"

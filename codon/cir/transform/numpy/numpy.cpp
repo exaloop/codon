@@ -5,11 +5,10 @@
 #include "codon/cir/analyze/dataflow/reaching.h"
 #include "codon/cir/analyze/module/global_vars.h"
 #include "codon/cir/analyze/module/side_effect.h"
+#include "codon/cir/llvm/llvm.h"
 #include "codon/cir/util/cloning.h"
 #include "codon/cir/util/irtools.h"
 #include "codon/parser/cache.h"
-
-#include "llvm/Support/CommandLine.h"
 
 #include <algorithm>
 #include <complex>

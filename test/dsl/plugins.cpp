@@ -1,11 +1,6 @@
-#include "codon/dsl/plugins.h"
+#include "codon/cir/llvm/llvm.h"
 #include "codon/compiler/jit.h"
-#include "llvm/ADT/SmallString.h"
-#include "llvm/Support/FileSystem.h"
-#include "llvm/Support/MemoryBuffer.h"
-#include "llvm/Support/Path.h"
-#include "llvm/Support/Program.h"
-#include "llvm/Support/raw_ostream.h"
+#include "codon/dsl/plugins.h"
 #include "gtest/gtest.h"
 
 namespace codon {
