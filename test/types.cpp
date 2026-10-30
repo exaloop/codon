@@ -906,7 +906,7 @@ assert old_info.methods != old_methods
 assert update_old(old, 3) == 43
 class LayoutSide(object):
   side: int
-class LayoutLater(LayoutSide, LayoutChild):
+class LayoutLater(LayoutChild, LayoutSide):
   padding: Tuple[int, int, int]
   def method(self, *values, **options) -> int:
     return 200 + len(values) + options['extra']
@@ -915,6 +915,7 @@ later.padding = (7, 8, 9)
 later.side = 99
 later.balance = 20
 later.accrued = 5
+assert TypeInfo.cache(LayoutLater)._dist_to(LayoutBase) != old_info._dist_to(LayoutBase)
 assert update_old(later, 4) == 53
 assert later.balance == 24 and later.accrued == 29
 assert later.padding == (7, 8, 9) and later.side == 99
@@ -943,6 +944,63 @@ dispatch_old(bad)
                                       "assert dispatch_new(later) == 205\n"
                                       "assert update_old(later, 1) == 124\n"
                                       "print('recovered')\n");
+    ASSERT_TRUE(bool(recovered)) << llvm::toString(recovered.takeError());
+    EXPECT_EQ(*recovered, "recovered\n");
+  }
+}
+
+TEST(JITRTTITest, MatchesBaseExceptionAcrossCells) {
+  for (bool debug : {false, true}) {
+    auto options = codon::Options::getDefault("build/codon_test");
+    options->jit = true;
+    options->debug = debug;
+    options->capture = true;
+    codon::jit::JIT instance(*options);
+    auto error = instance.init();
+    ASSERT_FALSE(bool(error)) << llvm::toString(std::move(error));
+    auto first =
+        instance.execute("@noinline\n"
+                         "def catch_future(error: BaseException):\n"
+                         "    try:\n"
+                         "        raise error\n"
+                         "    except TypeError:\n"
+                         "        return 'wrong handler'\n"
+                         "    except BaseException as caught:\n"
+                         "        assert caught is error\n"
+                         "        return caught.message\n"
+                         "assert catch_future(KeyboardInterrupt('old')) == 'old'\n"
+                         "print('first')\n");
+    ASSERT_TRUE(bool(first)) << llvm::toString(first.takeError());
+    EXPECT_EQ(*first, "first\n");
+    auto second = instance.execute(
+        "class ExceptionPadding(object):\n"
+        "    padding: tuple[int, int, int]\n"
+        "class FutureError(ValueError, ExceptionPadding):\n"
+        "    payload: int\n"
+        "    def __init__(self):\n"
+        "        super().__init__('shifted exception')\n"
+        "        self.padding = (17, 19, 23)\n"
+        "        self.payload = 29\n"
+        "future = FutureError()\n"
+        "assert TypeInfo.cache(FutureError)._dist_to(BaseException) != "
+        "TypeInfo.cache(ValueError)._dist_to(BaseException)\n"
+        "assert catch_future(future) == 'shifted exception'\n"
+        "assert future.padding == (17, 19, 23) and future.payload == 29\n"
+        "print('second')\n");
+    ASSERT_TRUE(bool(second)) << llvm::toString(second.takeError());
+    EXPECT_EQ(*second, "second\n");
+    auto unhandled =
+        instance.execute("from C import seq_alloc_exc(cobj) -> cobj\n"
+                         "from C import seq_terminate(cobj) -> None\n"
+                         "seq_terminate(seq_alloc_exc(type._ref_raw(future)))\n");
+    ASSERT_FALSE(bool(unhandled));
+    auto message = llvm::toString(unhandled.takeError());
+    EXPECT_NE(message.find("FutureError"), std::string::npos);
+    EXPECT_NE(message.find("shifted exception"), std::string::npos);
+    auto recovered = instance.execute(
+        "assert catch_future(future) == 'shifted exception'\n"
+        "assert future.padding == (17, 19, 23) and future.payload == 29\n"
+        "print('recovered')\n");
     ASSERT_TRUE(bool(recovered)) << llvm::toString(recovered.takeError());
     EXPECT_EQ(*recovered, "recovered\n");
   }

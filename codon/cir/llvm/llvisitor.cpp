@@ -1392,7 +1392,9 @@ llvm::StructType *LLVMVisitor::getPadType() {
 namespace {
 int typeIdxLookup(Type *type) {
   if (!type)
-    return 0;
+    return runtime::CATCH_ALL_SELECTOR;
+  if (auto *info = type->getRuntimeInfo(); info && info->exceptionBase == type)
+    return runtime::BASE_EXCEPTION_SELECTOR;
   auto *M = type->getModule();
   return M->getCache()->getRealizationId(type->getAstType()->getClass());
 }
@@ -3740,13 +3742,23 @@ llvm::StructType *LLVMVisitor::getObjectLayout(RefType *type) {
   auto *info = type->getRuntimeInfo();
   seqassertn(info, "missing runtime metadata for {}", type->getName());
   // For MRO [Leaf, Left, Right, Root, object], the allocation is
-  // {TypeInfo*, Leaf-own, Left-own, Right-own, Root-own, object-own}.
+  // {TypeInfo*, object-own, Root-own, Right-own, Left-own, Leaf-own}.
   // LLVM supplies padding between/within segments. Leaf-own excludes inherited
   // fields, and upcasts keep pointing at the header, not at a base segment.
   std::vector<llvm::Type *> fields{B->getPtrTy()};
-  for (auto *base : info->mro)
-    fields.push_back(getOwnLayout(cast<RefType>(base)));
+  for (auto base = info->mro.rbegin(); base != info->mro.rend(); ++base)
+    fields.push_back(getOwnLayout(cast<RefType>(*base)));
   return llvm::StructType::get(*context, fields);
+}
+
+uint64_t LLVMVisitor::getObjectOwnerOffset(RefType *type, RefType *owner) {
+  auto *info = type->getRuntimeInfo();
+  seqassertn(info, "missing runtime metadata for {}", type->getName());
+  auto position = std::find(info->mro.begin(), info->mro.end(), owner);
+  seqassertn(position != info->mro.end(), "field owner missing from MRO");
+  return M->getDataLayout()
+      .getStructLayout(getObjectLayout(type))
+      ->getElementOffset(std::distance(position, info->mro.end()));
 }
 
 uint64_t LLVMVisitor::getObjectFieldOffset(RefType *type, size_t index) {
@@ -3760,10 +3772,7 @@ uint64_t LLVMVisitor::getObjectFieldOffset(RefType *type, size_t index) {
   size_t localIndex = 0;
   for (size_t previous = 0; previous < index; ++previous)
     localIndex += info->fieldOwners[previous] == owner;
-  auto position = std::find(info->mro.begin(), info->mro.end(), owner);
-  seqassertn(position != info->mro.end(), "field owner missing from MRO");
-  return layout.getStructLayout(getObjectLayout(type))
-             ->getElementOffset(1 + std::distance(info->mro.begin(), position)) +
+  return getObjectOwnerOffset(type, owner) +
          layout.getStructLayout(getOwnLayout(owner))->getElementOffset(localIndex);
 }
 
@@ -3810,10 +3819,9 @@ llvm::GlobalVariable *LLVMVisitor::getRuntimeTypeInfo(Type *type) {
   std::vector<llvm::Constant *> mro, offsets, sortedMro, slots, parameters;
   for (size_t index = 0; index < info->mro.size(); ++index) {
     mro.push_back(B->getInt64(info->mro[index]->getRuntimeInfo()->id));
-    auto offset = polymorphic ? M->getDataLayout()
-                                    .getStructLayout(getObjectLayout(reference))
-                                    ->getElementOffset(index + 1)
-                              : 0;
+    auto offset = polymorphic
+                      ? getObjectOwnerOffset(reference, cast<RefType>(info->mro[index]))
+                      : 0;
     offsets.push_back(B->getInt64(offset));
     if (info->mro[index] == info->exceptionBase)
       exceptionOffset = offset;
@@ -4028,19 +4036,13 @@ llvm::Value *LLVMVisitor::getFieldAddress(llvm::Value *object, RefType *type,
                          .getStructLayout(getOwnLayout(owner))
                          ->getElementOffset(localIndex);
   if (exactType) {
-    auto *info = exactType->getRuntimeInfo();
-    auto position = std::find(info->mro.begin(), info->mro.end(), owner);
-    seqassertn(position != info->mro.end(), "field owner missing from exact type");
-    auto offset =
-        M->getDataLayout()
-            .getStructLayout(getObjectLayout(exactType))
-            ->getElementOffset(1 + std::distance(info->mro.begin(), position));
+    auto offset = getObjectOwnerOffset(exactType, owner);
     return B->CreateGEP(B->getInt8Ty(), object, B->getInt64(offset + localOffset));
   }
   // Address = canonical object + owner's segment offset + field's local offset.
-  // Static type Base alone does not fix the segment offset: Derived's own fields
-  // precede Base's segment. AOT can prove agreement across all known subtypes;
-  // JIT cannot make that closed-world assumption about future cells.
+  // Base-first segments preserve offsets through single inheritance. Multiple
+  // inheritance can insert other segments before the owner, so AOT still checks
+  // all known subtypes and JIT retains the open-world lookup.
   if (!options->jit) {
     auto key = std::make_pair(metadata->id, owner->getRuntimeInfo()->id);
     auto cached = fieldOffsetResolvers.find(key);
@@ -4053,12 +4055,7 @@ llvm::Value *LLVMVisitor::getFieldAddress(llvm::Value *object, RefType *type,
         if (!info || !candidate->isPolymorphic() ||
             std::find(info->mro.begin(), info->mro.end(), type) == info->mro.end())
           continue;
-        auto position = std::find(info->mro.begin(), info->mro.end(), owner);
-        seqassertn(position != info->mro.end(), "field owner missing from subtype");
-        auto offset =
-            M->getDataLayout()
-                .getStructLayout(getObjectLayout(candidate))
-                ->getElementOffset(1 + std::distance(info->mro.begin(), position));
+        auto offset = getObjectOwnerOffset(candidate, owner);
         offsets.emplace_back(info->id, offset);
       }
       FieldOffsetResolver resolver{false, 0, nullptr};

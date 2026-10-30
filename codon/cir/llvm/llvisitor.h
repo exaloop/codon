@@ -225,11 +225,17 @@ private:
   /// @return the class's own-field layout
   llvm::StructType *getOwnLayout(RefType *type);
   /// Gets the allocation layout of a reference type.
-  /// Plain classes contain only fields; polymorphic classes have a header and MRO
-  /// segments. All references point to the allocation start.
+  /// Plain classes contain only fields; polymorphic classes have a header and
+  /// base-first segments in reverse MRO order. References point to the allocation
+  /// start.
   /// @param type the reference type
   /// @return the object allocation layout
   llvm::StructType *getObjectLayout(RefType *type);
+  /// Gets the allocation offset of a declaring class's own-field segment.
+  /// @param type the concrete reference type
+  /// @param owner the declaring class in the type's MRO
+  /// @return the byte offset from the allocation start
+  uint64_t getObjectOwnerOffset(RefType *type, RefType *owner);
   /// Gets a field offset for an allocation of the given concrete type.
   /// @param type the concrete reference type
   /// @param index the source-visible field index, including inherited fields

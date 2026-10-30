@@ -40,6 +40,8 @@ constexpr uint64_t METHOD_HASH_MULTIPLIER = 0x9e3779b97f4a7c15ULL;
 constexpr unsigned METHOD_HASH_SHIFT = 32;
 constexpr seq_int_t MAX_LINEAR_MRO = 8;
 constexpr unsigned ANY_INLINE_BYTES = 8;
+constexpr int CATCH_ALL_SELECTOR = 0;
+constexpr int BASE_EXCEPTION_SELECTOR = -1;
 
 constexpr uint64_t methodHash(uint64_t id) {
   auto mixed = id * METHOD_HASH_MULTIPLIER;

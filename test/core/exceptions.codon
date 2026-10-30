@@ -171,6 +171,89 @@ def test_native_hierarchy():
 
 test_native_hierarchy()
 
+@test
+def test_base_exception_routing():
+    class RoutingPadding(object):
+        padding: tuple[int, int, int]
+
+    class RoutingError(ValueError, RoutingPadding):
+        payload: int
+
+        def __init__(self):
+            super().__init__("shifted exception")
+            self.padding = (17, 19, 23)
+            self.payload = 29
+
+    @noinline
+    def throw_root(error: BaseException):
+        raise error
+
+    @noinline
+    def route(error: BaseException):
+        try:
+            throw_root(error)
+        except KeyError:
+            return 1
+        except ValueError as caught:
+            assert caught is error
+            return 2
+        except Exception:
+            return 3
+        except BaseException as caught:
+            assert caught is error
+            return 4
+        except:
+            return 5
+        return 0
+
+    assert route(KeyError("key")) == 1
+    assert route(ValueError("value")) == 2
+    assert route(TypeError("type")) == 3
+    assert route(BaseException("base")) == 4
+    assert route(KeyboardInterrupt()) == 4
+    assert route(GeneratorExit()) == 4
+    assert route(SystemExit(7)) == 4
+    padded = RoutingError()
+    assert TypeInfo.cache(RoutingError)._dist_to(BaseException) != TypeInfo.cache(ValueError)._dist_to(BaseException)
+    assert route(padded) == 2
+    assert padded.message == "shifted exception"
+    assert padded.padding == (17, 19, 23) and padded.payload == 29
+
+    @noinline
+    def root_first(error: BaseException):
+        try:
+            throw_root(error)
+        except BaseException:
+            return 1
+        except ValueError:
+            return 2
+        return 0
+
+    assert root_first(padded) == 1
+
+    @noinline
+    def rethrow_root(error: BaseException, events: list[int]):
+        try:
+            try:
+                throw_root(error)
+            except KeyError:
+                assert False
+            finally:
+                events.append(1)
+        except BaseException as caught:
+            assert caught is error
+            events.append(2)
+            raise
+
+    events: list[int] = []
+    try:
+        rethrow_root(padded, events)
+    except:
+        events.append(3)
+    assert events == [1, 2, 3]
+
+test_base_exception_routing()
+
 from internal.types.error import OSError as NativeOSError
 
 class OSError:

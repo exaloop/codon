@@ -837,6 +837,107 @@ TEST(IntrinsicCodegenTest, RepresentationCastRejectsDifferentLLVMTypes) {
   }
 }
 
+TEST(RTTICodegenTest, UsesUnconditionalBaseExceptionSelector) {
+  ASSERT_EXIT(
+      {
+        auto options = Options::getDefault("build/codon_test");
+        options->debug = false;
+        options->standalone = true;
+        Compiler compiler(*options);
+        llvm::cantFail(compiler.parseCode("exception_selector.codon",
+                                          "@export\n"
+                                          "def catch_root(error: BaseException):\n"
+                                          "    try:\n"
+                                          "        raise error\n"
+                                          "    except ValueError:\n"
+                                          "        return 1\n"
+                                          "    except BaseException:\n"
+                                          "        return 2\n"
+                                          "@export\n"
+                                          "def catch_all(error: BaseException):\n"
+                                          "    try:\n"
+                                          "        raise error\n"
+                                          "    except:\n"
+                                          "        return 3\n"));
+        llvm::cantFail(compiler.compile());
+        auto *module = compiler.getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        bool foundRoot = false;
+        bool foundTyped = false;
+        bool foundAll = false;
+        for (auto &global : module->globals()) {
+          auto name = global.getName();
+          if (!name.starts_with("codon.typeidx."))
+            continue;
+          auto selector = llvm::cast<llvm::ConstantInt>(
+                              global.getInitializer()->getAggregateElement(0u))
+                              ->getSExtValue();
+          if (name.contains("BaseException")) {
+            foundRoot = true;
+            EXPECT_EQ(selector, runtime::BASE_EXCEPTION_SELECTOR);
+          } else if (name.contains("ValueError")) {
+            foundTyped = true;
+            EXPECT_GT(selector, runtime::CATCH_ALL_SELECTOR);
+          } else if (name.contains("<all>")) {
+            foundAll = true;
+            EXPECT_EQ(selector, runtime::CATCH_ALL_SELECTOR);
+          }
+        }
+        EXPECT_TRUE(foundRoot && foundTyped && foundAll);
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(RTTICodegenTest, KeepsBaseFieldsAtStableOffsets) {
+  ASSERT_EXIT(
+      {
+        auto compiler = compileAndOptimize(
+            "class PrefixBase(object):\n"
+            "    tag: u8\n"
+            "    value: int\n"
+            "class PrefixChild(PrefixBase):\n"
+            "    extra: int\n"
+            "class PrefixGrandchild(PrefixChild):\n"
+            "    padding: tuple[int, int, int]\n"
+            "@export\n"
+            "def prefix_update(value: PrefixBase, delta: int):\n"
+            "    value.value += delta\n"
+            "    return value.value\n"
+            "@export\n"
+            "def prefix_child_update(value: PrefixChild, delta: int):\n"
+            "    value.extra += delta\n"
+            "    return value.extra\n"
+            "@export\n"
+            "def prefix_base(): return PrefixBase(tag=u8(1), value=11)\n"
+            "@export\n"
+            "def prefix_child(): return PrefixChild(tag=u8(2), value=13, extra=17)\n"
+            "@export\n"
+            "def prefix_grandchild():\n"
+            "    return PrefixGrandchild(tag=u8(3), value=19, extra=23, "
+            "padding=(29, 31, 37))\n");
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        for (const auto *name : {"prefix_update", "prefix_child_update"}) {
+          auto *function = module->getFunction(name);
+          ASSERT_NE(function, nullptr);
+          size_t loads = 0;
+          for (auto &block : *function) {
+            for (auto &instruction : block) {
+              if (auto *load = llvm::dyn_cast<llvm::LoadInst>(&instruction)) {
+                ++loads;
+                EXPECT_FALSE(load->getType()->isPointerTy()) << name;
+              }
+              EXPECT_FALSE(llvm::isa<llvm::CallBase>(instruction)) << name;
+            }
+          }
+          EXPECT_EQ(loads, 1u) << name;
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
 TEST(RTTICodegenTest, FoldsUniformFieldsAndSpecializesCalls) {
   ASSERT_EXIT(
       {
@@ -895,29 +996,29 @@ TEST(RTTICodegenTest, DevirtualizesKnownExceptionFields) {
         options->debug = false;
         options->standalone = true;
         Compiler compiler(*options);
-        llvm::cantFail(compiler.parseCode("devirtualize.codon", R"(
-class LargerIndexError(IndexError):
-    payload: str
-    def __init__(self, message: str):
-        super().__init__(message)
-        self.payload = message
-
-@export
-def known_exception(message: str, choose: bool):
-    if choose:
-        error = IndexError(message)
-    else:
-        error = IndexError("fallback")
-    error.message = message
-    return error.message
-
-@export
-def unknown_exception(error: IndexError, message: str):
-    error.message = message
-    return error.message
-
-print(LargerIndexError("child").payload)
-)"));
+        llvm::cantFail(compiler.parseCode(
+            "devirtualize.codon",
+            "class ExceptionPadding(object):\n"
+            "    padding: int\n"
+            "class LargerIndexError(IndexError, ExceptionPadding):\n"
+            "    payload: str\n"
+            "    def __init__(self, message: str):\n"
+            "        super().__init__(message)\n"
+            "        self.padding = 17\n"
+            "        self.payload = message\n"
+            "@export\n"
+            "def known_exception(message: str, choose: bool):\n"
+            "    if choose:\n"
+            "        error = IndexError(message)\n"
+            "    else:\n"
+            "        error = IndexError(\"fallback\")\n"
+            "    error.message = message\n"
+            "    return error.message\n"
+            "@export\n"
+            "def unknown_exception(error: IndexError, message: str):\n"
+            "    error.message = message\n"
+            "    return error.message\n"
+            "print(LargerIndexError(\"child\").payload)\n"));
         llvm::cantFail(compiler.compile());
         auto *module = compiler.getLLVMVisitor()->getModule();
         EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
@@ -967,8 +1068,11 @@ TEST(RTTICodegenTest, DevirtualizationRespectsControlFlow) {
 class FieldBase(object):
   value: int
 
-class FieldChild(FieldBase):
+class FieldPadding(object):
   extra: int
+
+class FieldChild(FieldBase, FieldPadding):
+  pass
 
 class NoInlineRecord(object):
   value: int
@@ -994,7 +1098,7 @@ def mixed_field(flag: bool):
   if flag:
     value: FieldBase = FieldBase(1)
   else:
-    value: FieldBase = FieldChild(2, 3)
+    value: FieldBase = FieldChild(value=2, extra=3)
   return value.value
 
 @export
@@ -1020,7 +1124,7 @@ def exact_loop_field(count: int):
 
 @export
 def child_field(number: int):
-  value: FieldBase = FieldChild(number, 17)
+  value: FieldBase = FieldChild(value=number, extra=17)
   value.value += 1
   return value.value
 
@@ -1156,8 +1260,10 @@ TEST(RTTICodegenTest, DevirtualizationRejectsSharedEvaluationLocations) {
         std::string source =
             "class SharingBase(object):\n"
             "    value: int\n"
-            "class SharingChild(SharingBase):\n"
+            "class SharingPadding(object):\n"
             "    padding: int\n"
+            "class SharingChild(SharingBase, SharingPadding):\n"
+            "    pass\n"
             "@noinline\n"
             "def make_sharing_base(number: int) -> SharingBase:\n"
             "    return SharingBase(value=number)\n"
@@ -1206,8 +1312,9 @@ TEST(RTTICodegenTest, SpecializesExactArgumentContextsWithoutInlining) {
             "    value: int\n"
             "    def result(self):\n"
             "        return self.value\n"
-            "class ContextChild(ContextBase):\n"
+            "class ContextPadding(object):\n"
             "    extra: int\n"
+            "class ContextChild(ContextBase, ContextPadding):\n"
             "    def result(self):\n"
             "        return self.extra\n"
             "@llvm\n"
@@ -1248,11 +1355,11 @@ def context_second(number: int):
 
 @export
 def context_nested(number: int):
-    return context_pack(ContextChild(number, 9))[0][0].value
+    return context_pack(ContextChild(value=number, extra=9))[0][0].value
 
 print(context_read(ContextBase(0)))
-print(context_alternate(ContextBase(7), ContextChild(11, 13), 3))
-print(context_local(ContextChild(5, 7)))
+print(context_alternate(ContextBase(7), ContextChild(value=11, extra=13), 3))
+print(context_local(ContextChild(value=5, extra=7)))
 )";
         for (int index = 0; index < 12; ++index) {
           auto name = "ContextVariant" + std::to_string(index);
