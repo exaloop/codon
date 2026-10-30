@@ -40,7 +40,7 @@ jobs:
             arch: linux-aarch64
           - os: ubuntu-24.04-arm
             arch: manylinux2014-aarch64
-          - os: macos-14
+          - os: macos-15
             arch: darwin-arm64
     runs-on: ${{ matrix.os }}
     name: Compile Codon
@@ -104,7 +104,7 @@ jobs:
             arch: linux-aarch64
           - os: ubuntu-24.04-arm
             arch: manylinux2014-aarch64
-          - os: macos-14
+          - os: macos-15
             arch: darwin-arm64
     runs-on: ${{ matrix.platform.os }}
     steps:
@@ -172,7 +172,7 @@ jobs:
             arch: linux-aarch64
           - os: ubuntu-24.04-arm
             arch: manylinux2014-aarch64
-          - os: macos-14
+          - os: macos-15
             arch: darwin-arm64
     runs-on: ubuntu-latest
     steps:
