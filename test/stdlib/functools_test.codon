@@ -123,6 +123,7 @@ def test_various_lengths():
         data.sort(key=cmp_to_key(cmp_int))
         assert data == expected
 
+
 @test
 def test_custom_equality():
     def compare(a, b):

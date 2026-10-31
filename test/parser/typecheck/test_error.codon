@@ -413,3 +413,14 @@ def runtime_check_shift(value: Vec[int, 4], count: int, check: bool):
 #! no function 'Vec.lshift'
 #! during the realization of runtime_check_shift
 
+#%% functools_cmp_to_key_unhashable
+from functools import cmp_to_key
+
+def compare(a: int, b: int) -> int:
+    return a - b
+
+key = cmp_to_key(compare)
+hash(key(1))
+#! unhashable type: '_CmpKey'
+#! during the realization of __hash__
+#! during the realization of hash
