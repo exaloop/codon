@@ -197,12 +197,15 @@ if(CODON_USE_MIMALLOC)
         GIT_TAG v3.6.1
         EXCLUDE_FROM_ALL YES
         OPTIONS "MI_OVERRIDE ON"
-                "MI_BUILD_SHARED ON"
+                "MI_BUILD_SHARED OFF"
                 "MI_BUILD_STATIC OFF"
-                "MI_BUILD_OBJECT OFF"
+                "MI_BUILD_OBJECT ON"
                 "MI_BUILD_TESTS OFF"
                 "MI_DEBUG OFF"
                 "MI_SECURE OFF"
                 "MI_STATS OFF"
                 "MI_PROFILE OFF")
+    get_directory_property(MIMALLOC_LIBRARIES DIRECTORY "${mimalloc_SOURCE_DIR}"
+                           DEFINITION mi_libraries)
+    target_link_libraries(mimalloc-obj INTERFACE ${MIMALLOC_LIBRARIES})
 endif()
