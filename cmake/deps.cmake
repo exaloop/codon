@@ -189,3 +189,20 @@ CPMAddPackage(
             "HWY_ENABLE_INSTALL OFF"
             "HWY_ENABLE_TESTS OFF"
             "BUILD_TESTING OFF")
+
+if(CODON_USE_MIMALLOC)
+    CPMAddPackage(
+        NAME mimalloc
+        GITHUB_REPOSITORY microsoft/mimalloc
+        GIT_TAG v3.6.1
+        EXCLUDE_FROM_ALL YES
+        OPTIONS "MI_OVERRIDE ON"
+                "MI_BUILD_SHARED ON"
+                "MI_BUILD_STATIC OFF"
+                "MI_BUILD_OBJECT OFF"
+                "MI_BUILD_TESTS OFF"
+                "MI_DEBUG OFF"
+                "MI_SECURE OFF"
+                "MI_STATS OFF"
+                "MI_PROFILE OFF")
+endif()

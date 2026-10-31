@@ -30,6 +30,7 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 include_directories(.)
 
 option(SYSTEM_BLAS "Use system-provided BLAS" OFF)
+option(CODON_USE_MIMALLOC "Use bundled mimalloc for the Codon compiler process" OFF)
 set(APPLE_ARM OFF)
 if (APPLE AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "arm64")
   set(APPLE_ARM ON)
@@ -536,6 +537,9 @@ add_dependencies(libs codonrt codonc)
 # Codon command-line tool
 add_executable(codon codon/app/main.cpp)
 target_link_libraries(codon PUBLIC fmt codonc codon_jupyter Threads::Threads)
+if(CODON_USE_MIMALLOC)
+  target_link_libraries(codon PRIVATE mimalloc)
+endif()
 if(ASAN)
   target_compile_options(
     codon PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address"

@@ -99,6 +99,22 @@ struct BitSet {
     std::memcpy(words.data(), other.words.data(), allocSize(size) * (B / 8));
   }
 
+  bool applyTransfer(const BitSet &in, const BitSet &kill, const BitSet &gen,
+                     unsigned size) {
+    bool changed = false;
+    auto *out = words.data();
+    auto *input = in.words.data();
+    auto *killed = kill.words.data();
+    auto *generated = gen.words.data();
+    auto n = allocSize(size);
+    for (unsigned i = 0; i < n; i++) {
+      auto next = (input[i] & ~killed[i]) | generated[i];
+      changed |= out[i] != next;
+      out[i] = next;
+    }
+    return changed;
+  }
+
   void update(const BitSet &other, unsigned size) {
     auto *p = words.data();
     auto *q = other.words.data();
@@ -202,14 +218,12 @@ void RDInspector::analyze() {
     }
 
     // OUT[blk] = GEN[blk] U (IN[blk] - KILL[blk])
-    auto oldout = data.out.copy(n);
-    auto tmp = data.in.copy(n);
-    tmp.subtract(data.kill, n);
-    tmp.update(data.gen, n);
-    data.out.overwrite(tmp, n);
+    // Apply OUT = GEN U (IN - KILL) in place.  The former temporary BitSets
+    // allocated and copied two vectors for every worklist visit.
+    auto changed = data.out.applyTransfer(data.in, data.kill, data.gen, n);
 
     // if OUT changed, add all successors to worklist
-    if (!data.out.equals(oldout, n)) {
+    if (changed) {
       for (auto it = blk->successors_begin(); it != blk->successors_end(); ++it) {
         worklist.push(*it);
       }
