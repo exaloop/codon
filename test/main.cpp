@@ -508,6 +508,7 @@ INSTANTIATE_TEST_SUITE_P(
         "stdlib/ntpath_test.codon",
         "stdlib/win32_os_test.codon",
         "stdlib/unicode_test.codon",
+        "stdlib/functools_test.codon",
         "python/pybridge.codon"
       ),
       testing::Values(true, false),
