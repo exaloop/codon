@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.14)
 project(
   Codon
-  VERSION "0.20.5"
+  VERSION "0.20.6"
   HOMEPAGE_URL "https://github.com/exaloop/codon"
   DESCRIPTION "high-performance, extensible Python compiler")
-set(CODON_JIT_PYTHON_VERSION "0.5.5")
+set(CODON_JIT_PYTHON_VERSION "0.5.6")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.h.in"
                "${PROJECT_SOURCE_DIR}/codon/config/config.h")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.py.in"
@@ -171,7 +171,7 @@ elseif(SYSTEM_BLAS)
     PRIVATE -Wl,--whole-archive $<TARGET_FILE:zlibstatic> $<TARGET_FILE:gc>
             $<TARGET_FILE:bz2> $<TARGET_FILE:liblzma> $<TARGET_FILE:re2>
             $<TARGET_FILE:hwy> $<TARGET_FILE:hwy_contrib>
-            -Wl,--no-whole-archive)
+            ${COMPILER_RT_LIB} -Wl,--no-whole-archive)
   if(CMAKE_VERSION VERSION_LESS 3.22)
     message(FATAL_ERROR "SYSTEM_BLAS requires CMake 3.22+ for ILP64 selection")
   endif()
