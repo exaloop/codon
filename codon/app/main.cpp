@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "codon/cir/llvm/llvm.h"
 #include "codon/cir/util/format.h"
 #include "codon/compiler/compiler.h"
 #include "codon/compiler/error.h"
@@ -19,8 +20,6 @@
 #include "codon/parser/common.h"
 #include "codon/util/common.h"
 #include "codon/util/jupyter.h"
-#include "llvm/Support/CommandLine.h"
-#include "llvm/Support/FileSystem.h"
 
 namespace {
 void versMsg(llvm::raw_ostream &out) {

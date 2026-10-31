@@ -3,6 +3,7 @@
 #pragma once
 
 #include <memory>
+#include <memory_resource>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -29,7 +30,9 @@ private:
   std::string input;
   std::unique_ptr<Options> options;
   std::unique_ptr<PluginManager> plm;
-  std::vector<std::unique_ptr<ast::ASTNode>> nodes;
+  // Destroy the nodes (and their attributes/type references) before the arena.
+  std::pmr::monotonic_buffer_resource nodeStorage;
+  std::vector<ast::ASTNodePtr> nodes;
   std::unique_ptr<ast::Cache> cache;
   std::unique_ptr<ir::Module> module;
   std::unique_ptr<ir::transform::PassManager> pm;

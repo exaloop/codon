@@ -360,10 +360,27 @@ void TypecheckVisitor::prepareVTables() {
         auto oldContext = ctx;
         auto oldLevel = getLogger().level;
         auto oldErrors = ctx->cache->errors;
-        std::vector<std::pair<std::shared_ptr<TypeContext>, TypeContext>> contexts;
+        // TODO: generalize this to be able to typecheck any fn/code blocks with error
+        // recovery
+        struct SavedContext {
+          std::shared_ptr<TypeContext> active;
+          std::unique_ptr<TypeContext> state;
+          std::unique_ptr<TypeContext::BindingCheckpoint> bindings;
+        };
+        std::vector<SavedContext> contexts;
+        contexts.reserve(ctx->cache->imports.size());
+        std::unordered_set<TypeContext *> savedContexts;
         for (const auto &[name, imported] : ctx->cache->imports)
-          if (imported.ctx)
-            contexts.emplace_back(imported.ctx, *imported.ctx);
+          if (imported.ctx && savedContexts.insert(imported.ctx.get()).second) {
+            contexts.push_back({imported.ctx, nullptr, nullptr});
+            auto *saved = &contexts.back();
+            saved->bindings = std::make_unique<TypeContext::BindingCheckpoint>(
+                imported.ctx.get(), [saved]() {
+                  saved->state = std::make_unique<TypeContext>(
+                      saved->active->saveInferenceState());
+                });
+          }
+        ctx->prepareCheckpoint();
         std::set<std::pair<std::string, std::string>> incomplete;
         for (const auto &[name, function] : ctx->cache->functions)
           for (const auto &[key, realization] : function.realizations)
@@ -377,11 +394,12 @@ void TypecheckVisitor::prepareVTables() {
           ctx = oldContext;
           getLogger().level = oldLevel;
           ctx->cache->errors = std::move(oldErrors);
-          for (auto &[active, saved] : contexts) {
-            for (const auto &[name, items] : *active)
-              if (items.back()->isGlobal() && !saved.Context<TypecheckItem>::find(name))
-                saved.addToplevel(name, items.back());
-            *active = std::move(saved);
+          for (auto &[active, saved, bindings] : contexts) {
+            if (saved) {
+              bindings->rollback([](const auto &item) { return item->isGlobal(); });
+              active->restoreInferenceState(std::move(*saved));
+            }
+            bindings.reset();
           }
           for (auto &[name, function] : ctx->cache->functions) {
             for (auto iterator = function.realizations.begin();

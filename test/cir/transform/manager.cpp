@@ -3,6 +3,8 @@
 #include <map>
 #include <set>
 
+#include "codon/cir/analyze/module/side_effect.h"
+#include "codon/cir/transform/cleanup/canonical.h"
 #include "codon/cir/transform/lowering/imperative.h"
 #include "codon/cir/transform/lowering/return.h"
 #include "codon/cir/transform/manager.h"
@@ -57,6 +59,12 @@ public:
 };
 
 int DummyPass::runCounter = 0;
+
+class SkippedPass : public DummyPass {
+public:
+  using DummyPass::DummyPass;
+  bool shouldRun(Module *) const override { return false; }
+};
 
 TEST(MissingReturnTest, GuardsOnlyReachableNonnullableFallthrough) {
   auto options = codon::Options::getDefault("build/codon_test");
@@ -291,6 +299,28 @@ TEST_F(CIRCoreTest, PassManagerNoInvalidations) {
   ASSERT_EQ(1, DummyPass::runCounter);
 }
 
+TEST_F(CIRCoreTest, PassManagerSkipsInapplicablePasses) {
+  int counter = 0;
+  auto options = codon::Options::getDefault("");
+  options->pmempty = true;
+  transform::PassManager manager(options.get());
+  manager.registerAnalysis(std::make_unique<DummyAnalysis>(counter));
+  manager.registerPass(std::make_unique<SkippedPass>(counter, ANALYSIS_KEY), "",
+                       {ANALYSIS_KEY}, {ANALYSIS_KEY});
+  manager.run(module.get());
+  EXPECT_EQ(counter, 0);
+
+  manager.registerPass(std::make_unique<DummyPass>(counter, ANALYSIS_KEY), "",
+                       {ANALYSIS_KEY});
+  manager.registerPass(std::make_unique<SkippedPass>(counter, ANALYSIS_KEY), "",
+                       {ANALYSIS_KEY}, {ANALYSIS_KEY});
+  manager.registerPass(std::make_unique<DummyPass>(counter, ANALYSIS_KEY), "",
+                       {ANALYSIS_KEY});
+  manager.run(module.get());
+  EXPECT_EQ(counter, 3);
+  EXPECT_EQ(DummyAnalysis::runCounter, 0);
+}
+
 TEST_F(CIRCoreTest, PassManagerInvalidations) {
   int counter = 0;
   auto options = codon::Options::getDefault("");
@@ -306,6 +336,71 @@ TEST_F(CIRCoreTest, PassManagerInvalidations) {
 
   ASSERT_EQ(2, DummyAnalysis::runCounter);
   ASSERT_EQ(3, DummyPass::runCounter);
+}
+
+TEST_F(CIRCoreTest, CanonicalizationKeepsUnchangedCalls) {
+  struct PureAnalysis : analyze::Analysis {
+    std::string getKey() const override { return ANALYSIS_KEY; }
+    std::unique_ptr<analyze::Result> run(const Module *module) override {
+      std::unordered_map<codon::ir::id_t, util::SideEffectStatus> result;
+      for (auto it = module->values_begin(); it != module->values_end(); ++it)
+        result[(*it)->getId()] = util::PURE;
+      return std::make_unique<analyze::module::SideEffectResult>(std::move(result));
+    }
+  };
+  auto *function = module->Nr<BodiedFunc>("int.combine");
+  function->setUnmangledName("combine");
+  function->setParentType(module->getIntType());
+  function->realize(
+      module->unsafeGetFuncType("combine", module->getIntType(),
+                                {module->getIntType(), module->getIntType()}),
+      {"left", "right"});
+  auto *call = util::call(function, {module->getInt(1), module->getInt(2)});
+  auto *body = module->Nr<SeriesFlow>();
+  body->push_back(call);
+  cast<BodiedFunc>(module->getMainFunc())->setBody(body);
+  auto options = codon::Options::getDefault("");
+  options->pmempty = true;
+  transform::PassManager manager(options.get());
+  manager.registerAnalysis(std::make_unique<PureAnalysis>());
+  manager.registerPass(
+      std::make_unique<transform::cleanup::CanonicalizationPass>(ANALYSIS_KEY), "",
+      {ANALYSIS_KEY}, {ANALYSIS_KEY});
+  auto originalSize = std::distance(module->values_begin(), module->values_end());
+  manager.run(module.get());
+  EXPECT_EQ(std::distance(module->values_begin(), module->values_end()), originalSize);
+  manager.run(module.get());
+  EXPECT_EQ(std::distance(module->values_begin(), module->values_end()), originalSize);
+  EXPECT_EQ(body->front(), call);
+
+  auto attributes = std::make_unique<KeyValueAttribute>();
+  attributes->attributes[codon::ast::getMangledFunc("std.internal.attributes",
+                                                    "associative")] = "";
+  function->setAttribute(std::move(attributes));
+  auto *third = module->getInt(3);
+  auto *leftChain = util::call(function, {call, third});
+  body->push_back(leftChain);
+  originalSize = std::distance(module->values_begin(), module->values_end());
+  manager.run(module.get());
+  EXPECT_EQ(std::distance(module->values_begin(), module->values_end()), originalSize);
+
+  auto *rightChain = util::call(
+      function, {call->front(), util::call(function, {call->back(), third})});
+  body->push_back(rightChain);
+  manager.run(module.get());
+  auto *canonical = cast<CallInstr>(rightChain);
+  ASSERT_NE(canonical, rightChain);
+  auto *left = cast<CallInstr>(canonical->front());
+  ASSERT_NE(left, nullptr);
+  EXPECT_EQ(left->front(), call->front());
+  EXPECT_EQ(left->back(), call->back());
+  EXPECT_EQ(canonical->back(), third);
+
+  auto *named = util::call(function, {call->front(), call->back()});
+  named->setName("named-call");
+  body->push_back(named);
+  manager.run(module.get());
+  EXPECT_TRUE(named->getName().empty());
 }
 
 TEST(CIRFoldingTest, FoldsSideEffectFreeSequencesBeforeLLVM) {

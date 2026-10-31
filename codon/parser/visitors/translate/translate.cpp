@@ -43,7 +43,7 @@ ir::Func *TranslateVisitor::apply(Cache *cache, Stmt *stmts) {
         cache->module->unsafeGetFuncType("<internal_func_type>", none, {}, false);
     main->realize(irType, {});
     auto path = cache->fs->get_module0();
-    main->setSrcInfo({path, 0, 0, 0});
+    main->setSrcInfo({path.string(), 0, 0, 0});
   }
 
   auto block = cache->module->Nr<ir::SeriesFlow>("body");

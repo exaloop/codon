@@ -97,6 +97,7 @@ struct CanonOpChain : public RewriteRule {
 
   static void orderOperands(std::vector<Value *> &operands) {
     std::vector<std::pair<NodeRanker::Rank, Value *>> rankedOperands;
+    rankedOperands.reserve(operands.size());
     for (auto *v : operands) {
       rankedOperands.push_back({getRank(v), v});
     }
@@ -130,6 +131,20 @@ struct CanonOpChain : public RewriteRule {
 
       if (isCommutative)
         orderOperands(operands);
+
+      Value *left = v;
+      size_t remaining = operands.size();
+      while (remaining > 1) {
+        auto *call = cast<CallInstr>(left);
+        if (!call || call->numArgs() != 2 || util::getFunc(call->getCallee()) != fn ||
+            !call->getName().empty() || !call->getCallee()->getName().empty() ||
+            call->back() != operands[remaining - 1])
+          break;
+        left = call->front();
+        --remaining;
+      }
+      if (remaining == 1 && left == operands.front())
+        return;
 
       Value *newCall = util::call(fn, {operands[0], operands[1]});
       for (auto it = operands.begin() + 2; it != operands.end(); ++it) {

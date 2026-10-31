@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "codon/cir/llvm/llvm.h"
 #include "codon/parser/common.h"
 
 namespace codon::ast {
@@ -26,6 +27,9 @@ struct IntStaticType;
 struct StrStaticType;
 struct BoolStaticType;
 struct UnionType;
+struct Type;
+/// Generic substitution maps are usually tiny.
+using InstantiationCache = llvm::SmallDenseMap<int, std::shared_ptr<Type>, 8>;
 
 enum LiteralKind { Runtime, Int, String, Bool };
 
@@ -78,9 +82,8 @@ public:
   /// @param cache A reference to a lookup table to ensure that all instances of a
   ///              generic point to the same unbound type (e.g. dict[T, list[T]] should
   ///              be instantiated as dict[?1, list[?1]]).
-  virtual std::shared_ptr<Type>
-  instantiate(int atLevel, int *unboundCount,
-              std::unordered_map<int, std::shared_ptr<Type>> *cache) const = 0;
+  virtual std::shared_ptr<Type> instantiate(int atLevel, int *unboundCount,
+                                            InstantiationCache *cache) const = 0;
 
 public:
   /// Get the final type (follow through all LinkType links).
@@ -131,6 +134,10 @@ protected:
   explicit Type(Cache *, const SrcInfo & = SrcInfo());
 };
 using TypePtr = std::shared_ptr<Type>;
+inline TypePtr *in(InstantiationCache &cache, int key) {
+  auto entry = cache.find(key);
+  return entry == cache.end() ? nullptr : &entry->second;
+}
 
 } // namespace codon::ast::types
 

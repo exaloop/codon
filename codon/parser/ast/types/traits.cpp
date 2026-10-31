@@ -68,7 +68,7 @@ TypePtr CallableTrait::generalize(int atLevel) const {
 }
 
 TypePtr CallableTrait::instantiate(int atLevel, int *unboundCount,
-                                   std::unordered_map<int, TypePtr> *cache) const {
+                                   InstantiationCache *cache) const {
   auto g = args;
   for (auto &t : g)
     t = t ? t->instantiate(atLevel, unboundCount, cache) : nullptr;
@@ -102,14 +102,15 @@ TypePtr TypeTrait::generalize(int atLevel) const {
 }
 
 TypePtr TypeTrait::instantiate(int atLevel, int *unboundCount,
-                               std::unordered_map<int, TypePtr> *cache) const {
+                               InstantiationCache *cache) const {
   auto c = std::make_shared<TypeTrait>(type->instantiate(atLevel, unboundCount, cache));
   c->setSrcInfo(getSrcInfo());
   return c;
 }
 
 std::string TypeTrait::debugString(char mode) const {
-  return fmt::format("Trait[{}]", type->getClass() ? type->getClass()->name : "-");
+  return fmt::format("Trait[{}]",
+                     type->getClass() ? type->getClass()->name.str() : "-");
 }
 
 } // namespace codon::ast::types

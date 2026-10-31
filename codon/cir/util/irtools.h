@@ -14,6 +14,31 @@ namespace util {
 /// @return true if the function has the given attribute
 bool hasAttribute(const Func *func, const std::string &attribute);
 
+/// Checks whether a function has the export attribute.
+/// @param func the function
+/// @return true if the function is marked for export
+bool isExport(const Func *func);
+
+/// Sets or removes a function's export attribute.
+/// @param func the function
+/// @param value true to export the function, false to remove the attribute
+void setExport(Func *func, bool value = true);
+
+/// Checks whether a function has the GPU kernel attribute.
+/// @param func the function
+/// @return true if the function is a GPU kernel
+bool isGPUKernel(const Func *func);
+
+/// Checks whether a function has the inline attribute.
+/// @param func the function
+/// @return true if the function is marked for inlining
+bool isInline(const Func *func);
+
+/// Checks whether a function has the noinline attribute.
+/// @param func the function
+/// @return true if the function is marked to prevent inlining
+bool isNoInline(const Func *func);
+
 /// Checks whether a function comes from the standard library, and
 /// optionally a specific module therein.
 /// @param func the function

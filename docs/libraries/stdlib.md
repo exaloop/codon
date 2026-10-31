@@ -35,6 +35,7 @@ or in part natively in Codon:
 | `statistics`  ||
 | `typing`      | Contents are available by default in Codon. |
 | `getopt`      ||
+| `argparse`    | Native command-line parsing with tagged namespace values. |
 | `math`        ||
 | `pickle`      | Codon uses its own pickle format, so generally not compatible with CPython pickling. |
 | `string`      ||

@@ -8,10 +8,9 @@
 #include <string>
 #include <vector>
 
+#include "codon/cir/llvm/llvm.h"
 #include "codon/compiler/compiler.h"
 #include "codon/parser/cache.h"
-#include "llvm/Support/FileSystem.h"
-#include "llvm/Support/Path.h"
 #include <fmt/format.h>
 
 #include <cmrc/cmrc.hpp>

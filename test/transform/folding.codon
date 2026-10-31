@@ -754,6 +754,47 @@ def test_side_effect_analysis():
     assert some_global == 46
 test_side_effect_analysis()
 
+class FieldWriteBox:
+    value: int
+
+escaped_field_boxes = [FieldWriteBox(0)]
+
+@test
+def test_field_write_escape_analysis():
+    def local(value):
+        box = FieldWriteBox(value)
+        alias = box
+        box.value = inc(box.value)
+        alias.value = inc(alias.value)
+        return box.value
+
+    def returned(value):
+        box = FieldWriteBox(value)
+        box.value = inc(box.value)
+        box.value = inc(box.value)
+        return box
+
+    def publish(value):
+        box = FieldWriteBox(value)
+        alias = box
+        escaped_field_boxes[0] = box
+        box.value = inc(box.value)
+        alias.value = inc(alias.value)
+
+    def mutate(box):
+        box.value = inc(box.value)
+        box.value = inc(box.value)
+
+    assert eq(local(10), 12)
+    assert eq(returned(10).value, 12)
+    publish(20)
+    assert eq(escaped_field_boxes[0].value, 22)
+    mutate(escaped_field_boxes[0])
+    assert eq(escaped_field_boxes[0].value, 24)
+    publish(30)
+    assert eq(escaped_field_boxes[0].value, 32)
+test_field_write_escape_analysis()
+
 @test
 def test_while_loop_cfg():
     # Tests for former bug where while-loop CFG

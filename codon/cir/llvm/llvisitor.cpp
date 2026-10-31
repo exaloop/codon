@@ -25,19 +25,12 @@
 namespace codon {
 namespace ir {
 namespace {
-const std::string EXPORT_ATTR =
-    ast::getMangledFunc("std.internal.attributes", "export");
-const std::string INLINE_ATTR =
-    ast::getMangledFunc("std.internal.attributes", "inline");
-const std::string NOINLINE_ATTR =
-    ast::getMangledFunc("std.internal.attributes", "noinline");
 const std::string LLVM_MEMORY_NONE_ATTR =
     ast::getMangledFunc("std.internal.attributes", "llvm_memory_none");
 const std::string LLVM_NO_CAPTURE_ATTR =
     ast::getMangledFunc("std.internal.attributes", "llvm_nocapture");
 const std::string LLVM_NO_FREE_ATTR =
     ast::getMangledFunc("std.internal.attributes", "llvm_nofree");
-const std::string GPU_KERNEL_ATTR = ast::getMangledFunc("std.internal.gpu", "kernel");
 
 const std::string MAIN_UNCLASH = ".main.unclash";
 const std::string MAIN_CTOR = ".main.ctor";
@@ -60,9 +53,9 @@ llvm::DIFile *LLVMVisitor::DebugInfo::getFile(const std::string &path) {
 std::string LLVMVisitor::getGlobalCtorName() { return MAIN_CTOR; }
 
 std::string LLVMVisitor::getNameForFunction(const Func *x) {
-  if (isA<ExternalFunc>(x) || util::hasAttribute(x, EXPORT_ATTR)) {
+  if (isA<ExternalFunc>(x) || util::isExport(x)) {
     return x->getUnmangledName();
-  } else if (util::hasAttribute(x, GPU_KERNEL_ATTR)) {
+  } else if (util::isGPUKernel(x)) {
     return x->getName();
   } else {
     return x->referenceString();
@@ -285,7 +278,7 @@ std::unique_ptr<llvm::Module> LLVMVisitor::makeModule(llvm::LLVMContext &context
   B = std::make_unique<llvm::IRBuilder<>>(context);
 
   auto *srcInfo = src ? src : getDefaultSrcInfo();
-  M->setSourceFileName(srcInfo->file);
+  M->setSourceFileName(srcInfo->file.str());
   // debug info setup
   db.builder = std::make_unique<llvm::DIBuilder>(*M);
   auto *file = db.getFile(srcInfo->file);
@@ -1399,7 +1392,9 @@ llvm::StructType *LLVMVisitor::getPadType() {
 namespace {
 int typeIdxLookup(Type *type) {
   if (!type)
-    return 0;
+    return runtime::CATCH_ALL_SELECTOR;
+  if (auto *info = type->getRuntimeInfo(); info && info->exceptionBase == type)
+    return runtime::BASE_EXCEPTION_SELECTOR;
   auto *M = type->getModule();
   return M->getCache()->getRealizationId(type->getAstType()->getClass());
 }
@@ -1887,22 +1882,21 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
   seqassertn(func, "{} not inserted", *x);
   setDebugInfoForNode(x);
 
-  auto *fnAttributes = x->getAttribute<KeyValueAttribute>();
   if (x->isJIT()) {
     func->addFnAttr(llvm::Attribute::get(*context, "jit"));
   }
-  if (x->isJIT() || (fnAttributes && fnAttributes->has(EXPORT_ATTR))) {
+  if (x->isJIT() || util::isExport(x)) {
     func->setLinkage(llvm::GlobalValue::ExternalLinkage);
   } else {
     func->setLinkage(llvm::GlobalValue::PrivateLinkage);
   }
-  if (fnAttributes && fnAttributes->has(INLINE_ATTR)) {
+  if (util::isInline(x)) {
     func->addFnAttr(llvm::Attribute::AttrKind::AlwaysInline);
   }
-  if (fnAttributes && fnAttributes->has(NOINLINE_ATTR)) {
+  if (util::isNoInline(x)) {
     func->addFnAttr(llvm::Attribute::AttrKind::NoInline);
   }
-  if (fnAttributes && fnAttributes->has(GPU_KERNEL_ATTR)) {
+  if (util::isGPUKernel(x)) {
     func->addFnAttr(llvm::Attribute::AttrKind::NoInline);
     func->addFnAttr(llvm::Attribute::get(*context, "kernel"));
     func->setLinkage(llvm::GlobalValue::ExternalLinkage);
@@ -3328,7 +3322,9 @@ void LLVMVisitor::visit(const ExtractInstr *x) {
   process(x->getVal());
   B->SetInsertPoint(block);
   if (auto *refType = cast<RefType>(memberedType)) {
-    auto *address = getFieldAddress(value, refType, x->getField());
+    auto *exact = x->getAttribute<ExactTypeAttribute>();
+    auto *address =
+        getFieldAddress(value, refType, x->getField(), exact ? exact->type : nullptr);
     value = B->CreateLoad(getLLVMType(x->getType()), address);
     return;
   }
@@ -3347,7 +3343,9 @@ void LLVMVisitor::visit(const InsertInstr *x) {
   auto *rhs = value;
 
   B->SetInsertPoint(block);
-  auto *address = getFieldAddress(lhs, refType, x->getField());
+  auto *exact = x->getAttribute<ExactTypeAttribute>();
+  auto *address =
+      getFieldAddress(lhs, refType, x->getField(), exact ? exact->type : nullptr);
   B->CreateStore(rhs, address);
   value = lhs;
 }
@@ -3744,13 +3742,23 @@ llvm::StructType *LLVMVisitor::getObjectLayout(RefType *type) {
   auto *info = type->getRuntimeInfo();
   seqassertn(info, "missing runtime metadata for {}", type->getName());
   // For MRO [Leaf, Left, Right, Root, object], the allocation is
-  // {TypeInfo*, Leaf-own, Left-own, Right-own, Root-own, object-own}.
+  // {TypeInfo*, object-own, Root-own, Right-own, Left-own, Leaf-own}.
   // LLVM supplies padding between/within segments. Leaf-own excludes inherited
   // fields, and upcasts keep pointing at the header, not at a base segment.
   std::vector<llvm::Type *> fields{B->getPtrTy()};
-  for (auto *base : info->mro)
-    fields.push_back(getOwnLayout(cast<RefType>(base)));
+  for (auto base = info->mro.rbegin(); base != info->mro.rend(); ++base)
+    fields.push_back(getOwnLayout(cast<RefType>(*base)));
   return llvm::StructType::get(*context, fields);
+}
+
+uint64_t LLVMVisitor::getObjectOwnerOffset(RefType *type, RefType *owner) {
+  auto *info = type->getRuntimeInfo();
+  seqassertn(info, "missing runtime metadata for {}", type->getName());
+  auto position = std::find(info->mro.begin(), info->mro.end(), owner);
+  seqassertn(position != info->mro.end(), "field owner missing from MRO");
+  return M->getDataLayout()
+      .getStructLayout(getObjectLayout(type))
+      ->getElementOffset(std::distance(position, info->mro.end()));
 }
 
 uint64_t LLVMVisitor::getObjectFieldOffset(RefType *type, size_t index) {
@@ -3764,10 +3772,7 @@ uint64_t LLVMVisitor::getObjectFieldOffset(RefType *type, size_t index) {
   size_t localIndex = 0;
   for (size_t previous = 0; previous < index; ++previous)
     localIndex += info->fieldOwners[previous] == owner;
-  auto position = std::find(info->mro.begin(), info->mro.end(), owner);
-  seqassertn(position != info->mro.end(), "field owner missing from MRO");
-  return layout.getStructLayout(getObjectLayout(type))
-             ->getElementOffset(1 + std::distance(info->mro.begin(), position)) +
+  return getObjectOwnerOffset(type, owner) +
          layout.getStructLayout(getOwnLayout(owner))->getElementOffset(localIndex);
 }
 
@@ -3814,10 +3819,9 @@ llvm::GlobalVariable *LLVMVisitor::getRuntimeTypeInfo(Type *type) {
   std::vector<llvm::Constant *> mro, offsets, sortedMro, slots, parameters;
   for (size_t index = 0; index < info->mro.size(); ++index) {
     mro.push_back(B->getInt64(info->mro[index]->getRuntimeInfo()->id));
-    auto offset = polymorphic ? M->getDataLayout()
-                                    .getStructLayout(getObjectLayout(reference))
-                                    ->getElementOffset(index + 1)
-                              : 0;
+    auto offset = polymorphic
+                      ? getObjectOwnerOffset(reference, cast<RefType>(info->mro[index]))
+                      : 0;
     offsets.push_back(B->getInt64(offset));
     if (info->mro[index] == info->exceptionBase)
       exceptionOffset = offset;
@@ -4017,7 +4021,8 @@ llvm::Value *LLVMVisitor::loadRuntimeField(llvm::Value *info, unsigned field) {
 }
 
 llvm::Value *LLVMVisitor::getFieldAddress(llvm::Value *object, RefType *type,
-                                          const std::string &field) {
+                                          const std::string &field,
+                                          RefType *exactType) {
   auto index = type->getMemberIndex(field);
   seqassertn(index >= 0, "unknown field {} of {}", field, type->getName());
   if (!type->isPolymorphic())
@@ -4030,10 +4035,14 @@ llvm::Value *LLVMVisitor::getFieldAddress(llvm::Value *object, RefType *type,
   auto localOffset = M->getDataLayout()
                          .getStructLayout(getOwnLayout(owner))
                          ->getElementOffset(localIndex);
+  if (exactType) {
+    auto offset = getObjectOwnerOffset(exactType, owner);
+    return B->CreateGEP(B->getInt8Ty(), object, B->getInt64(offset + localOffset));
+  }
   // Address = canonical object + owner's segment offset + field's local offset.
-  // Static type Base alone does not fix the segment offset: Derived's own fields
-  // precede Base's segment. AOT can prove agreement across all known subtypes;
-  // JIT cannot make that closed-world assumption about future cells.
+  // Base-first segments preserve offsets through single inheritance. Multiple
+  // inheritance can insert other segments before the owner, so AOT still checks
+  // all known subtypes and JIT retains the open-world lookup.
   if (!options->jit) {
     auto key = std::make_pair(metadata->id, owner->getRuntimeInfo()->id);
     auto cached = fieldOffsetResolvers.find(key);
@@ -4046,12 +4055,7 @@ llvm::Value *LLVMVisitor::getFieldAddress(llvm::Value *object, RefType *type,
         if (!info || !candidate->isPolymorphic() ||
             std::find(info->mro.begin(), info->mro.end(), type) == info->mro.end())
           continue;
-        auto position = std::find(info->mro.begin(), info->mro.end(), owner);
-        seqassertn(position != info->mro.end(), "field owner missing from subtype");
-        auto offset =
-            M->getDataLayout()
-                .getStructLayout(getObjectLayout(candidate))
-                ->getElementOffset(1 + std::distance(info->mro.begin(), position));
+        auto offset = getObjectOwnerOffset(candidate, owner);
         offsets.emplace_back(info->id, offset);
       }
       FieldOffsetResolver resolver{false, 0, nullptr};
@@ -4229,6 +4233,11 @@ llvm::Value *LLVMVisitor::codegenIntrinsic(const InternalFunc *function,
       result = B->CreateInsertValue(result, args[index], index);
     return result;
   }
+  case Intrinsic::REPRESENTATION_CAST:
+    if (args.size() != 1 ||
+        args.front()->getType() != getLLVMType(function->getIntrinsicType()))
+      compilationError("invalid representation-preserving cast");
+    return args.front();
   case Intrinsic::GENERATOR_PROMISE: {
     auto *type = cast<GeneratorType>(function->getIntrinsicType());
     seqassertn(type && args.size() == 1, "invalid generator promise access");

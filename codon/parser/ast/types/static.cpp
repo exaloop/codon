@@ -46,16 +46,12 @@ int IntStaticType::unify(Type *typ, Unification *us) {
 }
 
 TypePtr IntStaticType::generalize(int atLevel) const {
-  auto c = std::make_shared<IntStaticType>(cache, value);
-  c->setSrcInfo(getSrcInfo());
-  return c;
+  return const_cast<IntStaticType *>(this)->shared_from_this();
 }
 
 TypePtr IntStaticType::instantiate(int atLevel, int *unboundCount,
-                                   std::unordered_map<int, TypePtr> *cache) const {
-  auto c = std::make_shared<IntStaticType>(this->cache, value);
-  c->setSrcInfo(getSrcInfo());
-  return c;
+                                   InstantiationCache *cache) const {
+  return const_cast<IntStaticType *>(this)->shared_from_this();
 }
 
 std::string IntStaticType::debugString(char mode) const {
@@ -84,16 +80,12 @@ int StrStaticType::unify(Type *typ, Unification *us) {
 }
 
 TypePtr StrStaticType::generalize(int atLevel) const {
-  auto c = std::make_shared<StrStaticType>(cache, value);
-  c->setSrcInfo(getSrcInfo());
-  return c;
+  return const_cast<StrStaticType *>(this)->shared_from_this();
 }
 
 TypePtr StrStaticType::instantiate(int atLevel, int *unboundCount,
-                                   std::unordered_map<int, TypePtr> *cache) const {
-  auto c = std::make_shared<StrStaticType>(this->cache, value);
-  c->setSrcInfo(getSrcInfo());
-  return c;
+                                   InstantiationCache *cache) const {
+  return const_cast<StrStaticType *>(this)->shared_from_this();
 }
 
 std::string StrStaticType::debugString(char mode) const {
@@ -121,16 +113,12 @@ int BoolStaticType::unify(Type *typ, Unification *us) {
 }
 
 TypePtr BoolStaticType::generalize(int atLevel) const {
-  auto c = std::make_shared<BoolStaticType>(cache, value);
-  c->setSrcInfo(getSrcInfo());
-  return c;
+  return const_cast<BoolStaticType *>(this)->shared_from_this();
 }
 
 TypePtr BoolStaticType::instantiate(int atLevel, int *unboundCount,
-                                    std::unordered_map<int, TypePtr> *cache) const {
-  auto c = std::make_shared<BoolStaticType>(this->cache, value);
-  c->setSrcInfo(getSrcInfo());
-  return c;
+                                    InstantiationCache *cache) const {
+  return const_cast<BoolStaticType *>(this)->shared_from_this();
 }
 
 std::string BoolStaticType::debugString(char mode) const {

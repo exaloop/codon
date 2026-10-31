@@ -5,11 +5,10 @@
 #include "codon/cir/analyze/dataflow/reaching.h"
 #include "codon/cir/analyze/module/global_vars.h"
 #include "codon/cir/analyze/module/side_effect.h"
+#include "codon/cir/llvm/llvm.h"
 #include "codon/cir/util/cloning.h"
 #include "codon/cir/util/irtools.h"
 #include "codon/parser/cache.h"
-
-#include "llvm/Support/CommandLine.h"
 
 #include <algorithm>
 #include <complex>
@@ -118,6 +117,10 @@ void setLifetimeTag(Value *value, const std::string &tag) {
 } // namespace
 
 const std::string FUSION_MODULE = "std.numpy.fusion";
+
+bool NumPyPass::shouldRun(Module *module) const {
+  return std::any_of(module->types_begin(), module->types_end(), isArrayType);
+}
 
 NumPyPrimitiveTypes::NumPyPrimitiveTypes(Module *M)
     : none(M->getNoneType()), bool_(M->getBoolType()), i8(M->getIntType(8, true)),
@@ -2274,9 +2277,7 @@ void NumPyInlinePass::run(Module *module) {
   auto getStatements = [&](BodiedFunc *callee) -> std::vector<Value *> {
     auto *body = cast<SeriesFlow>(callee->getBody());
     if (!body || callee->isGenerator() || callee->isAsync() ||
-        callee->getName().rfind("std.numpy.", 0) == 0 ||
-        util::hasAttribute(callee,
-                           ast::getMangledFunc("std.internal.attributes", "noinline")))
+        callee->getName().rfind("std.numpy.", 0) == 0 || util::isNoInline(callee))
       return {};
     std::vector<Value *> statements;
     std::function<void(SeriesFlow *)> flatten = [&](SeriesFlow *series) {

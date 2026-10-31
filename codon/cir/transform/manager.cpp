@@ -11,6 +11,7 @@
 #include "codon/cir/analyze/dataflow/reaching.h"
 #include "codon/cir/analyze/module/global_vars.h"
 #include "codon/cir/analyze/module/side_effect.h"
+#include "codon/cir/transform/cleanup/devirtualize.h"
 #include "codon/cir/transform/folding/folding.h"
 #include "codon/cir/transform/lowering/async_for.h"
 #include "codon/cir/transform/lowering/await.h"
@@ -111,6 +112,8 @@ void PassManager::runPass(Module *module, const std::string &name) {
   auto it = 0;
 
   while (run) {
+    if (!meta.pass->shouldRun(module))
+      break;
     for (auto &dep : meta.reqs) {
       runAnalysis(module, dep);
     }
@@ -245,6 +248,8 @@ void PassManager::registerStandardPasses() {
           /*insertBefore=*/"", {seKey2, rdKey, globalKey},
           {seKey2, rdKey, cfgKey, globalKey});
     }
+    registerPass(std::make_unique<cleanup::DevirtualizationPass>(rdKey),
+                 /*insertBefore=*/"", {rdKey}, {cfgKey, rdKey, globalKey});
   }
 }
 

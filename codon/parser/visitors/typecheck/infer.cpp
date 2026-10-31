@@ -321,6 +321,7 @@ types::Type *TypecheckVisitor::realizeType(types::ClassType *type) {
   // Realizations should always be visible, so add them to the toplevel
   rn = type->ClassType::realizedName();
   auto rt = std::static_pointer_cast<ClassType>(realized->generalize(0));
+  rt->freeze();
   auto val = std::make_shared<TypecheckItem>(rn, "", ctx->getModule(), rt);
   if (!val->type->is(StdlibTypes::Type) || isMetaclassType(val->type.get()))
     val->type = instantiateTypeVar(realized);
@@ -397,6 +398,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
 
   auto oldCtx = this->ctx;
   this->ctx = imp->ctx;
+  ctx->prepareCheckpoint();
   if (ctx->getRealizationDepth() > MAX_REALIZATION_DEPTH) {
     E(Error::MAX_REALIZATION, getSrcInfo(), getUserFacingName(type->getFuncName()));
   }
@@ -892,6 +894,23 @@ ir::Func *TypecheckVisitor::makeIRFunction(
     if (r->type->getFuncName() == getMangledMethod("", "type", "_ref_alloc")) {
       internal->setIntrinsic(ir::InternalFunc::Intrinsic::ALLOCATE,
                              ir::cast<ir::FuncType>(irType)->getReturnType());
+    } else if (r->type->getFuncName() == getMangledMethod("", "type", "_force_cast") ||
+               r->type->getFuncName() == getMangledMethod("", "type", "_ref_raw") ||
+               r->type->getFuncName() ==
+                   getMangledMethod("", "type", "_force_value_cast")) {
+      auto *target = ir::cast<ir::FuncType>(irType)->getReturnType();
+      if (r->type->getFuncName() != getMangledMethod("", "type", "_force_value_cast")) {
+        auto pointerLike = [](ir::Type *type) {
+          if (auto *optional = ir::cast<ir::OptionalType>(type))
+            return ir::isA<ir::RefType>(optional->getBase());
+          return ir::isA<ir::RefType>(type) || ir::isA<ir::PointerType>(type) ||
+                 ir::isA<ir::FuncType>(type) || ir::isA<ir::GeneratorType>(type);
+        };
+        if (types.size() != 1 || !pointerLike(types.front()) || !pointerLike(target))
+          E(Error::CUSTOM, r->ast->getSrcInfo(),
+            "pointer cast requires pointer-like source and destination types");
+      }
+      internal->setIntrinsic(ir::InternalFunc::Intrinsic::REPRESENTATION_CAST, target);
     } else if (r->type->getFuncName() == getMangledMethod("", "type", "_ref_size")) {
       internal->setIntrinsic(ir::InternalFunc::Intrinsic::ALLOCATION_SIZE,
                              makeIRType(extractFuncGeneric(r->getType())->getClass()));
@@ -903,8 +922,9 @@ ir::Func *TypecheckVisitor::makeIRFunction(
     } else if (r->type->getFuncName() ==
                getMangledMethod("", "TypeInfo", "_lookup_method")) {
       internal->setIntrinsic(ir::InternalFunc::Intrinsic::TYPEINFO_METHOD_LOOKUP);
-    } else if (unmangledName == "__new__" &&
-               ir::isA<ir::RecordType>(internal->getParentType())) {
+    } else if ((unmangledName == "__new__" &&
+                ir::isA<ir::RecordType>(internal->getParentType())) ||
+               r->type->getFuncName() == getMangledMethod("", "Partial", "__new__")) {
       internal->setIntrinsic(ir::InternalFunc::Intrinsic::RECORD_NEW,
                              ir::cast<ir::FuncType>(irType)->getReturnType());
     } else if (r->type->getFuncName() ==

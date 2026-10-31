@@ -569,8 +569,7 @@ void GeneratorLoopFusion::handle(ForFlow *loop) {
   if (!generator || !generator->isGenerator() || !generator->getBody() ||
       generator->isAsync() || parent == generator ||
       call->numArgs() != std::distance(generator->arg_begin(), generator->arg_end()) ||
-      util::hasAttribute(generator,
-                         ast::getMangledFunc("std.internal.attributes", "noinline")))
+      util::isNoInline(generator))
     return;
 
   FusionVerifier verifier;

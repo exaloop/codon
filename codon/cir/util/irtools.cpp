@@ -7,6 +7,15 @@
 namespace codon {
 namespace ir {
 namespace util {
+namespace {
+const std::string EXPORT_ATTR =
+    ast::getMangledFunc("std.internal.attributes", "export");
+const std::string GPU_KERNEL_ATTR = ast::getMangledFunc("std.internal.gpu", "kernel");
+const std::string INLINE_ATTR =
+    ast::getMangledFunc("std.internal.attributes", "inline");
+const std::string NOINLINE_ATTR =
+    ast::getMangledFunc("std.internal.attributes", "noinline");
+} // namespace
 
 bool hasAttribute(const Func *func, const std::string &attribute) {
   if (auto *attr = func->getAttribute<KeyValueAttribute>()) {
@@ -14,6 +23,28 @@ bool hasAttribute(const Func *func, const std::string &attribute) {
   }
   return false;
 }
+
+bool isExport(const Func *func) { return hasAttribute(func, EXPORT_ATTR); }
+
+void setExport(Func *func, bool value) {
+  auto *attributes = func->getAttribute<KeyValueAttribute>();
+  if (!attributes) {
+    if (!value)
+      return;
+    func->setAttribute(std::make_unique<KeyValueAttribute>());
+    attributes = func->getAttribute<KeyValueAttribute>();
+  }
+  if (value)
+    attributes->attributes[EXPORT_ATTR] = "";
+  else
+    attributes->attributes.erase(EXPORT_ATTR);
+}
+
+bool isGPUKernel(const Func *func) { return hasAttribute(func, GPU_KERNEL_ATTR); }
+
+bool isInline(const Func *func) { return hasAttribute(func, INLINE_ATTR); }
+
+bool isNoInline(const Func *func) { return hasAttribute(func, NOINLINE_ATTR); }
 
 bool isStdlibFunc(const Func *func, const std::string &submodule) {
   if (auto *attr = func->getAttribute<KeyValueAttribute>()) {

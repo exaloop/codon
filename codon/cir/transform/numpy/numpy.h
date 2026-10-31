@@ -19,6 +19,11 @@ namespace transform {
 namespace numpy {
 extern const std::string FUSION_MODULE;
 
+class NumPyPass : public OperatorPass {
+public:
+  bool shouldRun(Module *module) const override;
+};
+
 class NumPyExpressionAnalysis : public analyze::Analysis {
   std::string reachingDefKey;
   std::string sideEffectsKey;
@@ -32,7 +37,7 @@ public:
   std::unique_ptr<analyze::Result> run(const Module *module) override;
 };
 
-class NumPyInlinePass : public OperatorPass {
+class NumPyInlinePass : public NumPyPass {
   std::string expressionsKey;
 
 public:
@@ -44,7 +49,7 @@ public:
 };
 
 /// NumPy operator fusion pass.
-class NumPyFusionPass : public OperatorPass {
+class NumPyFusionPass : public NumPyPass {
 private:
   std::string expressionsKey;
   /// Key of the side effect analysis
@@ -57,15 +62,14 @@ public:
   /// @param expressionsKey the expression analysis' key
   /// @param sideEffectsKey side effect analysis' key
   NumPyFusionPass(const std::string &expressionsKey, const std::string &sideEffectsKey)
-      : OperatorPass(), expressionsKey(expressionsKey), sideEffectsKey(sideEffectsKey) {
-  }
+      : NumPyPass(), expressionsKey(expressionsKey), sideEffectsKey(sideEffectsKey) {}
 
   std::string getKey() const override { return KEY; }
   void visit(BodiedFunc *f) override;
 };
 
 /// Release proven-owned, nonescaping arrays after fusion, using fresh use analysis.
-class NumPyLifetimePass : public OperatorPass {
+class NumPyLifetimePass : public NumPyPass {
   std::string reachingDefKey;
 
 public:

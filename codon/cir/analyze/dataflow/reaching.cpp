@@ -2,7 +2,9 @@
 
 #include "reaching.h"
 
+#include <algorithm>
 #include <deque>
+#include <limits>
 #include <tuple>
 
 namespace codon {
@@ -95,6 +97,22 @@ struct BitSet {
 
   void overwrite(const BitSet &other, unsigned size) {
     std::memcpy(words.data(), other.words.data(), allocSize(size) * (B / 8));
+  }
+
+  bool applyTransfer(const BitSet &in, const BitSet &kill, const BitSet &gen,
+                     unsigned size) {
+    bool changed = false;
+    auto *out = words.data();
+    auto *input = in.words.data();
+    auto *killed = kill.words.data();
+    auto *generated = gen.words.data();
+    auto n = allocSize(size);
+    for (unsigned i = 0; i < n; i++) {
+      auto next = (input[i] & ~killed[i]) | generated[i];
+      changed |= out[i] != next;
+      out[i] = next;
+    }
+    return changed;
   }
 
   void update(const BitSet &other, unsigned size) {
@@ -200,14 +218,12 @@ void RDInspector::analyze() {
     }
 
     // OUT[blk] = GEN[blk] U (IN[blk] - KILL[blk])
-    auto oldout = data.out.copy(n);
-    auto tmp = data.in.copy(n);
-    tmp.subtract(data.kill, n);
-    tmp.update(data.gen, n);
-    data.out.overwrite(tmp, n);
+    // Apply OUT = GEN U (IN - KILL) in place.  The former temporary BitSets
+    // allocated and copied two vectors for every worklist visit.
+    auto changed = data.out.applyTransfer(data.in, data.kill, data.gen, n);
 
     // if OUT changed, add all successors to worklist
-    if (!data.out.equals(oldout, n)) {
+    if (changed) {
       for (auto it = blk->successors_begin(); it != blk->successors_end(); ++it) {
         worklist.push(*it);
       }
@@ -237,32 +253,39 @@ std::vector<ReachingDef> RDInspector::getReachingDefinitions(const Var *var,
   if (!blk)
     return {};
   auto &entry = sets[blk->getId()];
-  auto defs = entry.in[var->getId()];
-
-  bool needClear = (blk->getId() == cfg->getEntryBlock()->getId());
-  bool didClear = false;
-
-  auto done = false;
-  for (auto *val : *blk) {
-    if (done)
-      break;
-    if (val->getId() == loc->getId())
-      done = true;
-
-    auto killed = getKilled(val);
-    if (killed == var->getId()) {
-      defs.clear();
-      didClear = true;
+  if (!entry.indexed) {
+    size_t position = 0;
+    for (auto *value : *blk) {
+      entry.positions.emplace(value->getId(), position);
+      auto variable = getKilled(value);
+      if (variable != -1)
+        entry.assignments[variable].emplace_back(position, value);
+      ++position;
     }
-    auto gen = getGenerated(val);
-    if (gen.first == var->getId())
-      defs.insert(gen.second);
+    entry.indexed = true;
   }
 
-  if (needClear && !didClear)
+  auto position = entry.positions.find(loc->getId());
+  auto limit = position == entry.positions.end() ? std::numeric_limits<size_t>::max()
+                                                 : position->second;
+  auto assignments = entry.assignments.find(var->getId());
+  if (assignments != entry.assignments.end()) {
+    auto &values = assignments->second;
+    auto found = std::upper_bound(values.begin(), values.end(), limit,
+                                  [](size_t position, const auto &assignment) {
+                                    return position < assignment.first;
+                                  });
+    if (found != values.begin())
+      return {getGenerated(std::prev(found)->second).second};
+  }
+
+  if (blk == cfg->getEntryBlock())
     return {};
 
-  return std::vector<ReachingDef>(defs.begin(), defs.end());
+  auto incoming = entry.in.find(var->getId());
+  if (incoming == entry.in.end())
+    return {};
+  return std::vector<ReachingDef>(incoming->second.begin(), incoming->second.end());
 }
 
 const std::string RDAnalysis::KEY = "core-analyses-rd";
