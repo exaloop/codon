@@ -1,0 +1,362 @@
+import argparse
+
+@test
+def test_kind_codes():
+    cases = [(argparse.ArgumentValue(), argparse.VALUE_NULL),
+             (argparse.ArgumentValue(False), argparse.VALUE_BOOL),
+             (argparse.ArgumentValue(-3), argparse.VALUE_INT),
+             (argparse.ArgumentValue(1.5), argparse.VALUE_FLOAT),
+             (argparse.ArgumentValue(""), argparse.VALUE_STR),
+             (argparse.ArgumentValue("longer string"), argparse.VALUE_STR),
+             (argparse.ArgumentValue("\u03bb"), argparse.VALUE_STR),
+             (argparse.ArgumentValue([1, 2]), argparse.VALUE_ARRAY),
+             (argparse.ArgumentValue({"key": 1}), argparse.VALUE_OBJECT)]
+    for value, kind in cases:
+        assert isinstance(value.kind, int)
+        assert value.kind == kind
+    parser = argparse.ArgumentParser(add_help=False)
+    action = parser.add_argument("--value")
+    assert isinstance(action.kind, int)
+    assert action.kind == argparse._ACTION_STORE
+
+test_kind_codes()
+
+@test
+def test_namespace():
+    args = argparse.Namespace(count=3, name="input", enabled=True)
+    assert args.count.as_int() == 3
+    assert args.name.as_str() == "input"
+    assert args.enabled.as_bool()
+    args.count = 4
+    assert args["count"] == 4
+    args["files"] = ["a", "b"]
+    assert args.files[1].as_str() == "b"
+    assert len(args.files) == 2
+    assert repr(argparse.Namespace(value=None)) == "Namespace(value=None)"
+    args["not-an-identifier"] = 2
+    assert "**{'not-an-identifier': 2}" in repr(args)
+    assert args.__dict__()["count"] == 4
+
+test_namespace()
+
+@test
+def test_basic_parser():
+    parser = argparse.ArgumentParser(prog="tool", exit_on_error=False)
+    parser.add_argument("name")
+    parser.add_argument("-n", "--number", type=int, default=2)
+    parser.add_argument("-v", action="count", default=0)
+    parser.add_argument("--flag", action="store_true")
+    parser.add_argument("--items", nargs="+", type=float)
+    args = parser.parse_args(["input", "-vv", "--num=4", "--flag", "--items", "1.5", "2"])
+    assert args.name == "input" and args.number == 4 and args.v == 2 and args.flag == True
+    assert args.items[0].as_float() == 1.5
+    assert args.items[1].as_float() == 2.0
+    args, rest = parser.parse_known_args(["input", "--unknown", "x"])
+    assert args.number == 2 and rest == ["--unknown", "x"]
+    try:
+        parser.parse_args(["input", "-n", "bad"])
+        assert False
+    except argparse.ArgumentError as error:
+        assert str(error) == "argument -n/--number: invalid int value: 'bad'"
+        assert error.argument_name == "-n/--number"
+        assert error.message == "invalid int value: 'bad'"
+
+test_basic_parser()
+
+@test
+def test_actions_and_groups():
+    parser = argparse.ArgumentParser(prog="tool", exit_on_error=False)
+    parser.add_argument("--feature", action=argparse.BooleanOptionalAction)
+    parser.add_argument("-a", action="append", type=int, default=[1])
+    parser.add_argument("-e", action="extend", nargs="+", type=int)
+    parser.add_argument("-c", action="append_const", const="constant")
+    parser.add_argument("-s", action="store_const", const=5)
+    parser.add_argument("--off", action="store_false")
+    parser.add_argument("--maybe", nargs="?", const="3", default="2", type=int)
+    group = parser.add_argument_group("selection").add_mutually_exclusive_group(required=True)
+    group.add_argument("--one", action="store_true")
+    group.add_argument("--two", action="store_true")
+    args = parser.parse_args(["--no-feature", "-a2", "-a3", "-e", "4", "5", "-c", "-s", "--maybe", "--one"])
+    assert args.feature == False and args.a == [1, 2, 3] and args.e == [4, 5]
+    assert args.c == ["constant"] and args.s == 5 and args.off == True and args.maybe == 3
+    assert parser.parse_args(["--two"]).a == [1]
+    assert parser.parse_args(["--one"]).maybe == 2
+    try:
+        parser.parse_args(["--one", "--two"])
+        assert False
+    except argparse.ArgumentError as error:
+        assert "not allowed with argument --one" in str(error)
+    try:
+        parser.parse_args([])
+        assert False
+    except argparse.ArgumentError as error:
+        assert "one of the arguments --one --two is required" == str(error)
+
+@test
+def test_subparsers_and_parents():
+    parent = argparse.ArgumentParser(add_help=False)
+    parent.add_argument("--level", type=int, default=1)
+    parent.set_defaults(shared="parent")
+    parser = argparse.ArgumentParser(prog="tool", parents=[parent], exit_on_error=False)
+    commands = parser.add_subparsers(dest="command", required=True)
+    run = commands.add_parser("run", aliases=["r"], help="run files", exit_on_error=False)
+    run.add_argument("files", nargs="+")
+    run.add_argument("--speed", type=int, default=2)
+    run.set_defaults(shared="child")
+    args = parser.parse_args(["--level", "3", "r", "input", "--speed=4"])
+    assert args.level == 3 and args.command == "r" and args.files == ["input"]
+    assert args.speed == 4 and args.shared == "child"
+    args, extras = parser.parse_known_args(["run", "input", "--unknown"])
+    assert args.command == "run" and extras == ["--unknown"]
+    try:
+        parser.parse_args([])
+        assert False
+    except argparse.ArgumentError as error:
+        assert str(error) == "the following arguments are required: command"
+    with_path = argparse.ArgumentParser(prog="tool", usage="CUSTOM", color=False)
+    with_path.add_argument("path")
+    nested = with_path.add_subparsers().add_parser("run", color=False)
+    assert nested.prog == "tool path run"
+    assert nested.format_usage() == "usage: tool path run [-h]\n"
+    grouped_parent = argparse.ArgumentParser(add_help=False)
+    group = grouped_parent.add_mutually_exclusive_group(required=True)
+    group.add_argument("--one", action="store_true")
+    group.add_argument("--two", action="store_true")
+    child = argparse.ArgumentParser(parents=[grouped_parent], exit_on_error=False)
+    assert child.parse_args(["--two"]).two == True
+    try:
+        child.parse_args([])
+        assert False
+    except argparse.ArgumentError as error:
+        assert str(error) == "one of the arguments --one --two is required"
+
+test_actions_and_groups()
+test_subparsers_and_parents()
+
+@test
+def test_help():
+    parser = argparse.ArgumentParser(prog="tool", description="Process inputs.", epilog="Done.", color=False)
+    parser.add_argument("input", help="input path")
+    parser.add_argument("-n", "--number", type=int, default=2, help="number (default: %(default)s)")
+    parser.add_argument("--secret", help=argparse.SUPPRESS)
+    expected = "usage: tool [-h] [-n NUMBER] input\n\nProcess inputs.\n\npositional arguments:\n  input                input path\n\noptions:\n  -h, --help           show this help message and exit\n  -n, --number NUMBER  number (default: 2)\n\nDone.\n"
+    assert parser.format_help() == expected
+    raw = argparse.ArgumentParser(prog="raw", add_help=False, formatter_class=argparse.RawTextHelpFormatter,
+                                  description="first\n    second", color=False)
+    raw.add_argument("--x", help="one\n  two")
+    assert "first\n    second" in raw.format_help()
+    assert "one\n           two" in raw.format_help()
+    defaults = argparse.ArgumentParser(prog="defaults", formatter_class=argparse.ArgumentDefaultsHelpFormatter, color=False)
+    defaults.add_argument("--value", default=4, help="value")
+    assert "value (default: 4)" in defaults.format_help()
+    typed = argparse.ArgumentParser(prog="types", formatter_class=argparse.MetavarTypeHelpFormatter, color=False)
+    typed.add_argument("--value", type=int)
+    assert "--value int" in typed.format_help()
+    formatter = argparse.HelpFormatter("tool", width=60, color=False)
+    formatter.add_usage("%(prog)s INPUT", List[argparse.Action](), List[argparse._MutuallyExclusiveGroup](), prefix="run: ")
+    formatter.start_section("outer")
+    formatter.add_text("Use %(prog)s.")
+    formatter.start_section("inner")
+    formatter.add_argument(argparse.Action(["--value"], "value", help="a value"))
+    formatter.end_section()
+    formatter.end_section()
+    expected = "run: tool INPUT\n\nouter:\n  Use tool.\n\n  inner:\n    --value VALUE  a value\n"
+    assert formatter.format_help() == expected, formatter.format_help()
+    assert formatter.format_help() == expected
+    assert formatter._split_lines("ab-cd very-long-hyphenated-word example--word a-b-c-d", 12) == [
+        "ab-cd very-", "long-", "hyphenated-", "word example", "--word a-b-", "c-d"]
+    assert formatter._split_lines("abc abcdefghijklmnop", 8) == ["abc abcd", "efghijkl", "mnop"]
+
+test_help()
+
+class TwiceAction(argparse.Action):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def __call__(self, parser: argparse.ArgumentParser, namespace: argparse.Namespace,
+                 values: argparse.ArgumentValue, option_string: Optional[str] = None):
+        namespace[self.dest] = values.as_int() * 2
+
+@tuple
+class Coordinate:
+    value: int
+
+def coordinate(value: str):
+    if not value.isdigit(): raise argparse.ArgumentTypeError("expected a coordinate")
+    return Coordinate(int(value))
+
+class LineParser(argparse.ArgumentParser):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def convert_arg_line_to_args(self, arg_line: str) -> List[str]:
+        return arg_line.split()
+
+@test
+def test_custom_and_files():
+    parser = argparse.ArgumentParser(prog="custom", exit_on_error=False)
+    parser.add_argument("--twice", action=TwiceAction, type=int)
+    parser.register("action", "double", TwiceAction)
+    parser.add_argument("--registered", action="double", type=int)
+    parser.add_argument("--point", type=coordinate)
+    parser.register("type", "hexadecimal", lambda value: int(value, 16))
+    parser.add_argument("--hex", type="hexadecimal")
+    args = parser.parse_args(["--twice", "3", "--point", "7", "--hex", "ff", "--registered", "4"])
+    assert args.twice == 6 and args.point.as_type(Coordinate).value == 7 and args.hex == 255
+    assert args.registered == 8
+    callback: Callable[[str], Coordinate] = coordinate
+    parser.set_defaults(handler=callback)
+    stored_handler = parser.parse_args([]).handler
+    assert stored_handler == callback
+    assert bool(stored_handler)
+    handler = stored_handler.as_type(Callable[[str], Coordinate])
+    assert handler("9") == Coordinate(9)
+    try:
+        parser.parse_args(["--point", "bad"])
+        assert False
+    except argparse.ArgumentError as error:
+        assert str(error) == "argument --point: expected a coordinate"
+    import os
+    path = "/tmp/codon-argparse-" + str(os.getpid())
+    with open(path, "w") as output: output.write("--twice\n4\n")
+    try:
+        fromfile = argparse.ArgumentParser(fromfile_prefix_chars="@")
+        fromfile.add_argument("--twice", type=int)
+        assert fromfile.parse_args(["@" + path]).twice == 4
+        lines = LineParser(fromfile_prefix_chars="@")
+        lines.add_argument("--twice", type=int)
+        assert lines.parse_args(["@" + path]).twice == 4
+        files = argparse.ArgumentParser()
+        files.add_argument("text", type=argparse.FileType("r"))
+        files.add_argument("binary", type=argparse.FileType("rb"))
+        args = files.parse_args([path, path])
+        text, binary = args.text.as_type(File[str]), args.binary.as_type(File[bytes])
+        assert args.text == text and args.binary == binary
+        assert bool(args.text) and repr(args.text).startswith("<")
+        assert text.read() == "--twice\n4\n" and binary.read() == b"--twice\n4\n"
+        text.close()
+        binary.close()
+        for size in [0, 1, 8192]:
+            try:
+                argparse.FileType("wb", size)
+                assert False
+            except ValueError as error:
+                assert str(error) == "FileType does not support custom buffering"
+        with open(path) as reader:
+            assert reader.read() == "--twice\n4\n"
+    finally:
+        os.unlink(path)
+
+@test
+def test_positionals_and_defaults():
+    parser = argparse.ArgumentParser(exit_on_error=False)
+    parser.add_argument("first", nargs="?")
+    parser.add_argument("middle", nargs="*")
+    parser.add_argument("last")
+    parser.add_argument("--count", type=int)
+    assert parser.parse_args(["a"]).last == "a"
+    args = parser.parse_args(["a", "b", "c", "d"])
+    assert args.first == "a" and args.middle == ["b", "c"] and args.last == "d"
+    args = parser.parse_intermixed_args(["a", "--count", "3", "b", "c"])
+    assert args.first == "a" and args.middle == ["b"] and args.last == "c" and args.count == 3
+    assert parser.parse_args(["--", "-a"]).last == "-a"
+    assert parser.parse_args(["-1"]).last == "-1"
+    suppressed = argparse.ArgumentParser(argument_default=argparse.SUPPRESS, exit_on_error=False)
+    suppressed.add_argument("--name")
+    suppressed.add_argument("--count", type=int, default="4")
+    namespace = argparse.Namespace(count=7, extra="kept")
+    assert suppressed.parse_args([], namespace) is namespace
+    assert namespace.count == 7 and namespace.extra == "kept" and "name" not in namespace
+    assert suppressed.parse_args([]).count == 4
+    conflicts = argparse.ArgumentParser(conflict_handler="resolve")
+    conflicts.add_argument("-f", "--foo", default="old")
+    conflicts.add_argument("--foo", default="new")
+    assert conflicts.parse_args(["-f", "first", "--foo", "second"]).foo == "second"
+    default = [1]
+    shared = argparse.ArgumentParser(exit_on_error=False)
+    shared.add_argument("--values", type=int, action="append", default=default)
+    default.append(2)
+    first = shared.parse_args([])
+    assert first.values == [1, 2]
+    assert first.values.as_type(List[int]) is default
+    first.values.append(3)
+    assert default == [1, 2, 3]
+    assert shared.parse_args([]).values == [1, 2, 3]
+    appended = shared.parse_args(["--values", "4"])
+    assert appended.values == [1, 2, 3, 4]
+    appended.values.append(5)
+    assert default == [1, 2, 3]
+    default.clear()
+    assert not first.values and len(first.values) == 0 and repr(first.values) == "[]"
+    default.extend([6, 7])
+    assert first.values[-1] == 7
+    assert [value.as_int() for value in first.values.values()] == [6, 7]
+    nested = [[1]]
+    shared.set_defaults(nested=nested)
+    shared.parse_args([]).nested[0].append(2)
+    assert nested == [[1, 2]]
+
+test_custom_and_files()
+test_positionals_and_defaults()
+
+class PrefixChoices:
+    def __iter__(self) -> Generator[str]:
+        yield "item-*"
+
+    def __contains__(self, value: str) -> bool:
+        return value.startswith("item-")
+
+@test
+def test_choices():
+    parser = argparse.ArgumentParser(exit_on_error=False)
+    parser.add_argument("choice", nargs="?", choices=["a", "b"])
+    parser.add_argument("--integer", type=int, choices=[1, 2, 3])
+    assert parser.parse_args(["a"]).choice == "a"
+    assert parser.parse_args(["--integer", "2"]).integer == 2
+    numeric = argparse.ArgumentParser()
+    numeric.add_argument("--value", type=int, choices=[1.0, 2.0])
+    assert numeric.parse_args(["--value", "1"]).value == 1.0
+    assert argparse.ArgumentValue(True) == 1
+    assert argparse.ArgumentValue(9007199254740993) != 9007199254740992.0
+    boxed = argparse.ArgumentValue(Coordinate(3))
+    assert boxed == Coordinate(3), (boxed.kind, type(Coordinate(3)).__name__, repr(boxed))
+    assert repr(boxed) == repr(Coordinate(3)), (repr(boxed), repr(Coordinate(3)))
+    dictionary = argparse.ArgumentValue({"a": 1})
+    assert not dictionary == Coordinate(3)
+    assert dictionary.as_type(Dict[str, int]) == {"a": 1}
+    try:
+        boxed.as_type(Dict[str, int])
+        assert False
+    except TypeError:
+        pass
+    try:
+        parser.parse_args(["x"])
+        assert False
+    except argparse.ArgumentError as error:
+        assert str(error) == "argument choice: invalid choice: 'x' (choose from a, b)"
+    choices = ["first"]
+    mutable = argparse.ArgumentParser(exit_on_error=False)
+    mutable.add_argument("value", choices=choices)
+    choices.append("second")
+    assert mutable.parse_args(["second"]).value == "second"
+    assert "{first,second}" in mutable.format_usage()
+    choices.pop(0)
+    try:
+        mutable.parse_args(["first"])
+        assert False
+    except argparse.ArgumentError:
+        pass
+    custom = argparse.ArgumentParser(exit_on_error=False)
+    custom.add_argument("value", choices=PrefixChoices())
+    assert custom.parse_args(["item-12"]).value == "item-12"
+    substring = argparse.ArgumentParser(exit_on_error=False)
+    substring.add_argument("value", choices="abc")
+    assert substring.parse_args(["b"]).value == "b"
+    for invalid in ["ab", ""]:
+        try:
+            substring.parse_args([invalid])
+            assert False
+        except argparse.ArgumentError:
+            pass
+
+test_choices()

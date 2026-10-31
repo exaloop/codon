@@ -1,0 +1,1878 @@
+# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
+
+"""Command-line parsing with a tagged ArgumentValue and a dynamic Namespace.
+
+Parsed attributes are tagged values: use `args.count.as_int()`,
+`args.name.as_str()`, and `args.files.values()` to access native values.
+"""
+
+import json
+import internal.static as static
+from internal.gc import sizeof
+import re
+import sys
+import os
+
+SUPPRESS: Literal[str] = "==SUPPRESS=="
+OPTIONAL: Literal[str] = "?"
+ZERO_OR_MORE: Literal[str] = "*"
+ONE_OR_MORE: Literal[str] = "+"
+REMAINDER: Literal[str] = "..."
+PARSER: Literal[str] = "A..."
+
+VALUE_NULL: Literal[int] = json._KIND_NULL
+VALUE_BOOL: Literal[int] = json._KIND_BOOL
+VALUE_INT: Literal[int] = json._KIND_INT
+VALUE_FLOAT: Literal[int] = json._KIND_FLOAT
+VALUE_STR: Literal[int] = json._KIND_STR
+VALUE_ARRAY: Literal[int] = json._KIND_ARRAY
+VALUE_OBJECT: Literal[int] = 7
+_VALUE_TAG_MASK: Literal[int] = json._TAG_MASK
+
+_ACTION_CUSTOM: Literal[int] = 0
+_ACTION_STORE: Literal[int] = 1
+_ACTION_STORE_CONST: Literal[int] = 2
+_ACTION_STORE_TRUE: Literal[int] = 3
+_ACTION_STORE_FALSE: Literal[int] = 4
+_ACTION_APPEND: Literal[int] = 5
+_ACTION_APPEND_CONST: Literal[int] = 6
+_ACTION_COUNT: Literal[int] = 7
+_ACTION_EXTEND: Literal[int] = 8
+_ACTION_HELP: Literal[int] = 9
+_ACTION_VERSION: Literal[int] = 10
+_ACTION_BOOLEAN: Literal[int] = 11
+_ACTION_PARSERS: Literal[int] = 12
+_ACTION_REMOVED: Literal[int] = 13
+
+_HELP_SECTION: Literal[int] = 0
+_HELP_TEXT: Literal[int] = 1
+_HELP_USAGE: Literal[int] = 2
+_HELP_ACTION: Literal[int] = 3
+
+def _action_kind(name: str) -> int:
+    if name == "store": return _ACTION_STORE
+    if name == "store_const": return _ACTION_STORE_CONST
+    if name == "store_true": return _ACTION_STORE_TRUE
+    if name == "store_false": return _ACTION_STORE_FALSE
+    if name == "append": return _ACTION_APPEND
+    if name == "append_const": return _ACTION_APPEND_CONST
+    if name == "count": return _ACTION_COUNT
+    if name == "extend": return _ACTION_EXTEND
+    if name == "help": return _ACTION_HELP
+    if name == "version": return _ACTION_VERSION
+    return _ACTION_CUSTOM
+
+@tuple
+class ArgumentValue:
+    _meta: int
+    _payload: cobj
+
+    def __new__():
+        return ArgumentValue(VALUE_NULL, cobj())
+
+    def __new__(value):
+        if isinstance(value, ArgumentValue):
+            return value
+        elif isinstance(value, Optional):
+            return ArgumentValue(value.__val__()) if value.__has__() else ArgumentValue()
+        elif isinstance(value, (NoneType, bool, int, float, str)):
+            scalar = json.JSON(value)
+            return ArgumentValue(scalar._meta, scalar._payload)
+        elif isinstance(value, list):
+            return ArgumentValue(VALUE_ARRAY, type._force_cast(_Values(value), cobj))
+        elif isinstance(value, DynamicTuple):
+            result = ArgumentValue.array()
+            for item in value:
+                result.append(item)
+            return result
+        elif isinstance(value, tuple):
+            if type(value).__name__.startswith("Tuple[") or type(value).__name__ == "Tuple":
+                result = ArgumentValue.array()
+                for item in value:
+                    result.append(item)
+                return result
+            else:
+                return ArgumentValue(VALUE_OBJECT, type._force_cast(_CustomValue(value), cobj))
+        else:
+            return ArgumentValue(VALUE_OBJECT, type._force_cast(_CustomValue(value), cobj))
+
+    def array():
+        return ArgumentValue(VALUE_ARRAY, type._force_cast(_Values(List[ArgumentValue]()), cobj))
+
+    @property
+    def kind(self) -> int:
+        return self._meta & _VALUE_TAG_MASK
+
+    def is_null(self) -> bool:
+        return self.kind == VALUE_NULL
+
+    def as_str(self) -> str:
+        return json.JSON(self._meta, self._payload).as_str()
+
+    def as_int(self) -> int:
+        return json.JSON(self._meta, self._payload).as_int()
+
+    def as_float(self) -> float:
+        return json.JSON(self._meta, self._payload).as_float()
+
+    def as_bool(self) -> bool:
+        return json.JSON(self._meta, self._payload).as_bool()
+
+    def as_type(self, T: type) -> T:
+        if isinstance(T, Function) or isinstance(T, Partial) or isinstance(T, unrealized_type):
+            compile_error("extract function defaults using an explicit Callable signature")
+        elif T is str: return self.as_str()
+        elif T is int: return self.as_int()
+        elif T is float: return self.as_float()
+        elif T is bool: return self.as_bool()
+        else:
+            if self.kind == VALUE_ARRAY:
+                return type._force_cast(self._payload, _Values).payload.__unwrap__(T)
+            if self.kind != VALUE_OBJECT:
+                raise TypeError("argument value does not contain " + T.__name__)
+            custom = type._force_cast(self._payload, _CustomValue)
+            return custom.payload.__unwrap__(T)
+
+    def _values(self):
+        if self.kind != VALUE_ARRAY:
+            raise TypeError("argument value is not a list")
+        return type._force_cast(self._payload, _Values)
+
+    def values(self):
+        return iter(self._values())
+
+    def append(self, value):
+        self._values().append(ArgumentValue(value))
+
+    def __getitem__(self, index: int) -> ArgumentValue:
+        return self._values()[index]
+
+    def __len__(self) -> int:
+        return len(self._values()) if self.kind == VALUE_ARRAY else len(self.as_str())
+
+    def __bool__(self) -> bool:
+        if self.kind == VALUE_ARRAY: return bool(self._values())
+        if self.kind == VALUE_OBJECT: return type._force_cast(self._payload, _CustomValue)._truth()
+        return bool(json.JSON(self._meta, self._payload))
+
+    def __eq__(self, other) -> bool:
+        value = ArgumentValue(other)
+        first_tag, second_tag = self.kind, value.kind
+        if VALUE_BOOL <= first_tag <= VALUE_FLOAT and VALUE_BOOL <= second_tag <= VALUE_FLOAT:
+            if first_tag == VALUE_FLOAT and second_tag == VALUE_FLOAT: return self.as_float() == value.as_float()
+            if first_tag != VALUE_FLOAT and second_tag != VALUE_FLOAT:
+                first = int(self.as_bool()) if first_tag == VALUE_BOOL else self.as_int()
+                second = int(value.as_bool()) if second_tag == VALUE_BOOL else value.as_int()
+                return first == second
+            floating = self.as_float() if first_tag == VALUE_FLOAT else value.as_float()
+            integer_value = value if first_tag == VALUE_FLOAT else self
+            integer = int(integer_value.as_bool()) if integer_value.kind == VALUE_BOOL else integer_value.as_int()
+            if not -9223372036854775808.0 <= floating < 9223372036854775808.0: return False
+            converted = int(floating)
+            return floating == float(converted) and converted == integer
+        if first_tag != second_tag: return False
+        if first_tag == VALUE_ARRAY: return self._values() == value._values()
+        if first_tag == VALUE_OBJECT:
+            return type._force_cast(self._payload, _CustomValue)._equals(type._force_cast(value._payload, _CustomValue))
+        return json.JSON(self._meta, self._payload) == json.JSON(value._meta, value._payload)
+
+    def __ne__(self, other) -> bool:
+        return not self == other
+
+    def __repr__(self) -> str:
+        if self.kind == VALUE_ARRAY: return repr(self._values())
+        if self.kind == VALUE_OBJECT:
+            return type._force_cast(self._payload, _CustomValue)._repr()
+        if self.is_null(): return "None"
+        if self.kind == VALUE_STR: return repr(self.as_str())
+        if self.kind == VALUE_BOOL: return repr(self.as_bool())
+        if self.kind == VALUE_INT: return repr(self.as_int())
+        return repr(self.as_float())
+
+    def __str__(self) -> str:
+        if self.kind == VALUE_OBJECT: return type._force_cast(self._payload, _CustomValue)._str()
+        return self.as_str() if self.kind == VALUE_STR else repr(self)
+
+def _list_values(payload: Any, T: type) -> Generator[ArgumentValue]:
+    for item in payload.__unwrap__(List[T]):
+        yield ArgumentValue(item)
+
+def _list_item(payload: Any, index: int, T: type) -> ArgumentValue:
+    return ArgumentValue(payload.__unwrap__(List[T])[index])
+
+def _list_length(payload: Any, T: type) -> int:
+    return len(payload.__unwrap__(List[T]))
+
+def _list_append(payload: Any, value: ArgumentValue, T: type) -> None:
+    items = payload.__unwrap__(List[T])
+    if T is ArgumentValue:
+        items.append(value)
+    elif T is NoneType:
+        if not value.is_null(): raise TypeError("argument value does not contain NoneType")
+        items.append(NoneType())
+    else:
+        items.append(value.as_type(T))
+
+class _Values:
+    payload: Any
+    iterate: Function[[Any], Generator[ArgumentValue]]
+    item: Function[[Any, int], ArgumentValue]
+    length: Function[[Any], int]
+    add: Function[[Any, ArgumentValue], NoneType]
+
+    def __init__(self, items: List[T], T: type):
+        self.payload = Any(items)
+        self.iterate = static.function.realized(_list_values(T=T, ...), Any)
+        self.item = static.function.realized(_list_item(T=T, ...), Any, int)
+        self.length = static.function.realized(_list_length(T=T, ...), Any)
+        self.add = static.function.realized(_list_append(T=T, ...), Any, ArgumentValue)
+
+    def __iter__(self) -> Generator[ArgumentValue]:
+        return self.iterate(self.payload)
+
+    def __getitem__(self, index: int) -> ArgumentValue:
+        return self.item(self.payload, index)
+
+    def __len__(self) -> int:
+        return self.length(self.payload)
+
+    def __bool__(self) -> bool:
+        return len(self) != 0
+
+    def append(self, value: ArgumentValue):
+        self.add(self.payload, value)
+
+    def __eq__(self, other: _Values) -> bool:
+        if len(self) != len(other): return False
+        for first, second in zip(self, other):
+            if first != second: return False
+        return True
+
+    def __repr__(self) -> str:
+        return "[" + ", ".join(repr(value) for value in self) + "]"
+
+def _boxed_truth(payload: Any, T: type) -> bool:
+    value = payload.__unwrap__(T)
+    if hasattr(value, "__bool__"): return bool(value)
+    elif hasattr(value, "__len__"): return len(value) != 0
+    else: return True
+
+def _boxed_repr(payload: Any, T: type) -> str:
+    value = payload.__unwrap__(T)
+    if isinstance(value, File): return "<" + T.__name__ + ">"
+    elif hasattr(value, "__repr__"): return repr(value)
+    else: return "<" + T.__name__ + ">"
+
+def _boxed_str(payload: Any, T: type) -> str:
+    value = payload.__unwrap__(T)
+    if isinstance(value, File): return _boxed_repr(payload, T)
+    elif hasattr(value, "__str__"): return str(value)
+    else: return _boxed_repr(payload, T)
+
+def _boxed_equal(first: Any, second: Any, same_storage: bool, T: type) -> bool:
+    left = first.__unwrap__(T)
+    right = second.__unwrap__(T)
+    if isinstance(left, File): return left._state is right._state
+    elif isinstance(left, Function): return left.__raw__() == right.__raw__()
+    elif isinstance(left, Callable): return left.fn.__raw__() == right.fn.__raw__() and left.data == right.data
+    elif isinstance(left, Partial): return sizeof(T) == 0 or same_storage
+    elif hasattr(left, "__eq__"): return left == right
+    else: return left is right
+
+class _CustomValue:
+    payload: Any
+    truth: Function[[Any], bool]
+    representation: Function[[Any], str]
+    string: Function[[Any], str]
+    equal: Function[[Any, Any, bool], bool]
+
+    def __init__(self, value):
+        self.payload = Any(value)
+        self.truth = static.function.realized(_boxed_truth(T=type(value), ...), Any)
+        self.representation = static.function.realized(_boxed_repr(T=type(value), ...), Any)
+        self.string = static.function.realized(_boxed_str(T=type(value), ...), Any)
+        self.equal = static.function.realized(_boxed_equal(T=type(value), ...), Any, Any, bool)
+
+    def _truth(self) -> bool:
+        return self.truth(self.payload)
+
+    def _repr(self) -> str:
+        return self.representation(self.payload)
+
+    def _str(self) -> str:
+        return self.string(self.payload)
+
+    def _equals(self, other: _CustomValue) -> bool:
+        if self.payload._real_typeinfo() != other.payload._real_typeinfo(): return False
+        return self.equal(self.payload, other.payload, self is other)
+
+def _choice_membership(container, value: ArgumentValue) -> bool:
+    if isinstance(container, str):
+        return value.kind == VALUE_STR and len(value.as_str()) == 1 and value.as_str() in container
+    elif isinstance(container, range):
+        if value.kind == VALUE_INT: return value.as_int() in container
+        if value.kind == VALUE_BOOL: return int(value.as_bool()) in container
+        if value.kind == VALUE_FLOAT:
+            number = value.as_float()
+            if -9223372036854775808.0 <= number < 9223372036854775808.0:
+                integer = int(number)
+                return float(integer) == number and integer in container
+        return False
+    elif isinstance(container, (List, Dict, Set, DynamicTuple)) or \
+            type(container).__name__.startswith("Tuple[") or type(container).__name__ == "Tuple":
+        for item in container:
+            if value == item: return True
+        return False
+    elif hasattr(container, "__contains__"):
+        T = type(next(iter(container)))
+        if T is ArgumentValue: return value in container
+        elif T is str: return value.kind == VALUE_STR and value.as_str() in container
+        elif T is int: return value.kind == VALUE_INT and value.as_int() in container
+        elif T is float: return value.kind == VALUE_FLOAT and value.as_float() in container
+        elif T is bool: return value.kind == VALUE_BOOL and value.as_bool() in container
+        else:
+            if value.kind != VALUE_OBJECT: return False
+            custom = type._force_cast(value._payload, _CustomValue)
+            return isinstance(custom.payload, T) and value.as_type(T) in container
+    else:
+        for item in container:
+            if value == item: return True
+        return False
+
+class _Choices:
+    _iterate: Callable[[], Generator[ArgumentValue]]
+    _contains: Callable[[ArgumentValue], bool]
+    _extra: List[ArgumentValue]
+
+    def __init__(self, container):
+        def values(container) -> Generator[ArgumentValue]:
+            for item in container: yield ArgumentValue(item)
+        self._iterate = values(container, ...)
+        self._contains = _choice_membership(container, ...)
+        self._extra = []
+
+    def __iter__(self) -> Generator[ArgumentValue]:
+        yield from self._iterate()
+        yield from self._extra
+
+    def __contains__(self, value: ArgumentValue) -> bool:
+        return self._contains(value) or value in self._extra
+
+    def append(self, value: ArgumentValue):
+        self._extra.append(value)
+
+class Namespace:
+    _data: Dict[str, ArgumentValue]
+
+    def __init__(self, **kwargs):
+        self._data = {}
+        keys = kwargs.__keys__()
+        for index in static.range(static.len(kwargs.args)):
+            self._data[keys[index]] = ArgumentValue(kwargs.args[index])
+
+    def __getattr__(self, name: Literal[str]) -> ArgumentValue:
+        return self[name]
+
+    def __setattr__(self, name: Literal[str], value, /):
+        self[name] = value
+
+    def __getitem__(self, name: str) -> ArgumentValue:
+        if name not in self._data:
+            raise AttributeError("'Namespace' object has no attribute " + repr(name))
+        return self._data[name]
+
+    def __setitem__(self, name: str, value):
+        self._data[name] = ArgumentValue(value)
+
+    def __contains__(self, name: str) -> bool:
+        return name in self._data
+
+    def __delitem__(self, name: str):
+        del self._data[name]
+
+    def __dict__(self):
+        return self._data
+
+    def __eq__(self, other: Namespace) -> bool:
+        return self._data == other._data
+
+    def __repr__(self) -> str:
+        arguments = List[str]()
+        other = Dict[str, ArgumentValue]()
+        for key, value in self._data.items():
+            if key.isidentifier(): arguments.append(key + "=" + repr(value))
+            else: other[key] = value
+        if other: arguments.append("**" + repr(other))
+        return "Namespace(" + ", ".join(arguments) + ")"
+
+class ArgumentTypeError(Exception):
+    def __init__(self, message: str, /):
+        super().__init__(message)
+
+class ArgumentError(Exception):
+    argument_name: str
+
+    def __init__(self, argument, message: str):
+        if isinstance(argument, str): self.argument_name = argument
+        elif argument is None: self.argument_name = ""
+        else: self.argument_name = argument._name()
+        super().__init__(message)
+
+    def __str__(self) -> str:
+        return ("argument " + self.argument_name + ": " if self.argument_name else "") + self.message
+
+@tuple
+class _Unset:
+    pass
+
+_UNSET = _Unset()
+
+def _suppressed(value: ArgumentValue) -> bool:
+    return value.kind == VALUE_STR and value.as_str() == SUPPRESS
+
+def _interpolate(text: str, values: Dict[str, ArgumentValue]) -> str:
+    pieces = List[str]()
+    start = 0
+    while start < len(text):
+        marker = text.find("%", start)
+        if marker < 0:
+            pieces.append(text[start:])
+            break
+        pieces.append(text[start:marker])
+        if marker + 1 < len(text) and text[marker + 1] == "%":
+            pieces.append("%")
+            start = marker + 2
+            continue
+        match = re.match(r"%\(([^)]+)\)([#0 +\-]*\d*(?:\.\d+)?[srdifFeEgGouxXc])", text[marker:])
+        if not match: raise ValueError("invalid help format string")
+        found = unwrap(match)
+        value = values[found.group(1)]
+        spec = found.group(2)
+        if spec[-1] == "s": pieces.append(("%" + spec) % str(value))
+        elif spec[-1] == "r": pieces.append(("%" + spec[:-1] + "s") % repr(value))
+        elif spec[-1] in "fFeEgG": pieces.append(("%" + spec) % value.as_float())
+        else: pieces.append(("%" + spec) % value.as_int())
+        start = marker + len(found.group(0))
+    return "".join(pieces)
+
+def _convert_string(value: str) -> ArgumentValue:
+    return ArgumentValue(value)
+
+def _converter(function) -> Callable[[str], ArgumentValue]:
+    def convert(function, value: str) -> ArgumentValue:
+        return ArgumentValue(function(value))
+    return convert(function, ...)
+
+def _type_name(function) -> str:
+    if function is int: return "int"
+    elif function is float: return "float"
+    elif function is str: return "str"
+    elif function is bool: return "bool"
+    elif hasattr(function, "__fn_name__"): return function.__fn_name__
+    elif hasattr(function, "__name__"): return function.__name__
+    else: return "value"
+
+def _nargs(value) -> str:
+    if isinstance(value, ArgumentValue):
+        if value.is_null(): return ""
+        if value.kind == VALUE_INT: return _nargs(value.as_int())
+        return _nargs(value.as_str())
+    elif value is None or isinstance(value, _Unset): return ""
+    elif isinstance(value, int):
+        if value < 0: raise ValueError("nargs must not be negative")
+        return str(value)
+    elif isinstance(value, str):
+        if value not in (OPTIONAL, ZERO_OR_MORE, ONE_OR_MORE, REMAINDER, PARSER, SUPPRESS):
+            raise ValueError("invalid nargs value")
+        return value
+    else:
+        compile_error("nargs must be an integer, string or None")
+
+def _similarity(candidate: str, value: str) -> float:
+    if not candidate and not value: return 1.0
+    positions = Dict[str, List[int]]()
+    for index, character in enumerate(value):
+        if character not in positions: positions[character] = []
+        positions[character].append(index)
+    if len(value) >= 200:
+        popular = [character for character, indices in positions.items() if len(indices) > len(value) // 100 + 1]
+        for character in popular: del positions[character]
+    regions = [(0, len(candidate), 0, len(value))]
+    matched = 0
+    while regions:
+        first_start, first_end, second_start, second_end = regions.pop()
+        previous = Dict[int, int]()
+        best_first, best_second, best_size = first_start, second_start, 0
+        for first in range(first_start, first_end):
+            current = Dict[int, int]()
+            if candidate[first] in positions:
+                for second in positions[candidate[first]]:
+                    if second < second_start: continue
+                    if second >= second_end: break
+                    size = previous.get(second - 1, 0) + 1
+                    current[second] = size
+                    if size > best_size:
+                        best_first, best_second, best_size = first - size + 1, second - size + 1, size
+            previous = current
+        while best_first > first_start and best_second > second_start and candidate[best_first - 1] == value[best_second - 1]:
+            best_first -= 1
+            best_second -= 1
+            best_size += 1
+        while best_first + best_size < first_end and best_second + best_size < second_end and candidate[best_first + best_size] == value[best_second + best_size]:
+            best_size += 1
+        matched += best_size
+        if best_size:
+            if first_start < best_first and second_start < best_second:
+                regions.append((first_start, best_first, second_start, best_second))
+            if best_first + best_size < first_end and best_second + best_size < second_end:
+                regions.append((best_first + best_size, first_end, best_second + best_size, second_end))
+    return 2.0 * matched / (len(candidate) + len(value))
+
+def _suggestion(value: str, choices: _Choices) -> Optional[str]:
+    best = 0.6
+    result: Optional[str] = None
+    for choice in choices:
+        candidate = choice.as_str()
+        total = len(candidate) + len(value)
+        if total and 2.0 * min(len(candidate), len(value)) / total < best: continue
+        score = _similarity(candidate, value)
+        if score >= best and (score > best or result is None or candidate > unwrap(result)):
+            result, best = candidate, score
+    return result
+
+def _can_colorize() -> bool:
+    override = os.environ.get("PYTHON_COLORS", "")
+    if override == "0": return False
+    if override == "1": return True
+    if os.environ.get("NO_COLOR", ""): return False
+    if os.environ.get("FORCE_COLOR", ""): return True
+    if os.environ.get("TERM", "") == "dumb": return False
+    if sys.platform == "win32":
+        from C import _isatty(i32) -> i32
+        return bool(_isatty(i32(1)))
+    else:
+        from C import isatty(i32) -> i32
+        return bool(isatty(i32(1)))
+
+def _decolor(text: str) -> str:
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
+
+def _terminal_columns() -> int:
+    columns = os.environ.get("COLUMNS", "")
+    if columns:
+        try:
+            width = int(columns)
+            if width > 0: return width
+        except ValueError:
+            pass
+    if sys.platform == "win32":
+        from C import GetStdHandle(u32) -> cobj
+        from C import GetConsoleScreenBufferInfo(cobj, Ptr[i16]) -> i32
+        info = __array__[i16](12)
+        if GetConsoleScreenBufferInfo(GetStdHandle(u32(-11)), info):
+            width = int(info[7]) - int(info[5]) + 1
+            if width > 0: return width
+    elif sys.platform == "darwin" or sys.platform == "linux":
+        from C import ioctl(i32, u64, ...) -> i32
+        dimensions = __array__[u16](4)
+        request = 0x40087468 if sys.platform == "darwin" else 0x5413
+        if ioctl(i32(1), u64(request), dimensions) == i32(0) and dimensions[1] > u16(0):
+            return int(dimensions[1])
+    return 80
+
+class Action:
+    option_strings: List[str]
+    dest: str
+    nargs: str
+    const: ArgumentValue
+    default: ArgumentValue
+    type: Callable[[str], ArgumentValue]
+    type_name: str
+    choices: _Choices
+    has_choices: bool
+    required: bool
+    help: Optional[str]
+    metavar: List[str]
+    deprecated: bool
+    kind: int
+    version: Optional[str]
+
+    def __init__(self, option_strings, dest: str, nargs=None, const=None, default=None,
+                 choices=None, required: bool = False, help: Optional[str] = None,
+                 metavar=None, deprecated: bool = False, **kwargs):
+        self._initialize(option_strings, dest, nargs, const, default, kwargs.get("type"), choices,
+                         required, help, metavar, deprecated)
+
+    def _initialize(self, option_strings, dest: str, nargs, const, default, converter,
+                    choices, required: bool, help: Optional[str], metavar, deprecated: bool):
+        self.option_strings = list(option_strings)
+        self.dest, self.nargs = dest, _nargs(nargs)
+        self.const, self.default = ArgumentValue(const), ArgumentValue(default)
+        self.type = _convert_string
+        self.type_name = "str"
+        if converter is not None:
+            self.type = _converter(converter)
+            self.type_name = _type_name(converter)
+        self.has_choices = choices is not None
+        if choices is None: self.choices = _Choices(List[ArgumentValue]())
+        elif isinstance(choices, _Choices): self.choices = choices
+        else: self.choices = _Choices(choices)
+        self.required, self.help, self.deprecated = required, help, deprecated
+        self.metavar = []
+        if metavar is not None:
+            if isinstance(metavar, str): self.metavar.append(metavar)
+            else:
+                for item in metavar: self.metavar.append(item)
+        self.kind, self.version = _ACTION_STORE, None
+
+    def _name(self) -> str:
+        if self.option_strings: return "/".join(self.option_strings)
+        if len(self.metavar) > 1:
+            if self.nargs in (ONE_OR_MORE, ZERO_OR_MORE):
+                return self.metavar[0] + "[, " + self.metavar[1] + "]"
+            return ", ".join(self.metavar)
+        if self.metavar: return self.metavar[0]
+        if self.dest != SUPPRESS: return self.dest
+        return "{" + ",".join(str(choice) for choice in self.choices) + "}" if self.has_choices else ""
+
+    def __eq__(self, other: Action, /) -> bool:
+        return self is other
+
+    def __ne__(self, other: Action, /) -> bool:
+        return self is not other
+
+    def format_usage(self) -> str:
+        return " | ".join(self.option_strings) if self.kind == _ACTION_BOOLEAN else self.option_strings[0]
+
+    def _get_subactions(self) -> List[Action]:
+        return []
+
+    def _invoke_builtin(self, parser, namespace: Namespace, values: ArgumentValue,
+                 option_string: Optional[str] = None):
+        if self.dest == SUPPRESS: return
+        if self.kind == _ACTION_STORE: namespace[self.dest] = values
+        elif self.kind in (_ACTION_STORE_CONST, _ACTION_STORE_TRUE, _ACTION_STORE_FALSE):
+            namespace[self.dest] = self.const
+        elif self.kind == _ACTION_COUNT:
+            previous = namespace[self.dest] if self.dest in namespace else ArgumentValue()
+            namespace[self.dest] = (0 if previous.is_null() else previous.as_int()) + 1
+        elif self.kind in (_ACTION_APPEND, _ACTION_APPEND_CONST, _ACTION_EXTEND):
+            previous = namespace[self.dest] if self.dest in namespace else ArgumentValue()
+            result = ArgumentValue.array()
+            if not previous.is_null():
+                for item in previous.values(): result.append(item)
+            if self.kind == _ACTION_EXTEND:
+                if values.kind == VALUE_STR:
+                    for item in values.as_str(): result.append(item)
+                elif values.kind == VALUE_ARRAY:
+                    for item in values.values(): result.append(item)
+                else: raise TypeError("argument value is not iterable")
+            else:
+                result.append(self.const if self.kind == _ACTION_APPEND_CONST else values)
+            namespace[self.dest] = result
+        elif self.kind == _ACTION_HELP:
+            parser.print_help()
+            parser.exit()
+        elif self.kind == _ACTION_VERSION:
+            print(parser._expand(unwrap(self.version)))
+            parser.exit()
+
+class BooleanOptionalAction(Action):
+    def __init__(self, option_strings, dest: str, default=None, choices=None,
+                 required: bool = False, help: Optional[str] = None, metavar=None,
+                 deprecated: bool = False, **kwargs):
+        BooleanOptionalAction._initialize_boolean(self, option_strings, dest, default,
+                                                 kwargs.get("type"), choices, required,
+                                                 help, metavar, deprecated)
+
+    def _initialize_boolean(self, option_strings, dest: str, default, converter, choices,
+                            required: bool, help: Optional[str], metavar, deprecated: bool):
+        options = List[str]()
+        for option in option_strings:
+            options.append(option)
+            if option.startswith("--"): options.append("--no-" + option[2:])
+        super().__init__(options, dest, nargs=0, default=default, type=converter, choices=choices,
+                         required=required, help=help, metavar=metavar, deprecated=deprecated)
+        self.kind = _ACTION_BOOLEAN
+
+    def _invoke_boolean(self, parser, namespace: Namespace, values: ArgumentValue,
+                 option_string: Optional[str] = None):
+        if self.dest != SUPPRESS:
+            namespace[self.dest] = not unwrap(option_string).startswith("--no-")
+
+def _action_factory(constructor) -> Callable[[Action], Action]:
+    def make(constructor, spec: Action) -> Action:
+        arity = ArgumentValue(int(spec.nargs)) if spec.nargs.isdigit() else ArgumentValue(spec.nargs) if spec.nargs else ArgumentValue()
+        choices: Optional[_Choices] = spec.choices if spec.has_choices else None
+        result: Action = constructor(option_strings=spec.option_strings, dest=spec.dest,
+                                     nargs=arity, const=spec.const, default=spec.default,
+                                     type=spec.type, choices=choices, required=spec.required,
+                                     help=spec.help, metavar=spec.metavar if spec.metavar else None)
+        result.type_name = spec.type_name
+        result.deprecated = spec.deprecated
+        return result
+    return make(constructor, ...)
+
+@tuple
+class _Option:
+    index: int
+    name: str
+    explicit: Optional[str]
+    equals: bool
+
+class _ArgumentGroup:
+    _parser: cobj
+    title: str
+    description: Optional[str]
+    _actions: List[Action]
+
+    def __init__(self, parser, title: str, description: Optional[str] = None):
+        self._parser = type._force_cast(parser, cobj)
+        self.title, self.description, self._actions = title, description, []
+
+    @property
+    def parser(self):
+        return type._force_cast(self._parser, ArgumentParser)
+
+    def add_argument(self, *args, **kwargs):
+        return self.parser._add_argument(self, *args, _provided=kwargs.__keys__(), **kwargs)
+
+    def add_mutually_exclusive_group(self, required: bool = False):
+        group = _MutuallyExclusiveGroup(self, required)
+        self.parser._mutex.append(group)
+        return group
+
+    def set_defaults(self, **kwargs):
+        self.parser.set_defaults(**kwargs)
+
+class _MutuallyExclusiveGroup:
+    group: _ArgumentGroup
+    required: bool
+    _actions: List[Action]
+
+    def __init__(self, group: _ArgumentGroup, required: bool):
+        self.group, self.required, self._actions = group, required, []
+
+    def add_argument(self, *args, **kwargs):
+        if self.group is self.group.parser._optionals:
+            action = self.group.parser.add_argument(*args, **kwargs)
+        else:
+            action = self.group.add_argument(*args, **kwargs)
+        if action.required: raise ValueError("mutually exclusive arguments must be optional")
+        self._actions.append(action)
+        return action
+
+@tuple
+class _HelpItem:
+    kind: int
+    text: Optional[str]
+    prefix: Optional[str]
+    actions: List[Action]
+    groups: List[_MutuallyExclusiveGroup]
+    section: int
+
+class _HelpSection:
+    parent: int
+    heading: Optional[str]
+    items: List[_HelpItem]
+
+    def __init__(self, parent: int, heading: Optional[str]):
+        self.parent, self.heading, self.items = parent, heading, []
+
+class HelpFormatter:
+    _prog: str
+    _width: int
+    _indent_increment: int
+    _max_help_position: int
+    _color: bool
+    _sections: List[_HelpSection]
+    _current_section: int
+    _current_indent: int
+    _level: int
+    _action_max_length: int
+
+    def __init__(self, prog: str, indent_increment: int = 2, max_help_position: int = 24,
+                 width: Optional[int] = None, color: bool = True):
+        self._prog = prog
+        self._width = _terminal_columns() - 2 if width is None else unwrap(width)
+        self._indent_increment = indent_increment
+        self._max_help_position = min(max_help_position, max(self._width - 20, indent_increment * 2))
+        self._color = color and _can_colorize()
+        self._sections = [_HelpSection(-1, None)]
+        self._current_section, self._current_indent, self._level = 0, 0, 0
+        self._action_max_length = 0
+
+    def _indent(self):
+        self._current_indent += self._indent_increment
+        self._level += 1
+
+    def _dedent(self):
+        self._current_indent -= self._indent_increment
+        assert self._current_indent >= 0, "Indent decreased below 0."
+        self._level -= 1
+
+    def start_section(self, heading: Optional[str]):
+        self._indent()
+        section = len(self._sections)
+        self._sections[self._current_section].items.append(_HelpItem(_HELP_SECTION, None, None, [], [], section))
+        self._sections.append(_HelpSection(self._current_section, heading))
+        self._current_section = section
+
+    def end_section(self):
+        self._current_section = self._sections[self._current_section].parent
+        self._dedent()
+
+    def add_text(self, text: Optional[str]):
+        if text is not None and text != SUPPRESS:
+            self._sections[self._current_section].items.append(_HelpItem(_HELP_TEXT, text, None, [], [], -1))
+
+    def add_usage(self, usage: Optional[str], actions: List[Action],
+                  groups: List[_MutuallyExclusiveGroup], prefix: Optional[str] = None):
+        if usage != SUPPRESS:
+            self._sections[self._current_section].items.append(_HelpItem(_HELP_USAGE, usage, prefix, actions, groups, -1))
+
+    def _measure_action(self, action: Action, indent: int):
+        self._action_max_length = max(self._action_max_length, len(_decolor(self._format_action_invocation(action))) + indent)
+        for child in action._get_subactions():
+            self._measure_action(child, indent + self._indent_increment)
+
+    def add_argument(self, action: Action):
+        if action.help != SUPPRESS and action.kind != _ACTION_REMOVED:
+            self._measure_action(action, self._current_indent)
+            self._sections[self._current_section].items.append(_HelpItem(_HELP_ACTION, None, None, [action], [], -1))
+
+    def add_arguments(self, actions: List[Action]):
+        for action in actions: self.add_argument(action)
+
+    def _format_text(self, text: str) -> str:
+        expanded = _interpolate(text, {"prog": ArgumentValue(self._prog)}) if "%(prog)" in text else text
+        return self._fill_text(expanded, max(self._width - self._current_indent, 11), " " * self._current_indent) + "\n\n"
+
+    def _section_help(self, index: int) -> str:
+        section = self._sections[index]
+        if section.parent >= 0: self._indent()
+        parts = List[str]()
+        for item in section.items:
+            if item.kind == _HELP_SECTION: parts.append(self._section_help(item.section))
+            elif item.kind == _HELP_TEXT: parts.append(self._format_text(unwrap(item.text)))
+            elif item.kind == _HELP_USAGE: parts.append(self._format_usage(item.text, item.actions, item.groups, item.prefix))
+            else: parts.append(self._format_action(item.actions[0]))
+        if section.parent >= 0: self._dedent()
+        body = "".join(parts)
+        if not body: return ""
+        heading = ""
+        if section.heading is not None and section.heading != SUPPRESS:
+            heading = " " * self._current_indent + self._paint(unwrap(section.heading) + ":", "1;34") + "\n"
+        return "\n" + heading + body + "\n"
+
+    def format_help(self) -> str:
+        text = self._section_help(0)
+        return re.sub(r"\n{3,}", "\n\n", text).strip("\n") + "\n" if text else ""
+
+    def _paint(self, text: str, code: str) -> str:
+        return "\x1b[" + code + "m" + text + "\x1b[0m" if self._color else text
+
+    def _get_default_metavar_for_optional(self, action: Action) -> str:
+        return action.dest.upper()
+
+    def _get_default_metavar_for_positional(self, action: Action) -> str:
+        return action.dest
+
+    def _metavars(self, action: Action, default: str, count: int) -> List[str]:
+        if len(action.metavar) > 1: return action.metavar
+        if action.metavar: value = action.metavar[0]
+        elif action.has_choices: value = "{" + ",".join(str(choice) for choice in action.choices) + "}"
+        else: value = default
+        return [value] * count
+
+    def _format_args(self, action: Action, default: str) -> str:
+        nargs = action.nargs
+        count = 2 if nargs == ONE_OR_MORE else int(nargs) if nargs.isdigit() else 1
+        names = self._metavars(action, default, count)
+        if nargs == "": return names[0]
+        if nargs == OPTIONAL: return "[" + names[0] + "]"
+        if nargs == ZERO_OR_MORE:
+            return "[" + names[0] + (" [" + names[1] + " ...]]" if len(names) == 2 else " ...]")
+        if nargs == ONE_OR_MORE: return names[0] + " [" + names[1] + " ...]"
+        if nargs == REMAINDER: return "..."
+        if nargs == PARSER: return names[0] + " ..."
+        if nargs == SUPPRESS: return ""
+        return " ".join(names)
+
+    def _format_action_invocation(self, action: Action) -> str:
+        if not action.option_strings:
+            return self._paint(" ".join(self._metavars(action, self._get_default_metavar_for_positional(action), 1)), "1;32")
+        names = ", ".join(self._paint(name, "1;36" if len(name) > 2 else "1;32") for name in action.option_strings)
+        if action.nargs == "0": return names
+        return names + " " + self._paint(self._format_args(action, self._get_default_metavar_for_optional(action)), "1;33")
+
+    def _usage_parts(self, actions: List[Action], groups: List[_MutuallyExclusiveGroup]):
+        visible = [action for action in actions if action.help != SUPPRESS and action.kind != _ACTION_REMOVED]
+        memberships = Dict[int, int]()
+        for group_index, group in enumerate(groups):
+            if not group._actions: raise ValueError("empty group")
+            for index, action in enumerate(visible):
+                if action in group._actions: memberships[index] = group_index
+        used = Set[int]()
+        positionals = List[Tuple[int, List[Action]]]()
+        optionals = List[Tuple[int, List[Action]]]()
+        for index, action in enumerate(visible):
+            if action.option_strings: continue
+            used.add(index)
+            members = List[Action]()
+            required = -1
+            if index in memberships:
+                group = groups[memberships[index]]
+                required = int(group.required)
+                for other_index, other in enumerate(visible):
+                    if other_index not in used and other.option_strings and other in group._actions:
+                        members.append(other)
+                        used.add(other_index)
+            members.append(action)
+            positionals.append((required, members))
+        for index, action in enumerate(visible):
+            if index in used: continue
+            used.add(index)
+            members = [action]
+            required = -1
+            if index in memberships:
+                group = groups[memberships[index]]
+                required = int(group.required)
+                for other_index, other in enumerate(visible):
+                    if other_index not in used and other.option_strings and other in group._actions:
+                        members.append(other)
+                        used.add(other_index)
+            optionals.append((required, members))
+        parts = List[str]()
+        position = 0
+        for unit_index, unit in enumerate(optionals + positionals):
+            required, members = unit
+            if unit_index == len(optionals): position = len(parts)
+            grouped = len(members) > 1
+            for index, action in enumerate(members):
+                if not action.option_strings:
+                    part = self._format_args(action, self._get_default_metavar_for_positional(action))
+                    if grouped and part.startswith("[") and part.endswith("]"): part = part[1:-1]
+                    part = self._paint(part, "32")
+                else:
+                    code = "36" if len(action.option_strings[0]) > 2 else "32"
+                    if action.nargs == "0": part = self._paint(action.format_usage(), code)
+                    elif self._color:
+                        part = "\x1b[" + code + "m" + action.option_strings[0] + " \x1b[33m" + self._format_args(action, self._get_default_metavar_for_optional(action)) + "\x1b[0m"
+                    else: part = action.option_strings[0] + " " + self._format_args(action, self._get_default_metavar_for_optional(action))
+                    if not (action.required or required == 1 or grouped): part = "[" + part + "]"
+                if grouped:
+                    if index == 0: part = ("(" if required == 1 else "[") + part
+                    part += ( ")" if required == 1 else "]") if index == len(members) - 1 else " |"
+                if part: parts.append(part)
+        if not positionals: position = len(parts)
+        return parts, position
+
+    def _usage_lines(self, parts: List[str], indent: str, prefix: Optional[str] = None) -> List[str]:
+        lines, current = List[str](), List[str]()
+        length = len(indent) - 1 if prefix is None else len(unwrap(prefix)) - 1
+        for part in parts:
+            part_length = len(_decolor(part)) if self._color else len(part)
+            if current and length + part_length + 1 > self._width:
+                lines.append(indent + " ".join(current))
+                current.clear()
+                length = len(indent) - 1
+            current.append(part)
+            length += part_length + 1
+        if current: lines.append(indent + " ".join(current))
+        if prefix is not None and lines: lines[0] = lines[0][len(indent):]
+        return lines
+
+    def _format_usage(self, usage: Optional[str], actions: List[Action],
+                      groups: List[_MutuallyExclusiveGroup], prefix: Optional[str]) -> str:
+        if usage == SUPPRESS: return ""
+        plain_prefix = "usage: " if prefix is None else unwrap(prefix)
+        painted_prefix = self._paint(plain_prefix, "1;34")
+        if usage is not None:
+            if self._color:
+                program = self._paint(self._prog, "1;35") + "\x1b[35m"
+                rendered = self._paint(_interpolate(unwrap(usage), {"prog": ArgumentValue(program)}), "35")
+            else: rendered = _interpolate(unwrap(usage), {"prog": ArgumentValue(self._prog)})
+            return painted_prefix + rendered + "\n\n"
+        parts, position = self._usage_parts(actions, groups)
+        rendered = " ".join([self._prog] + parts)
+        if len(_decolor(rendered)) + len(plain_prefix) > self._width:
+            optionals, positionals = parts[:position], parts[position:]
+            if len(self._prog) + len(plain_prefix) <= 0.75 * self._width:
+                indent = " " * (len(self._prog) + len(plain_prefix) + 1)
+                if optionals:
+                    lines = self._usage_lines([self._prog] + optionals, indent, plain_prefix)
+                    lines.extend(self._usage_lines(positionals, indent))
+                else: lines = self._usage_lines([self._prog] + positionals, indent, plain_prefix)
+            else:
+                lines = self._usage_lines(parts, " " * len(plain_prefix))
+                if len(lines) > 1:
+                    lines = self._usage_lines(optionals, " " * len(plain_prefix)) + self._usage_lines(positionals, " " * len(plain_prefix))
+                lines.insert(0, self._prog)
+            rendered = "\n".join(lines)
+        return painted_prefix + self._paint(self._prog, "1;35") + rendered[len(self._prog):] + "\n\n"
+
+    def _split_lines(self, text: str, width: int) -> List[str]:
+        if width <= 0: raise ValueError("invalid width " + repr(width) + " (must be > 0)")
+        text = re.sub(r"[ \t\n\r\f\v]+", " ", text).strip()
+        chunks = List[str]()
+        start, index = 0, 0
+        def word(char: str) -> bool:
+            return char.isalnum() or char == "_"
+        def letter(char: str) -> bool:
+            return word(char) and not char.isdecimal()
+        while index < len(text):
+            if text[index] == " ":
+                if start < index: chunks.append(text[start:index])
+                chunks.append(" ")
+                start = index + 1
+            elif text[index] == "-":
+                end = index + 1
+                while end < len(text) and text[end] == "-": end += 1
+                if end - index >= 2 and index > 0 and end < len(text) and \
+                        (word(text[index - 1]) or text[index - 1] in "!\"'&.,?") and word(text[end]):
+                    if start < index: chunks.append(text[start:index])
+                    chunks.append(text[index:end])
+                    start, index = end, end - 1
+                elif index > start and index >= 2 and letter(text[index - 1]) and \
+                        (letter(text[index - 2]) or (text[index - 2] == "-" and index >= 3 and letter(text[index - 3]))):
+                    following = index + 2
+                    if following < len(text) and text[following] == "-": following += 1
+                    if following < len(text) and letter(text[index + 1]) and letter(text[following]):
+                        chunks.append(text[start:index + 1])
+                        start = index + 1
+            index += 1
+        if start < len(text): chunks.append(text[start:])
+        lines = List[str]()
+        index = 0
+        while index < len(chunks):
+            if lines and not chunks[index].strip():
+                index += 1
+                continue
+            parts = List[str]()
+            length = 0
+            while index < len(chunks) and length + len(chunks[index]) <= width:
+                parts.append(chunks[index])
+                length += len(chunks[index])
+                index += 1
+            if index < len(chunks) and len(chunks[index]) > width and length < width:
+                end = width - length
+                hyphen = chunks[index].rfind("-", 0, end)
+                if hyphen > 0 and any(char != "-" for char in chunks[index][:hyphen]): end = hyphen + 1
+                parts.append(chunks[index][:end])
+                chunks[index] = chunks[index][end:]
+            if parts and not parts[-1].strip(): parts.pop()
+            if parts: lines.append("".join(parts))
+        return lines
+
+    def _fill_text(self, text: str, width: int, indent: str) -> str:
+        return "\n".join(indent + line for line in self._split_lines(text, max(width - len(indent), 1)))
+
+    def _get_help_string(self, action: Action) -> str:
+        return "" if action.help is None else unwrap(action.help)
+
+    def _expand_help(self, action: Action) -> str:
+        values = {"prog": ArgumentValue(self._prog), "default": action.default, "const": action.const,
+                  "dest": ArgumentValue(action.dest), "type": ArgumentValue(action.type_name),
+                  "required": ArgumentValue(action.required), "help": ArgumentValue(action.help),
+                  "option_strings": ArgumentValue(action.option_strings),
+                  "metavar": ArgumentValue(action.metavar[0]) if action.metavar else ArgumentValue(),
+                  "nargs": ArgumentValue(int(action.nargs)) if action.nargs.isdigit() else ArgumentValue(action.nargs) if action.nargs else ArgumentValue(),
+                  "choices": ArgumentValue(", ".join(str(choice) for choice in action.choices)) if action.has_choices else ArgumentValue()}
+        return _interpolate(self._get_help_string(action), values)
+
+    def _format_action(self, action: Action) -> str:
+        help_position = min(self._action_max_length + 2, self._max_help_position)
+        indent = self._current_indent
+        invocation = self._format_action_invocation(action)
+        invocation_length = len(_decolor(invocation)) if self._color else len(invocation)
+        width = help_position - indent - 2
+        if not action.help:
+            result = " " * indent + invocation + "\n"
+        else:
+            if invocation_length <= width:
+                result = " " * indent + invocation + " " * (width - invocation_length) + "  "
+                first_indent = 0
+            else:
+                result = " " * indent + invocation + "\n"
+                first_indent = help_position
+            text = self._expand_help(action)
+            lines = self._split_lines(text, max(self._width - help_position, 11))
+            if lines:
+                result += " " * first_indent + lines[0] + "\n"
+                for line in lines[1:]: result += " " * help_position + line + "\n"
+            elif not result.endswith("\n"): result += "\n"
+        for child in action._get_subactions():
+            if child.help != SUPPRESS:
+                self._indent()
+                result += self._format_action(child)
+                self._dedent()
+        return result
+
+class RawDescriptionHelpFormatter(HelpFormatter):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def _fill_text(self, text: str, width: int, indent: str) -> str:
+        return "".join(indent + line for line in text.splitlines(keepends=True))
+
+class RawTextHelpFormatter(RawDescriptionHelpFormatter):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def _split_lines(self, text: str, width: int) -> List[str]:
+        return text.splitlines()
+
+class ArgumentDefaultsHelpFormatter(HelpFormatter):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def _get_help_string(self, action: Action) -> str:
+        text = "" if action.help is None else unwrap(action.help)
+        if "%(default)" not in text and not _suppressed(action.default) and not action.required:
+            if action.option_strings or action.nargs in (OPTIONAL, ZERO_OR_MORE):
+                text += " (default: %(default)s)"
+        return text
+
+class MetavarTypeHelpFormatter(HelpFormatter):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def _get_default_metavar_for_optional(self, action: Action) -> str:
+        return action.type_name
+
+    def _get_default_metavar_for_positional(self, action: Action) -> str:
+        return action.type_name
+
+class FileType:
+    _mode: str
+    _bufsize: int
+    _encoding: Optional[str]
+    _errors: Optional[str]
+
+    def __init__(self, mode: str = "r", bufsize: int = -1,
+                 encoding: Optional[str] = None, errors: Optional[str] = None):
+        if bufsize != -1:
+            raise ValueError("FileType does not support custom buffering")
+        self._mode, self._bufsize = mode, bufsize
+        self._encoding, self._errors = encoding, errors
+
+    def __call__(self, string: str) -> ArgumentValue:
+        binary = "b" in self._mode
+        if string == "-":
+            if "r" in self._mode:
+                return ArgumentValue(File[bytes](sys.stdin._state)) if binary else ArgumentValue(sys.stdin)
+            if any(char in self._mode for char in "wax"):
+                return ArgumentValue(File[bytes](sys.stdout._state)) if binary else ArgumentValue(sys.stdout)
+            raise ValueError("argument '-' with mode " + repr(self._mode))
+        try:
+            if binary and (self._encoding is not None or self._errors is not None):
+                raise ValueError("binary mode does not take encoding or errors")
+            stream = open(string, self._mode, encoding=self._encoding, errors=self._errors)
+            return ArgumentValue(File[bytes](stream._state)) if binary else ArgumentValue(stream)
+        except OSError as error:
+            raise ArgumentTypeError("can't open '" + string + "': " + str(error))
+
+    def __repr__(self) -> str:
+        arguments = [repr(self._mode)]
+        if self._bufsize != -1: arguments.append(str(self._bufsize))
+        if self._encoding is not None: arguments.append("encoding=" + repr(unwrap(self._encoding)))
+        if self._errors is not None: arguments.append("errors=" + repr(unwrap(self._errors)))
+        return "FileType(" + ", ".join(arguments) + ")"
+
+def _formatter_factory(constructor) -> Callable[[str], HelpFormatter]:
+    def make(constructor, prog: str) -> HelpFormatter:
+        return constructor(prog=prog)
+    return make(constructor, ...)
+
+class _SubParsersAction(Action):
+    P: type
+    _parser_class: P
+    _parsers: Dict[str, cobj]
+    _deprecated_commands: Set[str]
+    _command_help: List[Tuple[str, List[str], Optional[str]]]
+    _prog_prefix: str
+    _color: bool
+
+    def __init__(self, parser_class: P, prog: str, dest: str, required: bool,
+                 help: Optional[str], metavar, color: bool):
+        super().__init__(List[str](), dest, nargs=PARSER, required=required, help=help, metavar=metavar)
+        self.kind, self.has_choices = _ACTION_PARSERS, True
+        self._parser_class, self._prog_prefix, self._color = parser_class, prog, color
+        self._parsers, self._deprecated_commands, self._command_help = {}, set(), []
+
+    def add_parser(self, name: str, aliases=None, help: Optional[str] = None,
+                   deprecated: bool = False, prog: Optional[str] = None,
+                   color: Optional[bool] = None, **kwargs):
+        names = [name]
+        alias_names = List[str]()
+        if aliases is not None:
+            for alias in aliases: alias_names.append(alias)
+        names.extend(alias_names)
+        for index, command in enumerate(names):
+            if command in self._parsers:
+                raise ValueError("conflicting subparser" + (" alias" if index else "") + ": " + command)
+        child = self._parser_class(prog=self._prog_prefix + " " + name if prog is None else unwrap(prog),
+                                   color=self._color if color is None else unwrap(color), **kwargs)
+        base: ArgumentParser = child
+        for command in names:
+            self._parsers[command] = type._force_cast(base, cobj)
+            self.choices.append(ArgumentValue(command))
+            if deprecated: self._deprecated_commands.add(command)
+        if help is not None: self._command_help.append((name, alias_names, help))
+        return child
+
+    def _get_subactions(self) -> List[Action]:
+        result = List[Action]()
+        for name, aliases, help in self._command_help:
+            metavar = name + " (" + ", ".join(aliases) + ")" if aliases else name
+            result.append(Action(List[str](), name, help=help, metavar=metavar))
+        return result
+
+    def _invoke_subparser(self, parser, namespace: Namespace, values: ArgumentValue):
+        command = values[0].as_str()
+        if self.dest != SUPPRESS: namespace[self.dest] = command
+        if command in self._deprecated_commands:
+            parser._warning("command " + repr(command) + " is deprecated")
+        child = type._force_cast(self._parsers[command], ArgumentParser)
+        arguments = [values[index].as_str() for index in range(1, len(values))]
+        parsed, extras = child.parse_known_args(arguments)
+        for key, value in parsed._data.items(): namespace[key] = value
+        if extras:
+            if "_unrecognized_args" not in namespace: namespace["_unrecognized_args"] = ArgumentValue.array()
+            for extra in extras: namespace["_unrecognized_args"].append(extra)
+
+class ArgumentParser:
+    prog: str
+    usage: Optional[str]
+    description: Optional[str]
+    epilog: Optional[str]
+    prefix_chars: str
+    fromfile_prefix_chars: Optional[str]
+    argument_default: ArgumentValue
+    conflict_handler: str
+    allow_abbrev: bool
+    exit_on_error: bool
+    suggest_on_error: bool
+    color: bool
+    _actions: List[Action]
+    _options: Dict[str, int]
+    _defaults: Dict[str, ArgumentValue]
+    _groups: List[_ArgumentGroup]
+    _mutex: List[_MutuallyExclusiveGroup]
+    _positionals: _ArgumentGroup
+    _optionals: _ArgumentGroup
+    _subparsers: Optional[Action]
+    _formatter: HelpFormatter
+    formatter_class: Callable[[str], HelpFormatter]
+    _registered_types: Dict[str, Callable[[str], ArgumentValue]]
+    _registered_actions: Dict[str, Callable[[Action], Action]]
+    _patterns: Dict[str, re.Pattern[str]]
+
+    def __init__(self, prog: Optional[str] = None, usage: Optional[str] = None,
+                 description: Optional[str] = None, epilog: Optional[str] = None, parents=None,
+                 formatter_class=HelpFormatter, prefix_chars: str = "-",
+                 fromfile_prefix_chars: Optional[str] = None, argument_default=None,
+                 conflict_handler: str = "error", add_help: bool = True,
+                 allow_abbrev: bool = True, exit_on_error: bool = True, *,
+                 suggest_on_error: bool = False, color: bool = True):
+        self.prog = os.path.basename(sys.argv[0]) if prog is None else unwrap(prog)
+        self.usage, self.description, self.epilog = usage, description, epilog
+        self.prefix_chars, self.fromfile_prefix_chars = prefix_chars, fromfile_prefix_chars
+        if not prefix_chars: raise ValueError("prefix_chars must not be empty")
+        self.argument_default = ArgumentValue(argument_default)
+        if conflict_handler not in ("error", "resolve"):
+            raise ValueError("invalid conflict_resolution value: " + repr(conflict_handler))
+        self.conflict_handler = conflict_handler
+        self.allow_abbrev, self.exit_on_error = allow_abbrev, exit_on_error
+        self.suggest_on_error, self.color = suggest_on_error, color
+        self._actions, self._groups, self._mutex = [], [], []
+        self._options, self._defaults, self._registered_types = {}, {}, {}
+        self._registered_actions = {}
+        self._patterns = {}
+        self._subparsers = None
+        self.formatter_class = _formatter_factory(formatter_class)
+        self._formatter = self.formatter_class(self.prog)
+        self._positionals = self.add_argument_group("positional arguments")
+        self._optionals = self.add_argument_group("options")
+        if add_help:
+            prefix = "-" if "-" in prefix_chars else prefix_chars[0]
+            self.add_argument(prefix + "h", prefix * 2 + "help", action="help", default=SUPPRESS,
+                              help="show this help message and exit")
+        if parents is not None:
+            for parent in parents:
+                self._inherit(parent)
+
+    def add_argument(self, *names, **kwargs):
+        return self._add_argument(None, *names, _provided=kwargs.__keys__(), **kwargs)
+
+    def _add_argument(self, group, *names, _provided=(), action="store", nargs=_UNSET, const=_UNSET,
+                      default=_UNSET, choices=None, required: bool = False,
+                      help=_UNSET, metavar=None, dest: Optional[str] = None,
+                      version: Optional[str] = None, deprecated: bool = False, **kwargs):
+        converter = kwargs.get("type")
+        help_text: Optional[str] = None if isinstance(help, _Unset) else help
+        strings: List[str] = []
+        for name in names: strings.append(name)
+        if not strings:
+            if dest is None: raise TypeError("add_argument requires a name or dest")
+            destination = unwrap(dest)
+        else: destination = ""
+        optional = bool(strings) and bool(strings[0]) and strings[0][0] in self.prefix_chars
+        if not optional:
+            if len(strings) > 1: raise TypeError("multiple positional names")
+            if strings and dest is not None: raise TypeError("dest supplied twice for positional argument, did you mean metavar?")
+            if "required" in _provided: raise TypeError("'required' is an invalid argument for positionals")
+            if strings: destination = strings[0]
+            strings.clear()
+        else:
+            for name in strings:
+                if not name or name[0] not in self.prefix_chars:
+                    raise ValueError("invalid option string " + repr(name))
+            selected = strings[0]
+            for name in strings:
+                if len(name) > 1 and name[1] in self.prefix_chars:
+                    selected = name
+                    break
+            destination = selected.lstrip(self.prefix_chars).replace("-", "_") if dest is None else unwrap(dest)
+            if not destination: raise ValueError("dest= is required for options like " + repr(selected))
+        if isinstance(default, _Unset):
+            fallback = self._defaults.get(destination, self.argument_default)
+        else: fallback = ArgumentValue(default)
+        constant = ArgumentValue() if isinstance(const, _Unset) else ArgumentValue(const)
+        if isinstance(action, str):
+            kind = _action_kind(action)
+            if kind == _ACTION_CUSTOM and action not in self._registered_actions:
+                raise ValueError("unknown action " + repr(action))
+            if action not in self._registered_actions:
+                allowed = ["action", "dest", "default", "help", "deprecated"]
+                if kind not in (_ACTION_HELP, _ACTION_VERSION): allowed.append("required")
+                if kind in (_ACTION_STORE, _ACTION_APPEND, _ACTION_EXTEND):
+                    allowed.extend(["nargs", "const", "type", "choices", "metavar"])
+                elif kind == _ACTION_STORE_CONST: allowed.extend(["const", "metavar"])
+                elif kind == _ACTION_APPEND_CONST: allowed.append("const")
+                elif kind == _ACTION_VERSION: allowed.append("version")
+                for provided_index in static.range(static.len(_provided)):
+                    provided_key = _provided[provided_index]
+                    if provided_key not in allowed:
+                        constructor = "_" + "".join(part.capitalize() for part in action.split("_")) + "Action"
+                        raise TypeError(constructor + ".__init__() got an unexpected keyword argument " + repr(provided_key))
+            keys = kwargs.__keys__()
+            for index in static.range(static.len(kwargs.args)):
+                key = keys[index]
+                if key != "type": raise TypeError("unexpected keyword argument " + repr(key))
+            arity = _nargs(nargs)
+            if kind in (_ACTION_STORE_CONST, _ACTION_STORE_TRUE, _ACTION_STORE_FALSE, _ACTION_APPEND_CONST, _ACTION_COUNT, _ACTION_HELP, _ACTION_VERSION):
+                if not isinstance(nargs, _Unset): raise TypeError("unexpected keyword argument 'nargs'")
+                arity = "0"
+            if kind in (_ACTION_STORE, _ACTION_APPEND, _ACTION_EXTEND) and arity == "0":
+                if kind == _ACTION_STORE:
+                    raise ValueError("nargs for store actions must be != 0; if you have nothing to store, actions such as store true or store const may be more appropriate")
+                raise ValueError("nargs for append actions must be != 0; if arg strings are not supplying the value to append, the append const action may be more appropriate")
+            if not constant.is_null() and kind in (_ACTION_STORE, _ACTION_APPEND, _ACTION_EXTEND) and arity != OPTIONAL:
+                raise ValueError("nargs must be '?' to supply const")
+            if kind in (_ACTION_STORE_TRUE, _ACTION_STORE_FALSE):
+                constant = ArgumentValue(kind == _ACTION_STORE_TRUE)
+                if isinstance(default, _Unset) and destination not in self._defaults and self.argument_default.is_null():
+                    fallback = ArgumentValue(kind == _ACTION_STORE_FALSE)
+            if kind in (_ACTION_HELP, _ACTION_VERSION):
+                if isinstance(default, _Unset) and destination not in self._defaults and self.argument_default.is_null():
+                    fallback = ArgumentValue(SUPPRESS)
+                if isinstance(help, _Unset):
+                    help_text = "show this help message and exit" if kind == _ACTION_HELP else "show program's version number and exit"
+            result: Action = Action(strings, destination, default=fallback, const=constant,
+                                    choices=choices, required=required, help=help_text,
+                                    metavar=metavar, deprecated=deprecated)
+            result.kind, result.nargs, result.version = kind, arity, version
+            if converter is not None:
+                if isinstance(converter, str):
+                    if converter not in self._registered_types: raise TypeError(repr(converter) + " is not callable")
+                    result.type, result.type_name = self._registered_types[converter], converter
+                else:
+                    result.type, result.type_name = _converter(converter), _type_name(converter)
+        else:
+            if action is BooleanOptionalAction:
+                result: Action = action(strings, destination, default=fallback, type=converter, choices=choices,
+                                        required=required, help=help_text, metavar=metavar, deprecated=deprecated)
+            else:
+                if isinstance(nargs, _Unset):
+                    result: Action = action(strings, destination, default=fallback,
+                                            choices=choices, required=required, help=help_text,
+                                            metavar=metavar, **kwargs)
+                else:
+                    result: Action = action(strings, destination, nargs=nargs, default=fallback,
+                                            const=constant, choices=choices, required=required,
+                                            help=help_text, metavar=metavar, **kwargs)
+        if not optional:
+            if result.nargs == "0": raise ValueError("nargs for positionals must be != 0")
+            result.required = result.nargs not in (OPTIONAL, ZERO_OR_MORE, REMAINDER, SUPPRESS)
+        if "deprecated" in _provided: result.deprecated = deprecated
+        if len(result.metavar) > 1:
+            expected = int(result.nargs) if result.nargs.isdigit() else 2 if result.nargs in (ZERO_OR_MORE, ONE_OR_MORE) else 1
+            if len(result.metavar) != expected: raise ValueError("length of metavar tuple does not match nargs")
+        if isinstance(action, str):
+            if action in self._registered_actions:
+                result = self._registered_actions[action](result)
+        if result.help is not None and result.help != SUPPRESS:
+            self._formatter._expand_help(result)
+        if group is None: target = self._optionals if optional else self._positionals
+        else: target = group
+        self._install(result, target)
+        return result
+
+    def _install(self, action: Action, group: _ArgumentGroup):
+        conflicts = [name for name in action.option_strings if name in self._options]
+        if conflicts and self.conflict_handler == "error":
+            raise ArgumentError(action, "conflicting option string" + ("s" if len(conflicts) > 1 else "") + ": " + ", ".join(conflicts))
+        for name in conflicts:
+            previous = self._actions[self._options[name]]
+            previous.option_strings.remove(name)
+            if not previous.option_strings:
+                previous.kind, previous.help, previous.required = _ACTION_REMOVED, SUPPRESS, False
+        index = len(self._actions)
+        self._actions.append(action)
+        group._actions.append(action)
+        for name in action.option_strings: self._options[name] = index
+
+    def add_argument_group(self, title: str = "", description: Optional[str] = None):
+        group = _ArgumentGroup(self, title, description)
+        self._groups.append(group)
+        return group
+
+    def add_mutually_exclusive_group(self, *, required: bool = False):
+        return self._optionals.add_mutually_exclusive_group(required=required)
+
+    def add_subparsers(self, *, title: Optional[str] = None, description: Optional[str] = None,
+                       prog: Optional[str] = None, parser_class=None, dest: str = SUPPRESS,
+                       required: bool = False, help: Optional[str] = None, metavar=None):
+        if self._subparsers is not None:
+            raise ValueError("cannot have multiple subparser arguments")
+        group = self.add_argument_group("subcommands" if title is None else unwrap(title), description) \
+                if title is not None or description is not None else self._positionals
+        if prog is None:
+            formatter = self._get_formatter()
+            formatter._color = False
+            positionals = [action for action in self._actions if not action.option_strings]
+            formatter.add_usage(None, positionals, self._mutex, prefix="")
+            prefix = formatter.format_help().strip()
+        else:
+            prefix = unwrap(prog)
+        if parser_class is None:
+            action = _SubParsersAction(type(self), prefix, dest, required, help, metavar, self.color)
+        else:
+            action = _SubParsersAction(parser_class, prefix, dest, required, help, metavar, self.color)
+        self._install(action, group)
+        base: Action = action
+        self._subparsers = base
+        return action
+
+    def _inherit(self, parent):
+        for source in parent._groups:
+            target = self._positionals
+            found = False
+            for group in self._groups:
+                if group.title == source.title:
+                    target, found = group, True
+                    break
+            if not found: target = self.add_argument_group(source.title, source.description)
+            for action in source._actions:
+                if action.kind != _ACTION_REMOVED: self._install(action, target)
+        for source in parent._mutex:
+            group = self.add_mutually_exclusive_group(required=source.required)
+            group._actions.extend(source._actions)
+        self._defaults.update(parent._defaults)
+
+    def set_defaults(self, **kwargs):
+        keys = kwargs.__keys__()
+        for index in static.range(static.len(kwargs.args)):
+            key, value = keys[index], ArgumentValue(kwargs.args[index])
+            self._defaults[key] = value
+            for action in self._actions:
+                if action.dest == key: action.default = value
+
+    def get_default(self, dest: str) -> ArgumentValue:
+        for action in self._actions:
+            if action.dest == dest and not action.default.is_null(): return action.default
+        return self._defaults.get(dest, ArgumentValue())
+
+    def register(self, registry_name: Literal[str], value: str, object):
+        if registry_name == "type": self._registered_types[value] = _converter(object)
+        elif registry_name == "action": self._registered_actions[value] = _action_factory(object)
+        else: compile_error("argparse supports the type and action registries")
+
+    def _negative(self, value: str) -> bool:
+        return bool(re.match(r"^-\d+$|^-\d*\.\d+$", value))
+
+    def _optional(self, value: str) -> Optional[_Option]:
+        if not value or value[0] not in self.prefix_chars: return None
+        if value in self._options: return _Option(self._options[value], value, None, False)
+        if len(value) == 1: return None
+        prefix, separator, tail = value.partition("=")
+        explicit: Optional[str] = tail if separator else None
+        if separator and prefix in self._options:
+            return _Option(self._options[prefix], prefix, explicit, True)
+        matches = List[_Option]()
+        doubled = value[1] in self.prefix_chars
+        for name, index in self._options.items():
+            if not doubled and name == value[:2]:
+                matches.append(_Option(index, name, value[2:], False))
+            elif self.allow_abbrev and name.startswith(prefix):
+                matches.append(_Option(index, name, explicit, bool(separator)))
+        if len(matches) > 1:
+            raise ArgumentError("", "ambiguous option: " + value + " could match " + ", ".join(item.name for item in matches))
+        if matches: return matches[0]
+        if self._negative(value) and not any(self._negative(name) for name in self._options): return None
+        if " " in value: return None
+        return _Option(-1, value, None, False)
+
+    def _pattern(self, action: Action) -> str:
+        nargs = action.nargs
+        optional = bool(action.option_strings)
+        if nargs == "": return "(A)" if optional else "(-*A-*)"
+        if nargs == OPTIONAL: return "(A?)" if optional else "(-*A?-*)"
+        if nargs == ZERO_OR_MORE: return "(A*)" if optional else "(-*[A-]*)"
+        if nargs == ONE_OR_MORE: return "(A+)" if optional else "(-*A[A-]*)"
+        if nargs == REMAINDER: return "([AO]*)" if optional else "(.*)"
+        if nargs == PARSER: return "(A[AO]*)" if optional else "(-*A[-AO]*)"
+        if nargs == SUPPRESS: return "()" if optional else "(-*)"
+        return "([AO]{" + nargs + "})" if optional else "((?:-*A){" + nargs + "}-*)"
+
+    def _compiled_pattern(self, expression: str) -> re.Pattern[str]:
+        if expression not in self._patterns: self._patterns[expression] = re.compile(expression)
+        return self._patterns[expression]
+
+    def _match(self, action: Action, pattern: str, start: int = 0) -> int:
+        nargs = action.nargs
+        if nargs in ("0", SUPPRESS): return 0
+        if nargs in ("", OPTIONAL, ZERO_OR_MORE, ONE_OR_MORE):
+            stop = start
+            while stop < len(pattern) and pattern[stop] == "A":
+                stop += 1
+                if nargs in ("", OPTIONAL): break
+            if stop > start or nargs in (OPTIONAL, ZERO_OR_MORE): return stop - start
+        elif nargs.isdigit():
+            count = int(nargs)
+            if count <= len(pattern) - start and all(pattern[index] in "AO" for index in range(start, start + count)):
+                return count
+        else:
+            match = self._compiled_pattern(self._pattern(action)).match(pattern + "!", pos=start, endpos=len(pattern))
+            if match: return len(unwrap(match).group(1))
+        if action.nargs == "": message = "expected one argument"
+        elif action.nargs == OPTIONAL: message = "expected at most one argument"
+        elif action.nargs == ONE_OR_MORE: message = "expected at least one argument"
+        else: message = "expected " + action.nargs + " argument" + ("" if action.nargs == "1" else "s")
+        raise ArgumentError(action, message)
+
+    def _convert(self, action: Action, value: str) -> ArgumentValue:
+        try:
+            return action.type(value)
+        except ArgumentTypeError as error:
+            raise ArgumentError(action, str(error))
+        except ValueError:
+            raise ArgumentError(action, "invalid " + action.type_name + " value: " + repr(value))
+        except TypeError:
+            raise ArgumentError(action, "invalid " + action.type_name + " value: " + repr(value))
+
+    def _choice(self, action: Action, value: ArgumentValue):
+        if action.has_choices and value not in action.choices:
+            message = "invalid choice: " + repr(str(value))
+            if self.suggest_on_error and value.kind == VALUE_STR and all(choice.kind == VALUE_STR for choice in action.choices):
+                closest = _suggestion(value.as_str(), action.choices)
+                if closest is not None: message += ", maybe you meant " + repr(unwrap(closest)) + "?"
+            raise ArgumentError(action, message + " (choose from " + ", ".join(str(item) for item in action.choices) + ")")
+
+    def _values(self, action: Action, arguments: List[str]) -> ArgumentValue:
+        nargs = action.nargs
+        if nargs == SUPPRESS: return ArgumentValue(SUPPRESS)
+        if not arguments and nargs == OPTIONAL:
+            value = action.const if action.option_strings else action.default
+            if value.kind == VALUE_STR and not _suppressed(value):
+                value = self._convert(action, value.as_str())
+            return value
+        if not arguments and nargs == ZERO_OR_MORE and not action.option_strings:
+            return ArgumentValue.array() if action.default.is_null() else action.default
+        if nargs == "" or nargs == OPTIONAL:
+            value = self._convert(action, arguments[0])
+            self._choice(action, value)
+            return value
+        values = ArgumentValue.array()
+        for index, argument in enumerate(arguments):
+            value = self._convert(action, argument)
+            if nargs != REMAINDER and (nargs != PARSER or index == 0): self._choice(action, value)
+            values.append(value)
+        return values
+
+    def _take(self, index: int, arguments: List[str], option: Optional[str], namespace: Namespace,
+              seen: Set[int], present: Set[int], warned: Set[str]):
+        action = self._actions[index]
+        values = self._values(action, arguments)
+        seen.add(index)
+        if action.option_strings or arguments:
+            for group in self._mutex:
+                if action in group._actions:
+                    for other in group._actions:
+                        other_index = self._actions.index(other)
+                        if other is not action and other_index in present:
+                            raise ArgumentError(action, "not allowed with argument " + other._name())
+            present.add(index)
+        if action.deprecated and (action.option_strings or arguments):
+            label = "option " + repr(unwrap(option)) if option is not None else "argument " + repr(action.dest)
+            if label not in warned:
+                self._warning(label + " is deprecated")
+                warned.add(label)
+        if action.nargs != SUPPRESS and (arguments or not _suppressed(values)):
+            action(self, namespace, values, option)
+
+    def _consume_optional(self, index: int, option: _Option, arguments: List[str], pattern: str,
+                          namespace: Namespace, seen: Set[int], present: Set[int], extras: List[str], warned: Set[str]) -> int:
+        if option.index < 0:
+            extras.append(arguments[index])
+            return index + 1
+        current = option
+        pending = List[Tuple[int, List[str], str]]()
+        stop = index + 1
+        while True:
+            action = self._actions[current.index]
+            if current.explicit is None:
+                count = self._match(action, pattern, index + 1)
+                stop = index + 1 + count
+                pending.append((current.index, arguments[index + 1:stop], current.name))
+                break
+            tail = unwrap(current.explicit)
+            count = self._match(action, "A")
+            if count == 0 and len(current.name) > 1 and current.name[1] not in self.prefix_chars and tail:
+                if current.equals or tail[0] in self.prefix_chars:
+                    raise ArgumentError(action, "ignored explicit argument " + repr(tail))
+                pending.append((current.index, [], current.name))
+                name = current.name[0] + tail[0]
+                if name not in self._options:
+                    extras.append(current.name[0] + tail)
+                    break
+                tail = tail[1:]
+                equals = tail.startswith("=")
+                if equals: tail = tail[1:]
+                current = _Option(self._options[name], name, tail if tail or equals else None, equals)
+            elif count == 1:
+                pending.append((current.index, [tail], current.name))
+                break
+            else:
+                raise ArgumentError(action, "ignored explicit argument " + repr(tail))
+        for action_index, values, name in pending:
+            self._take(action_index, values, name, namespace, seen, present, warned)
+        return stop
+
+    def _consume_positionals(self, start: int, positionals: List[int], arguments: List[str], pattern: str,
+                             namespace: Namespace, seen: Set[int], present: Set[int], warned: Set[str]) -> int:
+        counts = List[int]()
+        for count in range(len(positionals), 0, -1):
+            expression = "".join(self._pattern(self._actions[index]) for index in positionals[:count])
+            match = self._compiled_pattern(expression).match(pattern + "!", pos=start, endpos=len(pattern))
+            if match:
+                found = unwrap(match)
+                counts = [len(found.group(index + 1)) for index in range(count)]
+                end = start + sum(counts)
+                if end < len(pattern) and pattern[end] == "O":
+                    while counts and counts[-1] == 0: counts.pop()
+                break
+        stop = start
+        for index, count in zip(positionals, counts):
+            action = self._actions[index]
+            values = arguments[stop:stop + count]
+            markers = pattern[stop:stop + count]
+            if action.nargs != REMAINDER and "-" in markers:
+                marker = markers.find("-")
+                if action.nargs != PARSER or marker == 0: del values[marker]
+            self._take(index, values, None, namespace, seen, present, warned)
+            stop += count
+        del positionals[:len(counts)]
+        return stop
+
+    def _parse(self, arguments: List[str], namespace: Namespace, intermixed: bool):
+        if self.fromfile_prefix_chars is not None: arguments = self._read_files(arguments, 0)
+        for action in self._actions:
+            if action.kind != _ACTION_REMOVED and action.dest != SUPPRESS and action.dest not in namespace and not _suppressed(action.default):
+                namespace[action.dest] = action.default
+        for key, value in self._defaults.items():
+            if key not in namespace: namespace[key] = value
+        positionals = [index for index, action in enumerate(self._actions)
+                       if not action.option_strings and action.kind != _ACTION_REMOVED]
+        if intermixed:
+            for index in positionals:
+                if self._actions[index].nargs in (PARSER, REMAINDER):
+                    raise TypeError("parse_intermixed_args: positional arg with nargs=" + self._actions[index].nargs)
+        options = Dict[int, _Option]()
+        markers = List[str]()
+        ended = False
+        for index, value in enumerate(arguments):
+            if ended: markers.append("A")
+            elif value == "--":
+                ended = True
+                markers.append("-")
+            else:
+                option = self._optional(value)
+                markers.append("O" if option is not None else "A")
+                if option is not None: options[index] = unwrap(option)
+        pattern = "".join(markers)
+        seen, present = Set[int](), Set[int]()
+        warned = Set[str]()
+        extras = List[str]()
+        delayed, delayed_pattern = List[str](), ""
+        start = 0
+        last = max(options.keys(), default=-1)
+        while start <= last:
+            next_option = start
+            while next_option not in options: next_option += 1
+            if not intermixed and start < next_option:
+                stop = self._consume_positionals(start, positionals, arguments, pattern, namespace, seen, present, warned)
+                if stop > start:
+                    start = stop
+                    continue
+            if intermixed:
+                delayed.extend(arguments[start:next_option])
+                delayed_pattern += pattern[start:next_option]
+            else: extras.extend(arguments[start:next_option])
+            previous_extras = len(extras)
+            start = self._consume_optional(next_option, options[next_option], arguments, pattern, namespace, seen, present, extras, warned)
+            if intermixed:
+                delayed.extend(extras[previous_extras:])
+                delayed_pattern += "O" * (len(extras) - previous_extras)
+                del extras[previous_extras:]
+        if intermixed:
+            delayed.extend(arguments[start:])
+            delayed_pattern += pattern[start:]
+            positional_args = [argument for argument, marker in zip(delayed, delayed_pattern) if marker != "O"]
+            stop = self._consume_positionals(0, positionals, positional_args, delayed_pattern.replace("O", ""), namespace, seen, present, warned)
+            for argument, marker in zip(delayed, delayed_pattern):
+                if marker != "O" and stop > 0: stop -= 1
+                else: extras.append(argument)
+        else:
+            stop = self._consume_positionals(start, positionals, arguments, pattern, namespace, seen, present, warned)
+            extras.extend(arguments[stop:])
+        required = List[str]()
+        for index, action in enumerate(self._actions):
+            if action.kind == _ACTION_REMOVED: continue
+            if index not in seen:
+                if action.required: required.append(action._name())
+                elif action.dest in namespace and action.default.kind == VALUE_STR and not _suppressed(action.default):
+                    current = namespace[action.dest]
+                    if current._meta == action.default._meta and current._payload == action.default._payload:
+                        namespace[action.dest] = self._convert(action, action.default.as_str())
+        if required: raise ArgumentError("", "the following arguments are required: " + ", ".join(required))
+        for group in self._mutex:
+            if group.required and not any(self._actions.index(action) in present for action in group._actions):
+                raise ArgumentError("", "one of the arguments " + " ".join(action._name() for action in group._actions
+                                    if action.help != SUPPRESS) + " is required")
+        if "_unrecognized_args" in namespace:
+            extras.extend(value.as_str() for value in namespace["_unrecognized_args"].values())
+            del namespace["_unrecognized_args"]
+        return namespace, extras
+
+    def _parse_entry(self, args, namespace, intermixed: bool, known: bool):
+        arguments: List[str] = []
+        if args is None:
+            arguments.extend(sys.argv[1:])
+        elif isinstance(args, List[NoneType]):
+            if args: raise TypeError("argument strings must be str")
+        else:
+            arguments.extend(args)
+        result = Namespace() if namespace is None else namespace
+        try:
+            result, extras = self._parse(arguments, result, intermixed)
+            if extras and not known: raise ArgumentError("", "unrecognized arguments: " + " ".join(extras))
+            return result, extras
+        except ArgumentError as error:
+            if self.exit_on_error: self.error(str(error))
+            raise
+
+    def parse_args(self, args=None, namespace=None) -> Namespace:
+        return self._parse_entry(args, namespace, False, False)[0]
+
+    def parse_known_args(self, args=None, namespace=None):
+        return self._parse_entry(args, namespace, False, True)
+
+    def parse_intermixed_args(self, args=None, namespace=None) -> Namespace:
+        return self._parse_entry(args, namespace, True, False)[0]
+
+    def parse_known_intermixed_args(self, args=None, namespace=None):
+        return self._parse_entry(args, namespace, True, True)
+
+    def _read_files(self, arguments: List[str], depth: int) -> List[str]:
+        if depth > 100: raise ArgumentError("", "argument file recursion limit exceeded")
+        result = List[str]()
+        for argument in arguments:
+            if argument and argument[0] in unwrap(self.fromfile_prefix_chars):
+                try:
+                    with open(argument[1:], encoding="utf-8", errors="surrogateescape") as source:
+                        lines = source.read().splitlines()
+                except OSError as error:
+                    raise ArgumentError("", str(error))
+                expanded = List[str]()
+                for line in lines: expanded.extend(self.convert_arg_line_to_args(line))
+                result.extend(self._read_files(expanded, depth + 1))
+            else: result.append(argument)
+        return result
+
+    def convert_arg_line_to_args(self, arg_line: str) -> List[str]:
+        return [arg_line]
+
+    def _expand(self, text: str) -> str:
+        return _interpolate(text, {"prog": ArgumentValue(self.prog)})
+
+    def _get_formatter(self) -> HelpFormatter:
+        formatter = self.formatter_class(self.prog)
+        formatter._color = self.color and _can_colorize()
+        return formatter
+
+    def exit(self, status: int = 0, message: Optional[str] = None):
+        if message is not None: print(unwrap(message), end="", file=sys.stderr)
+        raise SystemExit(status)
+
+    def error(self, message: str):
+        self.print_usage(sys.stderr)
+        self.exit(2, self.prog + ": error: " + message + "\n")
+
+    def _warning(self, message: str):
+        print(self.prog + ": warning: " + message, file=sys.stderr)
+
+    def format_usage(self) -> str:
+        formatter = self._get_formatter()
+        formatter.add_usage(self.usage, self._actions, self._mutex)
+        return formatter.format_help()
+
+    def format_help(self) -> str:
+        formatter = self._get_formatter()
+        formatter.add_usage(self.usage, self._actions, self._mutex)
+        formatter.add_text(self.description)
+        for group in self._groups:
+            formatter.start_section(group.title)
+            formatter.add_text(group.description)
+            formatter.add_arguments(group._actions)
+            formatter.end_section()
+        formatter.add_text(self.epilog)
+        return formatter.format_help()
+
+    def print_usage(self, file=None):
+        if file is None: print(self.format_usage(), end="")
+        else: print(self.format_usage(), end="", file=file)
+
+    def print_help(self, file=None):
+        if file is None: print(self.format_help(), end="")
+        else: print(self.format_help(), end="", file=file)
+
+@extend
+class Action:
+    def __call__(self, parser: ArgumentParser, namespace: Namespace, values: ArgumentValue,
+                 option_string: Optional[str] = None):
+        self._invoke_builtin(parser, namespace, values, option_string)
+
+@extend
+class BooleanOptionalAction:
+    def __call__(self, parser: ArgumentParser, namespace: Namespace, values: ArgumentValue,
+                 option_string: Optional[str] = None):
+        self._invoke_boolean(parser, namespace, values, option_string)
+
+@extend
+class _SubParsersAction:
+    def __call__(self, parser: ArgumentParser, namespace: Namespace, values: ArgumentValue,
+                 option_string: Optional[str] = None):
+        self._invoke_subparser(parser, namespace, values)
