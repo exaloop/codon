@@ -855,6 +855,52 @@ print static.len([1, 2]) #! expected tuple type
 #%% compile_error,barebones
 compile_error("woo-hoo") #! woo-hoo
 
+#%% argparse_unknown_keyword
+import argparse
+argparse.ArgumentParser().add_argument("--value", type=int, misspelled=True) #! unexpected keyword argument
+#! during the realization of _add_argument
+#! during the realization of add_argument
+
+#%% argparse_registered_action_keyword
+import argparse
+parser = argparse.ArgumentParser()
+parser.register("action", "custom", argparse.Action)
+parser.add_argument("--value", action="custom", extra=True) #! unexpected keyword argument
+#! during the realization of _add_argument
+#! during the realization of add_argument
+
+#%% argparse_custom_constructor_signature
+import argparse
+class NarrowAction(argparse.Action):
+    def __init__(self, option_strings, dest: str, default=None):
+        super().__init__(option_strings, dest, default=default)
+argparse.ArgumentParser().add_argument("--value", action=NarrowAction, default=None, unexpected=True) #! custom action constructor does not accept the supplied arguments
+#! during the realization of _construct_action
+#! during the realization of _custom_action
+#! during the realization of _add_argument
+#! during the realization of add_argument
+
+#%% argparse_custom_factory_signature
+import argparse
+def factory(option_strings, dest: str, default=None):
+    return argparse.Action(option_strings, dest, default=default)
+argparse.ArgumentParser().add_argument("--value", action=factory, default=None, unexpected=True) #! custom action factory does not accept the supplied arguments
+#! during the realization of _construct_action
+#! during the realization of _custom_action
+#! during the realization of _add_argument
+#! during the realization of add_argument
+
+#%% argparse_custom_constructor_missing_argument
+import argparse
+class RequiredAction(argparse.Action):
+    def __init__(self, option_strings, dest: str, default=None, *, scale: int):
+        super().__init__(option_strings, dest, default=default)
+argparse.ArgumentParser().add_argument("--value", action=RequiredAction, default=None) #! custom action constructor does not accept the supplied arguments
+#! during the realization of _construct_action
+#! during the realization of _custom_action
+#! during the realization of _add_argument
+#! during the realization of add_argument
+
 #%% stack_alloc,barebones
 a = __array__[int](2)
 print a.__class__.__name__ #: Ptr[int]

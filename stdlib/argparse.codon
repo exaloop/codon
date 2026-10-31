@@ -1,9 +1,33 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
-"""Command-line parsing with a tagged ArgumentValue and a dynamic Namespace.
+"""Command-line parsing with a tagged `ArgumentValue` and a dynamic `Namespace`.
 
 Parsed attributes are tagged values: use `args.count.as_int()`,
 `args.name.as_str()`, and `args.files.values()` to access native values.
+
+## Custom Actions
+
+Named action registration normalizes constructor arguments to the standard
+`Action` fields and does not forward additional constructor keywords. Pass
+the action class directly to supply custom keywords.
+
+### Differences From CPython
+
+- **Positional arguments:** Custom actions are supported only for options.
+    Using a custom class, factory, or registered action for a positional raises
+    `TypeError` before construction.
+- **Initializer overloads:** Class construction checks only the leading
+    `__init__` signature exposed by the compiler; it does not search additional
+    overloads or base initializers. Use a single initializer, or a factory that
+    explicitly calls the desired overload.
+- **Parser defaults:** For direct classes and factories, defaults from
+    `set_defaults()` and `argument_default` are passed as `ArgumentValue`, not
+    unboxed to a native constructor parameter type. Leave the default parameter
+    unannotated or accept `ArgumentValue`; alternatively, pass `default=` directly
+    to `add_argument()`, which preserves its native type.
+
+Incompatible signatures are rejected at compile time when independent of parser
+defaults, and with `TypeError` when they depend on runtime parser defaults.
 """
 
 import json
@@ -48,6 +72,8 @@ _HELP_SECTION: Literal[int] = 0
 _HELP_TEXT: Literal[int] = 1
 _HELP_USAGE: Literal[int] = 2
 _HELP_ACTION: Literal[int] = 3
+
+_OPTION_UNKNOWN: Literal[int] = -1
 
 def _action_kind(name: str) -> int:
     if name == "store": return _ACTION_STORE
@@ -621,6 +647,9 @@ class Action:
         self.metavar = []
         if metavar is not None:
             if isinstance(metavar, str): self.metavar.append(metavar)
+            elif isinstance(metavar, tuple) and not isinstance(metavar, DynamicTuple):
+                for index in static.range(static.len(metavar)):
+                    self.metavar.append(metavar[index])
             else:
                 for item in metavar: self.metavar.append(item)
         self.kind, self.version = _ACTION_STORE, None
@@ -649,6 +678,20 @@ class Action:
 
     def _invoke_builtin(self, parser, namespace: Namespace, values: ArgumentValue,
                  option_string: Optional[str] = None):
+        if self.kind == _ACTION_HELP:
+            parser.print_help()
+            parser.exit()
+            return
+        if self.kind == _ACTION_VERSION:
+            version = self.version
+            if version is None:
+                if hasattr(parser, "version"):
+                    version = parser.version
+                else:
+                    raise AttributeError("'" + type(parser).__name__ + "' object has no attribute 'version'")
+            print(parser._expand(unwrap(version)))
+            parser.exit()
+            return
         if self.dest == SUPPRESS: return
         if self.kind == _ACTION_STORE: namespace[self.dest] = values
         elif self.kind in (_ACTION_STORE_CONST, _ACTION_STORE_TRUE, _ACTION_STORE_FALSE):
@@ -670,12 +713,6 @@ class Action:
             else:
                 result.append(self.const if self.kind == _ACTION_APPEND_CONST else values)
             namespace[self.dest] = result
-        elif self.kind == _ACTION_HELP:
-            parser.print_help()
-            parser.exit()
-        elif self.kind == _ACTION_VERSION:
-            print(parser._expand(unwrap(self.version)))
-            parser.exit()
 
 class BooleanOptionalAction(Action):
     def __init__(self, option_strings, dest: str, default=None, choices=None,
@@ -700,6 +737,35 @@ class BooleanOptionalAction(Action):
         if self.dest != SUPPRESS:
             namespace[self.dest] = not unwrap(option_string).startswith("--no-")
 
+def _construct_action(constructor, runtime_default: Literal[bool], /, **kwargs) -> Action:
+    if isinstance(constructor, (Function, Partial)):
+        if static.function.can_call(constructor, **kwargs):
+            return constructor(**kwargs)
+        elif runtime_default:
+            raise TypeError("custom action factory does not accept the supplied arguments")
+        else:
+            compile_error("custom action factory does not accept the supplied arguments")
+    else:
+        for initializer in static.function.overloads(constructor, "__init__"):
+            if static.function.can_call(initializer, constructor.__new__(), **kwargs):
+                return constructor(**kwargs)
+            elif runtime_default:
+                raise TypeError("custom action constructor does not accept the supplied arguments")
+            else:
+                compile_error("custom action constructor does not accept the supplied arguments")
+        raise TypeError("custom action has no initializer")
+
+def _custom_action(constructor, option_strings, destination: str, parser_default: ArgumentValue,
+                   has_parser_default: bool, /, *, action=None, dest=None, default=_UNSET,
+                   **kwargs) -> Action:
+    if not isinstance(default, _Unset):
+        return _construct_action(constructor, False, option_strings=option_strings, dest=destination,
+                                 default=default, **kwargs)
+    if has_parser_default:
+        return _construct_action(constructor, True, option_strings=option_strings, dest=destination,
+                                 default=parser_default, **kwargs)
+    return _construct_action(constructor, True, option_strings=option_strings, dest=destination, **kwargs)
+
 def _action_factory(constructor) -> Callable[[Action], Action]:
     def make(constructor, spec: Action) -> Action:
         arity = ArgumentValue(int(spec.nargs)) if spec.nargs.isdigit() else ArgumentValue(spec.nargs) if spec.nargs else ArgumentValue()
@@ -719,6 +785,7 @@ class _Option:
     name: str
     explicit: Optional[str]
     equals: bool
+    candidates: str = ""
 
 class _ArgumentGroup:
     _parser: cobj
@@ -735,7 +802,7 @@ class _ArgumentGroup:
         return type._force_cast(self._parser, ArgumentParser)
 
     def add_argument(self, *args, **kwargs):
-        return self.parser._add_argument(self, *args, _provided=kwargs.__keys__(), **kwargs)
+        return self.parser._add_argument(self, *args, _provided=kwargs.__keys__(), _keywords=kwargs, **kwargs)
 
     def add_mutually_exclusive_group(self, required: bool = False):
         group = _MutuallyExclusiveGroup(self, required)
@@ -754,11 +821,9 @@ class _MutuallyExclusiveGroup:
         self.group, self.required, self._actions = group, required, []
 
     def add_argument(self, *args, **kwargs):
-        if self.group is self.group.parser._optionals:
-            action = self.group.parser.add_argument(*args, **kwargs)
-        else:
-            action = self.group.add_argument(*args, **kwargs)
-        if action.required: raise ValueError("mutually exclusive arguments must be optional")
+        target = None if self.group is self.group.parser._optionals else self.group
+        action = self.group.parser._add_argument(target, *args, _provided=kwargs.__keys__(),
+                                                _keywords=kwargs, _mutex=True, **kwargs)
         self._actions.append(action)
         return action
 
@@ -1304,9 +1369,9 @@ class ArgumentParser:
                 self._inherit(parent)
 
     def add_argument(self, *names, **kwargs):
-        return self._add_argument(None, *names, _provided=kwargs.__keys__(), **kwargs)
+        return self._add_argument(None, *names, _provided=kwargs.__keys__(), _keywords=kwargs, **kwargs)
 
-    def _add_argument(self, group, *names, _provided=(), action="store", nargs=_UNSET, const=_UNSET,
+    def _add_argument(self, group, *names, _provided=(), _keywords=(), _mutex: bool = False, action="store", nargs=_UNSET, const=_UNSET,
                       default=_UNSET, choices=None, required: bool = False,
                       help=_UNSET, metavar=None, dest: Optional[str] = None,
                       version: Optional[str] = None, deprecated: bool = False, **kwargs):
@@ -1325,6 +1390,11 @@ class ArgumentParser:
             if "required" in _provided: raise TypeError("'required' is an invalid argument for positionals")
             if strings: destination = strings[0]
             strings.clear()
+            if isinstance(action, str):
+                if action in self._registered_actions:
+                    raise TypeError("custom actions are only supported for options")
+            elif action is not BooleanOptionalAction:
+                raise TypeError("custom actions are only supported for options")
         else:
             for name in strings:
                 if not name or name[0] not in self.prefix_chars:
@@ -1357,10 +1427,8 @@ class ArgumentParser:
                     if provided_key not in allowed:
                         constructor = "_" + "".join(part.capitalize() for part in action.split("_")) + "Action"
                         raise TypeError(constructor + ".__init__() got an unexpected keyword argument " + repr(provided_key))
-            keys = kwargs.__keys__()
-            for index in static.range(static.len(kwargs.args)):
-                key = keys[index]
-                if key != "type": raise TypeError("unexpected keyword argument " + repr(key))
+            if static.len(kwargs.args) > 1 or (static.len(kwargs.args) == 1 and not hasattr(kwargs, "type")):
+                compile_error("unexpected keyword argument: only 'type' is supported for built-in or registered actions")
             arity = _nargs(nargs)
             if kind in (_ACTION_STORE_CONST, _ACTION_STORE_TRUE, _ACTION_STORE_FALSE, _ACTION_APPEND_CONST, _ACTION_COUNT, _ACTION_HELP, _ACTION_VERSION):
                 if not isinstance(nargs, _Unset): raise TypeError("unexpected keyword argument 'nargs'")
@@ -1378,8 +1446,8 @@ class ArgumentParser:
             if kind in (_ACTION_HELP, _ACTION_VERSION):
                 if isinstance(default, _Unset) and destination not in self._defaults and self.argument_default.is_null():
                     fallback = ArgumentValue(SUPPRESS)
-                if isinstance(help, _Unset):
-                    help_text = "show this help message and exit" if kind == _ACTION_HELP else "show program's version number and exit"
+                if isinstance(help, _Unset) and kind == _ACTION_VERSION:
+                    help_text = "show program's version number and exit"
             result: Action = Action(strings, destination, default=fallback, const=constant,
                                     choices=choices, required=required, help=help_text,
                                     metavar=metavar, deprecated=deprecated)
@@ -1395,24 +1463,21 @@ class ArgumentParser:
                 result: Action = action(strings, destination, default=fallback, type=converter, choices=choices,
                                         required=required, help=help_text, metavar=metavar, deprecated=deprecated)
             else:
-                if isinstance(nargs, _Unset):
-                    result: Action = action(strings, destination, default=fallback,
-                                            choices=choices, required=required, help=help_text,
-                                            metavar=metavar, **kwargs)
-                else:
-                    result: Action = action(strings, destination, nargs=nargs, default=fallback,
-                                            const=constant, choices=choices, required=required,
-                                            help=help_text, metavar=metavar, **kwargs)
+                result: Action = _custom_action(action, strings, destination, fallback,
+                                               destination in self._defaults or not self.argument_default.is_null(),
+                                               **_keywords)
+        if isinstance(action, str):
+            if action in self._registered_actions:
+                result = self._registered_actions[action](result)
         if not optional:
             if result.nargs == "0": raise ValueError("nargs for positionals must be != 0")
             result.required = result.nargs not in (OPTIONAL, ZERO_OR_MORE, REMAINDER, SUPPRESS)
         if "deprecated" in _provided: result.deprecated = deprecated
-        if len(result.metavar) > 1:
+        if ((metavar is not None and not isinstance(metavar, str)) or len(result.metavar) > 1) and result.nargs not in (REMAINDER, SUPPRESS):
             expected = int(result.nargs) if result.nargs.isdigit() else 2 if result.nargs in (ZERO_OR_MORE, ONE_OR_MORE) else 1
-            if len(result.metavar) != expected: raise ValueError("length of metavar tuple does not match nargs")
-        if isinstance(action, str):
-            if action in self._registered_actions:
-                result = self._registered_actions[action](result)
+            if len(result.metavar) != expected and not (result.nargs == ZERO_OR_MORE and len(result.metavar) == 1):
+                raise ValueError("length of metavar tuple does not match nargs")
+        if _mutex and result.required: raise ValueError("mutually exclusive arguments must be optional")
         if result.help is not None and result.help != SUPPRESS:
             self._formatter._expand_help(result)
         if group is None: target = self._optionals if optional else self._positionals
@@ -1467,6 +1532,7 @@ class ArgumentParser:
         return action
 
     def _inherit(self, parent):
+        targets = Dict[int, _ArgumentGroup]()
         for source in parent._groups:
             target = self._positionals
             found = False
@@ -1476,10 +1542,13 @@ class ArgumentParser:
                     break
             if not found: target = self.add_argument_group(source.title, source.description)
             for action in source._actions:
-                if action.kind != _ACTION_REMOVED: self._install(action, target)
+                targets[id(action)] = target
+        for action in parent._actions:
+            if action.kind != _ACTION_REMOVED: self._install(action, targets[id(action)])
+        installed = {id(action) for action in self._actions if action.kind != _ACTION_REMOVED}
         for source in parent._mutex:
             group = self.add_mutually_exclusive_group(required=source.required)
-            group._actions.extend(source._actions)
+            group._actions.extend(action for action in source._actions if id(action) in installed)
         self._defaults.update(parent._defaults)
 
     def set_defaults(self, **kwargs):
@@ -1492,7 +1561,7 @@ class ArgumentParser:
 
     def get_default(self, dest: str) -> ArgumentValue:
         for action in self._actions:
-            if action.dest == dest and not action.default.is_null(): return action.default
+            if action.kind != _ACTION_REMOVED and action.dest == dest and not action.default.is_null(): return action.default
         return self._defaults.get(dest, ArgumentValue())
 
     def register(self, registry_name: Literal[str], value: str, object):
@@ -1519,11 +1588,11 @@ class ArgumentParser:
             elif self.allow_abbrev and name.startswith(prefix):
                 matches.append(_Option(index, name, explicit, bool(separator)))
         if len(matches) > 1:
-            raise ArgumentError("", "ambiguous option: " + value + " could match " + ", ".join(item.name for item in matches))
+            return _Option(_OPTION_UNKNOWN, value, None, False, ", ".join(item.name for item in matches))
         if matches: return matches[0]
         if self._negative(value) and not any(self._negative(name) for name in self._options): return None
         if " " in value: return None
-        return _Option(-1, value, None, False)
+        return _Option(_OPTION_UNKNOWN, value, None, False)
 
     def _pattern(self, action: Action) -> str:
         nargs = action.nargs
@@ -1625,6 +1694,8 @@ class ArgumentParser:
 
     def _consume_optional(self, index: int, option: _Option, arguments: List[str], pattern: str,
                           namespace: Namespace, seen: Set[int], present: Set[int], extras: List[str], warned: Set[str]) -> int:
+        if option.candidates:
+            raise ArgumentError("", "ambiguous option: " + option.name + " could match " + option.candidates)
         if option.index < 0:
             extras.append(arguments[index])
             return index + 1
@@ -1861,7 +1932,7 @@ class ArgumentParser:
 
 @extend
 class Action:
-    def __call__(self, parser: ArgumentParser, namespace: Namespace, values: ArgumentValue,
+    def __call__(self, parser, namespace: Namespace, values: ArgumentValue,
                  option_string: Optional[str] = None):
         self._invoke_builtin(parser, namespace, values, option_string)
 

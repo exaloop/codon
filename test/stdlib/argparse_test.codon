@@ -102,10 +102,13 @@ def test_subparsers_and_parents():
     run = commands.add_parser("run", aliases=["r"], help="run files", exit_on_error=False)
     run.add_argument("files", nargs="+")
     run.add_argument("--speed", type=int, default=2)
+    run.add_argument("--cache", action=argparse.BooleanOptionalAction)
     run.set_defaults(shared="child")
     args = parser.parse_args(["--level", "3", "r", "input", "--speed=4"])
     assert args.level == 3 and args.command == "r" and args.files == ["input"]
     assert args.speed == 4 and args.shared == "child"
+    uncached = parser.parse_args(["run", "input", "--no-cache"])
+    assert uncached.command == "run" and uncached.cache == False
     args, extras = parser.parse_known_args(["run", "input", "--unknown"])
     assert args.command == "run" and extras == ["--unknown"]
     try:
@@ -129,9 +132,61 @@ def test_subparsers_and_parents():
         assert False
     except argparse.ArgumentError as error:
         assert str(error) == "one of the arguments --one --two is required"
+    replaced_parent = argparse.ArgumentParser(add_help=False, conflict_handler="resolve")
+    replaced_group = replaced_parent.add_mutually_exclusive_group(required=True)
+    replaced_group.add_argument("--old", action="store_true")
+    replaced_group.add_argument("--keep", action="store_true")
+    replaced_parent.add_argument("--old", action="store_true")
+    replaced_child = argparse.ArgumentParser(parents=[replaced_parent], exit_on_error=False)
+    kept = replaced_child.parse_args(["--keep"])
+    assert kept.keep == True and kept.old == False
+    try:
+        replaced_child.parse_args(["--old"])
+        assert False
+    except argparse.ArgumentError as error:
+        assert str(error) == "one of the arguments --keep is required"
+
+@test
+def test_inherited_positional_order():
+    parent = argparse.ArgumentParser(add_help=False)
+    parent.add_argument_group("files").add_argument("src")
+    parent.add_argument("dst")
+    child = argparse.ArgumentParser(parents=[parent], exit_on_error=False)
+    args = child.parse_args(["input.txt", "output.txt"])
+    assert args.src == "input.txt", repr(args)
+    assert args.dst == "output.txt", repr(args)
+
+@test
+def test_deferred_option_ambiguity():
+    parser = argparse.ArgumentParser(exit_on_error=False)
+    parser.add_argument("--format")
+    parser.add_argument("--force")
+    run = parser.add_subparsers(dest="command").add_parser("run", exit_on_error=False)
+    run.add_argument("--fo")
+    args = parser.parse_args(["run", "--fo", "json"])
+    assert args.command == "run" and args.fo == "json"
+    assert args.format.is_null() and args.force.is_null()
+    try:
+        parser.parse_args(["--fo", "json", "run"])
+        assert False
+    except argparse.ArgumentError as error:
+        assert str(error) == "ambiguous option: --fo could match --format, --force"
+    remainder = argparse.ArgumentParser(exit_on_error=False)
+    remainder.add_argument("--format")
+    remainder.add_argument("--force")
+    remainder.add_argument("rest", nargs=argparse.REMAINDER)
+    args = remainder.parse_args(["prefix", "--fo", "json"])
+    assert args.rest == ["prefix", "--fo", "json"]
+    optional = argparse.ArgumentParser(exit_on_error=False)
+    optional.add_argument("--format")
+    optional.add_argument("--force")
+    optional.add_argument("--rest", nargs=argparse.REMAINDER)
+    assert optional.parse_args(["--rest", "--fo", "json"]).rest == ["--fo", "json"]
 
 test_actions_and_groups()
 test_subparsers_and_parents()
+test_inherited_positional_order()
+test_deferred_option_ambiguity()
 
 @test
 def test_help():
@@ -177,6 +232,80 @@ class TwiceAction(argparse.Action):
                  values: argparse.ArgumentValue, option_string: Optional[str] = None):
         namespace[self.dest] = values.as_int() * 2
 
+class ConstAction(argparse.Action):
+    def __init__(self, option_strings, dest: str, nargs=0, const: int = 3, **kwargs):
+        super().__init__(option_strings, dest, nargs=nargs, const=const, **kwargs)
+
+    def __call__(self, parser: argparse.ArgumentParser, namespace: argparse.Namespace,
+                 values: argparse.ArgumentValue, option_string: Optional[str] = None):
+        namespace[self.dest] = self.const
+
+class NarrowScaledAction(argparse.Action):
+    scale: int
+
+    def __init__(self, option_strings, dest: str, *, scale: int):
+        super().__init__(option_strings, dest)
+        self.scale = scale
+
+    def __call__(self, parser: argparse.ArgumentParser, namespace: argparse.Namespace,
+                 values: argparse.ArgumentValue, option_string: Optional[str] = None):
+        namespace[self.dest] = int(values.as_str()) * self.scale
+
+class DefaultAction(argparse.Action):
+    def __init__(self, option_strings, dest: str, default=13):
+        super().__init__(option_strings, dest, default=default, const=default)
+
+class RequiredDefaultAction(argparse.Action):
+    def __init__(self, option_strings, dest: str, *, default):
+        super().__init__(option_strings, dest, default=default, const=default)
+
+class OverloadedAction(argparse.Action):
+    def __init__(self, option_strings, dest: str, *, left: int):
+        super().__init__(option_strings, dest, const=left)
+
+    @overload
+    def __init__(self, option_strings, dest: str, *, right: int):
+        super().__init__(option_strings, dest, const=right)
+
+class ReverseOverloadedAction(argparse.Action):
+    def __init__(self, option_strings, dest: str, *, right: int):
+        super().__init__(option_strings, dest, const=right)
+
+    @overload
+    def __init__(self, option_strings, dest: str, *, left: int):
+        super().__init__(option_strings, dest, const=left)
+
+class RequiredPositionalAction(argparse.Action):
+    def __init__(self, option_strings, dest: str, *, required: bool):
+        super().__init__(option_strings, dest, required=required, const=required)
+
+class IntegerDefaultAction(argparse.Action):
+    def __init__(self, option_strings, dest: str, *, default: int):
+        super().__init__(option_strings, dest, default=default, const=default)
+
+def scaled_action_factory(option_strings, dest: str, *, scale: int):
+    return NarrowScaledAction(option_strings, dest, scale=scale)
+
+def default_action_factory(option_strings, dest: str, default=11):
+    return DefaultAction(option_strings, dest, default=default)
+
+def required_default_factory(option_strings, dest: str, *, default):
+    return RequiredDefaultAction(option_strings, dest, default=default)
+
+def overloaded_action_factory(option_strings, dest: str, *, left: int):
+    return OverloadedAction(option_strings, dest, left=left)
+
+class ScaledAction(argparse.Action):
+    scale: int
+
+    def __init__(self, *args, scale: int = 1, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.scale = scale
+
+    def __call__(self, parser: argparse.ArgumentParser, namespace: argparse.Namespace,
+                 values: argparse.ArgumentValue, option_string: Optional[str] = None):
+        namespace[self.dest] = values.as_int() * self.scale
+
 @tuple
 class Coordinate:
     value: int
@@ -196,6 +325,19 @@ class LineParser(argparse.ArgumentParser):
 def test_custom_and_files():
     parser = argparse.ArgumentParser(prog="custom", exit_on_error=False)
     parser.add_argument("--twice", action=TwiceAction, type=int)
+    parser.add_argument("--constant", action=ConstAction, const=7)
+    parser.add_argument("--explicit", action=ConstAction, nargs=0, const=9)
+    parser.add_argument("--own-default", action=ConstAction, nargs=0)
+    parser.add_argument("--scaled", action=ScaledAction, scale=3, type=int)
+    constants = parser.parse_args(["--constant", "--explicit", "--own-default"])
+    assert constants.constant == 7 and constants.explicit == 9 and constants.own_default == 3
+    assert parser.parse_args(["--scaled", "4"]).scaled == 12
+    parser.add_argument("--narrow", action=NarrowScaledAction, scale=3)
+    assert parser.parse_args(["--narrow", "4"]).narrow == 12
+    parser.add_argument("--factory", action=scaled_action_factory, scale=3)
+    assert parser.parse_args(["--factory", "4"]).factory == 12
+    parser.add_argument("--partial", action=scaled_action_factory(scale=4, ...))
+    assert parser.parse_args(["--partial", "4"]).partial == 16
     parser.register("action", "double", TwiceAction)
     parser.add_argument("--registered", action="double", type=int)
     parser.add_argument("--point", type=coordinate)
@@ -296,8 +438,178 @@ def test_positionals_and_defaults():
     shared.parse_args([]).nested[0].append(2)
     assert nested == [[1, 2]]
 
+@test
+def test_custom_constructor_defaults():
+    parser = argparse.ArgumentParser(exit_on_error=False)
+    own = parser.add_argument("--own", action=DefaultAction)
+    assert own.const == 13 and parser.parse_args([]).own == 13
+    explicit = parser.add_argument("--explicit", action=DefaultAction, default=5)
+    assert explicit.const == 5 and parser.parse_args([]).explicit == 5
+    null = parser.add_argument("--null", action=DefaultAction, default=None)
+    assert null.const.is_null() and parser.parse_args([]).null.is_null()
+    factory = parser.add_argument("--factory", action=default_action_factory)
+    assert factory.const == 11 and parser.parse_args([]).factory == 11
+    fallback = argparse.ArgumentParser(argument_default=9, exit_on_error=False)
+    fallback.set_defaults(specific=7, empty=None)
+    general = fallback.add_argument("--general", action=DefaultAction)
+    specific = fallback.add_argument("--specific", action=DefaultAction)
+    empty = fallback.add_argument("--empty", action=DefaultAction)
+    override = fallback.add_argument("--override", action=DefaultAction, default=3)
+    generated = fallback.add_argument("--generated", action=default_action_factory)
+    required = fallback.add_argument("--required-default", action=RequiredDefaultAction)
+    required_factory = fallback.add_argument("--required-factory", action=required_default_factory)
+    assert general.const == 9 and specific.const == 7 and empty.const.is_null()
+    assert override.const == 3 and generated.const == 9
+    assert required.const == 9 and required_factory.const == 9
+    values = fallback.parse_args([])
+    assert values.general == 9 and values.specific == 7 and values.empty.is_null()
+    assert values.override == 3 and values.generated == 9
+    assert values.required_default == 9 and values.required_factory == 9
+    try:
+        parser.add_argument("--missing-default", action=RequiredDefaultAction)
+        assert False
+    except TypeError:
+        pass
+    assert "--missing-default" not in parser._options
+    count = len(fallback._actions)
+    try:
+        fallback.add_argument("--narrow", action=NarrowScaledAction, scale=3)
+        assert False
+    except TypeError:
+        pass
+    assert len(fallback._actions) == count and "--narrow" not in fallback._options
+
+@test
+def test_custom_constructor_overloads():
+    parser = argparse.ArgumentParser(exit_on_error=False)
+    count = len(parser._actions)
+    try:
+        parser.add_argument("--left", action=OverloadedAction, left=3)
+        assert False
+    except TypeError as error:
+        assert str(error) == "custom action constructor does not accept the supplied arguments"
+    assert len(parser._actions) == count and "--left" not in parser._options
+    try:
+        parser.add_argument("--reverse-right", action=ReverseOverloadedAction, right=13)
+        assert False
+    except TypeError as error:
+        assert str(error) == "custom action constructor does not accept the supplied arguments"
+    assert len(parser._actions) == count and "--reverse-right" not in parser._options
+    assert parser.add_argument("--right", action=OverloadedAction, right=7).const == 7
+    assert parser.add_argument("--reverse-left", action=ReverseOverloadedAction, left=11).const == 11
+    assert parser.add_argument("--factory", action=overloaded_action_factory, left=3).const == 3
+    values = parser.parse_args(["--factory", "one", "--right", "two"])
+    assert values.factory == "one" and values.right == "two"
+
+@test
+def test_custom_positional_required():
+    parser = argparse.ArgumentParser(exit_on_error=False)
+    parser.register("action", "twice", TwiceAction)
+    count = len(parser._actions)
+    try:
+        parser.add_argument("input", action=RequiredPositionalAction)
+        assert False
+    except TypeError as error:
+        assert str(error) == "custom actions are only supported for options"
+    try:
+        parser.add_argument_group("files").add_argument("input", action=DefaultAction)
+        assert False
+    except TypeError as error:
+        assert str(error) == "custom actions are only supported for options"
+    try:
+        parser.add_argument("input", action=default_action_factory)
+        assert False
+    except TypeError as error:
+        assert str(error) == "custom actions are only supported for options"
+    try:
+        parser.add_argument("input", action="twice")
+        assert False
+    except TypeError as error:
+        assert str(error) == "custom actions are only supported for options"
+    assert len(parser._actions) == count and not parser._positionals._actions
+    action = parser.add_argument("--input", action=RequiredPositionalAction, required=True)
+    assert action.const == True and action.required
+    assert parser.parse_args(["--input", "input.txt"]).input == "input.txt"
+
+@test
+def test_custom_typed_defaults():
+    parser = argparse.ArgumentParser(exit_on_error=False)
+    explicit = parser.add_argument("--explicit", action=IntegerDefaultAction, default=3)
+    parser.set_defaults(inherited=3)
+    count = len(parser._actions)
+    try:
+        parser.add_argument("--inherited", action=IntegerDefaultAction)
+        assert False
+    except TypeError as error:
+        assert str(error) == "custom action constructor does not accept the supplied arguments"
+    assert len(parser._actions) == count and "--inherited" not in parser._options
+    assert explicit.const == 3 and parser.parse_args([]).explicit == 3
+    inherited = parser.add_argument("--inherited", action=RequiredDefaultAction)
+    assert inherited.const == 3 and parser.parse_args([]).inherited == 3
+    global_default = argparse.ArgumentParser(argument_default=3, exit_on_error=False)
+    count = len(global_default._actions)
+    try:
+        global_default.add_argument("--integer", action=IntegerDefaultAction)
+        assert False
+    except TypeError:
+        pass
+    assert len(global_default._actions) == count and "--integer" not in global_default._options
+    assert global_default.add_argument("--integer", action=IntegerDefaultAction, default=3).const == 3
+
 test_custom_and_files()
+test_custom_constructor_overloads()
+test_custom_positional_required()
+test_custom_typed_defaults()
+test_custom_constructor_defaults()
 test_positionals_and_defaults()
+
+@test
+def test_registration_validation():
+    parser = argparse.ArgumentParser(exit_on_error=False, conflict_handler="resolve")
+    original = parser.add_argument("--token", default="original")
+    group = parser.add_mutually_exclusive_group()
+    count = len(parser._actions)
+    try:
+        group.add_argument("--token", required=True)
+        assert False
+    except ValueError as error:
+        assert str(error) == "mutually exclusive arguments must be optional"
+    assert len(parser._actions) == count and not group._actions
+    assert original.option_strings == ["--token"]
+    assert parser.get_default("token") == "original"
+    assert parser.parse_args([]).token == "original"
+    assert parser.parse_args(["--token", "kept"]).token == "kept"
+    try:
+        group.add_argument("required_positional")
+        assert False
+    except ValueError:
+        pass
+    assert len(parser._actions) == count
+    parser.add_argument("--token", default="replacement")
+    assert parser.get_default("token") == "replacement"
+    assert parser.parse_args([]).token == "replacement"
+    for arity in ["2", "+"]:
+        nargs = argparse.ArgumentValue(2) if arity == "2" else argparse.ArgumentValue(argparse.ONE_OR_MORE)
+        try:
+            parser.add_argument("--pair", nargs=nargs, metavar=("X",))
+            assert False
+        except ValueError as error:
+            assert str(error) == "length of metavar tuple does not match nargs"
+    try:
+        parser.add_argument("--empty", metavar=())
+        assert False
+    except ValueError:
+        pass
+    group.add_argument("--allowed", action="store_true")
+    parser.add_argument("--pair", nargs=2, metavar="X")
+    parser.add_argument("--many", nargs="*", metavar=("X",))
+    parser.add_argument("--dynamic", nargs=2, metavar=DynamicTuple(["LEFT", "RIGHT"]))
+    assert parser.parse_args(["--pair", "one", "two", "--many", "three"]).pair == ["one", "two"]
+    assert parser.parse_args(["--dynamic", "one", "two"]).dynamic == ["one", "two"]
+    assert "[--pair X X]" in parser.format_usage()
+    assert "[--many [X ...]]" in parser.format_usage()
+
+test_registration_validation()
 
 class PrefixChoices:
     def __iter__(self) -> Generator[str]:

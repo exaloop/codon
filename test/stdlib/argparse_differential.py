@@ -13,6 +13,50 @@ import tempfile
 
 DEFINITIONS = r'''
 import argparse
+from typing import ClassVar
+
+class VersionParser(argparse.ArgumentParser):
+    version: ClassVar[str] = "1.2"
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+class ConstAction(argparse.Action):
+    def __init__(self, option_strings, dest: str, nargs=0, const: int = 3, **kwargs):
+        super().__init__(option_strings, dest, nargs=nargs, const=const, **kwargs)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        if hasattr(namespace, "__setitem__"):
+            namespace[self.dest] = self.const
+        else:
+            setattr(namespace, self.dest, self.const)
+
+class NarrowScaledAction(argparse.Action):
+    scale: int
+
+    def __init__(self, option_strings, dest: str, *, scale: int):
+        super().__init__(option_strings, dest)
+        self.scale = scale
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        if hasattr(values, "as_str"):
+            value = int(values.as_str()) * self.scale
+        else:
+            value = int(values) * self.scale
+        if hasattr(namespace, "__setitem__"):
+            namespace[self.dest] = value
+        else:
+            setattr(namespace, self.dest, value)
+
+class DefaultAction(argparse.Action):
+    def __init__(self, option_strings, dest: str, default=13):
+        super().__init__(option_strings, dest, default=default, const=default)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        if hasattr(namespace, "__setitem__"):
+            namespace[self.dest] = values
+        else:
+            setattr(namespace, self.dest, values)
 
 class PrefixChoices:
     def __iter__(self):
@@ -190,6 +234,73 @@ def make_parser(case):
         group.add_argument("--one", action="store_true")
         group.add_argument("--two", action="store_true")
         parser = argparse.ArgumentParser(prog="tool", parents=[parent], exit_on_error=False, color=False)
+    elif case == 36:
+        parent = argparse.ArgumentParser(add_help=False)
+        parent.add_argument_group("files").add_argument("src")
+        parent.add_argument("dst")
+        parser = argparse.ArgumentParser(prog="tool", parents=[parent], exit_on_error=False, color=False)
+    elif case == 37:
+        parser.add_argument("--format")
+        parser.add_argument("--force")
+        run = parser.add_subparsers(dest="command").add_parser("run", exit_on_error=False, color=False)
+        run.add_argument("--fo")
+    elif case == 38:
+        parser.add_argument("--format")
+        parser.add_argument("--force")
+        parser.add_argument("rest", nargs=argparse.REMAINDER)
+    elif case == 39:
+        parser.add_argument("--format")
+        parser.add_argument("--force")
+        parser.add_argument("--rest", nargs=argparse.REMAINDER)
+    elif case == 40:
+        parser = argparse.ArgumentParser(prog="tool", exit_on_error=False, color=False, conflict_handler="resolve")
+        parser.add_argument("--mode", default="old")
+        parser.add_argument("--mode", default="new")
+    elif case == 41:
+        parser = argparse.ArgumentParser(prog="tool", exit_on_error=False, color=False, conflict_handler="resolve")
+        parser.add_argument("--token", default="original")
+        group = parser.add_mutually_exclusive_group()
+        try:
+            group.add_argument("--token", required=True)
+        except ValueError:
+            pass
+        group.add_argument("--allowed", action="store_true")
+    elif case == 42:
+        parser.add_argument("--pair", nargs=2, metavar=("X",))
+    elif case == 43:
+        parser.add_argument("--many", nargs="*", metavar=("X",))
+    elif case == 44:
+        parser.add_argument("--constant", action=ConstAction, const=7)
+        parser.add_argument("--explicit", action=ConstAction, nargs=0, const=9)
+        parser.add_argument("--own-default", action=ConstAction, nargs=0)
+    elif case == 45:
+        parser.add_argument("--empty", metavar=())
+    elif case == 46:
+        parser.add_argument("--n", action=NarrowScaledAction, scale=3)
+        parser.add_argument_group("extra").add_argument("--group", action=NarrowScaledAction, scale=2)
+        parser.add_mutually_exclusive_group().add_argument("--mutex", action=NarrowScaledAction, scale=4)
+    elif case == 47:
+        parent = argparse.ArgumentParser(add_help=False, conflict_handler="resolve")
+        group = parent.add_mutually_exclusive_group(required=True)
+        group.add_argument("--old", action="store_true")
+        group.add_argument("--keep", action="store_true")
+        parent.add_argument("--old", action="store_true")
+        parser = argparse.ArgumentParser(prog="tool", parents=[parent], exit_on_error=False, color=False)
+    elif case == 48:
+        parser = VersionParser(prog="tool", exit_on_error=False, color=False)
+        run = parser.add_subparsers(dest="command").add_parser("run", exit_on_error=False, color=False)
+        run.add_argument("--cache", action=argparse.BooleanOptionalAction)
+    elif case == 49:
+        parser.add_argument("--own", action=DefaultAction)
+        parser.add_argument("--explicit", action=DefaultAction, default=5)
+        parser.add_argument("--null", action=DefaultAction, default=None)
+    elif case == 50:
+        parser = argparse.ArgumentParser(prog="tool", argument_default=9, exit_on_error=False, color=False)
+        parser.set_defaults(specific=7, empty=None)
+        parser.add_argument("--general", action=DefaultAction)
+        parser.add_argument("--specific", action=DefaultAction)
+        parser.add_argument("--empty", action=DefaultAction)
+        parser.add_argument("--override", action=DefaultAction, default=3)
     return parser
 '''
 
@@ -235,6 +346,24 @@ import sys
 if len(sys.argv) > 1:
     if sys.argv[1] == "--terminal-width":
         print(argparse.HelpFormatter("tool", color=False)._width)
+    elif sys.argv[1] in ("--version-fallback", "--version-explicit", "--version-updated"):
+        version_parser = VersionParser(prog="tool", color=False)
+        if sys.argv[1] == "--version-explicit":
+            version_parser.add_argument("--version", action="version", version="2.0")
+        else:
+            version_parser.add_argument("--version", action="version")
+        if sys.argv[1] == "--version-updated": VersionParser.version = "1.3"
+        version_parser.parse_args(["--version"])
+    elif sys.argv[1] in ("--suppressed-help", "--suppressed-version", "--suppressed-fallback"):
+        suppressed = VersionParser(prog="tool", add_help=False, color=False)
+        if sys.argv[1] == "--suppressed-help":
+            suppressed.add_argument("--usage", action="help", dest=argparse.SUPPRESS)
+        elif sys.argv[1] == "--suppressed-version":
+            suppressed.add_argument("--usage", action="version", version="2.0", dest=argparse.SUPPRESS)
+        else:
+            suppressed.add_argument("--usage", action="version", dest=argparse.SUPPRESS)
+        suppressed.parse_args(["--usage"])
+        print("unexpected return from help/version")
     else:
         parser = make_parser(int(sys.argv[1]))
         parser.exit_on_error = True
@@ -305,8 +434,21 @@ def requests(seed, count):
         27: [["input", "run"]],
         34: [["--item", "3"], ["--item", "4", "--item", "5"]],
         35: [["--one"], ["--two"], ["--one", "--two"]],
+        36: [["input.txt", "output.txt"]],
+        37: [["run", "--fo", "json"], ["run", "--fo=json"], ["--fo", "json", "run"]],
+        38: [["prefix", "--fo", "json"], ["--fo", "json"]],
+        39: [["--rest", "--fo", "json"], ["--fo", "json"]],
+        40: [["--mode", "chosen"]],
+        41: [["--token", "kept"], ["--allowed"]],
+        43: [["--many", "one", "two"]],
+        44: [["--constant", "--explicit", "--own-default"]],
+        46: [["--n", "4"], ["--group", "5", "--mutex", "6"]],
+        47: [["--keep"], ["--old"], ["--old", "--keep"]],
+        48: [["run", "--no-cache"], ["run", "--cache"]],
+        49: [["--own", "one"], ["--explicit", "five", "--null", "value"]],
+        50: [["--general", "one"], ["--specific", "seven"]],
     }
-    for case in range(36):
+    for case in range(51):
         for mode in ("help", "usage"):
             yield {"case": case, "mode": mode, "args": []}
         arguments = [[], ["a"], ["a", "b"], ["--"], ["--unknown"], *examples.get(case, [])]
@@ -348,7 +490,10 @@ def main():
                       (10, ["--help"]), (10, ["run", "--help"]), (10, ["wrong"]),
                       (23, ["--version"]), (23, ["--old", "--old"]),
                       (23, ["-oo", "old"]), (23, ["-o", "--old", "old"]),
-                      (27, ["input", "run", "--help"])]
+                      (27, ["input", "run", "--help"]),
+                      ("--version-fallback", []), ("--version-explicit", []),
+                      ("--version-updated", []), ("--suppressed-help", []),
+                      ("--suppressed-version", []), ("--suppressed-fallback", [])]
         for case, argv in cli_checks:
             expected = subprocess.run([sys.executable, "-c", DEFINITIONS + CLI_PROBE, str(case), *argv],
                                       input="", text=True, capture_output=True, env=environment, timeout=10)
