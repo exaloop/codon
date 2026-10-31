@@ -142,18 +142,6 @@ def test_custom_equality():
 
 
 @test
-def test_unhashable():
-    key = cmp_to_key(cmp_int)
-
-    caught = False
-    try:
-        hash(key(1))
-    except TypeError:
-        caught = True
-
-    assert caught
-
-@test
 def test_keyword_argument():
     key = cmp_to_key(mycmp=cmp_int)
 
@@ -167,5 +155,4 @@ test_strings()
 test_lambda()
 test_various_lengths()
 test_custom_equality()
-test_unhashable()
 test_keyword_argument()

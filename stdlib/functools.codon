@@ -13,7 +13,7 @@ class _CmpKey:
     F: type
 
     def __hash__(self) -> int:
-        raise TypeError("unhashable type: '_CmpKey'")
+        compile_error("unhashable type: '_CmpKey'")
 
     def __lt__(self, other):
         return self.cmp(self.obj, other.obj) < 0
