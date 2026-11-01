@@ -9,11 +9,11 @@ namespace codon {
 namespace ast {
 
 std::string FormatVisitor::anchor_root(const std::string &s) {
-  return fmt::format("<a class=\".root\" name=\"{}\">{}</a>", s, s);
+  return renderHTML ? fmt::format("<a class=\".root\" name=\"{}\">{}</a>", s, s) : s;
 }
 
 std::string FormatVisitor::anchor(const std::string &s) {
-  return fmt::format("<a class=\".anchor\" href=\"#{}\">{}</a>", s, s);
+  return renderHTML ? fmt::format("<a class=\".anchor\" href=\"#{}\">{}</a>", s, s) : s;
 }
 
 FormatVisitor::FormatVisitor(bool html, Cache *cache)
@@ -410,7 +410,7 @@ void FormatVisitor::visit(ClassStmt *stmt) {
                         stmt->hasAttribute(Attr::Extend) ? " +@extend" : ""));
         for (auto &real : cls->realizations) {
           std::vector<std::string> args;
-          auto l = real.second->type->is(TYPE_TUPLE)
+          auto l = real.second->type->is(StdlibTypes::Tuple)
                        ? real.second->type->generics.size()
                        : real.second->fields.size();
           for (size_t i = 0; i < l; i++) {

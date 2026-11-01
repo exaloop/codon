@@ -492,7 +492,7 @@ class timedelta:
         days, seconds, microseconds = _normalize_d_s_us(0, 0, self._microseconds)
         return microseconds
 
-    def __repr__(self) -> str:
+    def __repr__(self, /) -> str:
         days, seconds, microseconds = _normalize_d_s_us(0, 0, self._microseconds)
         if days == 0 and seconds == 0 and microseconds == 0:
             return "timedelta(0)"
@@ -505,7 +505,7 @@ class timedelta:
             v.append(f"microseconds={microseconds}")
         return f"timedelta({', '.join(v)})"
 
-    def __str__(self) -> str:
+    def __str__(self, /) -> str:
         days, seconds, us = _normalize_d_s_us(0, 0, self._microseconds)
         minutes, seconds = _divmod(seconds, 60)
         hours, minutes = _divmod(minutes, 60)
@@ -521,79 +521,79 @@ class timedelta:
             else:
                 return f"{hours}:{str(minutes).zfill(2)}:{str(seconds).zfill(2)}"
 
-    def __add__(self, other: timedelta) -> timedelta:
+    def __add__(self, other: timedelta, /) -> timedelta:
         return timedelta._new(self._microseconds + other._microseconds)
 
-    def __sub__(self, other: timedelta) -> timedelta:
+    def __sub__(self, other: timedelta, /) -> timedelta:
         return timedelta._new(self._microseconds - other._microseconds)
 
-    def __mul__(self, other: int) -> timedelta:
+    def __mul__(self, other: int, /) -> timedelta:
         return timedelta._new(self._microseconds * other)
 
-    def __rmul__(self, other: int) -> timedelta:
+    def __rmul__(self, other: int, /) -> timedelta:
         return self * other
 
-    def __mul__(self, other: float) -> timedelta:
+    def __mul__(self, other: float, /) -> timedelta:
         return timedelta._new(int(_round_half_even(self._microseconds * other)))
 
-    def __rmul__(self, other: float) -> timedelta:
+    def __rmul__(self, other: float, /) -> timedelta:
         return self * other
 
-    def __truediv__(self, other: timedelta) -> float:
+    def __truediv__(self, other: timedelta, /) -> float:
         return self._microseconds / other._microseconds
 
-    def __truediv__(self, other: float) -> timedelta:
+    def __truediv__(self, other: float, /) -> timedelta:
         return timedelta._new(int(_round_half_even(self._microseconds / other)))
 
-    def __truediv__(self, other: int) -> timedelta:
+    def __truediv__(self, other: int, /) -> timedelta:
         return self / float(other)
 
-    def __floordiv__(self, other: timedelta) -> int:
+    def __floordiv__(self, other: timedelta, /) -> int:
         return int((self._microseconds / other._microseconds).__floor__())
 
-    def __floordiv__(self, other: int) -> timedelta:
+    def __floordiv__(self, other: int, /) -> timedelta:
         return timedelta._new(self._microseconds.cdiv(other))
 
-    def __mod__(self, other: timedelta) -> timedelta:
+    def __mod__(self, other: timedelta, /) -> timedelta:
         n = self._microseconds
         M = other._microseconds
         m = self._microseconds.cmod(other._microseconds)
         return timedelta._new((n.cmod(M) + M).cmod(M))
 
-    def __divmod__(self, other: timedelta) -> Tuple[int, timedelta]:
+    def __divmod__(self, other: timedelta, /) -> Tuple[int, timedelta]:
         return self // other, self % other
 
-    def __pos__(self) -> timedelta:
+    def __pos__(self, /) -> timedelta:
         return self
 
-    def __neg__(self) -> timedelta:
+    def __neg__(self, /) -> timedelta:
         return timedelta._new(-self._microseconds)
 
-    def __abs__(self) -> timedelta:
+    def __abs__(self, /) -> timedelta:
         return timedelta._new(abs(self._microseconds))
 
-    def __eq__(self, other: timedelta) -> bool:
+    def __eq__(self, other: timedelta, /) -> bool:
         return self._microseconds == other._microseconds
 
-    def __ne__(self, other: timedelta) -> bool:
+    def __ne__(self, other: timedelta, /) -> bool:
         return self._microseconds != other._microseconds
 
-    def __lt__(self, other: timedelta) -> bool:
+    def __lt__(self, other: timedelta, /) -> bool:
         return self._microseconds < other._microseconds
 
-    def __le__(self, other: timedelta) -> bool:
+    def __le__(self, other: timedelta, /) -> bool:
         return self._microseconds <= other._microseconds
 
-    def __gt__(self, other: timedelta) -> bool:
+    def __gt__(self, other: timedelta, /) -> bool:
         return self._microseconds > other._microseconds
 
-    def __ge__(self, other: timedelta) -> bool:
+    def __ge__(self, other: timedelta, /) -> bool:
         return self._microseconds >= other._microseconds
 
-    def __bool__(self) -> bool:
+    def __bool__(self, /) -> bool:
         return bool(self._microseconds)
 
-    def total_seconds(self) -> float:
+    def total_seconds(self, /) -> float:
         return self._microseconds / 1e6
 
 
@@ -638,7 +638,7 @@ class date:
         v = int(self._value)
         return v & 0xFF
 
-    def __repr__(self) -> str:
+    def __repr__(self, /) -> str:
         return f"date(year={self.year}, month={self.month}, day={self.day})"
 
     def today() -> date:
@@ -646,15 +646,15 @@ class date:
 
         return date.fromtimestamp(ttime())
 
-    def fromtimestamp(timestamp) -> date:
+    def fromtimestamp(timestamp, /) -> date:
         ts = int(timestamp)
         tm = localtime(ts)
         return date(tm.tm_year, tm.tm_mon, tm.tm_mday)
 
-    def fromordinal(ordinal: int) -> date:
+    def fromordinal(ordinal: int, /) -> date:
         return date(*_ord_to_ymd(ordinal))
 
-    def fromisoformat(date_string: str) -> date:
+    def fromisoformat(date_string: str, /) -> date:
         return date(*_parse_isoformat_date(date_string))
 
     def fromisocalendar(year, week, day) -> date:
@@ -679,43 +679,43 @@ class date:
         day_offset = (month - 1) * 7 + day - 1
         return date(*_ord_to_ymd(day_1 + day_offset))
 
-    def __add__(self, other: timedelta) -> date:
+    def __add__(self, other: timedelta, /) -> date:
         days, seconds, microseconds = _normalize_d_s_us(0, 0, other._microseconds)
         day = self.day + days
         return date(*_normalize_date(self.year, self.month, day))
 
-    def __sub__(self, other: timedelta) -> date:
+    def __sub__(self, other: timedelta, /) -> date:
         days, seconds, microseconds = _normalize_d_s_us(0, 0, other._microseconds)
         day = self.day - days
         return date(*_normalize_date(self.year, self.month, day))
 
-    def __sub__(self, other: date) -> timedelta:
+    def __sub__(self, other: date, /) -> timedelta:
         left_ord = _ymd_to_ord(self.year, self.month, self.day)
         right_ord = _ymd_to_ord(other.year, other.month, other.day)
         return timedelta(days=left_ord - right_ord)
 
-    def __eq__(self, other: date) -> bool:
+    def __eq__(self, other: date, /) -> bool:
         return self._value == other._value
 
-    def __ne__(self, other: date) -> bool:
+    def __ne__(self, other: date, /) -> bool:
         return self._value != other._value
 
-    def __lt__(self, other: date) -> bool:
+    def __lt__(self, other: date, /) -> bool:
         return self._value < other._value
 
-    def __le__(self, other: date) -> bool:
+    def __le__(self, other: date, /) -> bool:
         return self._value <= other._value
 
-    def __gt__(self, other: date) -> bool:
+    def __gt__(self, other: date, /) -> bool:
         return self._value > other._value
 
-    def __ge__(self, other: date) -> bool:
+    def __ge__(self, other: date, /) -> bool:
         return self._value >= other._value
 
     def __bool__(self) -> bool:
         return True
 
-    def replace(self, year: int = -1, month: int = -1, day: int = -1) -> date:
+    def replace(self, /, year: int = -1, month: int = -1, day: int = -1) -> date:
         if year == -1:
             year = self.year
         if month == -1:
@@ -724,22 +724,22 @@ class date:
             day = self.day
         return date(year, month, day)
 
-    def timetuple(self) -> struct_time:
+    def timetuple(self, /) -> struct_time:
         yday = self.toordinal() - date(self.year, 1, 1).toordinal() + 1
         return struct_time(
             self.year, self.month, self.day, 0, 0, 0, self.weekday(), yday, -1
         )
 
-    def toordinal(self) -> int:
+    def toordinal(self, /) -> int:
         return _ymd_to_ord(self.year, self.month, self.day)
 
-    def weekday(self) -> int:
+    def weekday(self, /) -> int:
         return _weekday(self.year, self.month, self.day)
 
-    def isoweekday(self) -> int:
+    def isoweekday(self, /) -> int:
         return self.weekday() + 1
 
-    def isocalendar(self) -> IsoCalendarDate:
+    def isocalendar(self, /) -> IsoCalendarDate:
         year = self.year
         week1_monday = _iso_week1_monday(year)
         today = _ymd_to_ord(year, self.month, self.day)
@@ -753,13 +753,13 @@ class date:
             week = 0
         return IsoCalendarDate(year, week + 1, day + 1)
 
-    def isoformat(self) -> str:
+    def isoformat(self, /) -> str:
         return f"{str(self.year).zfill(4)}-{str(self.month).zfill(2)}-{str(self.day).zfill(2)}"
 
-    def __str__(self) -> str:
+    def __str__(self, /) -> str:
         return self.isoformat()
 
-    def ctime(self) -> str:
+    def ctime(self, /) -> str:
         return _format_ctime(self.year, self.month, self.day, 0, 0, 0)
 
     # strftime() / __format__() not supported
@@ -804,7 +804,7 @@ class time:
         v = self._value
         return v & 0xFFFFFF
 
-    def __repr__(self) -> str:
+    def __repr__(self, /) -> str:
         h, m, s, us = self.hour, self.minute, self.second, self.microsecond
         v = []
         v.append(f"hour={h}")
@@ -815,13 +815,13 @@ class time:
             v.append(f"microsecond={us}")
         return f"time({', '.join(v)})"
 
-    def __str__(self) -> str:
+    def __str__(self, /) -> str:
         return self.isoformat()
 
     def __bool__(self) -> bool:
         return True
 
-    def fromisoformat(time_string: str) -> time:
+    def fromisoformat(time_string: str, /) -> time:
         (
             hour,
             minute,
@@ -834,7 +834,7 @@ class time:
         return time(hour, minute, second, microsecond)
 
     def replace(
-        self, hour: int = -1, minute: int = -1, second: int = -1, microsecond: int = -1
+        self, /, hour: int = -1, minute: int = -1, second: int = -1, microsecond: int = -1
     ) -> time:
         if hour == -1:
             hour = self.hour
@@ -846,7 +846,7 @@ class time:
             microsecond = self.microsecond
         return time(hour, minute, second, microsecond)
 
-    def isoformat(self, timespec: Literal[str] = "auto") -> str:
+    def isoformat(self, /, timespec: Literal[str] = "auto") -> str:
         hh = str(self.hour).zfill(2)
         mm = str(self.minute).zfill(2)
         ss = str(self.second).zfill(2)
@@ -896,10 +896,10 @@ class datetime:
     ) -> datetime:
         return datetime(time(hour, minute, second, microsecond), date(year, month, day))
 
-    def date(self) -> date:
+    def date(self, /) -> date:
         return self._date
 
-    def time(self) -> time:
+    def time(self, /) -> time:
         return self._time
 
     @property
@@ -930,10 +930,10 @@ class datetime:
     def microsecond(self) -> int:
         return self.time().microsecond
 
-    def __repr__(self) -> str:
+    def __repr__(self, /) -> str:
         return f"datetime(year={self.year}, month={self.month}, day={self.day}, hour={self.hour}, minute={self.minute}, second={self.second}, microsecond={self.microsecond})"
 
-    def __str__(self) -> str:
+    def __str__(self, /) -> str:
         return self.isoformat(sep=" ")
 
     def _from_timet_and_us(timet, us) -> datetime:
@@ -966,17 +966,17 @@ class datetime:
         timet, us = _time_to_timeval(float(timestamp), _ROUND_HALF_EVEN)
         return datetime._from_timet_and_us(timet, us)
 
-    def utcfromtimestamp(timestamp) -> datetime:
+    def utcfromtimestamp(timestamp, /) -> datetime:
         return datetime.fromtimestamp(timestamp)
 
-    def fromordinal(ordinal: int) -> datetime:
+    def fromordinal(ordinal: int, /) -> datetime:
         return datetime.combine(date.fromordinal(ordinal), time())
 
     # TODO: support timezone
     def combine(date: date, time: time) -> datetime:
         return datetime(time, date)
 
-    def fromisoformat(date_string: str) -> datetime:
+    def fromisoformat(date_string: str, /) -> datetime:
         time_string = "" if len(date_string) < 10 else date_string[:10]
         year, month, day = _parse_isoformat_date(time_string)
         if len(date_string) == 10:
@@ -996,7 +996,7 @@ class datetime:
     def fromisocalendar(year: int, week: int, day: int) -> datetime:
         return datetime.combine(date.fromisocalendar(year, week, day), time())
 
-    def __add__(self, other: timedelta) -> datetime:
+    def __add__(self, other: timedelta, /) -> datetime:
         td_days, td_seconds, td_microseconds = _normalize_d_s_us(
             0, 0, other._microseconds
         )
@@ -1011,7 +1011,7 @@ class datetime:
             *_normalize_datetime(year, month, day, hour, minute, second, microsecond)
         )
 
-    def __sub__(self, other: timedelta) -> datetime:
+    def __sub__(self, other: timedelta, /) -> datetime:
         td_days, td_seconds, td_microseconds = _normalize_d_s_us(
             0, 0, other._microseconds
         )
@@ -1026,7 +1026,7 @@ class datetime:
             *_normalize_datetime(year, month, day, hour, minute, second, microsecond)
         )
 
-    def __sub__(self, other: datetime) -> timedelta:
+    def __sub__(self, other: datetime, /) -> timedelta:
         delta_d = _ymd_to_ord(self.year, self.month, self.day) - _ymd_to_ord(
             other.year, other.month, other.day
         )
@@ -1038,29 +1038,29 @@ class datetime:
         delta_us = self.microsecond - other.microsecond
         return timedelta(days=delta_d, seconds=delta_s, microseconds=delta_us)
 
-    def __eq__(self, other: datetime) -> bool:
+    def __eq__(self, other: datetime, /) -> bool:
         return self.date() == other.date() and self.time() == other.time()
 
-    def __ne__(self, other: datetime) -> bool:
+    def __ne__(self, other: datetime, /) -> bool:
         return not (self == other)
 
-    def __lt__(self, other: datetime) -> bool:
+    def __lt__(self, other: datetime, /) -> bool:
         return (self.date(), self.time()) < (other.date(), other.time())
 
-    def __le__(self, other: datetime) -> bool:
+    def __le__(self, other: datetime, /) -> bool:
         return (self.date(), self.time()) <= (other.date(), other.time())
 
-    def __gt__(self, other: datetime) -> bool:
+    def __gt__(self, other: datetime, /) -> bool:
         return (self.date(), self.time()) > (other.date(), other.time())
 
-    def __ge__(self, other: datetime) -> bool:
+    def __ge__(self, other: datetime, /) -> bool:
         return (self.date(), self.time()) >= (other.date(), other.time())
 
     def __bool__(self) -> bool:
         return True
 
     def replace(
-        self,
+        self, /,
         year: int = -1,
         month: int = -1,
         day: int = -1,
@@ -1074,7 +1074,7 @@ class datetime:
             self.date().replace(year, month, day),
         )
 
-    def timetuple(self) -> struct_time:
+    def timetuple(self, /) -> struct_time:
         yday = self.toordinal() - date(self.year, 1, 1).toordinal() + 1
         return struct_time(
             self.year,
@@ -1088,30 +1088,30 @@ class datetime:
             -1,
         )
 
-    def utctimetuple(self) -> struct_time:
+    def utctimetuple(self, /) -> struct_time:
         return self.timetuple()
 
-    def toordinal(self) -> int:
+    def toordinal(self, /) -> int:
         return self.date().toordinal()
 
-    def timestamp(self) -> float:
+    def timestamp(self, /) -> float:
         return (self - datetime(1970, 1, 1)).total_seconds()
 
-    def weekday(self) -> int:
+    def weekday(self, /) -> int:
         return self.date().weekday()
 
-    def isoweekday(self) -> int:
+    def isoweekday(self, /) -> int:
         return self.date().isoweekday()
 
-    def isocalendar(self) -> IsoCalendarDate:
+    def isocalendar(self, /) -> IsoCalendarDate:
         return self.date().isocalendar()
 
-    def isoformat(self, sep: str = "T", timespec: Literal[str] = "auto") -> str:
+    def isoformat(self, /, sep: str = "T", timespec: Literal[str] = "auto") -> str:
         date_part = str(self.date())
         time_part = self.time().isoformat(timespec=timespec)
         return f"{date_part}{sep}{time_part}"
 
-    def ctime(self) -> str:
+    def ctime(self, /) -> str:
         date = self.date()
         time = self.time()
         return _format_ctime(
@@ -1122,8 +1122,8 @@ datetime.min = datetime(MINYEAR, 1, 1)
 datetime.max = datetime(MAXYEAR, 12, 31, 23, 59, 59, 999999)
 @extend
 class timedelta:
-    def __add__(self, other: date) -> date:
+    def __add__(self, other: date, /) -> date:
         return other + self
 
-    def __add__(self, other: datetime) -> datetime:
+    def __add__(self, other: datetime, /) -> datetime:
         return other + self

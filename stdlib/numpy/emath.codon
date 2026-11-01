@@ -41,7 +41,7 @@ def _unary_emath_op(x, op, cond):
     ndim: Literal[int] = x.ndim
     C = type(_complex_type(x.dtype))
     F = type(util.to_float(util.zero(x.dtype)))
-    O = Union[ndarray[F, ndim], ndarray[C, ndim]]
+    O = ndarray[F, ndim] | ndarray[C, ndim]
 
     if x._any(cond):
         return O(_tocomplex(x, op, C))

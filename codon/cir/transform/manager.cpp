@@ -11,11 +11,14 @@
 #include "codon/cir/analyze/dataflow/reaching.h"
 #include "codon/cir/analyze/module/global_vars.h"
 #include "codon/cir/analyze/module/side_effect.h"
+#include "codon/cir/transform/cleanup/devirtualize.h"
 #include "codon/cir/transform/folding/folding.h"
 #include "codon/cir/transform/lowering/async_for.h"
 #include "codon/cir/transform/lowering/await.h"
 #include "codon/cir/transform/lowering/imperative.h"
 #include "codon/cir/transform/lowering/pipeline.h"
+#include "codon/cir/transform/lowering/return.h"
+#include "codon/cir/transform/lowering/throw.h"
 #include "codon/cir/transform/manager.h"
 #include "codon/cir/transform/numpy/indexing.h"
 #include "codon/cir/transform/numpy/numpy.h"
@@ -109,6 +112,8 @@ void PassManager::runPass(Module *module, const std::string &name) {
   auto it = 0;
 
   while (run) {
+    if (!meta.pass->shouldRun(module))
+      break;
     for (auto &dep : meta.reqs) {
       runAnalysis(module, dep);
     }
@@ -159,6 +164,8 @@ void PassManager::registerStandardPasses() {
   } else if (options->debug && !options->test) {
     registerPass(std::make_unique<lowering::PipelineLowering>());
     registerPass(std::make_unique<lowering::ImperativeForFlowLowering>());
+    registerPass(std::make_unique<lowering::MissingReturnLowering>());
+    registerPass(std::make_unique<lowering::ThrowLowering>());
     registerPass(std::make_unique<lowering::AsyncForLowering>());
     registerPass(std::make_unique<lowering::AwaitLowering>());
     registerPass(std::make_unique<parallel::OpenMPPass>());
@@ -176,6 +183,8 @@ void PassManager::registerStandardPasses() {
     // lowering
     registerPass(std::make_unique<lowering::PipelineLowering>());
     registerPass(std::make_unique<lowering::ImperativeForFlowLowering>());
+    registerPass(std::make_unique<lowering::MissingReturnLowering>());
+    registerPass(std::make_unique<lowering::ThrowLowering>());
 
     // folding
     auto cfgKey = registerAnalysis(std::make_unique<analyze::dataflow::CFAnalysis>());
@@ -239,6 +248,8 @@ void PassManager::registerStandardPasses() {
           /*insertBefore=*/"", {seKey2, rdKey, globalKey},
           {seKey2, rdKey, cfgKey, globalKey});
     }
+    registerPass(std::make_unique<cleanup::DevirtualizationPass>(rdKey),
+                 /*insertBefore=*/"", {rdKey}, {cfgKey, rdKey, globalKey});
   }
 }
 

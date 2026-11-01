@@ -31,6 +31,11 @@ python -m pip install --upgrade pip setuptools wheel
 python -m pip install cython wheel astunparse
 python -m pip install --force-reinstall -v "numpy==2.0.2"
 
+if [ "$TEST" = "shard" ]; then
+  python -m pip install -v "${CODON_DIR}/python"
+  exec "${WORKSPACE}/.github/ci/test.sh" "${WORKSPACE}" "${ARCH}" "${4:?}" "${5:?}"
+fi
+
 # Build Codon
 cmake -S . -B build-${ARCH} \
     -G Ninja \
@@ -52,7 +57,7 @@ python -m pip install -v ${CODON_DIR}/python/dist/*.gz
 
 # Test
 if [ "$TEST" = "yes" ]; then
-  ${WORKSPACE}/.github/build-linux/test.sh "${WORKSPACE}" "${ARCH}"
+  ${WORKSPACE}/.github/ci/test.sh "${WORKSPACE}" "${ARCH}"
 fi
 
 # Package
@@ -61,6 +66,15 @@ cp -rf ${CODON_DIR}/python/dist .
 ls -lah dist/
 # Clean-up useless install artefacts
 rm -rf ${CODON_DIR}/lib/libfmt.a ${CODON_DIR}/lib/pkgconfig ${CODON_DIR}/lib/cmake \
-       ${CODON_DIR}/python/codon.egg-info ${CODON_DIR}/python/dist ${CODON_DIR}/python/build
+       ${CODON_DIR}/python/*.egg-info ${CODON_DIR}/python/dist
 tar czf ${CODON_BUILD_ARCHIVE} -C ${WORKSPACE} codon-deploy-${ARCH}/
 du -sh ${CODON_BUILD_ARCHIVE}
+
+set -- "build-${ARCH}/codon" "build-${ARCH}/codon_test" "build-${ARCH}/lib/codon" \
+  "build-${ARCH}/stdlib"
+for library in build-${ARCH}/*.so build-${ARCH}/*.so.* build-${ARCH}/*.dylib; do
+  if [ -e "$library" ]; then
+    set -- "$@" "$library"
+  fi
+done
+tar czf "codon-tests-${ARCH}.tar.gz" "$@"

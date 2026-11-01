@@ -547,7 +547,7 @@ struct ReductionIdentifier : public util::Operator {
     auto *ptrType = cast<PointerType>(shared->getType());
     seqassertn(ptrType, "expected shared var to be of pointer type");
     auto *type = ptrType->getBase();
-    auto *noneType = M->getOptionalType(M->getNoneType());
+    auto *noneType = M->getNoneType();
 
     // double-check the call
     if (!util::isCallOf(v, Module::SETITEM_MAGIC_NAME,
@@ -1096,8 +1096,8 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
 
   Value *makeTaskRedInput(Reduction *reduction, Value *shar, Value *orig) {
     auto *M = shar->getModule();
-    auto *size = M->Nr<TypePropertyInstr>(reduction->getType(),
-                                          TypePropertyInstr::Property::SIZEOF);
+    auto *size = util::call(
+        M->getIntrinsic(InternalFunc::Intrinsic::SIZEOF, reduction->getType()), {});
     auto *init = ptrFromFunc(makeTaskRedInitFunc(reduction));
     auto *comb = ptrFromFunc(makeTaskRedCombFunc(reduction));
 

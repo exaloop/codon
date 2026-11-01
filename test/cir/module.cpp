@@ -1,8 +1,29 @@
 #include "test.h"
 
 #include "codon/cir/util/matching.h"
+#include "codon/compiler/compiler.h"
 
 using namespace codon::ir;
+
+TEST(CIRModuleTest, CanonicalizesCheckedOptionalTypes) {
+  auto options = codon::Options::getDefault("build/codon_test");
+  codon::Compiler compiler(*options);
+  auto error = compiler.parseCode("optional_types.codon", "pass\n");
+  ASSERT_FALSE(bool(error)) << llvm::toString(std::move(error));
+
+  auto *module = compiler.getModule();
+  auto *none = module->getNoneType();
+  ASSERT_NE(none, nullptr);
+  EXPECT_EQ(module->getOptionalType(none), none);
+  EXPECT_TRUE(isA<RecordType>(none));
+
+  auto *integer = module->getIntType();
+  auto *optional = module->getOptionalType(integer);
+  ASSERT_NE(optional, nullptr);
+  ASSERT_TRUE(isA<OptionalType>(optional));
+  EXPECT_EQ(cast<OptionalType>(optional)->getBase(), integer);
+  EXPECT_EQ(module->getOptionalType(optional), optional);
+}
 
 TEST_F(CIRCoreTest, ModuleNodeBuildingRemovalAndIterators) {
   {
@@ -31,6 +52,79 @@ TEST_F(CIRCoreTest, ModuleNodeBuildingRemovalAndIterators) {
     module->remove(n1);
     ASSERT_EQ(numVars - 1, std::distance(module->begin(), module->end()));
   }
+}
+
+TEST_F(CIRCoreTest, IntrinsicFactoryReuseAndRollback) {
+  using Intrinsic = InternalFunc::Intrinsic;
+  auto *integer = module->getIntType();
+  auto *query = module->getIntrinsic(Intrinsic::SIZEOF, integer);
+  ASSERT_TRUE(query->hasValidIntrinsicSignature());
+  ASSERT_TRUE(query->isTypeQuery());
+  ASSERT_TRUE(query->isGlobal());
+  ASSERT_EQ(query, module->getIntrinsic(Intrinsic::SIZEOF, integer));
+  auto *call = module->Nr<CallInstr>(module->Nr<VarValue>(query));
+  ASSERT_EQ(call->getType(), integer);
+  ASSERT_EQ(query->getIntrinsicSideEffectStatus(), util::PURE);
+  ASSERT_FALSE(query->intrinsicDerivesFromArguments());
+
+  auto *atomic = module->getIntrinsic(Intrinsic::IS_ATOMIC, integer);
+  ASSERT_NE(query, atomic);
+  ASSERT_EQ(cast<FuncType>(atomic->getType())->getReturnType(), module->getBoolType());
+  ASSERT_TRUE(atomic->hasValidIntrinsicSignature());
+
+  query->setIntrinsic(Intrinsic::SIZEOF, module->getBoolType());
+  auto *replacement = module->getIntrinsic(Intrinsic::SIZEOF, integer);
+  ASSERT_NE(query, replacement);
+  auto removed = replacement->getId();
+  module->remove(replacement);
+  replacement = module->getIntrinsic(Intrinsic::SIZEOF, integer);
+  ASSERT_NE(removed, replacement->getId());
+
+  module->pushArena();
+  auto *temporary = module->unsafeGetMemberedType("temporary.intrinsic.type");
+  auto temporaryId = module->getIntrinsic(Intrinsic::SIZEOF, temporary)->getId();
+  module->popArena();
+  ASSERT_EQ(module->getVar(temporaryId), nullptr);
+  ASSERT_EQ(module->getType("temporary.intrinsic.type"), nullptr);
+  ASSERT_EQ(replacement, module->getIntrinsic(Intrinsic::SIZEOF, integer));
+  temporary = module->unsafeGetMemberedType("temporary.intrinsic.type");
+  ASSERT_NE(module->getIntrinsic(Intrinsic::SIZEOF, temporary)->getId(), temporaryId);
+}
+
+TEST_F(CIRCoreTest, IntrinsicSignaturesAndEffects) {
+  using Intrinsic = InternalFunc::Intrinsic;
+  auto *reference = module->unsafeGetMemberedType("intrinsic.reference", true);
+  auto *signature =
+      module->unsafeGetFuncType("intrinsic.alloc.signature", reference, {});
+  auto *allocate = module->getIntrinsic(Intrinsic::ALLOCATE, reference, signature);
+  ASSERT_TRUE(allocate->hasValidIntrinsicSignature());
+  ASSERT_EQ(allocate->getIntrinsicSideEffectStatus(), util::NO_SIDE_EFFECT);
+  ASSERT_FALSE(allocate->intrinsicDerivesFromArguments());
+
+  auto *record = module->unsafeGetMemberedType("intrinsic.record");
+  signature = module->unsafeGetFuncType("intrinsic.record.signature", record, {});
+  auto *construct = module->getIntrinsic(Intrinsic::RECORD_NEW, record, signature);
+  ASSERT_TRUE(construct->intrinsicDerivesFromArguments());
+  ASSERT_TRUE(construct->hasValidIntrinsicSignature());
+
+  auto *generator = module->unsafeGetGeneratorType(module->getIntType());
+  signature = module->unsafeGetFuncType(
+      "intrinsic.promise.signature", module->unsafeGetPointerType(module->getIntType()),
+      {generator});
+  auto *promise =
+      module->getIntrinsic(Intrinsic::GENERATOR_PROMISE, generator, signature);
+  ASSERT_TRUE(promise->intrinsicDerivesFromArguments());
+  ASSERT_TRUE(promise->hasValidIntrinsicSignature());
+
+  signature = module->unsafeGetFuncType("intrinsic.lookup.signature", reference,
+                                        {module->getIntType()});
+  auto *lookup = module->getIntrinsic(Intrinsic::TYPEINFO_LOOKUP, nullptr, signature);
+  ASSERT_EQ(lookup->getIntrinsicSideEffectStatus(), util::UNKNOWN);
+  ASSERT_TRUE(lookup->hasValidIntrinsicSignature());
+  lookup->setIntrinsic(Intrinsic::NONE);
+  ASSERT_FALSE(lookup->hasValidIntrinsicSignature());
+  lookup->setIntrinsic(Intrinsic::SIZEOF, reference);
+  ASSERT_FALSE(lookup->hasValidIntrinsicSignature());
 }
 
 TEST_F(CIRCoreTest, ModuleMainFunctionAndArgVar) {

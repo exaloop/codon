@@ -167,6 +167,7 @@ class Foo:
     i: int
     def __enter__(self: Foo):
         print '> foo! ' + str(self.i)
+        return self
     def __exit__(self: Foo):
         print '< foo! ' + str(self.i)
     def foo(self: Foo):
@@ -175,6 +176,7 @@ class Bar:
     s: str
     def __enter__(self: Bar):
         print '> bar! ' + self.s
+        return self
     def __exit__(self: Bar):
         print '< bar! ' + self.s
     def bar(self: Bar):
@@ -198,6 +200,244 @@ with Foo(2), Bar('t') as q:
 #: < bar! t
 #: < foo! 2
 
+
+#%% with_enter_result
+events: list[str] = []
+class EntryValue:
+    def __enter__(self):
+        events.append('enter')
+        return 42
+    def __exit__(self):
+        events.append('exit')
+
+with EntryValue() as value:
+    assert type(value) is int and value == 42
+    value = 99
+assert events == ['enter', 'exit']
+
+class EmptyEntry:
+    def __enter__(self):
+        pass
+    def __exit__(self):
+        events.append('empty exit')
+
+with EmptyEntry() as empty:
+    assert empty is None
+assert events[-1] == 'empty exit'
+
+class FailedEntry:
+    def __enter__(self) -> int:
+        raise ValueError('entry failed')
+    def __exit__(self):
+        assert False
+
+try:
+    with FailedEntry() as missing:
+        assert False
+except ValueError as error:
+    assert error.message == 'entry failed'
+
+def legacy_returning():
+    with EntryValue() as value:
+        return value
+
+events.clear()
+assert legacy_returning() == 42
+assert events == ['enter', 'exit']
+
+events.clear()
+for index in range(3):
+    with EntryValue():
+        if index == 0:
+            continue
+        break
+assert events == ['enter', 'exit', 'enter', 'exit']
+
+class LegacySuppression:
+    suppress: bool
+    def __enter__(self):
+        return self
+    def __exit__(self):
+        events.append('legacy suppression')
+        return True if self.suppress else None
+
+events.clear()
+with LegacySuppression(True):
+    raise ValueError('suppressed')
+try:
+    with LegacySuppression(False):
+        raise KeyError('propagated')
+except KeyError as error:
+    assert error.message == 'propagated'
+assert events == ['legacy suppression', 'legacy suppression']
+
+#%% async_with
+import asyncio
+from internal.types.rtti import get_typeinfo
+
+events: list[str] = []
+class AsyncManager:
+    name: str
+    suppress: bool
+    async def __aenter__(self):
+        await asyncio.sleep(0)
+        events.append('enter:' + self.name)
+        return self.name
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        await asyncio.sleep(0)
+        assert traceback is None
+        if exc_type is None:
+            assert exc_value is None
+            events.append('normal:' + self.name)
+        else:
+            assert exc_type == get_typeinfo(exc_value)
+            events.append(exc_type.nice_name + ':' + self.name)
+        return self.suppress
+
+class AsyncLegacy:
+    async def __aenter__(self):
+        await asyncio.sleep(0)
+        return 42
+    async def __aexit__(self):
+        await asyncio.sleep(0)
+        events.append('legacy exit')
+
+class AsyncFailedEntry:
+    async def __aenter__(self):
+        await asyncio.sleep(0)
+        raise ValueError('async entry')
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        assert False
+
+class AsyncLegacySuppression:
+    async def __aenter__(self):
+        return self
+    async def __aexit__(self):
+        await asyncio.sleep(0)
+        events.append('async legacy suppression')
+        return True
+
+class ExitAwaitable:
+    def __await__(self):
+        events.append('custom exit')
+        yield
+
+class CustomAsyncExit:
+    async def __aenter__(self):
+        return self
+    def __aexit__(self):
+        return ExitAwaitable()
+
+class AsyncFailedExit:
+    async def __aenter__(self):
+        return self
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        await asyncio.sleep(0)
+        events.append('failed exit')
+        raise RuntimeError('async exit')
+
+async def returning():
+    async with AsyncLegacy() as value:
+        return value
+
+async def cancelling():
+    async with AsyncManager('task', False):
+        asyncio.current_task().cancel('task cancelled')
+        await asyncio.Future[int]()
+
+async def run_contexts():
+    async with AsyncManager('outer', False) as outer, AsyncManager('inner', True) as inner:
+        assert outer == 'outer' and inner == 'inner'
+        raise ValueError('suppressed')
+    assert events == ['enter:outer', 'enter:inner', 'ValueError:inner', 'normal:outer']
+
+    events.clear()
+    assert await returning() == 42
+    assert events == ['legacy exit']
+
+    events.clear()
+    async with AsyncLegacySuppression():
+        raise ValueError('async suppressed')
+    assert events == ['async legacy suppression']
+
+    events.clear()
+    try:
+        async with CustomAsyncExit():
+            raise KeyError('custom propagated')
+    except KeyError as error:
+        assert error.message == 'custom propagated'
+    assert events == ['custom exit']
+
+    events.clear()
+    for index in range(3):
+        async with AsyncManager('loop', False):
+            if index == 0:
+                continue
+            break
+    assert events == ['enter:loop', 'normal:loop', 'enter:loop', 'normal:loop']
+
+    events.clear()
+    try:
+        async with AsyncManager('cancel', False):
+            raise asyncio.CancelledError('cancelled')
+    except asyncio.CancelledError as error:
+        assert error.message == 'cancelled'
+    assert events == ['enter:cancel', 'CancelledError:cancel']
+
+    events.clear()
+    task = asyncio.create_task(cancelling())
+    try:
+        await task
+        assert False
+    except asyncio.CancelledError:
+        pass
+    assert task.cancelled()
+    assert events == ['enter:task', 'CancelledError:task']
+
+    try:
+        async with AsyncFailedEntry() as missing:
+            assert False
+    except ValueError as error:
+        assert error.message == 'async entry'
+
+    events.clear()
+    async with AsyncManager('outer failure', True), AsyncFailedEntry():
+        assert False
+    assert events == ['enter:outer failure', 'ValueError:outer failure']
+
+    events.clear()
+    try:
+        async with AsyncLegacy():
+            raise KeyError('legacy async error')
+    except KeyError as error:
+        assert error.message == 'legacy async error'
+    assert events == ['legacy exit']
+
+    events.clear()
+    try:
+        async with AsyncFailedExit():
+            raise ValueError('original')
+    except RuntimeError as error:
+        assert error.message == 'async exit'
+    assert events == ['failed exit']
+
+asyncio.run(run_contexts())
+
+#%% with_stdlib_entry_results
+from threading import Lock, RLock
+from time import TimeInterval
+
+def check_lock(lock):
+    with lock as acquired:
+        assert acquired is True
+    assert lock.acquire(False)
+    lock.release()
+
+check_lock(Lock())
+check_lock(RLock())
+interval = TimeInterval()
+entered = interval.__enter__()
+assert entered is interval
 
 #%% function_err_0,barebones
 def foo(a, b, a):
@@ -328,6 +568,44 @@ def foo():
 foo()
 #! name 'x' is not defined
 #! during the realization of foo()
+
+#%% captured_argument_initialization
+# hoisting a captured parameter must preserve its incoming value.
+def captured(number: int):
+    original = number
+    def add(value: int):
+        return value + number
+    assert add(1) == 43
+    number = 0
+    assert add(1) == 1
+    return original
+assert captured(42) == 42
+
+def changed(number: int):
+    original = number
+    def increment():
+        nonlocal number
+        number += 1
+    increment()
+    assert number == original + 1
+    return original
+assert changed(42) == 42
+
+# A nonlocal parameter that is also hoisted must keep one initialized capsule.
+def changed_and_reassigned(number: int):
+    original = number
+    def increment():
+        nonlocal number
+        number += 1
+    increment()
+    assert number == original + 1
+    number = 100
+    increment()
+    assert number == 101
+    return original
+assert changed_and_reassigned(42) == 42
+assert changed_and_reassigned(7) == 7
+print('captured arguments ok')  #: captured arguments ok
 
 #%% capture_recursive,barebones
 def f(x: int) -> int:
@@ -575,6 +853,65 @@ print(num2(10, 20)) #: 3600
 from C import seq_print(str)
 x = seq_print("not ")
 print x  #: not None
+
+#%% nullable_return_inference
+# None/value returns infer one optional payload regardless of branch order.
+def none_first(flag: bool):
+    if flag:
+        return None
+    else:
+        return 42
+
+def value_first(flag: bool):
+    if flag:
+        return 42
+    return None
+
+def only_none(flag: bool):
+    if flag:
+        return None
+    return None
+
+assert none_first(True) is None and none_first(False) == 42
+assert value_first(False) is None and value_first(True) == 42
+assert type(none_first(False)) is Optional[int]
+assert type(value_first(True)) is Optional[int]
+assert type(only_none(True)) is NoneType
+
+def static_return(value):
+    if isinstance(value, int):
+        return value
+    return None
+assert type(static_return(42)) is int
+assert type(static_return('unused')) is NoneType
+
+def nested_return():
+    def inner():
+        return None
+    inner()
+    return 42
+assert type(nested_return()) is int
+
+def recursive_return(number: int):
+    if number < 0:
+        return None
+    if number == 0:
+        return 42
+    return recursive_return(number - 1)
+assert recursive_return(-1) is None and recursive_return(3) == 42
+
+def record_none(events):
+    events.append(1)
+    return None
+def tuple_return(flag: bool, events):
+    if flag:
+        return record_none(events)
+    return (42, 'answer')
+events: list[int] = []
+assert tuple_return(True, events) is None
+assert tuple_return(False, events) == (42, 'answer')
+assert events == [1]
+print('nullable returns ok')  #: nullable returns ok
 
 #%% return_none_err_1,barebones
 def foo(n: int):
@@ -847,3 +1184,68 @@ foo('a')
 foo(3)
 #! 'int' does not match expected type 'str'
 #! during the realization of foo
+
+#%% nested_closure_chain
+# scratch.codon: captures and lexical parents share earlier closure types.
+# Keep that graph shared while specializing calls with independent argument types.
+def step(emit, k: int):
+    return lambda value: emit(value + k)
+
+def run():
+    e0 = lambda value: value
+    e1 = step(e0, 1)
+    e2 = step(e1, 2)
+    e3 = step(e2, 3)
+    e4 = step(e3, 4)
+    e5 = step(e4, 5)
+    e6 = step(e5, 6)
+    e7 = step(e6, 7)
+    e8 = step(e7, 8)
+    e9 = step(e8, 9)
+    e10 = step(e9, 10)
+    e11 = step(e10, 11)
+    e12 = step(e11, 12)
+    e13 = step(e12, 13)
+    e14 = step(e13, 14)
+    e15 = step(e14, 15)
+    e16 = step(e15, 16)
+    assert e16(0) == 136
+    assert e16(0.5) == 136.5
+
+run()
+print('nested closures ok')  #: nested closures ok
+
+#%% typed_closure_pointer
+# GC finalizers materialize typed callbacks without calling them first. Their
+# inferred return type must remain fresh even when generic templates are shared.
+def get_callback():
+    def callback(value: int):
+        return value + 1
+    return callback(...).F.T.__raw__()
+
+callback = Function[[int], int](get_callback())
+assert callback(41) == 42
+
+# Unpacking the same function template with different explicit generics must
+# infer independent return types instead of modifying the stored signature.
+def convert(value: int, T: type):
+    return T(value)
+
+int_callback = Function[[int], int](convert(T=int, ...).F.T.__raw__())
+float_callback = Function[[int], float](convert(T=float, ...).F.T.__raw__())
+assert int_callback(42) == 42
+assert float_callback(42) == 42.0
+print('typed closure pointer ok')  #: typed closure pointer ok
+
+#%% bound_callable_can_call
+import internal.static as static
+class Receiver:
+    def method(self, value):
+        return value
+
+bound = Receiver().method
+assert static.function.can_call(bound, 1)
+assert static.function.can_call(bound, 's')
+assert not static.function.can_call(bound)
+assert bound(1) == 1 and bound('s') == 's'
+print('bound can_call ok')  #: bound can_call ok

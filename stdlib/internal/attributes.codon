@@ -29,6 +29,14 @@ def llvm_memory_none():
     pass
 
 @__attribute__
+def llvm_nocapture():
+    pass
+
+@__attribute__
+def llvm_nofree():
+    pass
+
+@__attribute__
 def nocapture():
     pass
 

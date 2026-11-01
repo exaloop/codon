@@ -74,11 +74,9 @@ void TypecheckVisitor::visit(WhileStmt *stmt) {
   ctx->staticLoops.push_back(stmt->gotoVar.empty() ? "" : stmt->gotoVar);
   ctx->getBase()->loops.emplace_back(breakVar);
 
-  auto oldExpectedType = getStdLibType("bool")->shared_from_this();
-  std::swap(ctx->expectedType, oldExpectedType);
+  stmt->getCond()->setExpectedType(getStdLibType(StdlibTypes::Bool));
   stmt->cond = transform(stmt->getCond());
-  std::swap(ctx->expectedType, oldExpectedType);
-  wrapExpr(&stmt->cond, getStdLibType("bool"));
+  wrapExpr(&stmt->cond, getStdLibType(StdlibTypes::Bool));
 
   ctx->blockLevel++;
   stmt->suite = SuiteStmt::wrap(transform(stmt->getSuite()));
@@ -120,7 +118,7 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
   // Needs in-advance transformation to prevent name clashes with the iterator variable
   stmt->getIter()->setAttribute(
       Attr::ExprNoSpecial); // do not expand special calls here,
-                            // might be needed for statis loops!
+                            // might be needed for static loops!
   stmt->iter = transform(stmt->getIter());
 
   // Check for for-else clause
@@ -143,14 +141,6 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
     return;
   }
 
-  // Replace for (i, j) in ... { ... } with for tmp in ...: { i, j = tmp ; ... }
-  if (!cast<IdExpr>(stmt->getVar())) {
-    auto var = N<IdExpr>(ctx->cache->getTemporaryVar("for"));
-    auto ns = unpackAssignment(stmt->getVar(), var);
-    stmt->suite = N<SuiteStmt>(ns, stmt->getSuite());
-    stmt->var = var;
-  }
-
   // Case: iterating a non-generator. Wrap with `__iter__`
   bool isGenerator =
       iterType->name == (stmt->isAsync() ? "AsyncGenerator" : "Generator");
@@ -161,6 +151,17 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
     if (!iterType)
       return;
     isGenerator = iterType->name == (stmt->isAsync() ? "AsyncGenerator" : "Generator");
+  }
+
+  // Delay target unpacking until the yielded type is known. A compiler-owned
+  // tuple temporary needs neither a copy nor a runtime check for matching arity.
+  if (!cast<IdExpr>(stmt->getVar())) {
+    auto var = N<IdExpr>(ctx->cache->getTemporaryVar("for"));
+    if (isGenerator)
+      var->setType(extractClassGeneric(iterType)->shared_from_this());
+    auto ns = unpackAssignment(stmt->getVar(), var, true);
+    stmt->suite = N<SuiteStmt>(ns, stmt->getSuite());
+    stmt->var = var;
   }
 
   ctx->getBase()->loops.emplace_back(breakVar);
@@ -361,10 +362,13 @@ TypecheckVisitor::transformStaticLoopCall(Expr *varExpr, SuiteStmt **varSuite,
                               getMangledFunc("std.internal.static", "vars"))) {
     block = populateStaticVarsLoop(iter, vars);
   } else if (fn && startswith(fn->getValue(),
+                              getMangledFunc("std.internal.static", "methods"))) {
+    block = populateStaticMethodsLoop(iter, vars);
+  } else if (fn && startswith(fn->getValue(),
                               getMangledFunc("std.internal.static", "vars_types"))) {
     block = populateStaticVarTypesLoop(iter, vars);
   } else {
-    if (iter->getType()->is(TYPE_TUPLE)) {
+    if (iter->getType()->is(StdlibTypes::Tuple)) {
       // Maybe heterogenous?
       if (!iter->getType()->canRealize())
         return {true, true, nullptr, {}}; // wait until the tuple is fully realizable

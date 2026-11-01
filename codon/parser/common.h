@@ -52,6 +52,9 @@ size_t utf8_strlen(const std::string &s);
 /// otherwise).
 std::string utf8_substr(const std::string &s, std::size_t start, std::size_t count,
                         std::ptrdiff_t step = 1);
+/// Replace first occurence of a string with another string;
+std::string replace(const std::string &text, const std::string &match,
+                    const std::string &replace);
 /// Combine items separated by a delimiter into a string.
 /// Combine items separated by a delimiter into a string.
 template <typename T> std::string join(const T &items, const std::string &delim = " ") {
@@ -134,6 +137,19 @@ V *in(std::unordered_map<K, V> &m, const U &item) {
 bool in(const std::string &m, const std::string &item);
 bool in(const std::string &m, char item);
 
+template <typename K, typename V>
+std::vector<std::pair<K, V>> sorted_view(const std::unordered_map<K, V> &map) {
+  std::vector<std::pair<K, V>> sorted_keys(map.begin(), map.end());
+  std::ranges::sort(sorted_keys, {}, &std::pair<K, V>::first);
+  return sorted_keys;
+}
+
+template <typename T> std::vector<T> sorted_view(const std::unordered_set<T> &set) {
+  std::vector<T> sorted_values(set.begin(), set.end());
+  std::ranges::sort(sorted_values);
+  return sorted_values;
+}
+
 /// AST utilities
 
 template <typename T> T clone(const T &t, bool clean = false) { return t.clone(clean); }
@@ -150,6 +166,7 @@ template <typename T> std::remove_const_t<T> *clean_clone(T *t) {
 template <typename T>
 std::vector<std::remove_const_t<T>> clone(const std::vector<T> &t, bool clean = false) {
   std::vector<std::remove_const_t<T>> v;
+  v.reserve(t.size());
   for (auto &i : t)
     v.push_back(clone(i, clean));
   return v;
@@ -246,7 +263,7 @@ std::string getMangledClass(const std::string &module, const std::string &cls,
                             size_t id = 0);
 
 std::string getMangledFunc(const std::string &module, const std::string &fn,
-                           size_t overload = 0, size_t id = 0);
+                           size_t overload = 0, size_t id = 0, bool noCore = false);
 
 std::string getMangledMethod(const std::string &module, const std::string &cls,
                              const std::string &method, size_t overload = 0,

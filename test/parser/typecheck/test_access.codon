@@ -168,9 +168,9 @@ def foo():
     f4()  #: f4 8
     f5()  #: f5 8 5
     f6()  #: f6 5
-          #: f6 10 Capsule[int]
+          #: f6 10 int
     print(a)  #: 10
-    f7()  #: f7_11 2 Capsule[int]
+    f7()  #: f7_11 2 int
           #: f7 2
     print(a)  #: 10
 
@@ -185,24 +185,24 @@ def foo():
     f4()  #: f4 8
     f5()  #: f5 8 s
     f6()  #: f6 s
-          #: f6 ss Capsule[str]
+          #: f6 ss str
     print(a)  #: ss
-    f7()  #: f7_11 2 Capsule[int]
+    f7()  #: f7_11 2 int
           #: f7 2
     print(a)  #: ss
 
     # if len("abc") < 5:
     a = 1.1
     f6()  #: f6 1.1
-          #: f6 2.2 Capsule[float]
+          #: f6 2.2 float
     print(a)  #: 2.2
 
     return fp
 
 fp = foo()
 a = fp()  #: f6 10
-          #: f6 20 Capsule[int]
-print(a, a.__class__.__name__)  #: 20 Capsule[int]
+          #: f6 20 int
+print(a, a.__class__.__name__)  #: 20 int
 print(g, g.__class__.__name__)  #: 20 int
 
 # Lambda capture test
@@ -255,9 +255,11 @@ def foo(x = None, dtype: type = bool):
 foo()
 #: Optional[bool]
 #: bool True
-foo(int)
-#: bool
-#: NoneType False
+try:
+    foo(5)
+    #: bool
+except NameError:
+    print("oops")  #: oops
 
 #%% new_scoping_loops_try,barebones
 for i in range(10):
@@ -314,6 +316,16 @@ while l < 10:
     l = fn(i)
     i += 1
 print("hi")  #: hi
+
+# Check if conditional assignments in conditionals are propagated
+def foo(x): return x
+a = 3
+while ( a and (elem := foo(100)) != 0 ):
+    print(elem)
+    a -= 1
+#: 100
+#: 100
+#: 100
 
 #%% dot_access_error_NOPY,barebones
 class Foo:
@@ -486,7 +498,8 @@ print A.B.C[Optional[int]].f(False).__class__.__name__ #: Tuple[int,str,bool]
 #%% rec_class_1_NOPY,barebones
 class A:
     y: A
-    def __init__(self): pass  # necessary to prevent recursive instantiation!
+    def __init__(self):
+        self.y = self
 x = A()
 print(x.__class__.__name__, x.y.__class__.__name__) #: A A
 
@@ -495,7 +508,13 @@ class A[T]:
     a: T
     b: A[T]
     c: A[str]
-    def __init__(self): pass
+    def __init__(self):
+        self.a = T()
+        self.b = self
+        if T is str:
+            self.c = self
+        else:
+            self.c = A[str]()
 a = A[int]()
 print a.__class__.__name__, a.b.__class__.__name__, a.c.__class__.__name__, a.b.b.__class__.__name__, a.b.c.__class__.__name__
 #: A[int] A[int] A[str] A[int] A[str]
@@ -506,7 +525,9 @@ print a.c.b.__class__.__name__, a.c.c.__class__.__name__, a.b.b.b.b.b.b.b.b.b.b.
 class X:
     x: int
     rec: X
-    def __init__(self): pass
+    def __init__(self):
+        self.x = 0
+        self.rec = self
     def foo(x: X, y: int):
         return y
     class Y:
@@ -530,12 +551,21 @@ class A[T]:
     a: T
     b: A[T]
     c: A[str]
-    def __init__(self): pass
+    def __init__(self):
+        self.a = T()
+        self.b = self
+        if T is str:
+            self.c = self
+        else:
+            self.c = A[str]()
 class B[T]:
     a: T
     b: A[T]
     c: B[T]
-    def __init__(self): pass
+    def __init__(self):
+        self.a = T()
+        self.b = A[T]()
+        self.c = self
     class Nest1[U]:
         n: U
     class Nest2[T, U]:
@@ -557,7 +587,8 @@ class X[T]:
         return (x+x, y+y)
 y = X[X[int]]()
 print y.__class__.__name__ #: X[X[int]]
-print X[float].foo(U=int, ...).__fn_name__ #: foo[int;X[float],float,int]
+# Self is now an additional realized generic in the inherited method signature.
+print X[float].foo(U=int, ...).__fn_name__ #: foo[int,X[float];X[float],float,int]
 print X[int]().foo(1, 's') #: (2, 'ss')
 
 #%% class_partial_access_NOPY,barebones
@@ -565,7 +596,8 @@ class X[T]:
     def foo[U](self, x, y: U):
         return (x+x, y+y)
 y = X[X[int]]()
-print y.foo(U=float,...).__class__.__name__  #: foo(X[X[int]],...,...,float)
+# The partial mask also includes the implicit Self generic slot.
+print y.foo(U=float,...).__class__.__name__  #: foo(X[X[int]],...,...,float,...)
 print y.foo(1, 2.2, float) #: (2, 4.4)
 
 #%% fn_overloads_NOPY,barebones
@@ -594,7 +626,7 @@ def fox(a: int, b: int, c: int, dtype: type = int):
 
 @overload
 def fox(a: int, b: int, dtype: type = int):
-    print('fox 2:', a, b, dtype.__class__.__name__)
+    print('fox 2:', a, b, dtype.__name__)
 
 fox(1, 2, float)
 #: fox 2: 1 2 float
@@ -767,7 +799,7 @@ print(a.foo("lala"))  #: lala_foo
 a.xyz = 'hello'  #: xyz <- hello
 print(a.xyz)  #: None
 
-class dotdict[V](Static[Dict[str, V]]):
+class dotdict[V](Dict[str, V]):
     def __getattr__(self, attr: Literal[str]) -> Optional[V]:
         return self.get(attr)
     def __setattr__(self, attr: Literal[str], v: V):

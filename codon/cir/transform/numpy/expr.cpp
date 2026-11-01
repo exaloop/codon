@@ -142,6 +142,7 @@ int64_t NumPyExpr::opcost() const {
     return 2;
   case NP_OP_CLIP_MIN:
   case NP_OP_CLIP_MAX:
+  case NP_OP_ROLL:
   case NP_OP_CAST:
   case NP_OP_ZEROS_LIKE:
   case NP_OP_ONES_LIKE:
@@ -376,6 +377,11 @@ int64_t NumPyExpr::cost() const {
   return c;
 }
 
+int64_t NumPyExpr::rollAxis() const {
+  auto axis = cast<IntConst>(cast<CallInstr>(val)->back())->getVal();
+  return axis < 0 ? axis + type.ndim : axis;
+}
+
 std::string NumPyExpr::opstring() const {
   static const std::unordered_map<Op, std::string> m = {
       {NP_OP_NONE, "a"},
@@ -454,6 +460,7 @@ std::string NumPyExpr::opstring() const {
       {NP_OP_DEG2RAD, "deg2rad"},
       {NP_OP_RAD2DEG, "rad2deg"},
       {NP_OP_HEAVISIDE, "heaviside"},
+      {NP_OP_ROLL, "roll"},
       {NP_OP_CAST, "cast"},
       {NP_OP_ZEROS_LIKE, "zeros_like"},
       {NP_OP_ONES_LIKE, "ones_like"},
@@ -601,7 +608,12 @@ Var *NumPyExpr::codegenLayout(CodegenContext &C) {
   if (third && third->type.isArray())
     operands.push_back(M->Nr<VarValue>(third->codegenLayout(C)));
   Func *layoutFunc = nullptr;
-  if (op == NP_OP_CAST || op == NP_OP_ZEROS_LIKE || op == NP_OP_ONES_LIKE) {
+  if (op == NP_OP_ROLL) {
+    operands.push_back(M->getBool(true));
+    layoutFunc = M->getOrRealizeFunc(
+        "_producer_layout", {operands[0]->getType(), M->getBoolType()},
+        {baseType, opstring(), std::string("K")}, FUSION_MODULE);
+  } else if (op == NP_OP_CAST || op == NP_OP_ZEROS_LIKE || op == NP_OP_ONES_LIKE) {
     auto *call = cast<CallInstr>(val);
     auto *order = cast<StringConst>(*std::next(call->begin()));
     auto *copy = call->numArgs() == 3 ? cast<BoolConst>(call->back()) : nullptr;
@@ -630,6 +642,13 @@ Var *NumPyExpr::codegenFusedEval(CodegenContext &C, Var *destination) {
   auto &T = C.T;
   auto *element = isReduction() ? lhs.get() : this;
 
+  std::unordered_map<NumPyExpr *, NumPyExpr *> rollInputs;
+  element->apply([&](NumPyExpr &expr) {
+    if (expr.op == NP_OP_ROLL) {
+      rollInputs[expr.lhs.get()] = &expr;
+    }
+  });
+
   std::vector<std::pair<NumPyExpr *, Var *>> leaves;
   element->apply([&](NumPyExpr &e) {
     if (e.isLeaf()) {
@@ -642,6 +661,7 @@ Var *NumPyExpr::codegenFusedEval(CodegenContext &C, Var *destination) {
 
   // Arrays for scalar expression function
   std::vector<Value *> arrays;
+  std::vector<Value *> shifts;
   std::vector<std::string> scalarFuncArgNames;
   std::vector<Type *> scalarFuncArgTypes;
   std::unordered_map<NumPyExpr *, Var *> scalarFuncArgMap;
@@ -662,6 +682,16 @@ Var *NumPyExpr::codegenFusedEval(CodegenContext &C, Var *destination) {
   for (auto &e : leaves) {
     if (e.first->type.isArray()) {
       arrays.push_back(M->Nr<VarValue>(e.second));
+      auto rolled = rollInputs.find(e.first);
+      if (!rollInputs.empty()) {
+        std::vector<Value *> dimensions(element->type.ndim, M->getInt(0));
+        if (rolled != rollInputs.end()) {
+          auto *roll = rolled->second;
+          auto axis = roll->rollAxis() + element->type.ndim - roll->type.ndim;
+          dimensions[axis] = M->Nr<VarValue>(vars.at(roll->rhs.get()));
+        }
+        shifts.push_back(util::makeTuple(dimensions));
+      }
       scalarFuncArgNames.push_back("in" + std::to_string(argIdx++));
       scalarFuncArgTypes.push_back(M->getPointerType(e.first->type.getIRBaseType(T)));
     } else {
@@ -726,7 +756,8 @@ Var *NumPyExpr::codegenFusedEval(CodegenContext &C, Var *destination) {
     loopTypes.push_back(initial->getType());
     loopGenerics = {baseType, type.getIRBaseType(T), opstring()};
   }
-  bool needsLayout = !destination && C.layouts.count(element) != 0;
+  bool needsLayout =
+      !rollInputs.empty() || (!destination && C.layouts.count(element) != 0);
   element->apply([&](NumPyExpr &expr) {
     if (expr.op == NP_OP_WHERE || expr.isClip() ||
         (expr.type.ndim > 1 && (expr.op == NP_OP_CAST || expr.op == NP_OP_ZEROS_LIKE ||
@@ -745,6 +776,12 @@ Var *NumPyExpr::codegenFusedEval(CodegenContext &C, Var *destination) {
     loopArgs.push_back(M->Nr<VarValue>(layout));
     loopTypes.push_back(layout->getType());
     loopName += "_layout";
+  }
+  if (!rollInputs.empty()) {
+    auto *shiftTuple = util::makeTuple(shifts);
+    loopArgs.push_back(shiftTuple);
+    loopTypes.push_back(shiftTuple->getType());
+    loopName = "_loop_alloc_roll";
   }
   if (axisReduction) {
     util::CloneVisitor clone(M);
@@ -822,6 +859,17 @@ Var *NumPyExpr::codegenSequentialEval(CodegenContext &C) {
   bool rfreeable = rhs && rhs->type.isArray() && (rhs->ownedLastUse || !rhs->isLeaf());
   bool ltmp = lfreeable && lhs->type.dtype == type.dtype && lhs->type.ndim == type.ndim;
   bool rtmp = rfreeable && rhs->type.dtype == type.dtype && rhs->type.ndim == type.ndim;
+
+  if (op == NP_OP_ROLL) {
+    auto *call = cast<CallInstr>(val);
+    auto *result = util::makeVar(
+        util::call(util::getFunc(call->getCallee()),
+                   {M->Nr<VarValue>(lv), M->Nr<VarValue>(rv), call->back()}),
+        series, func);
+    if (lfreeable)
+      series->push_back(freeArray(lv));
+    return result;
+  }
 
   if (op == NP_OP_WHERE || isClip()) {
     auto *thirdValue = third ? third->codegenSequentialEval(C) : nullptr;
@@ -1189,6 +1237,9 @@ Value *NumPyExpr::codegenScalarExpr(
     const std::unordered_map<NumPyExpr *, unsigned> &scalarMap, Var *scalars) {
   auto *M = C.M;
   auto &T = C.T;
+
+  if (op == NP_OP_ROLL)
+    return lhs->codegenScalarExpr(C, args, scalarMap, scalars);
 
   Value *lv = lhs ? lhs->codegenScalarExpr(C, args, scalarMap, scalars) : nullptr;
   Value *rv = rhs ? rhs->codegenScalarExpr(C, args, scalarMap, scalars) : nullptr;

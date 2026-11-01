@@ -26,14 +26,14 @@ struct TypecheckItem : public SrcObject {
   /// Unique identifier (canonical name)
   std::string canonicalName;
   /// Base name (e.g., foo.bar.baz)
-  std::string baseName;
+  InternedString baseName;
   /// Full module name
-  std::string moduleName;
+  InternedString moduleName;
   /// Type
   types::TypePtr type = nullptr;
 
-  /// Full base scope information
-  std::vector<int> scope = {0};
+  /// Information about number of nested conditionals (blocks).
+  int blockLevel = 0;
   /// Specifies at which time the name was added to the context.
   /// Used to prevent using later definitions early (can happen in
   /// advanced type checking iterations).
@@ -42,25 +42,29 @@ struct TypecheckItem : public SrcObject {
   /// Set if an identifier is a class or a function generic
   bool generic = false;
 
-  TypecheckItem(std::string, std::string, std::string, types::TypePtr,
-                std::vector<int> = {0});
+  /// Points to another type in case this type is not useful
+  /// [used within isinstance blocks].
+  std::shared_ptr<TypecheckItem> alternative = nullptr;
+
+  TypecheckItem(std::string, InternedString, InternedString, types::TypePtr, int = 0);
+  TypecheckItem(std::string, std::string_view, InternedString, types::TypePtr, int = 0);
 
   /* Convenience getters */
-  std::string getBaseName() const { return baseName; }
-  std::string getModule() const { return moduleName; }
+  const std::string &getBaseName() const { return baseName.str(); }
+  const std::string &getModule() const { return moduleName.str(); }
   bool isVar() const { return !generic && !isFunc() && !isType(); }
   bool isFunc() const { return type->getFunc() != nullptr; }
-  bool isType() const { return type->is(TYPE_TYPE); }
+  bool isType() const { return type->is(StdlibTypes::Type); }
 
-  bool isGlobal() const { return scope.size() == 1 && baseName.empty(); }
+  bool isGlobal() const { return blockLevel == 0 && baseName.empty(); }
   /// True if an identifier is within a conditional block
   /// (i.e., a block that might not be executed during the runtime)
-  bool isConditional() const { return scope.size() > 1; }
+  bool isConditional() const { return blockLevel > 0; }
   bool isGeneric() const { return generic; }
   types::LiteralKind getStaticKind() const { return type->getStaticKind(); }
 
   types::Type *getType() const { return type.get(); }
-  std::string getName() const { return canonicalName; }
+  const std::string &getName() const { return canonicalName; }
 
   int64_t getTime() const { return time; }
 };
@@ -70,33 +74,11 @@ struct TypeContext : public Context<TypecheckItem> {
   /// A pointer to the shared cache.
   Cache *cache;
 
-  /// Holds the information about current scope.
-  /// A scope is defined as a stack of conditional blocks
-  /// (i.e., blocks that might not get executed during the runtime).
-  /// Used mainly to support Python's variable scoping rules.
-  struct ScopeBlock {
-    int id;
-    std::unordered_map<std::string, std::pair<std::string, bool>> replacements;
-    /// List of statements that are to be prepended to a block
-    /// after its transformation.
-    std::vector<Stmt *> stmts;
-    ScopeBlock(int id) : id(id) {}
-  };
-  /// Current hierarchy of conditional blocks.
-  std::vector<ScopeBlock> scope;
-  std::vector<int> getScope() const {
-    std::vector<int> result;
-    result.reserve(scope.size());
-    for (const auto &b : scope)
-      result.emplace_back(b.id);
-    return result;
-  }
-
   /// Holds the information about current base.
   /// A base is defined as a function or a class block.
   struct Base {
     /// Canonical name of a function or a class that owns this base.
-    std::string name;
+    InternedString name;
     /// Function type
     types::TypePtr type;
     /// The return type of currently realized function
@@ -106,6 +88,10 @@ struct TypeContext : public Context<TypecheckItem> {
     /// Only set for functions.
     FunctionStmt *func = nullptr;
     Stmt *suite = nullptr;
+    /// Collect reached returns before committing to a result type or wrapping them.
+    bool inferReturnType = false;
+    /// Reached returns and whether each was originally bare, for nullable joining.
+    std::vector<std::pair<ReturnStmt *, bool>> returnStatements;
     /// Index of the parent base
     int parent = 0;
 
@@ -128,9 +114,6 @@ struct TypeContext : public Context<TypecheckItem> {
     /// Map of identifiers that are to be fetched from Python.
     std::unordered_set<std::string> *pyCaptures = nullptr;
 
-    // /// Scope that defines the base.
-    // std::vector<int> scope;
-
     /// A stack of nested loops enclosing the current statement used for transforming
     /// "break" statement in loop-else constructs. Each loop is defined by a "break"
     /// variable created while parsing a loop-else construct. If a loop has no else
@@ -144,10 +127,15 @@ struct TypeContext : public Context<TypecheckItem> {
     };
     std::vector<Loop> loops;
 
+    static constexpr int NONE_ARGUMENT_DEFAULT_PRIORITY = -1;
     std::map<int, std::set<types::TypePtr>> pendingDefaults;
     std::set<types::TypePtr> recursiveDependencies;
 
   public:
+    Base() = default;
+    Base(std::string_view name, types::TypePtr type = nullptr,
+         types::TypePtr returnType = nullptr)
+        : name(name), type(std::move(type)), returnType(std::move(returnType)) {}
     Loop *getLoop() { return loops.empty() ? nullptr : &(loops.back()); }
     bool isType() const { return func == nullptr; }
   };
@@ -167,8 +155,12 @@ struct TypeContext : public Context<TypecheckItem> {
     }
   };
 
-  /// Current module. The default module is named `__main__`.
-  ImportFile moduleName = {ImportFile::PACKAGE, "", ""};
+private:
+  /// Module information and its normalized identifier are assigned together.
+  ImportFile moduleInfo = {ImportFile::PACKAGE, "", ""};
+  InternedString moduleIdentifier;
+
+public:
   /// Set if the standard library is currently being loaded.
   bool isStdlibLoading = false;
 
@@ -203,6 +195,9 @@ struct TypeContext : public Context<TypecheckItem> {
 public:
   explicit TypeContext(Cache *cache, std::string filename = "");
 
+  TypeContext saveInferenceState();
+  void restoreInferenceState(TypeContext &&saved);
+
   void add(const std::string &name, const Item &var) override;
   /// Convenience method for adding an object to the context.
   Item addVar(const std::string &name, const std::string &canonicalName,
@@ -225,9 +220,12 @@ public:
 
   /// Return a canonical name of the current base.
   /// An empty string represents the toplevel base.
-  std::string getBaseName() const;
+  InternedString getBaseName() const;
   /// Return the current module.
-  std::string getModule() const;
+  InternedString getModule() const { return moduleIdentifier; }
+  /// Assign module information and compute its normalized identifier once.
+  void setModule(ImportFile module);
+  const ImportFile &getModuleInfo() const { return moduleInfo; }
   /// Return the current module path.
   std::string getModulePath() const;
   /// Pretty-print the current context state.
@@ -254,7 +252,9 @@ public:
   /// Convenience method for adding an object to the context.
   std::shared_ptr<TypecheckItem>
   addToplevel(const std::string &name, const std::shared_ptr<TypecheckItem> &item) {
-    map[name].push_front(item);
+    recordBinding(name);
+    auto &bindings = map[name];
+    bindings.insert(bindings.begin(), item);
     return item;
   }
 

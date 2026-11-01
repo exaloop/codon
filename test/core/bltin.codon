@@ -2458,3 +2458,522 @@ def test_round():
     assert isinstance(round(123, -1), int)
 
 test_round()
+
+@test
+def test_any_tuple():
+    from internal.static import len as static_len
+    from C import GC_gcollect()
+
+    class Record:
+        number: int
+        values: list[int]
+
+        def __eq__(self, other: Record):
+            return self.number == other.number and self.values == other.values
+
+        def __ne__(self, other: Record):
+            return not self == other
+
+        def __hash__(self):
+            return hash((self.number, self.values))
+
+    @tuple
+    class Nested:
+        value: Any
+
+    class Holder:
+        value: Any
+        marker: int
+
+    @noinline
+    def box(value) -> Any:
+        return value
+
+    def unbox(value: Any) -> int:
+        return value
+
+    assert Any.__elemsize__ == Ptr[byte].__elemsize__ + TypeInfo.__elemsize__
+    assert not Any.__atomic__
+    number = box(17)
+    assert static_len(number) == 2
+    assert unbox(number) == 17
+    assert Any(number) == number
+    assert number.__unwrap__(Any) == number
+    assert hash(Any(number)) == hash(number)
+    distinct = box(17)
+    assert distinct == number
+    assert hash(number) == hash(17)
+    hash_method_id = TypeInfo._value_method_id('_hash_value')
+    equal_method_id = TypeInfo._value_method_id('_equal_values')
+    assert hash_method_id > 0 and equal_method_id > 0
+    assert hash_method_id != equal_method_id
+    integer_info = TypeInfo.cache(int)
+    hash_target = integer_info._lookup_method(hash_method_id)
+    equal_target = integer_info._lookup_method(equal_method_id)
+    number_payload = number.__unwrap__(int)
+    distinct_payload = distinct.__unwrap__(int)
+    assert Function[[Ptr[byte]], int](hash_target)(__ptr__(number_payload).as_byte()) == hash(17)
+    assert Function[[Ptr[byte], Ptr[byte]], bool](equal_target)(
+        __ptr__(number_payload).as_byte(), __ptr__(distinct_payload).as_byte())
+    for index in range(integer_info.n_methods):
+        slot = integer_info.methods[index]
+        if slot.id:
+            assert integer_info._lookup_method(slot.id) == slot.target
+    field_names = [name for name, member_type, offset in TypeInfo.cache(TypeInfo)]
+    assert 'value_hash' not in field_names and 'value_equal' not in field_names
+    assert box(18) != number
+    assert box(17.0) != number
+    assert box(True) != box(1)
+    assert box('value') == box('value')
+    assert box('value') != box('other')
+    assert hash(box('value')) == hash('value')
+    assert box((3, 'value')) == box((3, 'value'))
+    assert hash(box((3, 'value'))) == hash((3, 'value'))
+    assert box([3, 5]) == box([3, 5])
+    assert hash(box([3, 5])) == hash([3, 5])
+    nan = box(float('nan'))
+    assert nan != nan
+    keys = {number: 'original'}
+    assert keys[Any(number)] == 'original'
+    keys[distinct] = 'distinct'
+    assert len(keys) == 1 and keys[number] == 'distinct'
+    assert len({number, Any(number), distinct}) == 1
+
+    record = Record(41, [1, 2])
+    boxed = box(record)
+    alias = boxed
+    assert Any(record) == boxed
+    assert Any(Record(41, [1, 2])) == boxed
+    assert Any(Record(40, [1, 2])) != boxed
+    saved_hash = hash(boxed)
+    assert saved_hash == hash(record)
+    alias.__setattr__('number', 42)
+    assert record.number == 42
+    assert boxed.__getattr__('number', int) == 42
+    assert hash(boxed) == hash(record)
+    assert hash(boxed) != saved_hash
+    assert boxed.__getattr__('number') == box(42)
+    assert hash(boxed.__getattr__('number')) == hash(42)
+    assert boxed.__unwrap__(Record) is record
+    assert boxed.__getattr__('values', list[int]) is record.values
+    try:
+        number.__unwrap__(str)
+        assert False
+    except TypeError:
+        pass
+
+    storage = Ptr[Any](1)
+    storage[0] = number
+    assert Any(TypeInfo.cache(Any), storage.as_byte()) == number
+    assert Any(storage).__cast__(Ptr[Any])[0] == number
+    integers = Ptr[int](1)
+    integers[0] = 23
+    assert Any(integers).__cast__(Ptr[Any])[0].__unwrap__(int) == 23
+
+    reference = Record(51, [5, 1])
+    neighbor = Record(63, [6, 3])
+    references = Ptr[Record](2)
+    references[0] = reference
+    references[1] = neighbor
+    converted_reference = cast(Ptr[Any], Any(references))[0]
+    restored_reference = cast(Record, converted_reference)
+    assert restored_reference is reference
+    assert restored_reference.number == 51 and restored_reference.values == [5, 1]
+    restored_reference.number = 52
+    converted_reference.__setattr__('values', [5, 2])
+    assert reference.number == 52 and reference.values == [5, 2]
+    assert references[0] is reference and references[1] is neighbor
+    assert neighbor.number == 63 and neighbor.values == [6, 3]
+
+    present = Any(Optional[Any](number)).__cast__(Optional[Any])
+    assert present is not None and unwrap(present) == number
+    assert Any(Optional[Any]()).__cast__(Optional[Any]) is None
+    present_int = Any(Optional[int](19)).__cast__(Optional[Any])
+    assert present_int is not None and unwrap(present_int).__unwrap__(int) == 19
+    present_ref = Any(Optional[Record](record)).__cast__(Optional[Any])
+    assert present_ref is not None and unwrap(present_ref).__unwrap__(Record) is record
+    assert Any(Optional[Record]()).__cast__(Optional[Any]) is None
+
+    values: list[Any] = [number, box('text'), boxed]
+    viewed = Any(values).__cast__(List[Any])
+    assert len(viewed) == 3
+    assert viewed[0] == number
+    assert viewed[1].__unwrap__(str) == 'text'
+    assert viewed[2].__unwrap__(Record) is record
+    assert Any(List[Any]()).__cast__(List[Any]) == []
+    integer_values = Any([3, 5]).__cast__(List[Any])
+    assert [value.__unwrap__(int) for value in integer_values] == [3, 5]
+    assert integer_values[0] == box(3)
+    assert hash(integer_values[1]) == hash(5)
+    reference_values = Any([record]).__cast__(List[Any])
+    assert reference_values[0].__unwrap__(Record) is record
+    tuple_values = Any((17, 'text', number)).__cast__(List[Any])
+    assert tuple_values[0].__unwrap__(int) == 17
+    assert tuple_values[1].__unwrap__(str) == 'text'
+    assert tuple_values[2] == number
+    assert Any(Nested(number)).__getattr__('value') == number
+    holder = Holder(number, 99)
+    wrapped_holder = Any(holder)
+    assert wrapped_holder.__getattr__('value') == number
+    wrapped_holder.__setattr__('value', distinct)
+    assert holder.value == distinct and holder.marker == 99
+
+    @noinline
+    def retained_values() -> list[Any]:
+        return [Any(Record(73, [7, 3])), Any(('owned', [8, 9])), Any(71)]
+
+    retained = retained_values()
+    GC_gcollect()
+    assert retained[0].__unwrap__(Record).values == [7, 3]
+    assert retained[1].__unwrap__(Tuple[str, list[int]]) == ('owned', [8, 9])
+    assert retained[2].__unwrap__(int) == 71
+
+    class Missing:
+        value: int
+
+    missing = box(Missing(1))
+    assert missing != number
+    try:
+        missing == missing
+        assert False
+    except TypeError:
+        pass
+    try:
+        hash(missing)
+        assert False
+    except TypeError:
+        pass
+
+    unsupported_values = [box([Missing(1)]), box((Missing(1),))]
+    for unsupported in unsupported_values:
+        try:
+            hash(unsupported)
+            assert False
+        except TypeError:
+            pass
+        try:
+            unsupported == unsupported
+            assert False
+        except TypeError:
+            pass
+    assert box(17) == number and hash(number) == hash(17)
+
+    class RawValue:
+        value: int
+
+        def __eq__(self, other: RawValue):
+            return self.value == other.value
+
+        def __hash__(self):
+            return hash(self.value)
+
+    raw_value = RawValue(29)
+    raw_box = Any(TypeInfo.cache(RawValue.__id__), raw_value.__raw__())
+    assert raw_box == raw_box
+    assert hash(raw_box) == hash(29)
+
+    class RawBase:
+        number: int
+
+        def __eq__(self, other: RawBase):
+            return True
+
+        def __hash__(self):
+            return 31
+
+    class RawChild(RawBase):
+        extra: int
+
+    raw_child = RawChild(number=71, extra=73)
+    dynamic_box = Any(get_typeinfo(raw_child), raw_child.__raw__())
+    assert dynamic_box == dynamic_box
+    assert hash(dynamic_box) == 31
+
+    base_pointer = Ptr[RawBase](1)
+    base_pointer[0] = raw_child
+    converted_child = cast(Ptr[Any], Any(base_pointer))[0]
+    assert isinstance(converted_child, RawChild)
+    assert cast(RawBase, converted_child) is raw_child
+    restored_child = cast(RawChild, converted_child)
+    assert restored_child is raw_child
+    assert restored_child.number == 71 and restored_child.extra == 73
+    restored_child.number = 72
+    converted_child.__setattr__('extra', 74)
+    assert base_pointer[0] is raw_child
+    assert raw_child.number == 72 and raw_child.extra == 74
+    GC_gcollect()
+    assert cast(RawChild, converted_child) is raw_child
+    assert converted_child == dynamic_box and hash(converted_child) == 31
+
+    @tuple
+    class ReflectedValue:
+        value: float
+
+    class ReflectedHolder:
+        value: ReflectedValue
+
+    reflected = box(ReflectedHolder(ReflectedValue(7.5))).__getattr__('value')
+    assert reflected == reflected
+    assert hash(reflected) == hash(ReflectedValue(7.5))
+
+    value_pointer = Ptr[ReflectedValue](1)
+    value_pointer[0] = ReflectedValue(8.5)
+    converted_value = cast(Ptr[Any], Any(value_pointer))[0]
+    assert cast(ReflectedValue, converted_value).value == 8.5
+    converted_value.__setattr__('value', 9.5)
+    assert value_pointer[0].value == 9.5
+
+    class Raising:
+        def __eq__(self, other: Raising) -> bool:
+            raise ValueError('equality')
+
+        def __hash__(self) -> int:
+            raise ValueError('hash')
+
+    raising = box(Raising())
+    try:
+        raising == raising
+        assert False
+    except ValueError as error:
+        assert str(error) == 'equality'
+    try:
+        hash(raising)
+        assert False
+    except ValueError as error:
+        assert str(error) == 'hash'
+
+test_any_tuple()
+
+@test
+def test_any_dict_cast():
+    from C import GC_gcollect()
+
+    source = {'second': 2, 'first': 1, 'third': 3}
+    del source['first']
+    source['first'] = 10
+    boxed = Any(source)
+    assert isinstance(boxed, Dict[Any, Any])
+    converted = boxed.__cast__(Dict[Any, Any])
+    assert [(key.__unwrap__(str), value.__unwrap__(int))
+            for key, value in converted.items()] == list(source.items())
+    assert converted[Any('first')].__unwrap__(int) == 10
+    assert len(Any(Dict[str, int]()).__cast__(Dict[Any, Any])) == 0
+
+    resized = {index: 3 * index for index in range(128)}
+    for index in range(0, 128, 3):
+        del resized[index]
+    expected = list(resized.items())
+    copied = Any(resized).__cast__(Dict[Any, Any])
+    resized[1] = -1
+    resized.clear()
+    GC_gcollect()
+    assert [(key.__unwrap__(int), value.__unwrap__(int))
+            for key, value in copied.items()] == expected
+    assert copied[Any(1)].__unwrap__(int) == 3
+
+    class Value:
+        number: int
+
+    value = Value(23)
+    references = Any({('key', 7): value}).__cast__(Dict[Any, Any])
+    assert references[Any(('key', 7))].__unwrap__(Value) is value
+    value.number = 29
+    assert references[Any(('key', 7))].__unwrap__(Value).number == 29
+
+    class Holder:
+        mapping: Dict[float, str]
+
+    reflected = Any(Holder({1.5: 'reflected'})).__getattr__('mapping')
+    assert reflected.__cast__(Dict[Any, Any])[Any(1.5)].__unwrap__(str) == 'reflected'
+
+    raw_source = {True: (31, 'raw')}
+    raw_box = Any(TypeInfo.cache(type(raw_source).__id__), raw_source.__raw__())
+    assert raw_box.__cast__(Dict[Any, Any])[Any(True)].__unwrap__(Tuple[int, str]) == (31, 'raw')
+
+    preboxed = {Any('nested'): Any({5: 'value'})}
+    outer = Any(preboxed).__cast__(Dict[Any, Any])
+    inner = outer[Any('nested')].__cast__(Dict[Any, Any])
+    assert inner[Any(5)].__unwrap__(str) == 'value'
+
+    @noinline
+    def retained():
+        local = {str(73): Value(73)}
+        result = Any(local).__cast__(Dict[Any, Any])
+        local.clear()
+        return result
+
+    owned = retained()
+    GC_gcollect()
+    assert owned[Any('73')].__unwrap__(Value).number == 73
+
+    try:
+        Any([1, 2]).__cast__(Dict[Any, Any])
+        assert False
+    except ValueError as error:
+        assert str(error) == 'expected dict'
+
+test_any_dict_cast()
+
+@test
+def test_any_inline_scalars():
+    from C import GC_gcollect()
+    from C import GC_get_total_bytes() -> int
+
+    def check(value):
+        boxed = Any(value)
+        assert boxed._is_inline()
+        assert boxed._typeinfo == TypeInfo.cache(type(value))
+        assert boxed._typeinfo.inline_value
+        assert isinstance(boxed, type(value))
+        assert boxed.__unwrap__(type(value)) == value
+        assert boxed == Any(value)
+        copied = Any(boxed._typeinfo, __ptr__(value).as_byte())
+        assert copied._is_inline() and copied == boxed
+        assert copied.__unwrap__(type(value)) == value
+        if hasattr(value, '__hash__'):
+            assert hash(boxed) == hash(value)
+        else:
+            try:
+                hash(boxed)
+                assert False
+            except TypeError:
+                pass
+        assert Any(boxed)._is_inline()
+        assert len(list(boxed.members)) == 0
+
+    for value in (0, -1, 9223372036854775807, -9223372036854775807 - 1,
+                  True, False, i1(-1), u1(1), i8(-128), i8(127),
+                  Int[7](-64), UInt[7](127), Int[33](-1), UInt[63](-1),
+                  i16(-32768), i32(-2147483648), u64(0), u64(-1),
+                  0.0, -0.0, 1.25, float('inf'), -float('inf'),
+                  float32(1.25), float16(1.25), bfloat16(1.25), NoneType()):
+        check(value)
+
+    from math import copysign, isnan
+    negative_zero = Any(-0.0)
+    assert copysign(1.0, negative_zero.__unwrap__(float)) == -1.0
+    nan = Any(float('nan'))
+    assert nan._is_inline() and isnan(nan.__unwrap__(float))
+    assert nan != nan
+    assert Any(1) != Any(True) and Any(1) != Any(1.0)
+
+    def check_float_bits(bits, T: type):
+        storage = Ptr[type(bits)](1)
+        storage[0] = bits
+        boxed = Any(Ptr[T](storage)[0])
+        restored = boxed.__unwrap__(T)
+        assert boxed._is_inline()
+        assert Ptr[type(bits)](__ptr__(restored))[0] == bits
+        copied = Any(TypeInfo.cache(T), storage.as_byte())
+        restored_copy = copied.__unwrap__(T)
+        assert copied._is_inline()
+        assert Ptr[type(bits)](__ptr__(restored_copy))[0] == bits
+
+    check_float_bits(u64(0x7ff8000000000042), float)
+    check_float_bits(u32(0x7fc00042), float32)
+    check_float_bits(u16(0x7e42), float16)
+    check_float_bits(u16(0x7fc2), bfloat16)
+    check_float_bits(u64(0x8000000000000000), float)
+    check_float_bits(u32(0x80000000), float32)
+    check_float_bits(u16(0x8000), float16)
+    check_float_bits(u16(0x8000), bfloat16)
+
+    for value in (Int[65](-1), i128(7), u128(7), float128(1.25), 'text', (7,),
+                  complex64(1.0, 2.0),
+                  Ptr[int](1), Optional[int](7)):
+        boxed = Any(value)
+        assert not boxed._is_inline()
+        assert boxed.__unwrap__(type(value)) == value
+
+    storage = Ptr[int](1)
+    storage[0] = 17
+    copied = Any(TypeInfo.cache(int), storage.as_byte())
+    owned = Any(17)
+    assert copied._is_inline()
+    assert owned == copied and copied == owned
+    assert hash(owned) == hash(copied)
+    storage[0] = 19
+    assert copied.__unwrap__(int) == 17 and owned.__unwrap__(int) == 17
+    assert copied == owned
+    assert Any(TypeInfo.cache(int), storage.as_byte()).__unwrap__(int) == 19
+
+    pointer_snapshot = Any(storage).__cast__(Ptr[Any])
+    storage[0] = 23
+    assert pointer_snapshot[0]._is_inline()
+    assert pointer_snapshot[0].__unwrap__(int) == 19
+
+    optional_storage = Ptr[Optional[int]](1)
+    optional_storage[0] = Optional(29)
+    optional_box = Any(TypeInfo.cache(Optional[int]), optional_storage.as_byte())
+    optional_snapshot = optional_box.__cast__(Optional[Any])
+    optional_storage[0] = Optional(31)
+    assert unwrap(optional_snapshot)._is_inline()
+    assert unwrap(optional_snapshot).__unwrap__(int) == 29
+    assert unwrap(optional_box.__unwrap__(Optional[int])) == 31
+
+    class Record:
+        number: int
+
+    record = Record(23)
+    field = Any(record).__getattr__('number')
+    record.number = 29
+    assert field._is_inline() and field.__unwrap__(int) == 23
+    Any(record).__setattr__('number', 47)
+    assert record.number == 47 and field.__unwrap__(int) == 23
+    values = [31]
+    snapshots = Any(values).__cast__(List[Any])
+    values[0] = 37
+    assert snapshots[0]._is_inline() and snapshots[0].__unwrap__(int) == 31
+
+    @tuple
+    class Tiny:
+        number: int
+
+    tiny = Any(Tiny(41))
+    alias = tiny
+    tiny.__setattr__('number', 43)
+    assert not tiny._is_inline()
+    assert alias.__unwrap__(Tiny).number == 43
+
+    try:
+        owned.__unwrap__(str)
+        assert False
+    except TypeError:
+        pass
+    try:
+        owned.__setattr__('missing', 1)
+        assert False
+    except AttributeError:
+        pass
+
+    @noinline
+    def box_number(value: int) -> Any:
+        return Any(value)
+
+    @noinline
+    def copy_number(info: TypeInfo, data: Ptr[byte]) -> Any:
+        return Any(info, data)
+
+    count = 4096
+    retained = Ptr[Any](count)
+    before = GC_get_total_bytes()
+    for index in range(count):
+        retained[index] = box_number(index)
+    assert GC_get_total_bytes() == before
+    GC_gcollect()
+    for index in range(count):
+        assert retained[index]._is_inline()
+        assert retained[index].__unwrap__(int) == index
+    integer_info = TypeInfo.cache(int)
+    before = GC_get_total_bytes()
+    for index in range(count):
+        retained[index] = copy_number(integer_info, __ptr__(index).as_byte())
+    assert GC_get_total_bytes() == before
+    GC_gcollect()
+    for index in range(count):
+        assert retained[index]._is_inline()
+        assert retained[index].__unwrap__(int) == index
+    assert Any.__elemsize__ == 2 * Ptr[byte].__elemsize__
+    assert not Any.__atomic__
+
+test_any_inline_scalars()

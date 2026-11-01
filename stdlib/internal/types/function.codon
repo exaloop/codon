@@ -22,6 +22,7 @@ class Function:
     def __repr__(self) -> str:
        return Ptr._ptr_to_str(self.__raw__(), "function")
 
+    @__generated__
     @llvm
     def __call_internal__(self: Function[T, TR], args: T) -> TR:
         noop  # compiler will populate this one

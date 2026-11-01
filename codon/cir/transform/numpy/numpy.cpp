@@ -5,10 +5,10 @@
 #include "codon/cir/analyze/dataflow/reaching.h"
 #include "codon/cir/analyze/module/global_vars.h"
 #include "codon/cir/analyze/module/side_effect.h"
+#include "codon/cir/llvm/llvm.h"
 #include "codon/cir/util/cloning.h"
 #include "codon/cir/util/irtools.h"
-
-#include "llvm/Support/CommandLine.h"
+#include "codon/parser/cache.h"
 
 #include <algorithm>
 #include <complex>
@@ -56,8 +56,7 @@ llvm::cl::opt<bool> Verbose("npfuse-verbose",
 
 bool isArrayType(Type *t) {
   return t && isA<RecordType>(t) &&
-         t->getName().rfind(ast::getMangledClass("std.numpy.ndarray", "ndarray") + "[",
-                            0) == 0;
+         t->getName().rfind(ast::StdlibTypes::NDArray + "[", 0) == 0;
 }
 
 bool isUFuncType(Type *t) {
@@ -68,9 +67,7 @@ bool isUFuncType(Type *t) {
               ast::getMangledClass("std.numpy.ufunc", "BinaryUFunc") + "[", 0) == 0);
 }
 
-bool isNoneType(Type *t, NumPyPrimitiveTypes &T) {
-  return t && (t->is(T.none) || t->is(T.optnone));
-}
+bool isNoneType(Type *t, NumPyPrimitiveTypes &T) { return t && t->is(T.none); }
 
 bool isCopyIndexType(Type *type, NumPyPrimitiveTypes &types) {
   auto index = NumPyType::get(type, types);
@@ -121,15 +118,18 @@ void setLifetimeTag(Value *value, const std::string &tag) {
 
 const std::string FUSION_MODULE = "std.numpy.fusion";
 
+bool NumPyPass::shouldRun(Module *module) const {
+  return std::any_of(module->types_begin(), module->types_end(), isArrayType);
+}
+
 NumPyPrimitiveTypes::NumPyPrimitiveTypes(Module *M)
-    : none(M->getNoneType()), optnone(M->getOptionalType(none)),
-      bool_(M->getBoolType()), i8(M->getIntType(8, true)), u8(M->getIntType(8, false)),
-      i16(M->getIntType(16, true)), u16(M->getIntType(16, false)),
-      i32(M->getIntType(32, true)), u32(M->getIntType(32, false)),
-      i64(M->getIntType(64, true)), u64(M->getIntType(64, false)),
-      f16(M->getFloat16Type()), f32(M->getFloat32Type()), f64(M->getFloatType()),
-      c64(M->getType(ast::getMangledClass("std.internal.types.complex", "complex64"))),
-      c128(M->getType(ast::getMangledClass("std.internal.types.complex", "complex"))) {}
+    : none(M->getNoneType()), bool_(M->getBoolType()), i8(M->getIntType(8, true)),
+      u8(M->getIntType(8, false)), i16(M->getIntType(16, true)),
+      u16(M->getIntType(16, false)), i32(M->getIntType(32, true)),
+      u32(M->getIntType(32, false)), i64(M->getIntType(64, true)),
+      u64(M->getIntType(64, false)), f16(M->getFloat16Type()), f32(M->getFloat32Type()),
+      f64(M->getFloatType()), c64(M->getType(ast::StdlibTypes::Complex64)),
+      c128(M->getType(ast::StdlibTypes::Complex)) {}
 
 NumPyType::NumPyType(TypeCode dtype, int64_t ndim) : dtype(dtype), ndim(ndim) {
   seqassertn(ndim >= 0, "ndim must be non-negative");
@@ -579,6 +579,20 @@ std::unique_ptr<NumPyExpr> parse(Value *v,
 
   if (auto *c = cast<CallInstr>(v)) {
     auto *f = util::getFunc(c->getCallee());
+
+    if (f && c->numArgs() == 3 && isArrayType(c->front()->getType()) &&
+        (*std::next(c->begin()))->getType()->is(T.i64) &&
+        f->getName().rfind(ast::getMangledFunc("std.numpy.routines", "roll") + "[",
+                           0) == 0) {
+      auto *axis = cast<IntConst>(c->back());
+      if (axis && axis->getVal() >= -type.ndim && axis->getVal() < type.ndim) {
+        auto operand = parse(c->front(), leaves, T);
+        auto shift = parse(*std::next(c->begin()), leaves, T);
+        if (operand && shift)
+          return std::make_unique<NumPyExpr>(type, v, NumPyExpr::NP_OP_ROLL,
+                                             std::move(operand), std::move(shift));
+      }
+    }
 
     if (f && c->numArgs() == 4 && f->getUnmangledName() == "clip" &&
         (isArrayType(f->getParentType()) ||
@@ -1242,6 +1256,7 @@ bool hasOwnedResult(const NumPyExpr &expr) {
   case NumPyExpr::NP_OP_DEG2RAD:
   case NumPyExpr::NP_OP_RAD2DEG:
   case NumPyExpr::NP_OP_HEAVISIDE:
+  case NumPyExpr::NP_OP_ROLL:
   case NumPyExpr::NP_OP_ZEROS_LIKE:
   case NumPyExpr::NP_OP_ONES_LIKE:
   case NumPyExpr::NP_OP_WHERE:
@@ -1306,6 +1321,22 @@ bool NumPyOptimizationUnit::optimize(NumPyPrimitiveTypes &T,
       hasUFuncArgumentEffects(*expr, sideEffects))
     return false;
 
+  bool hasRoll = false;
+  bool supportsRoll = true;
+  expr->apply([&](NumPyExpr &element) {
+    if (element.op == NumPyExpr::NP_OP_ROLL) {
+      hasRoll = true;
+      if (!element.lhs->isLeaf() || !element.rhs->isLeaf())
+        supportsRoll = false;
+    }
+    if (element.op == NumPyExpr::NP_OP_TRANSPOSE ||
+        element.op == NumPyExpr::NP_OP_MATMUL ||
+        (element.isReduction() && &element != expr.get()))
+      supportsRoll = false;
+  });
+  if (hasRoll && !supportsRoll)
+    return false;
+
   for (auto &leaf : leaves) {
     if (!isSafeFusionLeaf(leaf.second, T, sideEffects))
       return false;
@@ -1338,6 +1369,15 @@ bool NumPyOptimizationUnit::optimize(NumPyPrimitiveTypes &T,
   bool ownsResult = hasOwnedResult(*expr) && !reduction;
 
   codegenValidation(C, true);
+
+  if (reduction && hasRoll) {
+    auto *element = expr->lhs.get();
+    auto *input = element->codegenFusedEval(C);
+    NumPyExpr replacement(element->type, M->Nr<VarValue>(input));
+    replacement.ownedLastUse = true;
+    element->replace(replacement);
+    C.vars[element] = input;
+  }
 
   if (reduction) {
     expr->lhs->apply([&](NumPyExpr &element) {
@@ -2237,9 +2277,7 @@ void NumPyInlinePass::run(Module *module) {
   auto getStatements = [&](BodiedFunc *callee) -> std::vector<Value *> {
     auto *body = cast<SeriesFlow>(callee->getBody());
     if (!body || callee->isGenerator() || callee->isAsync() ||
-        callee->getName().rfind("std.numpy.", 0) == 0 ||
-        util::hasAttribute(callee,
-                           ast::getMangledFunc("std.internal.attributes", "noinline")))
+        callee->getName().rfind("std.numpy.", 0) == 0 || util::isNoInline(callee))
       return {};
     std::vector<Value *> statements;
     std::function<void(SeriesFlow *)> flatten = [&](SeriesFlow *series) {

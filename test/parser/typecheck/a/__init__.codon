@@ -23,3 +23,7 @@ def ha():
 par = 'y'
 if len('x') == 1:
     par = 'x'
+    woo = 10
+
+if len('x') == 2:
+    woo2 = 15

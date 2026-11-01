@@ -1,0 +1,159 @@
+from functools import cmp_to_key
+
+
+def cmp_int(a, b):
+    # Comparison results need not be -1, 0, or 1.
+    return 7 * ((a > b) - (a < b))
+
+
+@test
+def test_comparisons():
+    key = cmp_to_key(cmp_int)
+
+    a = key(2)
+    b = key(2)
+    c = key(5)
+
+    # Equal values.
+    assert a == b
+    assert not (a != b)
+    assert a <= b
+    assert a >= b
+    assert not (a < b)
+    assert not (a > b)
+
+    # Less than.
+    assert a < c
+    assert a <= c
+    assert a != c
+    assert not (a == c)
+    assert not (a > c)
+    assert not (a >= c)
+
+    # Greater than.
+    assert c > a
+    assert c >= a
+    assert c != a
+    assert not (c == a)
+    assert not (c < a)
+    assert not (c <= a)
+
+    # Original object is accessible.
+    assert a.obj == 2
+
+
+@test
+def test_sort():
+    original = [3, 1, 4, 1, 5, 9, 2, -4, 0]
+    expected = [-4, 0, 1, 1, 2, 3, 4, 5, 9]
+
+    # sorted() returns a new list.
+    result = sorted(original, key=cmp_to_key(cmp_int))
+    assert result == expected
+    assert original == [3, 1, 4, 1, 5, 9, 2, -4, 0]
+
+    # list.sort() modifies the list in place.
+    original.sort(key=cmp_to_key(cmp_int))
+    assert original == expected
+
+    # Reverse sorting.
+    original.sort(key=cmp_to_key(cmp_int), reverse=True)
+    assert original == expected[::-1]
+
+
+@test
+def test_stability():
+    def cmp_first(a, b):
+        return (a[0] > b[0]) - (a[0] < b[0])
+
+    data = [(2, 0), (1, 0), (2, 1), (1, 1), (2, 2)]
+
+    result = sorted(data, key=cmp_to_key(cmp_first))
+
+    assert result == [
+        (1, 0),
+        (1, 1),
+        (2, 0),
+        (2, 1),
+        (2, 2),
+    ]
+
+    # Reverse sorting must preserve the order of equal keys.
+    result = sorted(data, key=cmp_to_key(cmp_first), reverse=True)
+
+    assert result == [
+        (2, 0),
+        (2, 1),
+        (2, 2),
+        (1, 0),
+        (1, 1),
+    ]
+
+
+@test
+def test_strings():
+    def cmp_lower(a, b):
+        x = a.lower()
+        y = b.lower()
+        return (x > y) - (x < y)
+
+    data = ["b", "A", "a", "B", "c"]
+
+    result = sorted(data, key=cmp_to_key(cmp_lower))
+
+    assert result == ["A", "a", "b", "B", "c"]
+
+
+@test
+def test_lambda():
+    result = sorted(
+        [3, 1, 4, 1, 5],
+        key=cmp_to_key(lambda a, b: cmp_int(b, a)),
+    )
+
+    assert result == [5, 4, 3, 1, 1]
+
+
+@test
+def test_various_lengths():
+    for size in (0, 1, 2, 3, 16, 17, 31, 32, 63, 64, 65, 127, 128, 129, 512):
+        data = [(i * 37) % 29 - 14 for i in range(size)]
+        expected = sorted(data)
+
+        data.sort(key=cmp_to_key(cmp_int))
+        assert data == expected
+
+
+@test
+def test_custom_equality():
+    def compare(a, b):
+        return (a // 10 > b // 10) - (a // 10 < b // 10)
+
+    key = cmp_to_key(compare)
+
+    a = key(11)
+    b = key(12)
+
+    assert a == b
+    assert not (a != b)
+    assert a <= b
+    assert a >= b
+    assert not (a < b)
+    assert not (a > b)
+
+
+@test
+def test_keyword_argument():
+    key = cmp_to_key(mycmp=cmp_int)
+
+    result = sorted([3, 1, 2], key=key)
+    assert result == [1, 2, 3]
+
+test_comparisons()
+test_sort()
+test_stability()
+test_strings()
+test_lambda()
+test_various_lengths()
+test_custom_equality()
+test_keyword_argument()

@@ -3,6 +3,7 @@
 #pragma once
 
 #include <map>
+#include <memory_resource>
 #include <ostream>
 #include <set>
 #include <string>
@@ -21,15 +22,6 @@
 
 #define MAIN_IMPORT ""
 #define STDLIB_IMPORT ":stdlib:"
-
-#define TYPE_CALLABLE "Callable"
-#define TYPE_FUNCTION "Function"
-#define TYPE_OPTIONAL "Optional"
-#define TYPE_TUPLE "Tuple"
-#define TYPE_TYPE "type"
-
-#define TRAIT_TYPE "TypeTrait"
-#define TRAIT_CALLABLE "CallableTrait"
 
 #define FN_DISPATCH_SUFFIX ":dispatch"
 #define FN_SETTER_SUFFIX ":set_"
@@ -52,6 +44,48 @@ namespace codon::ast {
 extern const std::string VAR_ARGV;
 extern const std::string VAR_ARGC;
 extern const std::string FN_OPTIONAL_UNWRAP;
+
+namespace StdlibTypes {
+extern const std::string Any;
+extern const std::string Array;
+extern const std::string BaseException;
+extern const std::string Bool;
+extern const std::string Callable;
+extern const std::string Capsule;
+extern const std::string CObj;
+extern const std::string Complex;
+extern const std::string Complex64;
+extern const std::string Coroutine;
+extern const std::string Dict;
+extern const std::string Float;
+extern const std::string Float16;
+extern const std::string Function;
+extern const std::string Generator;
+extern const std::string Int;
+extern const std::string List;
+extern const std::string NamedTuple;
+extern const std::string NDArray;
+extern const std::string NoneType;
+extern const std::string Object;
+extern const std::string Optional;
+extern const std::string Ptr;
+extern const std::string PyError;
+extern const std::string Range;
+extern const std::string Set;
+extern const std::string Slice;
+extern const std::string String;
+extern const std::string ThreadLocal;
+extern const std::string Tuple;
+extern const std::string Type;
+extern const std::string TypeWrap;
+extern const std::string UInt;
+extern const std::string Union;
+extern const std::string UnrealizedType;
+extern const std::string Vec;
+
+extern const std::string CallableTrait;
+extern const std::string TypeTrait;
+}; // namespace StdlibTypes
 
 /// Forward declarations
 struct TypeContext;
@@ -172,8 +206,7 @@ struct Cache {
       /// Maps {base, function signature} to {thunk realization, thunk ID}.
       /// Base can be the realization itself.
       /// Order is important so map is used instead of unordered_map.
-      std::map<std::pair<std::string, std::string>, std::shared_ptr<types::FuncType>>
-          vtable;
+      std::map<size_t, std::shared_ptr<types::FuncType>> vtable;
       /// Realization ID
       size_t id = 0;
 
@@ -189,13 +222,14 @@ struct Cache {
     std::unordered_set<std::string> virtuals;
     /// MRO
     std::vector<std::shared_ptr<types::ClassType>> mro;
-
-    /// List of statically inherited classes.
-    std::vector<std::string> staticParentClasses;
+    /// Classes whose base is this class
+    std::unordered_set<std::string> descendants;
 
     int jitCell = 0;
 
-    bool hasRTTI() const { return rtti; }
+    bool hasRTTI() const {
+      return mro.size() > 1 || ast->getName() == StdlibTypes::Object;
+    }
   };
   /// Class lookup table that maps a canonical class identifier to the corresponding
   /// Class instance.
@@ -204,7 +238,9 @@ struct Cache {
 
   Class *getClass(const types::ClassType *);
 
-  std::map<std::pair<std::string, std::string>, size_t> thunkIds;
+  std::map<std::string, size_t> thunkIds;
+  std::map<size_t, std::shared_ptr<types::FuncType>> superCalls;
+  std::map<size_t, std::shared_ptr<types::FuncType>> superCallSignatures;
 
   struct Function {
     /// Module information
@@ -230,6 +266,9 @@ struct Cache {
       ir::Func *ir;
       /// Resolved captures
       std::vector<std::string> captures;
+      /// Whether this constructor requires an independent field-initialization check.
+      /// Targets realized only for super() dispatch are checked through the caller.
+      bool checkInitialization = false;
 
       types::FuncType *getType() const { return type.get(); }
     };
@@ -272,9 +311,9 @@ struct Cache {
   ParserErrors errors;
 
 public:
-  explicit Cache(std::vector<std::unique_ptr<ast::ASTNode>> &nodes,
-                 std::string argv0 = "",
-                 const std::shared_ptr<IFilesystem> &fs = nullptr);
+  explicit Cache(std::vector<ASTNodePtr> &nodes, std::string argv0,
+                 const std::shared_ptr<IFilesystem> &fs,
+                 std::pmr::memory_resource *nodeStorage);
 
   /// Return a uniquely named temporary variable of a format
   /// "{sigil}_{prefix}{counter}". A sigil should be a non-lexable symbol.
@@ -335,20 +374,21 @@ public:
   void populatePythonModule();
 
 private:
-  std::vector<std::unique_ptr<ast::ASTNode>> *_nodes;
+  std::vector<ASTNodePtr> *_nodes;
+  std::pmr::memory_resource *_nodeStorage;
 
 public:
   /// Convenience method that constructs a node with the visitor's source location.
   template <typename Tn, typename... Ts> Tn *N(Ts &&...args) {
-    _nodes->emplace_back(std::make_unique<Tn>(std::forward<Ts>(args)...));
-    Tn *t = static_cast<Tn *>(_nodes->back().get());
+    auto *storage = _nodeStorage->allocate(sizeof(Tn), alignof(Tn));
+    ASTNodePtr node(::new (storage) Tn(std::forward<Ts>(args)...));
+    Tn *t = static_cast<Tn *>(node.get());
     t->cache = this;
+    _nodes->push_back(std::move(node));
     return t;
   }
   template <typename Tn, typename... Ts> Tn *NS(const ASTNode *srcInfo, Ts &&...args) {
-    _nodes->emplace_back(std::make_unique<Tn>(std::forward<Ts>(args)...));
-    Tn *t = static_cast<Tn *>(_nodes->back().get());
-    t->cache = this;
+    Tn *t = N<Tn>(std::forward<Ts>(args)...);
     t->setSrcInfo(srcInfo->getSrcInfo());
     return t;
   }

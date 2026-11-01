@@ -15,16 +15,16 @@ using namespace types;
 /// @example
 ///   `(a1, ..., aN)` -> `Tuple.__new__(a1, ..., aN)`
 void TypecheckVisitor::visit(TupleExpr *expr) {
-  resultExpr =
-      transform(N<CallExpr>(N<DotExpr>(N<IdExpr>(TYPE_TUPLE), "__new__"), expr->items));
+  resultExpr = transform(
+      N<CallExpr>(N<DotExpr>(N<IdExpr>(StdlibTypes::Tuple), "__new__"), expr->items));
 }
 
 /// Transform a list `[a1, ..., aN]` to the corresponding statement expression.
 /// See @c transformComprehension
 void TypecheckVisitor::visit(ListExpr *expr) {
   expr->setType(instantiateUnbound());
-  auto name = getStdLibType("List")->name;
-  if ((resultExpr = transformComprehension(name, "append", expr->items))) {
+  if ((resultExpr = transformComprehension(StdlibTypes::List, "append", expr->items,
+                                           expr->getExpectedType()))) {
     resultExpr->setAttribute(Attr::ExprList);
   }
 }
@@ -33,8 +33,8 @@ void TypecheckVisitor::visit(ListExpr *expr) {
 /// See @c transformComprehension
 void TypecheckVisitor::visit(SetExpr *expr) {
   expr->setType(instantiateUnbound());
-  auto name = getStdLibType("Set")->name;
-  if ((resultExpr = transformComprehension(name, "add", expr->items))) {
+  if ((resultExpr = transformComprehension(StdlibTypes::Set, "add", expr->items,
+                                           expr->getExpectedType()))) {
     resultExpr->setAttribute(Attr::ExprSet);
   }
 }
@@ -43,8 +43,8 @@ void TypecheckVisitor::visit(SetExpr *expr) {
 /// expression. See @c transformComprehension
 void TypecheckVisitor::visit(DictExpr *expr) {
   expr->setType(instantiateUnbound());
-  auto name = getStdLibType("Dict")->name;
-  if ((resultExpr = transformComprehension(name, "__setitem__", expr->items))) {
+  if ((resultExpr = transformComprehension(StdlibTypes::Dict, "__setitem__",
+                                           expr->items, expr->getExpectedType()))) {
     resultExpr->setAttribute(Attr::ExprDict);
   }
 }
@@ -73,8 +73,8 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
     expr->setFinalExpr(
         N<CallExpr>(N<DotExpr>(clone(var), "append"), expr->getFinalExpr()));
     auto suite = expr->getFinalSuite();
-    auto noOptStmt =
-        N<SuiteStmt>(N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>("List"))), suite);
+    auto noOptStmt = N<SuiteStmt>(
+        N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>(StdlibTypes::List))), suite);
 
     if (canOptimize) {
       auto optimizeVar = getTemporaryVar("i");
@@ -86,7 +86,7 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
           N<AssignStmt>(N<IdExpr>(optimizeVar), clone(origIter)),
           N<AssignStmt>(
               clone(var),
-              N<CallExpr>(N<IdExpr>("List"),
+              N<CallExpr>(N<IdExpr>(StdlibTypes::List),
                           N<CallExpr>(N<DotExpr>(N<IdExpr>(optimizeVar), "__len__")))),
           (*cast<SuiteStmt>(optStmt))[1]);
       resultExpr = N<IfExpr>(
@@ -98,14 +98,14 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
     resultExpr = transform(resultExpr);
   } else if (expr->kind == GeneratorExpr::SetGenerator) {
     // Set comprehensions
-    auto head = N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>("Set")));
+    auto head = N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>(StdlibTypes::Set)));
     expr->setFinalExpr(
         N<CallExpr>(N<DotExpr>(clone(var), "add"), expr->getFinalExpr()));
     auto suite = expr->getFinalSuite();
     resultExpr = transform(N<StmtExpr>(N<SuiteStmt>(head, suite), var));
   } else if (expr->kind == GeneratorExpr::DictGenerator) {
     // Dictionary comprehensions
-    auto head = N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>("Dict")));
+    auto head = N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>(StdlibTypes::Dict)));
     expr->setFinalExpr(N<CallExpr>(N<DotExpr>(clone(var), "__setitem__"),
                                    N<StarExpr>(expr->getFinalExpr())));
     auto suite = expr->getFinalSuite();
@@ -156,6 +156,8 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
 
 /// Transform a collection of type `type` to a statement expression:
 ///   `[a1, ..., aN]` -> `cont = [type](); (cont.[fn](a1); ...); cont`
+/// Union parameters in expectedType fix storage; other parameters use common-type
+/// inference. Dictionary keys and values are inferred independently.
 /// Any star-expression within the collection will be expanded:
 ///   `[a, *b]` -> `cont.[fn](a); for i in b: cont.[fn](i)`.
 /// @example
@@ -172,42 +174,71 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
 ///                       for i in b.items(): cont.__setitem__((i[0], i[i]))```
 Expr *TypecheckVisitor::transformComprehension(const std::string &type,
                                                const std::string &fn,
-                                               std::vector<Expr *> &items) {
-  // Deduce the super type of the collection--- in other words, the least common
-  // ancestor of all types in the collection. For example, `type([1, 1.2]) == type([1.2,
-  // 1]) == float` because float is an "ancestor" of int.
+                                               std::vector<Expr *> &items,
+                                               types::Type *expectedType) {
+  // Deduce the lowest common type of the collection--- in other words, the lowest
+  // common ancestor of all types in the collection. For example, `type([1, 1.2]) ==
+  // type([1.2, 1]) == float` because float is an "ancestor" of int.
   // TODO: use wrapExpr...
-  auto superTyp = [&](ClassType *collectionCls, ClassType *ti) -> TypePtr {
+  auto lctyp = [&](ClassType *collectionCls, ClassType *ti) -> TypePtr {
     if (!collectionCls)
       return ti->shared_from_this();
+    // NoneType introduces nullability without becoming the element type.
+    if (collectionCls->is(StdlibTypes::NoneType) != ti->is(StdlibTypes::NoneType)) {
+      auto member = collectionCls->is(StdlibTypes::NoneType) ? ti : collectionCls;
+      return member->is(StdlibTypes::Optional)
+                 ? member->shared_from_this()
+                 : instantiateType(getStdLibType(StdlibTypes::Optional),
+                                   std::vector<Type *>{member});
+    }
     if (collectionCls->is("Int") && ti->is("float")) {
       // Rule: int derives from float
       return ti->shared_from_this();
-    } else if (collectionCls->name != TYPE_OPTIONAL && ti->name == TYPE_OPTIONAL) {
+    } else if (collectionCls->name != StdlibTypes::Optional &&
+               ti->name == StdlibTypes::Optional) {
       // Rule: T derives from Optional[T]
-      return instantiateType(getStdLibType("Optional"),
+      return instantiateType(getStdLibType(StdlibTypes::Optional),
                              std::vector<types::Type *>{collectionCls});
-    } else if (collectionCls->name == TYPE_OPTIONAL && ti->name != TYPE_OPTIONAL) {
-      return instantiateType(getStdLibType("Optional"), std::vector<types::Type *>{ti});
+    } else if (collectionCls->name == StdlibTypes::Optional &&
+               ti->name != StdlibTypes::Optional) {
+      return instantiateType(getStdLibType(StdlibTypes::Optional),
+                             std::vector<types::Type *>{ti});
     } else if (!collectionCls->is("pyobj") && ti->is("pyobj")) {
       // Rule: anything derives from pyobj
       return ti->shared_from_this();
     } else if (collectionCls->name != ti->name) {
-      // Rule: subclass derives from superclass
+      // Rule: subclass derives from its base class
       const auto &mros = getClass(collectionCls)->mro;
-      for (size_t i = 1; i < mros.size(); i++) {
+      const auto &tMros = getClass(ti)->mro;
+      for (size_t i = 0; i < mros.size(); i++) {
         auto t = instantiateType(mros[i].get(), collectionCls);
-        if (t->unify(ti, nullptr) >= 0) {
-          return ti->shared_from_this();
+        for (size_t j = 0; j < tMros.size(); j++) {
+          auto tj = instantiateType(tMros[j].get(), ti);
+          if (t->unify(tj.get(), nullptr) >= 0) {
+            return t->shared_from_this();
+          }
         }
       }
     }
     return nullptr;
   };
 
-  TypePtr collectionTyp = instantiateUnbound();
+  bool isDict = type == StdlibTypes::Dict;
+  auto root = getStdLibType(type);
+  if (isDict) // Instantiate Dict's class template, not the alias.
+    root = getStdLibType(root->name);
+  std::vector<TypePtr> elementTypes;
+  std::vector<bool> declaredUnions;
+  for (int di = 0; di < (isDict ? 2 : 1); ++di) {
+    // Dict is an alias: compare the resolved class, e.g. OrderedDict.
+    auto member = expectedType && expectedType->is(root->name)
+                      ? extractClassGeneric(expectedType, di)
+                      : nullptr;
+    declaredUnions.push_back(member && member->getUnion());
+    elementTypes.push_back(declaredUnions.back() ? member->shared_from_this()
+                                                 : instantiateUnbound());
+  }
   bool done = true;
-  bool isDict = type == getStdLibType("Dict")->name;
   for (auto &i : items) {
     ClassType *typ = nullptr;
     if (!isDict && cast<StarExpr>(i)) {
@@ -228,28 +259,18 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
       done = false;
       continue;
     }
-    if (!collectionTyp->getClass()) {
-      unify(collectionTyp.get(), typ);
-    } else if (!isDict) {
-      if (auto t = superTyp(collectionTyp->getClass(), typ))
-        collectionTyp = t;
-    } else {
-      auto tt = unify(typ, instantiateType(generateTuple(2)))->getClass();
-      seqassert(collectionTyp->getClass() &&
-                    collectionTyp->getClass()->generics.size() == 2 &&
-                    tt->generics.size() == 2,
-                "bad dict");
-      std::vector<types::TypePtr> nt;
-      for (int di = 0; di < 2; di++) {
-        nt.push_back(extractClassGeneric(collectionTyp.get(), di)->shared_from_this());
-        if (!nt[di]->getClass())
-          unify(nt[di].get(), extractClassGeneric(tt, di));
-        else if (auto dt = superTyp(nt[di]->getClass(),
-                                    extractClassGeneric(tt, di)->getClass()))
-          nt[di] = dt;
-      }
-      collectionTyp =
-          instantiateType(generateTuple(nt.size()), ctx->cache->castVectorPtr(nt));
+    if (isDict)
+      typ = unify(typ, instantiateType(generateTuple(2)))->getClass();
+    for (size_t di = 0; di < elementTypes.size(); ++di) {
+      // A declared union fixes storage; only inferred slots participate in lctyp.
+      // Keep dict keys/values independent (union_collection_common_type).
+      if (declaredUnions[di])
+        continue;
+      auto member = isDict ? extractClassGeneric(typ, di) : typ;
+      if (!elementTypes[di]->getClass())
+        unify(elementTypes[di].get(), member);
+      else if (auto t = lctyp(elementTypes[di]->getClass(), member->getClass()))
+        elementTypes[di] = t;
     }
   }
   if (!done)
@@ -258,21 +279,12 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
   Expr *var = N<IdExpr>(getTemporaryVar("cont"));
 
   std::vector<Expr *> constructorArgs{};
-  if (type == getStdLibType("List")->name && !items.empty()) {
+  if (type == StdlibTypes::List && !items.empty()) {
     // Optimization: pre-allocate the list with the exact number of elements
     constructorArgs.push_back(N<IntExpr>(items.size()));
   }
-  auto t = N<IdExpr>(type);
-  auto ta = instantiateType(getStdLibType(type));
-  if (isDict && collectionTyp->getClass()) {
-    seqassert(collectionTyp->getClass()->isRecord(), "bad dict");
-    std::vector<types::Type *> nt;
-    for (auto &g : collectionTyp->getClass()->generics)
-      nt.push_back(g.getType());
-    ta = instantiateType(getStdLibType(type), nt);
-  } else if (!isDict) {
-    ta = instantiateType(getStdLibType(type), {collectionTyp.get()});
-  }
+  auto t = N<IdExpr>(isDict ? root->name : type);
+  auto ta = instantiateType(root, ctx->cache->castVectorPtr(elementTypes));
   t->setType(instantiateTypeVar(ta.get()));
   stmts.push_back(N<AssignStmt>(clone(var), N<CallExpr>(t, constructorArgs)));
   for (const auto &it : items) {

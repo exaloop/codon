@@ -9,15 +9,15 @@ class range:
     # Magic methods
 
     @overload
-    def __new__(start: int, stop: int) -> range:
+    def __new__(start: int, stop: int, /) -> range:
         return range(start, stop, 1)
 
     @overload
-    def __new__(stop: int) -> range:
+    def __new__(stop: int, /) -> range:
         return range(0, stop, 1)
 
     @overload
-    def __new__(start: int, stop: int, step: int) -> range:
+    def __new__(start: int, stop: int, step: int, /) -> range:
         if step == 0:
             raise ValueError("range() step argument must not be zero")
         return superf(start, stop, step)
@@ -26,7 +26,7 @@ class range:
         return self.start + (idx * self.step)
 
     @overload
-    def __getitem__(self, idx: int) -> int:
+    def __getitem__(self, idx: int, /) -> int:
         n = self.__len__()
         if idx < 0:
             idx += n
@@ -35,7 +35,7 @@ class range:
         return self._get(idx)
 
     @overload
-    def __getitem__(self, s: Slice) -> range:
+    def __getitem__(self, s: Slice, /) -> range:
         if s.start is None and s.stop is None and s.step is None:
             return self
         else:
@@ -45,7 +45,7 @@ class range:
             substop = self._get(stop)
             return range(substart, substop, substep)
 
-    def __contains__(self, idx: int) -> bool:
+    def __contains__(self, idx: int, /) -> bool:
         start, stop, step = self.start, self.stop, self.step
         if (step > 0 and not (start <= idx < stop)) or (
             step < 0 and not (stop < idx <= start)
@@ -56,17 +56,17 @@ class range:
     def _index(self, n: int) -> int:
         return (n - self.start).cdiv(self.step)
 
-    def index(self, n: int) -> int:
+    def index(self, n: int, /) -> int:
         if n in self:
             return self._index(n)
         else:
             raise ValueError(str(n) + " is not in range")
 
-    def count(self, n: int) -> int:
+    def count(self, n: int, /) -> int:
         return int(n in self)
 
     @overload
-    def __iter__(self) -> Generator[int]:
+    def __iter__(self, /) -> Generator[int]:
         start, stop, step = self.start, self.stop, self.step
         i = start
         if step > 0:
@@ -79,7 +79,7 @@ class range:
                 i += step
 
     @overload
-    def __len__(self) -> int:
+    def __len__(self, /) -> int:
         start, stop, step = self.start, self.stop, self.step
         if step > 0 and start < stop:
             return 1 + (stop - 1 - start).cdiv(step)
@@ -88,16 +88,16 @@ class range:
         else:
             return 0
 
-    def __bool__(self) -> bool:
+    def __bool__(self, /) -> bool:
         return self.__len__() > 0
 
-    def __reversed__(self) -> Generator[int]:
+    def __reversed__(self, /) -> Generator[int]:
         start, stop, step = self.start, self.stop, self.step
         n = self.__len__()
         return range(start + (n - 1) * step, start - step, -step).__iter__()
 
     @overload
-    def __repr__(self) -> str:
+    def __repr__(self, /) -> str:
         if self.step == 1:
             return f"range({self.start}, {self.stop})"
         else:

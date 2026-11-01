@@ -108,29 +108,6 @@ int StackAllocInstr::doReplaceUsedType(const std::string &name, Type *newType) {
   return 0;
 }
 
-const char TypePropertyInstr::NodeId = 0;
-
-Type *TypePropertyInstr::doGetType() const {
-  switch (property) {
-  case Property::IS_ATOMIC:
-    return getModule()->getBoolType();
-  case Property::IS_CONTENT_ATOMIC:
-    return getModule()->getBoolType();
-  case Property::SIZEOF:
-    return getModule()->getIntType();
-  default:
-    return getModule()->getNoneType();
-  }
-}
-
-int TypePropertyInstr::doReplaceUsedType(const std::string &name, Type *newType) {
-  if (inspectType->getName() == name) {
-    inspectType = newType;
-    return 1;
-  }
-  return 0;
-}
-
 const char YieldInInstr::NodeId = 0;
 
 int YieldInInstr::doReplaceUsedType(const std::string &name, Type *newType) {
@@ -252,17 +229,25 @@ int YieldInstr::doReplaceUsedValue(id_t id, Value *newValue) {
 const char ThrowInstr::NodeId = 0;
 
 std::vector<Value *> ThrowInstr::doGetUsedValues() const {
+  std::vector<Value *> used;
   if (value)
-    return {value};
-  return {};
+    used.push_back(value);
+  if (fallback)
+    used.push_back(fallback);
+  return used;
 }
 
 int ThrowInstr::doReplaceUsedValue(id_t id, Value *newValue) {
+  int replacements = 0;
   if (value && value->getId() == id) {
     setValue(newValue);
-    return 1;
+    ++replacements;
   }
-  return 0;
+  if (fallback && fallback->getId() == id) {
+    setFallback(newValue);
+    ++replacements;
+  }
+  return replacements;
 }
 
 const char FlowInstr::NodeId = 0;

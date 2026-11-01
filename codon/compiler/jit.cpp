@@ -21,9 +21,7 @@ static char *strndup(const char *s, size_t n) {
 }
 #endif
 
-#include "llvm/Support/JSON.h"
-#include "llvm/TargetParser/Host.h"
-
+#include "codon/cir/llvm/llvm.h"
 #include "codon/parser/common.h"
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/doc/doc.h"
@@ -115,6 +113,11 @@ llvm::Error JIT::init(bool forgetful) {
   if (auto err = engine->addModule({std::move(pair.first), std::move(pair.second)}))
     return err;
 
+  auto initialize = engine->lookup(llvisitor->getRuntimeInitializerName());
+  if (!initialize)
+    return initialize.takeError();
+  initialize->toPtr<InputFunc>()();
+
   auto func = engine->lookup("main");
   if (auto err = func.takeError())
     return err;
@@ -142,6 +145,10 @@ llvm::Error JIT::compile(const ir::Func *input, llvm::orc::ResourceTrackerSP rt)
   Timer t3("jit/engine");
   if (auto err = engine->addModule({std::move(pair.first), std::move(pair.second)}, rt))
     return std::move(err);
+  auto initialize = engine->lookup(llvisitor->getRuntimeInitializerName());
+  if (!initialize)
+    return initialize.takeError();
+  initialize->toPtr<InputFunc>()();
   t3.log();
 
   return llvm::Error::success();
@@ -215,6 +222,7 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
     if (auto err = ast::ScopingVisitor::apply(sctx->cache, node, &sctx->globalShadows))
       throw exc::ParserException(std::move(err));
     auto tv = ast::TypecheckVisitor::apply(sctx, node, JIT_FILENAME);
+    ast::TypecheckVisitor(sctx).prepareVTables();
     auto typechecked = cache->N<ast::SuiteStmt>();
     for (auto &s : *preamble)
       typechecked->addStmt(s);

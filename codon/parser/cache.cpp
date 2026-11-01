@@ -2,16 +2,19 @@
 
 #include "cache.h"
 
+#include <algorithm>
 #include <chrono>
 #include <ranges>
 #include <string>
 #include <vector>
 
+#include "codon/cir/llvm/llvm.h"
 #include "codon/cir/pyextension.h"
 #include "codon/cir/util/irtools.h"
 #include "codon/compiler/compiler.h"
 #include "codon/parser/common.h"
 #include "codon/parser/peg/peg.h"
+#include "codon/parser/visitors/scoping/scoping.h"
 #include "codon/parser/visitors/translate/translate.h"
 #include "codon/parser/visitors/typecheck/ctx.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
@@ -23,9 +26,10 @@ const std::string VAR_ARGC = getMangledVar("", "__argc__");
 const std::string FN_OPTIONAL_UNWRAP =
     getMangledFunc("std.internal.types.optional", "unwrap");
 
-Cache::Cache(std::vector<std::unique_ptr<ast::ASTNode>> &nodes, std::string argv0,
-             const std::shared_ptr<IFilesystem> &fs)
-    : fs(fs), _nodes(&nodes) {
+Cache::Cache(std::vector<ASTNodePtr> &nodes, std::string argv0,
+             const std::shared_ptr<IFilesystem> &fs,
+             std::pmr::memory_resource *nodeStorage)
+    : fs(fs), _nodes(&nodes), _nodeStorage(nodeStorage) {
   if (!this->fs) {
     this->fs = std::make_shared<Filesystem>(argv0);
   }
@@ -146,6 +150,13 @@ ir::Func *Cache::realizeFunction(types::FuncType *type,
   }
   ir::Func *f = nullptr;
   if (auto rtv = tv.realize(t.get())) {
+    auto realization =
+        functions[rtv->getFunc()->getFuncName()].realizations.at(rtv->realizedName());
+    bool checkInitialization =
+        tv.getUnmangledName(rtv->getFunc()->getFuncName()) == "__init__";
+    realization->checkInitialization |= checkInitialization;
+    if (!pendingRealizations.empty() || checkInitialization)
+      tv.prepareVTables();
     auto pr = pendingRealizations; // copy it as it might be modified
     for (const auto &key : pr | std::views::keys)
       TranslateVisitor(codegenCtx).translateStmts(clone(functions[key].ast));
@@ -177,7 +188,7 @@ ir::Type *Cache::makeUnion(const std::vector<types::TypePtr> &types) {
   auto tv = TypecheckVisitor(typeCtx);
   auto argType =
       tv.instantiateType(tv.generateTuple(types.size()), castVectorPtr(types));
-  return realizeType(tv.getStdLibType("Union")->getClass(), {argType});
+  return realizeType(tv.getStdLibType(StdlibTypes::Union)->getClass(), {argType});
 }
 
 size_t Cache::getRealizationId(types::ClassType *type) {
@@ -216,13 +227,34 @@ std::vector<ir::SeriesFlow *> Cache::parseCode(const std::string &code) {
   if (!nodeOrErr)
     throw exc::ParserException(nodeOrErr.takeError());
   auto sctx = imports[MAIN_IMPORT].ctx;
+  if (auto err = ast::ScopingVisitor::apply(this, *nodeOrErr, &sctx->globalShadows))
+    throw exc::ParserException(std::move(err));
   auto node = ast::TypecheckVisitor::apply(sctx, *nodeOrErr);
-  auto old = codegenCtx->series;
-  codegenCtx->series.clear();
-  ast::TranslateVisitor(codegenCtx).initializeGlobals();
-  ast::TranslateVisitor(codegenCtx).translateStmts(node);
-  std::swap(old, codegenCtx->series);
-  return old;
+  ast::TypecheckVisitor(sctx).prepareVTables();
+
+  // New imports emit module initialization statements, so use empty block.
+  auto *block = module->Nr<ir::SeriesFlow>("parsed");
+  {
+    auto oldSeries = codegenCtx->series;
+    auto oldBases = codegenCtx->bases;
+    auto restore = llvm::make_scope_exit([&] {
+      codegenCtx->series = std::move(oldSeries);
+      codegenCtx->bases = std::move(oldBases);
+    });
+    codegenCtx->series = {block};
+    codegenCtx->bases = {codegenCtx->mainFunc};
+    ast::TranslateVisitor(codegenCtx).translateStmts(node);
+  }
+
+  // Module::parseCode discards the returned block, so attach initialization to
+  // main (or the current JIT cell), after the runtime preamble and before users
+  // can call the newly parsed helpers. Definitions alone leave main unchanged.
+  if (block->begin() != block->end()) {
+    auto *body = ir::cast<ir::SeriesFlow>(codegenCtx->mainFunc->getBody());
+    auto pos = std::find(body->begin(), body->end(), codegenCtx->mainUserStart);
+    body->insert(pos, block);
+  }
+  return {block};
 }
 
 std::vector<std::shared_ptr<types::ClassType>>
@@ -309,5 +341,49 @@ void Cache::populatePythonModule() {
   for (const auto &key : pr | std::views::keys)
     TranslateVisitor(codegenCtx).translateStmts(clone(functions[key].ast));
 }
+
+namespace StdlibTypes {
+const std::string Any = getMangledClass("", "Any");
+const std::string Array = getMangledClass("", "Array");
+const std::string BaseException =
+    getMangledClass("std.internal.types.error", "BaseException");
+const std::string Bool = getMangledClass("", "bool");
+const std::string Callable = getMangledClass("", "Callable");
+const std::string Capsule = getMangledClass("", "Capsule");
+const std::string CObj = getMangledClass("", "cobj");
+const std::string Complex = getMangledClass("std.internal.types.complex", "complex");
+const std::string Complex64 =
+    getMangledClass("std.internal.types.complex", "complex64");
+const std::string Coroutine = getMangledClass("", "Coroutine");
+const std::string Dict = getMangledVar("", "Dict");
+const std::string Float = getMangledClass("", "float");
+const std::string Float16 = getMangledClass("", "float16");
+const std::string Function = getMangledClass("", "Function");
+const std::string Generator = getMangledClass("", "Generator");
+const std::string Int = getMangledClass("", "Int");
+const std::string List = getMangledClass("std.internal.types.collections.list", "List");
+const std::string NamedTuple = getMangledClass("", "NamedTuple");
+const std::string NDArray = getMangledClass("std.numpy.ndarray", "ndarray");
+const std::string NoneType = getMangledClass("", "NoneType");
+const std::string Object = getMangledClass("", "object");
+const std::string Optional = getMangledClass("", "Optional");
+const std::string Ptr = getMangledClass("", "Ptr");
+const std::string PyError = getMangledClass("std.internal.python", "PyError");
+const std::string Range = getMangledClass("std.internal.types.range", "range");
+const std::string Set = getMangledClass("std.internal.types.collections.set", "Set");
+const std::string Slice = getMangledClass("std.internal.types.slice", "Slice");
+const std::string String = getMangledClass("", "str");
+const std::string ThreadLocal = getMangledClass("std.threading", "ThreadLocal");
+const std::string Tuple = getMangledClass("", "Tuple");
+const std::string Type = getMangledClass("", "type");
+const std::string TypeWrap = getMangledClass("", "TypeWrap");
+const std::string UInt = getMangledClass("", "UInt");
+const std::string Union = getMangledClass("", "Union");
+const std::string UnrealizedType = getMangledClass("", "unrealized_type");
+const std::string Vec = getMangledClass("std.simd", "Vec");
+
+const std::string CallableTrait = "CallableTrait";
+const std::string TypeTrait = "TypeTrait";
+}; // namespace StdlibTypes
 
 } // namespace codon::ast

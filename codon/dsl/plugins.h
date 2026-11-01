@@ -8,10 +8,10 @@
 #include <unordered_set>
 #include <vector>
 
+#include "codon/cir/llvm/llvm.h"
 #include "codon/cir/util/iterators.h"
 #include "codon/compiler/error.h"
 #include "codon/dsl/dsl.h"
-#include "llvm/Support/DynamicLibrary.h"
 
 namespace codon {
 

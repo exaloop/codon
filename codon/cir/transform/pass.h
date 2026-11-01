@@ -28,6 +28,8 @@ public:
   /// @return a unique key for this pass
   virtual std::string getKey() const = 0;
 
+  virtual bool shouldRun(Module *module) const { return true; }
+
   /// Execute the pass.
   /// @param module the module
   virtual void run(Module *module) = 0;

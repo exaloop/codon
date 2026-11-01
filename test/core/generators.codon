@@ -99,6 +99,8 @@ def test_generator_send():
     items = exchange(events)
     next(items)
     assert items.send(10) == 11
+    assert hasattr(items, "send", int)
+    assert not hasattr(items, "send", what=int)
     for repeat in range(3):
         try:
             items.send(100)

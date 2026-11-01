@@ -21,6 +21,10 @@ namespace codon::ast {
   using AcceptorExtend::accept;                                                        \
   ASTNode *clone(bool c) const override;                                               \
   void accept(VISITOR &visitor) override;                                              \
+  std::string toPythonString(bool attributes = false, int indent = -1, int level = 0)  \
+      const override;                                                                  \
+  detail::CodonString formatCodonString(bool attributes, int indent, int level)        \
+      const override;                                                                  \
   std::string toString(int) const override;                                            \
   friend class TypecheckVisitor;                                                       \
   template <typename TE, typename TS> friend struct CallbackASTVisitor;                \
@@ -30,6 +34,18 @@ namespace codon::ast {
 
 // Forward declarations
 struct Stmt;
+struct Param;
+
+std::string pyQuote(const std::string &s);
+std::string pyList(const std::vector<std::string> &v, int indent, int level);
+std::string pyOperator(const std::string &op);
+std::string attrName(int key);
+std::string pyAttrs(const ASTNode *n);
+std::string pyArguments(const std::vector<Param> &params, bool attributes, int indent,
+                        int level);
+std::string pyNode(const std::string &name, const std::vector<std::string> &fields,
+                   const ASTNode *n, bool attrs, int indent, int level);
+std::string pyExpr(const Expr *e, bool attrs, int indent, int level);
 
 /**
  * A Seq AST expression.
@@ -51,8 +67,12 @@ struct Expr : public AcceptorExtend<Expr, ASTNode> {
   void setDone() { done = true; }
   Expr *getOrigExpr() const { return origExpr; }
   void setOrigExpr(Expr *orig) { origExpr = orig; }
+  types::Type *getExpectedType() const { return expectedType; }
+  void setExpectedType(types::Type *e) { expectedType = e; }
 
   static const char NodeId;
+  virtual std::string toPythonString(bool attributes = false, int indent = -1,
+                                     int level = 0) const = 0;
   SERIALIZE(Expr, BASE(ASTNode), /*type,*/ done, origExpr);
 
   Expr *operator<<(types::Type *t);
@@ -69,13 +89,17 @@ private:
   bool done;
   /// Original (pre-transformation) expression
   Expr *origExpr;
+  /// Expected type of the expression. nullptr by default.
+  types::Type *expectedType;
 };
 
 /// Function signature parameter helper node (name: type = defaultValue).
 struct Param : public codon::SrcObject {
+  enum Kind { Normal, PositionalOnly, KeywordOnly };
   std::string name;
   Expr *type;
   Expr *defaultValue;
+  Kind kind;
   enum {
     Value,
     Generic,
@@ -83,9 +107,9 @@ struct Param : public codon::SrcObject {
   } status; // 1 for normal generic, 2 for hidden generic
 
   explicit Param(std::string name = "", Expr *type = nullptr,
-                 Expr *defaultValue = nullptr, int generic = 0);
+                 Expr *defaultValue = nullptr, int generic = 0, Kind kind = Normal);
   explicit Param(const SrcInfo &info, std::string name = "", Expr *type = nullptr,
-                 Expr *defaultValue = nullptr, int generic = 0);
+                 Expr *defaultValue = nullptr, int generic = 0, Kind kind = Normal);
 
   std::string getName() const { return name; }
   Expr *getType() const { return type; }
@@ -95,7 +119,7 @@ struct Param : public codon::SrcObject {
   bool isHiddenGeneric() const { return status == HiddenGeneric; }
   std::pair<int, std::string> getNameWithStars() const;
 
-  SERIALIZE(Param, name, type, defaultValue);
+  SERIALIZE(Param, name, type, defaultValue, kind);
   Param clone(bool) const;
   std::string toString(int) const;
 };

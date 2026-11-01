@@ -288,3 +288,102 @@ def test_27(x):
     assert expect_capture(True, False, ())  # x
     return a
 test_27('x')
+
+@test
+def test_order_write_before_link(value):
+    result = ['']
+    holder = A([''])
+    holder.a[0] = value
+    assign(holder, result)
+    assert expect_capture(False, False, ())
+    return result
+assert test_order_write_before_link('value') == ['']
+
+@test
+def test_order_write_after_link(value):
+    result = ['']
+    holder = A([''])
+    assign(holder, result)
+    holder.a[0] = value
+    assert expect_capture(True, False, ())
+    return result
+assert test_order_write_after_link('value') == ['value']
+
+@test
+def test_order_conditional_write_before_link(value, condition):
+    result = ['']
+    holder = A([''])
+    if condition:
+        holder.a[0] = value
+    assign(holder, result)
+    assert expect_capture(False, False, ())
+    assert expect_capture(False, False, ())
+    return result
+assert test_order_conditional_write_before_link('value', True) == ['']
+assert test_order_conditional_write_before_link('value', False) == ['']
+
+@test
+def test_order_conditional_links(first, second, condition):
+    first_result = ['']
+    second_result = ['']
+    first_holder = A([''])
+    second_holder = A([''])
+    if condition:
+        assign(first_holder, first_result)
+        assign(second_holder, second_result)
+    first_holder.a[0] = first
+    second_holder.a[0] = second
+    assert expect_capture(True, False, ())
+    assert expect_capture(True, False, ())
+    assert expect_capture(False, False, ())
+    return first_result, second_result
+assert test_order_conditional_links('first', 'second', True) == (['first'], ['second'])
+assert test_order_conditional_links('first', 'second', False) == ([''], [''])
+
+@test
+def test_order_loop_back_edge(value, count):
+    result = ['']
+    holder = A([''])
+    for index in range(count):
+        holder.a[0] = value
+        assign(holder, result)
+    assert expect_capture(True, False, ())
+    assert expect_capture(False, False, ())
+    return result
+assert test_order_loop_back_edge('value', 0) == ['']
+assert test_order_loop_back_edge('value', 1) == ['']
+assert test_order_loop_back_edge('value', 2) == ['value']
+
+@test
+def test_order_loop_dominating_write(value, count, condition):
+    result = ['']
+    holder = A([''])
+    for index in range(count):
+        holder.a[0] = value
+        if condition:
+            assign(holder, result)
+    assert expect_capture(True, False, ())
+    assert expect_capture(False, False, ())
+    assert expect_capture(False, False, ())
+    return result
+assert test_order_loop_dominating_write('value', 1, True) == ['']
+assert test_order_loop_dominating_write('value', 2, True) == ['value']
+assert test_order_loop_dominating_write('value', 2, False) == ['']
+
+@test
+def test_order_finally(value, condition):
+    result = ['']
+    holder = A([''])
+    try:
+        assign(holder, result)
+        if condition:
+            raise ValueError('condition')
+    except ValueError:
+        pass
+    finally:
+        holder.a[0] = value
+    assert expect_capture(True, False, ())
+    assert expect_capture(False, False, ())
+    return result
+assert test_order_finally('value', True) == ['value']
+assert test_order_finally('value', False) == ['value']

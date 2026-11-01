@@ -33,8 +33,8 @@ void TypecheckVisitor::visit(AssignExpr *expr) {
 /// See @c transformAssignment and @c unpackAssignments for more details.
 /// See @c wrapExpr for more examples.
 void TypecheckVisitor::visit(AssignStmt *stmt) {
-  if (cast<TupleExpr>(stmt->lhs) || cast<ListExpr>(stmt->lhs)) {
-    resultStmt = transform(unpackAssignment(stmt->lhs, stmt->rhs));
+  if (cast<TupleExpr>(stmt->getLhs()) || cast<ListExpr>(stmt->getLhs())) {
+    resultStmt = transform(unpackAssignment(stmt->getLhs(), stmt->getRhs()));
     return;
   }
 
@@ -54,11 +54,13 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
     stmt->getLhs()->eraseAttribute(Attr::ExprDominatedUsed);
     auto e = cast<IdExpr>(stmt->getLhs());
     seqassert(e, "dominated bad assignment");
-    resultStmt = transform(N<SuiteStmt>(
-        resultStmt,
-        N<AssignStmt>(N<IdExpr>(fmt::format("{}{}", getUnmangledName(e->getValue()),
-                                            VAR_USED_SUFFIX)),
-                      N<BoolExpr>(true), nullptr, AssignStmt::UpdateMode::Update)));
+    // A type declaration alone must not mark a binding initialized!
+    if (stmt->getRhs())
+      resultStmt = transform(N<SuiteStmt>(
+          resultStmt,
+          N<AssignStmt>(N<IdExpr>(fmt::format("{}{}", getUnmangledName(e->getValue()),
+                                              VAR_USED_SUFFIX)),
+                        N<BoolExpr>(true), nullptr, AssignStmt::UpdateMode::Update)));
   }
 }
 
@@ -74,15 +76,15 @@ void TypecheckVisitor::visit(DelStmt *stmt) {
     // Assign `a` to `type(a)()` to mark it for deletion
     resultStmt = transform(N<AssignStmt>(
         stmt->getExpr(),
-        N<CallExpr>(N<CallExpr>(N<IdExpr>(TYPE_TYPE), clone(stmt->getExpr()))), nullptr,
-        AssignStmt::Update));
+        N<CallExpr>(N<CallExpr>(N<IdExpr>(StdlibTypes::Type), clone(stmt->getExpr()))),
+        nullptr, AssignStmt::Update));
 
     // Allow deletion *only* if the binding is dominated
     auto val = ctx->find(ei->getValue());
     if (!val)
       E(Error::ID_NOT_FOUND, ei, ei->getValue());
-    if (ctx->getScope() != val->scope)
-      E(Error::DEL_NOT_ALLOWED, ei, ei->getValue());
+    // TODO: check if variable can be deleted (e.g., can you delete a variable in
+    // outside scope?!)
     ctx->remove(ei->getValue());
     ctx->remove(getUnmangledName(ei->getValue()));
   } else {
@@ -101,7 +103,9 @@ void TypecheckVisitor::visit(DelStmt *stmt) {
 /// @example
 ///   `a, b = c, d + foo()` -> `assign = (c, d + foo); a = assign[0]; b = assign[1]`.
 /// Each assignment is unpacked recursively to allow cases like `a, (b, c) = d`.
-Stmt *TypecheckVisitor::unpackAssignment(Expr *lhs, Expr *rhs) {
+/// Compiler-owned loop tuples can be read directly when their arity is known,
+/// preserving the field-read pattern used by loop optimizations.
+Stmt *TypecheckVisitor::unpackAssignment(Expr *lhs, Expr *rhs, bool isLoopTarget) {
   std::vector<Expr *> leftSide;
   if (auto et = cast<TupleExpr>(lhs)) {
     // Case: (a, b) = ...
@@ -119,13 +123,50 @@ Stmt *TypecheckVisitor::unpackAssignment(Expr *lhs, Expr *rhs) {
   auto oldSrcInfo = getSrcInfo();
   setSrcInfo(rhs->getSrcInfo());
   auto *block = N<SuiteStmt>();
-  if (!cast<IdExpr>(rhs)) {
-    // Store any non-trivial right-side expression into a variable
-    auto var = getTemporaryVar("assign");
-    auto newRhs = N<IdExpr>(var);
-    block->addStmt(N<AssignStmt>(newRhs, ast::clone(rhs)));
+  // Consume each nested unpacking source once, including generators.
+  bool hasStar = std::ranges::any_of(
+      leftSide, [](Expr *item) { return cast<StarExpr>(item) != nullptr; });
+  auto newRhs = N<IdExpr>(getTemporaryVar("assign"));
+  auto tuple = cast<TupleExpr>(rhs);
+  bool knownShape =
+      tuple &&
+      std::ranges::none_of(
+          *tuple, [](Expr *item) { return cast<StarExpr>(item) != nullptr; }) &&
+      (hasStar ? tuple->size() >= leftSide.size() - 1
+               : tuple->size() == leftSide.size());
+  auto sourceType = rhs->getType();
+  bool directLoopTuple = false;
+  if (isLoopTarget && sourceType && sourceType->is(StdlibTypes::Tuple)) {
+    auto sourceSize = getClassFields(sourceType->getClass()).size();
+    directLoopTuple =
+        hasStar ? sourceSize >= leftSide.size() - 1 : sourceSize == leftSide.size();
+  }
+  if (!directLoopTuple) {
+    Expr *source = ast::clone(rhs);
+    if (!knownShape)
+      source = N<CallExpr>(
+          N<IdExpr>(getMangledMethod("std.internal.types.collections.list", "List",
+                                     "_unpack")),
+          source, N<IntExpr>(leftSide.size() - hasStar), N<BoolExpr>(hasStar));
+    block->addStmt(N<AssignStmt>(newRhs, source));
     rhs = newRhs;
   }
+
+  auto assignments = N<SuiteStmt>();
+  Stmt *starredSnapshot = nullptr;
+  auto addAssignment = [&](Expr *target, Expr *value, bool starred = false) {
+    if (hasStar) {
+      auto snapshot = N<IdExpr>(getTemporaryVar("unpack"));
+      auto extract = N<AssignStmt>(snapshot, value);
+      if (starred)
+        starredSnapshot = extract;
+      else
+        block->addStmt(extract);
+      assignments->addStmt(unpackAssignment(target, snapshot));
+    } else {
+      block->addStmt(unpackAssignment(target, value));
+    }
+  };
 
   // Process assignments until the fist StarExpr (if any)
   size_t st = 0;
@@ -135,8 +176,7 @@ Stmt *TypecheckVisitor::unpackAssignment(Expr *lhs, Expr *rhs) {
     // Transformation: `leftSide_st = rhs[st]` where `st` is static integer
     auto rightSide = N<IndexExpr>(ast::clone(rhs), N<IntExpr>(st));
     // Recursively process the assignment because of cases like `(a, (b, c)) = d)`
-    auto ns = unpackAssignment(leftSide[st], rightSide);
-    block->addStmt(ns);
+    addAssignment(leftSide[st], rightSide);
   }
   // Process StarExpr (if any) and the assignments that follow it
   if (st < leftSide.size() && cast<StarExpr>(leftSide[st])) {
@@ -153,8 +193,7 @@ Stmt *TypecheckVisitor::unpackAssignment(Expr *lhs, Expr *rhs) {
                              ? nullptr
                              : N<IntExpr>(-leftSide.size() + st + 1),
                          nullptr)));
-    auto ns = unpackAssignment(cast<StarExpr>(leftSide[st])->getExpr(), rightSide);
-    block->addStmt(ns);
+    addAssignment(cast<StarExpr>(leftSide[st])->getExpr(), rightSide, true);
     st += 1;
     // Process remaining assignments. They will use negative indices (-1, -2 etc.)
     // because we do not know how big is StarExpr
@@ -163,9 +202,12 @@ Stmt *TypecheckVisitor::unpackAssignment(Expr *lhs, Expr *rhs) {
         E(Error::ASSIGN_MULTI_STAR, leftSide[st]->getSrcInfo());
       rightSide = N<IndexExpr>(ast::clone(rhs),
                                N<IntExpr>(-static_cast<int>(leftSide.size() - st)));
-      auto next = unpackAssignment(leftSide[st], rightSide);
-      block->addStmt(next);
+      addAssignment(leftSide[st], rightSide);
     }
+  }
+  if (hasStar) {
+    block->addStmt(starredSnapshot);
+    block->addStmt(assignments);
   }
   setSrcInfo(oldSrcInfo);
   return block;
@@ -210,24 +252,27 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
     E(Error::ASSIGN_INVALID, stmt->getLhs());
     return nullptr;
   }
+  // Never do undef checks on assignments!
+  e->setAttribute(Attr::ExprNoUndefCheck);
 
+  // Ensure that captured values are in a Capsule
   if (ctx->inFunction() && stmt->getRhs() && !mustExist) {
     if (auto b =
             ctx->getBase()->func->getAttribute<BindingsAttribute>(Attr::Bindings)) {
       const auto &bd = b->bindings[e->getValue()];
       if (bd.isNonlocal) {
         if (stmt->getTypeExpr())
-          stmt->type = N<IndexExpr>(N<IdExpr>("Capsule"), stmt->getTypeExpr());
+          stmt->type =
+              N<IndexExpr>(N<IdExpr>(StdlibTypes::Capsule), stmt->getTypeExpr());
         else
-          stmt->type = N<IdExpr>("Capsule");
+          stmt->type = N<IdExpr>(StdlibTypes::Capsule);
       }
     }
   }
 
   bool isThreadLocal = false;
   auto typeExpr = transformType(stmt->getTypeExpr());
-  if (typeExpr &&
-      extractType(typeExpr)->is(getMangledClass("std.threading", "ThreadLocal"))) {
+  if (typeExpr && extractType(typeExpr)->is(StdlibTypes::ThreadLocal)) {
     isThreadLocal = true;
     if (auto ti = cast<IndexExpr>(stmt->getTypeExpr())) {
       typeExpr = transformType(ti->getIndex());
@@ -248,17 +293,29 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
       s->setAtomicUpdate();
     else
       s->setUpdate();
-    if (auto u = transformUpdate(s))
+    if (auto u = transformUpdate(s)) {
       return u;
-    else
+    } else {
       return s; // delay
+    }
   }
 
+  // Construct collection literals with their declared union storage (union_*_layout).
+  if (typeExpr && (cast<ListExpr>(stmt->getRhs()) || cast<SetExpr>(stmt->getRhs()) ||
+                   cast<DictExpr>(stmt->getRhs())))
+    stmt->getRhs()->setExpectedType(extractType(typeExpr));
   stmt->rhs = transform(stmt->getRhs(), true);
   stmt->type = typeExpr;
 
   // Generate new canonical variable name for this assignment and add it to the context
-  auto canonical = ctx->generateCanonicalName(e->getValue());
+  std::string canonical;
+  if (endswith(e->getValue(), VAR_USED_SUFFIX)) {
+    auto f = ctx->forceFind(e->getValue().substr(
+        0, e->getValue().size() - std::string(VAR_USED_SUFFIX).size()));
+    canonical = f->canonicalName + VAR_USED_SUFFIX;
+  } else {
+    canonical = ctx->generateCanonicalName(e->getValue());
+  }
   auto assign =
       N<AssignStmt>(N<IdExpr>(canonical), stmt->getRhs(), stmt->getTypeExpr());
   assign->getLhs()->cloneAttributesFrom(stmt->getLhs());
@@ -267,12 +324,12 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
                                 : instantiateUnbound(assign->getLhs()->getSrcInfo()));
   if (isThreadLocal)
     assign->setThreadLocal();
-  if (!stmt->getRhs() && !stmt->getTypeExpr() && ctx->find("NoneType")) {
+  if (!stmt->getRhs() && !stmt->getTypeExpr() && ctx->find(StdlibTypes::NoneType)) {
     // All declarations that are not handled are to be marked with NoneType later on
     // (useful for dangling declarations that are not initialized afterwards due to
     //  static check)
     assign->getLhs()->getType()->getLink()->defaultType =
-        getStdLibType("NoneType")->shared_from_this();
+        getStdLibType(StdlibTypes::NoneType)->shared_from_this();
     ctx->getBase()->pendingDefaults[1].insert(
         assign->getLhs()->getType()->shared_from_this());
   }
@@ -283,13 +340,19 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
   }
   auto val = std::make_shared<TypecheckItem>(
       canonical, ctx->getBaseName(), ctx->getModule(),
-      assign->getLhs()->getType()->shared_from_this(), ctx->getScope());
+      assign->getLhs()->getType()->shared_from_this(), ctx->blockLevel);
   val->time = getTime();
   val->setSrcInfo(getSrcInfo());
   ctx->add(e->getValue(), val);
   ctx->addAlwaysVisible(val);
 
   if (assign->getRhs()) { // not a declaration!
+    // Inferred chain temporaries preserve compile-time comparison operands.
+    if (stmt->hasAttribute(Attr::MaybeLiteral)) {
+      if (auto unbound = assign->getLhs()->getType()->getUnbound())
+        unbound->staticKind = assign->getRhs()->getType()->getStaticKind();
+      assign->setAttribute(Attr::MaybeLiteral);
+    }
     // Check if we can wrap the expression (e.g., `a: float = 3` -> `a = float(3)`)
     if (wrapExpr(&assign->rhs, assign->getLhs()->getType())) {
       unify(assign->getLhs()->getType(), assign->getRhs()->getType());
@@ -354,6 +417,13 @@ Stmt *TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
                                                      extractType(stmt->getTypeExpr())));
   }
 
+  // Annotation-only updates refine the hoisted variable's type, not its value.
+  if (!stmt->getRhs()) {
+    if (realize(stmt->getLhs()->getType()))
+      stmt->setDone();
+    return nullptr;
+  }
+
   // Case: wrap expressions if needed (e.g. floats or optionals)
   if (wrapExpr(&stmt->rhs, stmt->getLhs()->getType()))
     unify(stmt->getRhs()->getType(), stmt->getLhs()->getType());
@@ -372,6 +442,13 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
   stmt->lhs = transform(stmt->getLhs());
 
   if (auto lhsClass = extractClassType(stmt->getLhs())) {
+    // enum_reassign_err: use the existing member globals, without a second
+    // registry of enum names in the class cache.
+    if (isEnum(lhsClass) && !startswith(stmt->getMember(), "__"))
+      if (auto var = in(getClass(lhsClass)->classVars, stmt->getMember());
+          var && ctx->forceFind(*var)->getType()->is(lhsClass->name))
+        E(Error::CUSTOM, stmt, "cannot reassign enumeration member '{}'",
+          stmt->getMember());
     auto member = findMember(lhsClass, stmt->getMember());
     if (!member) {
       // Case: property setters
@@ -392,7 +469,7 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
           return;
         }
     }
-    if (!member && lhsClass->is(TYPE_OPTIONAL)) {
+    if (!member && lhsClass->is(StdlibTypes::Optional)) {
       // Unwrap optional and look up there
       resultStmt = transform(N<AssignMemberStmt>(
           N<CallExpr>(N<IdExpr>(FN_OPTIONAL_UNWRAP), stmt->getLhs()), stmt->getMember(),
@@ -447,6 +524,7 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
               return transform(clean_clone(member->typeExpr));
             })));
     }
+
     if (!wrapExpr(&stmt->rhs, ftyp.get()))
       return;
     unify(stmt->getRhs()->getType(), ftyp.get());
@@ -470,14 +548,15 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
 ///         expression, and (2) the replacement expression.
 std::pair<bool, Stmt *> TypecheckVisitor::transformInplaceUpdate(AssignStmt *stmt) {
   // Case: capsule operations
-  if (stmt->getLhs()->getType()->is("Capsule")) {
-    return {true,
-            transform(N<AssignStmt>(
-                N<IndexExpr>(N<CallExpr>(N<IdExpr>(getMangledMethod("std.internal.core",
-                                                                    "Capsule", "_ptr")),
-                                         stmt->getLhs()),
-                             N<IntExpr>(0)),
-                stmt->getRhs()))};
+  if (auto c = cast<CallExpr>(stmt->getLhs());
+      c && isFunctionExpr(c->getExpr(), getMangledMethod("", "Capsule", "_get"))) {
+    return {
+        true,
+        transform(N<AssignStmt>(
+            N<IndexExpr>(N<CallExpr>(N<IdExpr>(getMangledMethod("", "Capsule", "_ptr")),
+                                     c->begin()->getExpr()),
+                         N<IntExpr>(0)),
+            stmt->getRhs()))};
   }
 
   // Case: in-place updates (e.g., `a += b`).
@@ -516,8 +595,9 @@ std::pair<bool, Stmt *> TypecheckVisitor::transformInplaceUpdate(AssignStmt *stm
     if (cast<IdExpr>(call->front()) &&
         cast<IdExpr>(call->front())->getValue() == lei->getValue()) {
       // `type(a).__atomic_min__(__ptr__(a), b)`
-      auto ptrTyp = instantiateType(stmt->getLhs()->getSrcInfo(), getStdLibType("Ptr"),
-                                    std::vector<types::Type *>{lhsClass});
+      auto ptrTyp =
+          instantiateType(stmt->getLhs()->getSrcInfo(), getStdLibType(StdlibTypes::Ptr),
+                          std::vector<types::Type *>{lhsClass});
       (*call)[1].value = transform((*call)[1]);
       auto rhsTyp = extractClassType((*call)[1].value);
       if (auto method =
@@ -536,8 +616,9 @@ std::pair<bool, Stmt *> TypecheckVisitor::transformInplaceUpdate(AssignStmt *stm
     // `type(a).__atomic_xchg__(__ptr__(a), b)`
     stmt->rhs = transform(stmt->getRhs());
     if (auto rhsClass = stmt->getRhs()->getClassType()) {
-      auto ptrType = instantiateType(stmt->getLhs()->getSrcInfo(), getStdLibType("Ptr"),
-                                     std::vector<types::Type *>{lhsClass});
+      auto ptrType =
+          instantiateType(stmt->getLhs()->getSrcInfo(), getStdLibType(StdlibTypes::Ptr),
+                          std::vector<types::Type *>{lhsClass});
       if (auto m =
               findBestMethod(lhsClass, "__atomic_xchg__", {ptrType.get(), rhsClass})) {
         return {true, transform(N<ExprStmt>(

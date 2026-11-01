@@ -1,6 +1,6 @@
 // Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
-#include "codon/cir/transform/pass.h"
+#include "codon/cir/transform/numpy/numpy.h"
 #include "codon/cir/type.h"
 
 namespace codon {
@@ -9,7 +9,7 @@ namespace transform {
 namespace numpy {
 
 /// NumPy bounds check elision pass
-class NumPyBoundsCheckElisionPass : public OperatorPass {
+class NumPyBoundsCheckElisionPass : public NumPyPass {
 private:
   /// Key of the reaching definition analysis
   std::string reachingDefKey;
@@ -20,7 +20,7 @@ public:
   /// Constructs a NumPy bounds check elision pass.
   /// @param reachingDefKey the reaching definition analysis' key
   NumPyBoundsCheckElisionPass(const std::string &reachingDefKey)
-      : OperatorPass(), reachingDefKey(reachingDefKey) {}
+      : NumPyPass(), reachingDefKey(reachingDefKey) {}
 
   std::string getKey() const override { return KEY; }
   void visit(ImperativeForFlow *f) override;

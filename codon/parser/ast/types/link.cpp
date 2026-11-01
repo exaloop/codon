@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "codon/parser/ast/types/link.h"
@@ -117,7 +118,7 @@ TypePtr LinkType::generalize(int atLevel) const {
 }
 
 TypePtr LinkType::instantiate(int atLevel, int *unboundCount,
-                              std::unordered_map<int, TypePtr> *cache) const {
+                              InstantiationCache *cache) const {
   if (kind == Generic) {
     if (TypePtr *res = nullptr; cache && ((res = in(*cache, id))))
       return *res;
@@ -190,6 +191,7 @@ std::string LinkType::debugString(char mode) const {
       return trait->debugString(mode);
     }
     return (genericName.empty() ? (mode ? "?" : "<unknown type>") : genericName);
+    // (mode ? genericName : cache->rev(genericName)));
   }
   return type->debugString(mode);
 }
@@ -238,32 +240,40 @@ LinkType *LinkType::getUnbound() {
 }
 
 bool LinkType::occurs(Type *typ, Type::Unification *undo) {
-  if (auto tl = typ->getLink()) {
-    if (tl->kind == Unbound) {
-      if (tl->id == id)
-        return true;
-      if (tl->trait && occurs(tl->trait.get(), undo))
-        return true;
-      if (undo && tl->level > level) {
-        undo->leveled.emplace_back(tl->shared_from_this(), tl->level);
-        tl->level = level;
-      }
+  // Closure captures and function signatures share earlier types. Visit each node
+  // once per check, including its level adjustment, rather than expanding the DAG.
+  std::unordered_set<Type *> visited;
+  std::function<bool(Type *)> check = [&](Type *typ) -> bool {
+    if (!visited.insert(typ).second)
       return false;
-    } else if (tl->kind == Link) {
-      return occurs(tl->type.get(), undo);
+    if (auto tl = typ->getLink()) {
+      if (tl->kind == Unbound) {
+        if (tl->id == id)
+          return true;
+        if (tl->trait && check(tl->trait.get()))
+          return true;
+        if (undo && tl->level > level) {
+          undo->leveled.emplace_back(tl->shared_from_this(), tl->level);
+          tl->level = level;
+        }
+        return false;
+      } else if (tl->kind == Link) {
+        return check(tl->type.get());
+      } else {
+        return false;
+      }
+    } else if (typ->getStatic()) {
+      return false;
+    }
+    if (const auto tc = typ->getClass()) {
+      return std::ranges::any_of(
+          tc->generics.begin(), tc->generics.end(),
+          [&](const auto &g) { return g.type && check(g.type.get()); });
     } else {
       return false;
     }
-  } else if (typ->getStatic()) {
-    return false;
-  }
-  if (const auto tc = typ->getClass()) {
-    return std::ranges::any_of(
-        tc->generics.begin(), tc->generics.end(),
-        [&](const auto &g) { return g.type && occurs(g.type.get(), undo); });
-  } else {
-    return false;
-  }
+  };
+  return check(typ);
 }
 
 } // namespace codon::ast::types

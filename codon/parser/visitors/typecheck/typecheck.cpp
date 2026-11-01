@@ -2,6 +2,7 @@
 
 #include "typecheck.h"
 
+#include <algorithm>
 #include <fmt/format.h>
 #include <memory>
 #include <utility>
@@ -46,7 +47,7 @@ Stmt *TypecheckVisitor::apply(
   cache->imports[file].update(MAIN_IMPORT, file, ctx);
   cache->imports[MAIN_IMPORT] = cache->imports[file];
   ctx->setFilename(file);
-  ctx->moduleName = {ImportFile::PACKAGE, file, MODULE_MAIN};
+  ctx->setModule({ImportFile::PACKAGE, file, MODULE_MAIN});
 
   // Prepare the code
   auto tv = TypecheckVisitor(ctx, preamble);
@@ -77,21 +78,19 @@ Stmt *TypecheckVisitor::apply(
 
   if (auto err = ScopingVisitor::apply(cache, suite, &ctx->globalShadows))
     throw exc::ParserException(std::move(err));
+  // LOG(">> {}", suite->toPythonString(true, 2));
   auto n = tv.inferTypes(suite, true);
   if (!n) {
     auto errors = tv.findTypecheckErrors(suite);
+    // LOG("-> {}", suite->toString(2));
     throw exc::ParserException(errors);
   }
 
   suite = tv.N<SuiteStmt>();
   suite->items.push_back(preamble);
-
-  // Add dominated assignment declarations
-  suite->items.insert(suite->items.end(), ctx->scope.back().stmts.begin(),
-                      ctx->scope.back().stmts.end());
   suite->items.push_back(n);
 
-  if (cast<SuiteStmt>(n) && !cache->compiler->getOptions()->pyext)
+  if (!cache->compiler->getOptions()->pyext)
     tv.prepareVTables();
 
   if (!ctx->cache->errors.empty())
@@ -123,7 +122,7 @@ void TypecheckVisitor::loadStdLibrary(
 
   // Load the standard library
   stdlib->isStdlibLoading = true;
-  stdlib->moduleName = {ImportFile::STDLIB, stdlibPath->path, "__init__"};
+  stdlib->setModule({ImportFile::STDLIB, stdlibPath->path, "__init__"});
   stdlib->setFilename(stdlibPath->path);
 
   // 1. Core definitions
@@ -186,6 +185,7 @@ void TypecheckVisitor::loadStdLibrary(
 /// Simplify an AST node. Assumes that the standard library is loaded.
 Stmt *TypecheckVisitor::apply(const std::shared_ptr<TypeContext> &ctx, Stmt *node,
                               const std::string &file, bool sweepForceRealize) {
+  ctx->prepareCheckpoint();
   auto oldFilename = ctx->getFilename();
   ctx->setFilename(file);
   auto preamble = ctx->cache->N<ast::SuiteStmt>();
@@ -263,8 +263,18 @@ Expr *TypecheckVisitor::transform(Expr *expr, bool allowTypes) {
 /// Special case: replace `None` with `NoneType`
 /// @throw @c ParserException if a node is not a type (use @c transform instead).
 Expr *TypecheckVisitor::transformType(Expr *expr, bool simple) {
+  // In annotations, the builtin type describes arbitrary class values
+  if (auto builtin = isId(expr, StdlibTypes::Type)
+                         ? ctx->find(StdlibTypes::Type, getTime())
+                         : nullptr;
+      builtin && builtin->getName() == StdlibTypes::Type) {
+    auto annotation = N<IdExpr>(StdlibTypes::Type);
+    annotation->setType(instantiateType(getStdLibType(StdlibTypes::Type)));
+    annotation->setDone();
+    return annotation;
+  }
   if (cast<NoneExpr>(expr)) {
-    auto ne = N<IdExpr>("NoneType");
+    auto ne = N<IdExpr>(StdlibTypes::NoneType);
     ne->setSrcInfo(expr->getSrcInfo());
     expr = ne;
   }
@@ -356,7 +366,7 @@ void TypecheckVisitor::visit(SuiteStmt *stmt) {
 
   std::vector<Stmt *> prepend;
   if (auto b = stmt->getAttribute<BindingsAttribute>(Attr::Bindings)) {
-    for (auto &[n, bd] : b->bindings) {
+    for (const auto &[n, bd] : sorted_view(b->bindings)) {
       prepend.push_back(N<AssignStmt>(N<IdExpr>(n), nullptr));
       if (bd.count > 0)
         prepend.push_back(N<AssignStmt>(
@@ -366,6 +376,12 @@ void TypecheckVisitor::visit(SuiteStmt *stmt) {
   }
   if (!prepend.empty())
     stmt->items.insert(stmt->items.begin(), prepend.begin(), prepend.end());
+  auto lr = stmt->getAttribute<ir::KeyValueAttribute>(Attr::LocalRenames);
+  if (lr) {
+    for (const auto &[k, v] : sorted_view(lr->attributes)) {
+      ctx->add(k, ctx->forceFind(v));
+    }
+  }
   for (auto *s : *stmt) {
     if (ctx->returnEarly) {
       // If returnEarly is set (e.g., in the function) ignore the rest
@@ -386,6 +402,11 @@ void TypecheckVisitor::visit(SuiteStmt *stmt) {
     }
   }
   stmt->items = stmts;
+  if (lr) {
+    for (const auto &[k, _] : sorted_view(lr->attributes)) {
+      ctx->remove(k);
+    }
+  }
   if (done)
     stmt->setDone();
 }
@@ -437,7 +458,7 @@ TypecheckVisitor::findBestMethod(ClassType *typ, const std::string &member,
     callArgs.emplace_back("", N<NoneExpr>()); // dummy expression
     callArgs.back().value->setType(a->shared_from_this());
   }
-  auto methods = findMethod(typ, member, false);
+  auto methods = findMethod(typ, member);
   auto m = findMatchingMethods(typ, methods, callArgs);
   return m.empty() ? nullptr : m[0];
 }
@@ -450,7 +471,7 @@ types::FuncType *TypecheckVisitor::findBestMethod(ClassType *typ,
   std::vector<CallArg> callArgs;
   for (auto &a : args)
     callArgs.emplace_back("", a);
-  auto methods = findMethod(typ, member, false);
+  auto methods = findMethod(typ, member);
   auto m = findMatchingMethods(typ, methods, callArgs);
   return m.empty() ? nullptr : m[0];
 }
@@ -465,99 +486,296 @@ types::FuncType *TypecheckVisitor::findBestMethod(
     callArgs.emplace_back(n, N<NoneExpr>()); // dummy expression
     callArgs.back().value->setType(a->shared_from_this());
   }
-  auto methods = findMethod(typ, member, false);
+  auto methods = findMethod(typ, member);
   auto m = findMatchingMethods(typ, methods, callArgs);
   return m.empty() ? nullptr : m[0];
 }
 
-/// Check if a function can be called with the given arguments.
-/// See @c reorderNamedArgs for details.
-int TypecheckVisitor::canCall(types::FuncType *fn, const std::vector<CallArg> &args,
-                              types::ClassType *part) {
-  std::vector<types::Type *> partialArgs;
-  if (part && part->getPartial()) {
-    auto known = part->getPartialMask();
-    auto knownArgTypes = extractClassGeneric(part, 1)->getClass();
-    for (size_t i = 0, k = 0; i < known.size(); i++)
-      if (known[i] == ClassType::PartialFlag::Included) {
-        partialArgs.push_back(extractClassGeneric(knownArgTypes, static_cast<int>(k)));
-        k++;
-      } else if (known[i] == ClassType::PartialFlag::Default) {
-        k++;
-      }
+/// Types captured by a partial, indexed by AST parameter (including generics).
+/// The trailing *args tuple is separate from the fixed captured arguments.
+std::vector<Type *> TypecheckVisitor::getPartialArgTypes(FuncType *fn,
+                                                         ClassType *part) const {
+  std::vector<Type *> result(fn->ast->size(), nullptr);
+  if (part) {
+    const auto known = part->getPartialMask();
+    auto captured = extractClassGeneric(part, 1)->getClass();
+    for (size_t i = 0, pi = 0; i < known.size(); ++i)
+      if ((*fn->ast)[i].isValue() && (known[i] == ClassType::PartialFlag::Included ||
+                                      known[i] == ClassType::PartialFlag::Default))
+        result[i] = (*captured)[pi++];
   }
+  return result;
+}
 
-  std::vector<std::pair<types::Type *, size_t>> reordered;
+Expr *TypecheckVisitor::getCallDefault(const Param &parameter) {
+  // An unannotated None default participates in optional inference at calls.
+  if (cast<NoneExpr>(parameter.getDefault()) && !parameter.getType())
+    return transform(N<CallExpr>(N<InstantiateExpr>(N<IdExpr>(StdlibTypes::Optional),
+                                                    N<IdExpr>(StdlibTypes::NoneType))));
+  return transform(clean_clone(parameter.getDefault()));
+}
+
+Type *TypecheckVisitor::getCallArgType(FuncType *fn, size_t parameterIndex,
+                                       size_t valueIndex, Type *actual) {
+  auto expected = extractFuncArgType(fn, valueIndex);
+
+  // Calls and callable constraints must select the same concrete union member.
+  if (auto u = expected->getUnion(); u && u->canRealize()) {
+    auto signature = getFunction(fn->getFuncName())->getType();
+    // Check if there is a binding for this name to safeguard against cases
+    // where specialized arg is being reassigned to another type within union
+    auto bindings = fn->ast->getAttribute<BindingsAttribute>(Attr::Bindings);
+    auto binding =
+        bindings
+            ? in(bindings->bindings,
+                 getUnmangledName((*fn->ast)[parameterIndex].getNameWithStars().second))
+            : nullptr;
+    // Handle union specialization
+    if (actual->canRealize() && extractFuncArgType(signature, valueIndex)->getUnion() &&
+        (!binding || (binding->count == 1 && !binding->isNonlocal)) &&
+        !fn->ast->hasAttribute(Attr::LLVM) && !fn->ast->hasAttribute(Attr::C))
+      for (auto member : u->getRealizationTypes())
+        if (member->unify(actual, nullptr) >= 0)
+          return actual;
+  }
+  return expected;
+}
+
+/// Match the same parameter slots as callReorderArguments(), applying the same
+/// argument coercions as typecheckCallArgs().
+/// Probes avoid transformations/instantiations.
+/// preserveUnions is indexed by supplied arguments, not reordered parameters.
+int TypecheckVisitor::canCall(FuncType *fn, const std::vector<CallArg> &args,
+                              ClassType *part, std::vector<bool> *preserveUnions,
+                              Type::Unification *us, bool probing) {
+  if (!us)
+    return matchCallable(fn, args, nullptr, nullptr, part, preserveUnions);
+  auto changes = us;
+  if (preserveUnions)
+    preserveUnions->assign(args.size(), false);
+  auto captured = getPartialArgTypes(fn, part);
+  const auto known = part ? part->getPartialMask() : "";
   const auto &niGenerics = fn->ast->getNonInferrableGenerics();
-  auto score = reorderNamedArgs(
+  return reorderNamedArgs(
       fn, args,
-      [&](int s, int k, const std::vector<std::vector<int>> &slots, bool _) {
-        for (int si = 0, gi = 0, pi = 0; si < slots.size(); si++) {
-          if ((*fn->ast)[si].isGeneric()) {
-            if (slots[si].empty()) {
-              // is this "real" type?
-              if (in(niGenerics, (*fn->ast)[si].getName()) &&
-                  !(*fn->ast)[si].getDefault())
-                return -1;
-              reordered.emplace_back(nullptr, 0);
-            } else {
-              seqassert(gi < fn->funcGenerics.size(), "bad fn");
-              if (!extractFuncGeneric(fn, gi)->getStaticKind() &&
-                  !isTypeExpr(args[slots[si][0]]))
-                return -1;
-              reordered.emplace_back(args[slots[si][0]].getExpr()->getType(),
-                                     slots[si][0]);
-            }
-            gi++;
-          } else if (si == s || si == k || slots[si].size() != 1) {
-            // Partials
-            if (slots[si].empty() && part && part->getPartial() &&
-                part->getPartialMask()[si] == ClassType::PartialFlag::Included) {
-              reordered.emplace_back(partialArgs[pi++], 0);
-            } else {
-              // Ignore *args, *kwargs and default arguments
-              reordered.emplace_back(nullptr, 0);
-            }
-          } else {
-            reordered.emplace_back(args[slots[si][0]].getExpr()->getType(),
-                                   slots[si][0]);
-          }
-        }
-        return 0;
+      [&](int star, int kwstar, const CallArgSlots &slots, bool partial) {
+        return withClassGenerics(
+            fn,
+            [&]() {
+              int providedGenerics = 0;
+              std::vector<TypePtr> replacements;
+              auto wrap = [&](Type *actual, Type *expected) -> TypePtr {
+                auto [done, wrapped, conversion] = canWrapExpr(actual, expected, fn);
+                if (!conversion && !expected->getStaticKind())
+                  // special case: @no_argument_wrap prevents needed static wrapping
+                  wrapped = getUnderlyingStaticType(actual)->shared_from_this();
+                if (!wrapped)
+                  wrapped = actual->shared_from_this();
+                if (wrapped->unify(expected, changes) < 0)
+                  return nullptr;
+                return expected->getClass() ? expected->shared_from_this() : wrapped;
+              };
+              for (size_t si = 0, vi = 0, gi = 0; si < slots.size(); ++si) {
+                const auto &param = (*fn->ast)[si];
+                if (param.isGeneric()) {
+                  auto expected = extractFuncGeneric(fn, gi++);
+                  if (!slots[si].empty()) {
+                    auto value = args[slots[si][0]].getExpr();
+                    if ((!expected->getStaticKind() && !isTypeExpr(value)) ||
+                        (expected->getStaticKind() &&
+                         !value->getType()->getStaticKind()))
+                      return -1;
+                    if (extractType(value)->unify(expected, changes) < 0)
+                      return -1;
+                    ++providedGenerics;
+                  } else if (!partial && expected->getUnbound() &&
+                             in(niGenerics, param.getName()) && !param.getDefault()) {
+                    return -1;
+                  }
+                  continue;
+                }
+                auto expected = extractFuncArgType(fn, vi++);
+                TypePtr actual;
+                if (si == star || si == kwstar) {
+                  std::vector<Type *> values;
+                  std::vector<std::string> names;
+                  std::unordered_set<std::string> supplied;
+                  for (auto index : slots[si])
+                    supplied.insert(args[index].name);
+                  if (part && si == star) {
+                    auto tuple = extractClassGeneric(part, 1)->getClass();
+                    for (const auto &g :
+                         tuple->generics.back().type->getClass()->generics)
+                      values.push_back(g.getType());
+                  } else if (part && si == kwstar) {
+                    auto kwargs = extractClassGeneric(part, 2);
+                    const auto &keys =
+                        ctx->cache->generatedTupleNames[getIntLiteral(kwargs)];
+                    auto tuple = extractClassGeneric(kwargs, 1)->getClass();
+                    for (size_t i = 0; i < keys.size(); ++i)
+                      if (!in(supplied, keys[i])) {
+                        names.push_back(keys[i]);
+                        values.push_back((*tuple)[i]);
+                      }
+                  }
+                  for (auto index : slots[si]) {
+                    values.push_back(args[index].getExpr()->getType());
+                    if (si == kwstar)
+                      names.push_back(args[index].name);
+                  }
+                  // Typed variadics coerce each element before building their tuple.
+                  std::vector<TypePtr> wrapped;
+                  if (param.getType()) {
+                    auto annotation = extractType(transform(clone(param.getType())));
+                    for (auto &value : values) {
+                      auto converted = wrap(value, annotation);
+                      if (!converted)
+                        return -1;
+                      value = converted.get();
+                      wrapped.push_back(converted);
+                    }
+                  }
+                  actual = instantiateType(generateTuple(values.size()), values);
+                  if (si == kwstar) {
+                    auto id = std::make_shared<IntStaticType>(ctx->cache,
+                                                              generateKwId(names));
+                    actual = instantiateType(getStdLibType(StdlibTypes::NamedTuple),
+                                             {id.get(), actual.get()});
+                  }
+                } else if (!slots[si].empty()) {
+                  const auto index = slots[si][0];
+                  actual = args[index].getExpr()->getType()->shared_from_this();
+                  if (preserveUnions && actual->getUnion() && expected->getUnion() &&
+                      actual->unify(expected, nullptr) >= 0)
+                    (*preserveUnions)[index] = true;
+                } else if (captured[si]) {
+                  actual = captured[si]->shared_from_this();
+                } else if (!probing && param.getDefault()) {
+                  actual = getCallDefault(param)->getType()->shared_from_this();
+                } else if (!probing && startswith(param.getName(), "$")) {
+                  actual =
+                      transform(N<IdExpr>(getUnmangledName(param.getName()).substr(1)))
+                          ->getType()
+                          ->shared_from_this();
+                }
+                if (!actual)
+                  continue;
+                auto selected = getCallArgType(fn, si, vi - 1,
+                                               getUnderlyingStaticType(actual.get()));
+                if (!wrap(actual.get(), selected))
+                  return -1;
+                if (!probing && selected != expected) {
+                  // The signature is private; preserve the call's union specialization.
+                  if (replacements.empty())
+                    replacements.resize(fn->size(), nullptr);
+                  replacements[vi - 1] = selected->shared_from_this();
+                  if (!fn->ast->getReturn() && fn->getRetType()->canRealize())
+                    fn->generics[1].type = instantiateType(
+                        getFunction(fn->getFuncName())->getType()->getRetType());
+                }
+              }
+              if (!replacements.empty())
+                fn->replaceArgTypes(replacements);
+              // Defaults are applied after argument inference, just as at real calls.
+              if (!probing && !partial)
+                for (size_t si = 0, gi = 0; si < slots.size(); ++si)
+                  if ((*fn->ast)[si].isGeneric()) {
+                    auto expected = extractFuncGeneric(fn, gi++);
+                    if (expected->getUnbound() && (*fn->ast)[si].getDefault())
+                      if (extractType(
+                              transform(clean_clone((*fn->ast)[si].getDefault())))
+                              ->unify(expected, changes) < 0)
+                        return -1;
+                  }
+              return int(providedGenerics == fn->funcGenerics.size());
+            },
+            true);
       },
-      [](error::Error, const SrcInfo &, const std::string &) { return -1; },
-      part && part->getPartial() ? part->getPartialMask() : "");
-  int ai = 0, mai = 0, gi = 0, real_gi = 0;
-  for (; score != -1 && ai < reordered.size(); ai++) {
-    auto expectTyp = (*fn->ast)[ai].isValue() ? extractFuncArgType(fn, mai++)
-                                              : extractFuncGeneric(fn, gi++);
-    auto [argType, argTypeIdx] = reordered[ai];
-    if (!argType)
-      continue;
-    real_gi += !(*fn->ast)[ai].isValue();
-    if (!(*fn->ast)[ai].isValue()) {
-      // Check if this is a good generic!
-      if (expectTyp && expectTyp->getStaticKind()) {
-        if (!args[argTypeIdx].getExpr()->getType()->getStaticKind()) {
-          score = -1;
-          break;
-        } else {
-          argType = args[argTypeIdx].getExpr()->getType();
-        }
-      } else {
-        /// TODO: check if these are real types or if traits are satisfied
-        continue;
-      }
-    }
+      {}, known);
+}
 
-    auto [_, newArgTyp, _ignore] = canWrapExpr(argType, expectTyp, fn);
-    if (!newArgTyp)
-      newArgTyp = argType->shared_from_this();
-    if (newArgTyp->unify(expectTyp, nullptr) < 0)
-      score = -1;
+/// Shared entry for CallableTrait, Callable adapters, and static call probes.
+int TypecheckVisitor::matchCallable(Type *type, const std::vector<CallArg> &args,
+                                    Type *returnType, Type::Unification *us,
+                                    ClassType *captured,
+                                    std::vector<bool> *preserveUnions) {
+  return matchCallableImpl(type, args, returnType, us, captured, preserveUnions, false);
+}
+
+int TypecheckVisitor::matchCallableImpl(Type *type, const std::vector<CallArg> &args,
+                                        Type *returnType, Type::Unification *us,
+                                        ClassType *captured,
+                                        std::vector<bool> *preserveUnions,
+                                        bool instantiated) {
+  // Nested CallableTrait::unify calls carry the journal, but no matching options.
+  // Keep their probe mode here, without adding state to Unification or the context.
+  static thread_local llvm::SmallVector<Type::Unification *, 8> probes;
+  Type::Unification probe;
+  auto changes = us ? us : &probe;
+  if (!us)
+    probes.push_back(changes);
+  const bool probing =
+      !us || std::find(probes.begin(), probes.end(), changes) != probes.end();
+  auto match = [&]() -> int {
+    auto cls = type->getClass();
+    if (!cls || (!cls->is(StdlibTypes::Function) && !cls->getPartial() &&
+                 !cls->is(StdlibTypes::TypeWrap)))
+      return -1;
+    TypePtr function;
+    auto part = captured ? captured : cls->getPartial();
+    if (auto partial = cls->getPartial()) {
+      auto generic = partial->getPartialFunc()->generalize(0);
+      function = instantiateType(generic.get());
+    } else if (cls->is(StdlibTypes::TypeWrap)) {
+      auto methods = findMethod(cls, "__call_no_self__");
+      if (methods.empty())
+        return -1;
+      function = instantiateType(methods.front(), cls);
+    } else if (cls->getFunc()) {
+      // Overload candidates are already private instantiations with receiver
+      // generics bound. The probe journal still undoes any argument bindings.
+      function = instantiated ? cls->shared_from_this() : instantiateType(cls);
+    }
+    if (function) {
+      auto fn = function->getFunc();
+      auto score = canCall(fn, args, part, preserveUnions, changes, probing);
+      if (score < 0)
+        return -1;
+      if (!probing && returnType && fn->canRealize()) {
+        auto realized = realize(fn);
+        if (!realized ||
+            fn->getRetType()->unify(realized->getFunc()->getRetType(), changes) < 0)
+          return -1;
+      }
+      return !returnType || returnType->unify(fn->getRetType(), changes) >= 0 ? score
+                                                                              : -1;
+    }
+    // Function pointers have a fixed ABI and no AST parameters/defaults to reorder.
+    auto parameters = extractClassGeneric(cls)->getClass();
+    if (parameters->size() != args.size())
+      return -1;
+    for (size_t i = 0; i < args.size(); ++i)
+      if (!args[i].name.empty() ||
+          args[i].getExpr()->getType()->unify((*parameters)[i], changes) < 0)
+        return -1;
+    return !returnType || returnType->unify(extractClassGeneric(cls, 1), changes) >= 0
+               ? 1
+               : -1;
+  };
+  auto undo = [&]() {
+    if (!us) {
+      probes.pop_back();
+      probe.undo();
+    }
+  };
+  int score;
+  try {
+    score = match();
+  } catch (...) {
+    undo();
+    throw;
   }
-  if (score >= 0)
-    score += (real_gi == fn->funcGenerics.size());
+  undo();
   return score;
 }
 
@@ -571,8 +789,13 @@ std::vector<types::FuncType *> TypecheckVisitor::findMatchingMethods(
   for (const auto &mi : methods) {
     if (!mi)
       continue; // avoid overloads that have not been seen yet
+    // Captured/partial arguments need the full reorder path. Other calls can
+    // reject impossible shapes before allocating a type
+    if (!part && !(typ && typ->getPartial()) && !acceptsCallShape(mi, args))
+      continue;
     auto method = instantiateType(mi, typ);
-    int score = canCall(method->getFunc(), args, part);
+    int score =
+        matchCallableImpl(method.get(), args, nullptr, nullptr, part, nullptr, true);
     if (score != -1) {
       results.push_back(mi);
     }
@@ -621,21 +844,32 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
   TypePtr type = nullptr;
   std::function<Expr *(Expr *)> fn = nullptr;
 
-  if (callee && exprType->is(TYPE_TYPE)) {
+  // Case: types are wrapped in TypeWrap when type is not expected
+  if (callee && exprType->is(StdlibTypes::Type)) {
     auto c = extractClassType(exprType);
     if (!c)
       return {false, nullptr, nullptr};
-    if (!(expectedType && (expectedType->is(TYPE_TYPE)))) {
-      type = instantiateType(getStdLibType("TypeWrap"), std::vector<types::Type *>{c});
+    // Any type with a zero-argument __iter__ can satisfy a Generator parameter through
+    // normal method lookup.
+    if (expectedClass && expectedClass->is(StdlibTypes::Generator) &&
+        findBestMethod(c, "__iter__", std::vector<types::Type *>{})) {
+      auto iterator =
+          transform(N<CallExpr>(N<DotExpr>(N<IdExpr>(c->realizedName()), "__iter__")));
+      return {true, iterator->getType()->shared_from_this(),
+              [this](Expr *expr) -> Expr * {
+                return N<CallExpr>(N<DotExpr>(expr, "__iter__"));
+              }};
+    }
+    if (!expectedType || !expectedType->is(StdlibTypes::Type)) {
+      type = instantiateType(getStdLibType(StdlibTypes::TypeWrap),
+                             std::vector<types::Type *>{c});
       fn = [&](Expr *expr) -> Expr * {
-        return N<CallExpr>(N<IdExpr>("TypeWrap"), expr);
+        return N<CallExpr>(N<IdExpr>(StdlibTypes::TypeWrap), expr);
       };
     }
     return {true, type, fn};
   }
 
-  std::unordered_set<std::string> hints = {"Generator", "float", TYPE_OPTIONAL,
-                                           "pyobj"};
   if (!expectedType || !expectedType->getStaticKind()) {
     if (exprType->getStaticKind()) {
       exprType = getUnderlyingStaticType(exprType);
@@ -644,23 +878,26 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     }
   }
 
-  if (!exprClass && expectedClass && in(hints, expectedClass->name)) {
+  if (!exprClass && expectedClass &&
+      (expectedClass->name == StdlibTypes::Generator ||
+       expectedClass->name == "float" || expectedClass->name == StdlibTypes::Optional ||
+       expectedClass->name == "pyobj")) {
     return {false, nullptr, nullptr}; // argument type not yet known.
   }
 
-  else if (expectedClass && !expectedClass->is("Capsule") && exprClass &&
-           exprClass->is("Capsule")) {
-    type = extractClassGeneric(exprClass)->shared_from_this();
+  // Use Capsule ONLY if the type signature explicitly asks for it!
+  if (allowUnwrap && expectedClass && expectedClass->is(StdlibTypes::Capsule) &&
+      exprClass && !exprClass->is(StdlibTypes::Capsule)) {
+    type = instantiateType(getStdLibType(StdlibTypes::Capsule),
+                           std::vector<Type *>{exprClass});
     fn = [&](Expr *expr) -> Expr * {
-      return N<CallExpr>(
-          N<IdExpr>(getMangledMethod("std.internal.core", "Capsule", "_get")), expr);
-    };
-  } else if (expectedClass && expectedClass->is("Capsule") && exprClass &&
-             !exprClass->is("Capsule")) {
-    type = instantiateType(getStdLibType("Capsule"), std::vector<Type *>{exprClass});
-    fn = [&](Expr *expr) -> Expr * {
-      return N<CallExpr>(
-          N<IdExpr>(getMangledMethod("std.internal.core", "Capsule", "make")), expr);
+      if (auto c = cast<CallExpr>(expr);
+          c && isFunctionExpr(c->getExpr(), getMangledMethod("", "Capsule", "_get"))) {
+        // Do not wrap already wrapped vars
+        return c->begin()->getExpr();
+      } else {
+        return N<CallExpr>(N<IdExpr>(getMangledMethod("", "Capsule", "_make")), expr);
+      }
     };
   }
 
@@ -670,7 +907,8 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     fn = [this, type](Expr *expr) -> Expr * {
       auto r = realize(type.get());
       seqassert(r, "not realizable");
-      return N<CallExpr>(N<IdExpr>("Any.unwrap"), expr, N<IdExpr>(r->realizedName()));
+      return N<CallExpr>(N<IdExpr>(FN_OPTIONAL_UNWRAP), expr,
+                         N<IdExpr>(r->realizedName()));
     };
   } else if (expectedClass && expectedClass->is("Any") && exprClass &&
              !exprClass->is("Any")) {
@@ -680,10 +918,13 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
 
   else if (expectedClass && expectedClass->is("Generator") &&
            !exprClass->is(expectedClass->name) && !isEllipsis) {
-    if (findMethod(exprClass, "__iter__").empty())
+    // Select proper overload for type
+    auto *method =
+        findBestMethod(exprClass, "__iter__", std::vector<Type *>{exprClass});
+    if (!method)
       return {false, nullptr, nullptr};
-    // Note: do not do this in pipelines (TODO: why?)
-    type = instantiateType(expectedClass);
+    auto iterator = instantiateType(method, exprClass);
+    type = iterator->getFunc()->getRetType()->shared_from_this();
     fn = [&](Expr *expr) -> Expr * {
       return N<CallExpr>(N<DotExpr>(expr, "__iter__"));
     };
@@ -694,8 +935,8 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     fn = [&](Expr *expr) -> Expr * { return N<CallExpr>(N<IdExpr>("float"), expr); };
   }
 
-  else if (!callee && expectedClass && expectedClass->is("bool") && exprClass &&
-           !exprClass->is("bool")) {
+  else if (!callee && expectedClass && expectedClass->is(StdlibTypes::Bool) &&
+           exprClass && !exprClass->is(StdlibTypes::Bool)) {
     // Do not do this in function calls---only use for if-else wrapping
     type = instantiateType(expectedClass);
     fn = [&](Expr *expr) -> Expr * {
@@ -703,19 +944,44 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     };
   }
 
-  else if (expectedClass && expectedClass->is(TYPE_OPTIONAL) && exprClass &&
+  else if (expectedClass && expectedClass->is(StdlibTypes::Optional) && exprClass &&
            !exprClass->is(expectedClass->name)) {
-    type =
-        instantiateType(getStdLibType(TYPE_OPTIONAL), std::vector<Type *>{exprClass});
-    fn = [&](Expr *expr) -> Expr * {
-      return N<CallExpr>(N<IdExpr>(TYPE_OPTIONAL), expr);
+    // Converting NoneType to Optional[T] constructs an absent value.
+    if (exprClass->is(StdlibTypes::NoneType)) {
+      type = expectedClass->shared_from_this();
+      auto payload = extractClassGeneric(expectedClass)->shared_from_this();
+      fn = [this, type, payload](Expr *expr) -> Expr * {
+        auto constructor = N<IdExpr>(StdlibTypes::Optional);
+        constructor->setType(instantiateTypeVar(type.get()));
+        auto member = N<IdExpr>("T");
+        member->setType(instantiateTypeVar(payload.get()));
+        member->setDone();
+        return N<CallExpr>(N<DotExpr>(constructor, "_from_none"), expr, member);
+      };
+      return {true, type, fn};
+    }
+    auto expectedUnwrap = extractClassGeneric(expectedClass);
+    auto [_, tp, fnp] =
+        canWrapExpr(exprClass, expectedUnwrap, callee, allowUnwrap, isEllipsis);
+    type = instantiateType(getStdLibType(StdlibTypes::Optional),
+                           std::vector<Type *>{tp ? tp.get() : exprClass});
+    fn = [this, fnp](Expr *expr) -> Expr * {
+      return N<CallExpr>(N<IdExpr>(StdlibTypes::Optional), fnp ? fnp(expr) : expr);
     };
   } else if (allowUnwrap && expectedClass && exprClass &&
-             exprClass->is(TYPE_OPTIONAL) &&
-             !exprClass->is(expectedClass->name)) { // unwrap optional
-    type = instantiateType(extractClassGeneric(exprClass));
-    fn = [&](Expr *expr) -> Expr * {
-      return N<CallExpr>(N<IdExpr>(FN_OPTIONAL_UNWRAP), expr);
+             exprClass->is(StdlibTypes::Optional) &&
+             !exprClass->is(expectedClass->name) &&
+             !(expectedClass->getUnion() && expectedClass->canRealize() &&
+               std::ranges::any_of(expectedClass->getUnion()->getRealizationTypes(),
+                                   [](auto *member) {
+                                     return member->is(StdlibTypes::Optional);
+                                   }))) { // unwrap optional
+    auto exprUnwrap = extractClassGeneric(exprClass);
+    auto [_, tp, fnp] =
+        canWrapExpr(exprUnwrap, expectedClass, callee, allowUnwrap, isEllipsis);
+    type = instantiateType(tp ? tp.get() : extractClassGeneric(exprClass));
+    fn = [this, fnp](Expr *expr) -> Expr * {
+      return N<CallExpr>(N<IdExpr>(FN_OPTIONAL_UNWRAP), fnp ? fnp(expr) : expr);
     };
   }
 
@@ -728,10 +994,8 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
       return N<CallExpr>(N<IdExpr>("pyobj"),
                          N<CallExpr>(N<DotExpr>(expr, "__to_py__")));
     };
-  }
-
-  else if (allowUnwrap && expectedClass && exprClass && exprClass->is("pyobj") &&
-           !exprClass->is(expectedClass->name)) { // unwrap pyobj
+  } else if (allowUnwrap && expectedClass && exprClass && exprClass->is("pyobj") &&
+             !exprClass->is(expectedClass->name)) { // unwrap pyobj
     if (findMethod(expectedClass, "__from_py__").empty())
       return {false, nullptr, nullptr};
     type = instantiateType(expectedClass);
@@ -742,65 +1006,29 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     };
   }
 
-  else if (expectedClass && expectedClass->is(TYPE_CALLABLE) && exprClass &&
+  else if (expectedClass && expectedClass->is(StdlibTypes::Callable) && exprClass &&
            (exprClass->getPartial() || exprClass->getFunc() ||
-            exprClass->is(TYPE_FUNCTION))) {
-    // Get list of arguments
-    std::vector<Type *> argTypes;
-    Type *retType;
-    std::shared_ptr<FuncType> fnType = nullptr;
-    if (!exprClass->getPartial()) {
-      auto targs = extractClassGeneric(exprClass)->getClass();
-      for (size_t i = 0; i < targs->size(); i++)
-        argTypes.push_back((*targs)[i]);
-      retType = extractClassGeneric(exprClass, 1);
-    } else {
-      fnType = instantiateType(exprClass->getPartial()->getPartialFunc());
-      std::vector<types::Type *> argumentTypes;
-      auto known = exprClass->getPartial()->getPartialMask();
-      for (size_t i = 0; i < known.size(); i++) {
-        if (known[i] != ClassType::PartialFlag::Included)
-          argTypes.push_back((*fnType)[i]);
-      }
-      retType = fnType->getRetType();
-    }
+            exprClass->is(StdlibTypes::Function))) {
     auto expectedArgs = extractClassGeneric(expectedClass)->getClass();
-    if (argTypes.size() != expectedArgs->size())
-      return {false, nullptr, nullptr};
-    for (size_t i = 0; i < argTypes.size(); i++) {
-      if (argTypes[i]->unify((*expectedArgs)[i], nullptr) < 0)
-        return {false, nullptr, nullptr};
+    std::vector<CallArg> callArgs;
+    for (const auto &argument : expectedArgs->generics) {
+      auto value = N<NoneExpr>();
+      value->setType(argument.type);
+      callArgs.emplace_back(value);
     }
-    if (retType->unify(extractClassGeneric(expectedClass, 1), nullptr) < 0)
+    if (matchCallable(exprClass, callArgs, extractClassGeneric(expectedClass, 1)) < 0)
       return {false, nullptr, nullptr};
 
     type = expectedType->shared_from_this();
-    fn = [this, type](Expr *expr) -> Expr * {
+    fn = [this, type, callArgs](Expr *expr) -> Expr * {
       auto exprClass = expr->getType()->getClass();
       auto expectedClass = type->getClass();
-
-      std::vector<Type *> argTypes;
-      Type *retType;
-      std::shared_ptr<FuncType> fnType = nullptr;
-      if (!exprClass->getPartial()) {
-        auto targs = extractClassGeneric(exprClass)->getClass();
-        for (size_t i = 0; i < targs->size(); i++)
-          argTypes.push_back((*targs)[i]);
-        retType = extractClassGeneric(exprClass, 1);
-      } else {
-        fnType = instantiateType(exprClass->getPartial()->getPartialFunc());
-        std::vector<types::Type *> argumentTypes;
-        auto known = exprClass->getPartial()->getPartialMask();
-        for (size_t i = 0; i < known.size(); i++) {
-          if (known[i] != ClassType::PartialFlag::Included)
-            argTypes.push_back((*fnType)[i]);
-        }
-        retType = fnType->getRetType();
-      }
       auto expectedArgs = extractClassGeneric(expectedClass)->getClass();
-      for (size_t i = 0; i < argTypes.size(); i++)
-        unify(argTypes[i], (*expectedArgs)[i]);
-      unify(retType, extractClassGeneric(expectedClass, 1));
+      Type::Unification changes;
+      if (matchCallable(exprClass, callArgs, extractClassGeneric(expectedClass, 1),
+                        &changes) < 0)
+        E(Error::TYPE_UNIFY, expr, exprClass->prettyString(),
+          expectedClass->prettyString());
 
       std::string fname;
       Expr *retFn = nullptr, *dataArg = nullptr, *dataType = nullptr;
@@ -808,27 +1036,27 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
         auto rf = realize(exprClass);
         fname = rf->realizedName();
         seqassert(rf, "not realizable");
-        retFn = N<IndexExpr>(
-            N<CallExpr>(N<IndexExpr>(N<IdExpr>("Ptr"), N<IdExpr>(rf->realizedName())),
-                        N<IdExpr>("data")),
-            N<IntExpr>(0));
-        dataType = N<IdExpr>("cobj");
+        retFn = N<IndexExpr>(N<CallExpr>(N<IndexExpr>(N<IdExpr>(StdlibTypes::Ptr),
+                                                      N<IdExpr>(rf->realizedName())),
+                                         N<IdExpr>("data")),
+                             N<IntExpr>(0));
+        dataType = N<IdExpr>(StdlibTypes::CObj);
       } else if (exprClass->getFunc()) {
-        auto rf = realize(exprClass);
-        seqassert(rf, "not realizable");
-        fname = rf->realizedName();
-        retFn = N<IdExpr>(rf->getFunc()->realizedName());
-        dataArg = N<CallExpr>(N<IdExpr>("cobj"));
-        dataType = N<IdExpr>("cobj");
+        fname = exprClass->getFunc()->getFuncName();
+        retFn = N<IdExpr>(fname);
+        dataArg = N<CallExpr>(N<IdExpr>(StdlibTypes::CObj));
+        dataType = N<IdExpr>(StdlibTypes::CObj);
       } else {
-        seqassert(exprClass->is("Function"), "bad type: {}", exprClass->debugString(2));
+        seqassert(exprClass->is(StdlibTypes::Function), "bad type: {}",
+                  exprClass->debugString(2));
         auto rf = realize(exprClass);
         seqassert(rf, "not realizable");
         fname = rf->realizedName();
         retFn = N<CallExpr>(N<IdExpr>(rf->realizedName()), N<IdExpr>("data"));
-        dataType = N<IdExpr>("cobj");
+        dataType = N<IdExpr>(StdlibTypes::CObj);
       }
-      fname = fmt::format(".proxy.{}", fname);
+      // One stored template can adapt to several input/return signatures.
+      fname = fmt::format(".proxy.{}.{}", fname, expectedClass->realizedName());
 
       if (!ctx->find(fname)) {
         // Create wrapper if needed
@@ -841,12 +1069,12 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
                 N<ReturnStmt>(N<CallExpr>(retFn, N<StarExpr>(N<IdExpr>("args"))))));
         f = cast<FunctionStmt>(transform(f));
       }
-      auto e = N<CallExpr>(N<IdExpr>(TYPE_CALLABLE), N<IdExpr>(fname),
+      auto e = N<CallExpr>(N<IdExpr>(StdlibTypes::Callable), N<IdExpr>(fname),
                            dataArg ? dataArg : expr);
       return e;
     };
   } else if (callee && exprClass && exprType->getFunc() &&
-             !(expectedClass && expectedClass->is("Function"))) {
+             !(expectedClass && expectedClass->is(StdlibTypes::Function))) {
     // Wrap raw Seq functions into Partial(...) call for easy realization.
     // Special case: Seq functions are embedded (via lambda!)
     if (expectedClass)
@@ -858,7 +1086,7 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
         return N<StmtExpr>(se->items, p);
       return p;
     };
-  } else if (expectedClass && expectedClass->is("Function") && exprClass &&
+  } else if (expectedClass && expectedClass->is(StdlibTypes::Function) && exprClass &&
              exprClass->getPartial() && exprClass->getPartial()->isPartialEmpty()) {
     type = instantiateType(expectedClass);
     auto fnName = exprClass->getPartial()->getPartialFunc()->ast->name;
@@ -878,7 +1106,10 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
         return {false, nullptr, nullptr};
       bool ok = false;
       for (auto &ut : e->getUnion()->getRealizationTypes()) {
-        if (ut->unify(t, nullptr) >= 0) {
+        if (ut->unify(t, nullptr) >= 0 ||
+            (ut->is(StdlibTypes::Optional) &&
+             (t->is(StdlibTypes::NoneType) ||
+              extractClassGeneric(ut)->unify(t, nullptr) >= 0))) {
           ok = true;
           break;
         }
@@ -886,28 +1117,20 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
       if (ok) {
         type = t->shared_from_this();
         fn = [this, type](Expr *expr) -> Expr * {
-          return N<CallExpr>(
-              N<IdExpr>(getMangledMethod("std.internal.core", "Union", "_get")), expr,
-              N<IdExpr>(type->realizedName()));
+          return N<CallExpr>(N<IdExpr>(getMangledMethod("", "Union", "_get")), expr,
+                             N<IdExpr>(type->realizedName()));
         };
       }
     } else {
       return {false, nullptr, nullptr};
     }
-  }
-
-  else if (exprClass && expectedClass && expectedClass->getUnion()) {
+  } else if (exprClass && expectedClass && expectedClass->getUnion()) {
     // Make union types via Union._new
-    if (!expectedClass->getUnion()->isSealed()) {
-      if (!expectedClass->getUnion()->addType(exprClass))
-        E(error::Error::UNION_TOO_BIG, expectedClass->getSrcInfo(),
-          expectedClass->getUnion()->pendingTypes.size());
-    }
     if (auto t = realize(expectedClass)) {
       if (expectedClass->unify(exprClass, nullptr) == -1) {
         type = t->shared_from_this();
         fn = [this, type](Expr *expr) -> Expr * {
-          return N<CallExpr>(N<DotExpr>(N<IdExpr>("Union"), "_new"), expr,
+          return N<CallExpr>(N<DotExpr>(N<IdExpr>(StdlibTypes::Union), "_new"), expr,
                              N<IdExpr>(type->realizedName()));
         };
       }
@@ -916,58 +1139,48 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     }
   }
 
-  else if (exprClass && exprClass->is(TYPE_TYPE) && expectedClass &&
-           (expectedClass->is("TypeWrap"))) {
-    type = instantiateType(getStdLibType("TypeWrap"),
+  else if (exprClass && exprClass->is(StdlibTypes::Type) && expectedClass &&
+           (expectedClass->is(StdlibTypes::TypeWrap))) {
+    type = instantiateType(getStdLibType(StdlibTypes::TypeWrap),
                            std::vector<types::Type *>{exprClass});
     fn = [this](Expr *expr) -> Expr * {
-      return N<CallExpr>(N<IdExpr>("TypeWrap"), expr);
+      return N<CallExpr>(N<IdExpr>(StdlibTypes::TypeWrap), expr);
     };
   }
 
-  else if (exprClass && exprClass->is("Super") && expectedClass &&
-           !expectedClass->is("Super")) {
-    // Super[T] to T
-    type = extractClassGeneric(exprClass)->shared_from_this();
-    fn = [this](Expr *expr) -> Expr * {
-      return N<CallExpr>(
-          N<IdExpr>(getMangledMethod("std.internal.core", "Super", "_unwrap")), expr);
-    };
-  }
-
-  else if (exprClass && expectedClass && !exprClass->is(expectedClass->name)) {
-    // Cast derived classes to base classes
-    const auto &mros = ctx->cache->getClass(exprClass)->mro;
-    for (size_t i = 1; i < mros.size(); i++) {
-      auto t = instantiateType(mros[i].get(), exprClass);
-      if (t->unify(expectedClass, nullptr) >= 0) {
-        type = expectedClass->shared_from_this();
-        fn = [this, type](Expr *expr) -> Expr * {
-          return castToSuperClass(expr, type->getClass(), true);
-        };
-        break;
+  else if (exprClass && expectedClass) {
+    auto src = exprClass, dest = expectedClass;
+    bool optional = src->is(StdlibTypes::Optional) && dest->is(StdlibTypes::Optional);
+    if (optional) {
+      src = extractClassGeneric(src)->getClass();
+      dest = extractClassGeneric(dest)->getClass();
+    }
+    if (src && dest && !src->is(dest->name)) {
+      // Cast derived classes to base classes
+      const auto &mros = ctx->cache->getClass(src)->mro;
+      for (size_t i = 1; i < mros.size(); i++) {
+        auto base = instantiateType(mros[i].get(), src);
+        if (base->unify(dest, nullptr) >= 0) {
+          unify(base.get(), dest);
+          type = expectedClass->shared_from_this();
+          fn = [this, base, optional](Expr *expr) -> Expr * {
+            ClassType *typ = expr->getClassType();
+            Expr *typExpr = N<IdExpr>(base->getClass()->name);
+            typExpr->setType(instantiateTypeVar(base->getClass()));
+            if (optional)
+              typExpr = N<InstantiateExpr>(N<IdExpr>(StdlibTypes::Optional),
+                                           std::vector<Expr *>{typExpr});
+            return transform(N<CallExpr>(
+                N<IdExpr>(getMangledFunc("std.internal.types.rtti", "force_cast")),
+                expr, typExpr));
+          };
+          break;
+        }
       }
     }
   }
 
   return {true, type, fn};
-}
-
-/// Cast derived class to a base class.
-Expr *TypecheckVisitor::castToSuperClass(Expr *expr, ClassType *superTyp,
-                                         bool isVirtual) {
-  ClassType *typ = expr->getClassType();
-  for (auto &field : getClassFields(typ)) {
-    for (auto &parentField : getClassFields(superTyp))
-      if (field.name == parentField.name) {
-        auto t = instantiateType(field.getType(), typ);
-        unify(t.get(), instantiateType(parentField.getType(), superTyp));
-      }
-  }
-  realize(superTyp);
-  auto typExpr = N<IdExpr>(superTyp->realizedName());
-  return transform(
-      N<CallExpr>(N<DotExpr>(N<IdExpr>("Super"), "_super"), expr, typExpr));
 }
 
 /// Unpack a Tuple or KwTuple expression into (name, type) vector.
@@ -984,7 +1197,8 @@ TypecheckVisitor::unpackTupleTypes(const Expr *expr) {
     }
   } else if (cast<CallExpr>(expr->getOrigExpr())) {
     auto val = extractClassType(expr->getType());
-    if (!val || !val->is("NamedTuple") || !extractClassGeneric(val, 1)->getClass() ||
+    if (!val || !val->is(StdlibTypes::NamedTuple) ||
+        !extractClassGeneric(val, 1)->getClass() ||
         !extractClassGeneric(val)->canRealize())
       return nullptr;
     auto id = getIntLiteral(val);
@@ -1007,7 +1221,7 @@ std::vector<std::pair<std::string, Expr *>>
 TypecheckVisitor::extractNamedTuple(Expr *expr) {
   std::vector<std::pair<std::string, Expr *>> ret;
 
-  seqassert(expr->getType()->is("NamedTuple") &&
+  seqassert(expr->getType()->is(StdlibTypes::NamedTuple) &&
                 extractClassGeneric(expr->getClassType())->canRealize(),
             "bad named tuple: {}", *expr);
   auto id = getIntLiteral(expr->getClassType());
@@ -1023,7 +1237,7 @@ std::vector<Cache::Class::ClassField>
 TypecheckVisitor::getClassFields(types::ClassType *t) const {
   // Tuple has MAX_TUPLE fields; copy only the requested prefix, not the whole table.
   const auto &f = getClass(t->name)->fields;
-  if (t->is(TYPE_TUPLE))
+  if (t->is(StdlibTypes::Tuple))
     return std::vector<Cache::Class::ClassField>(f.begin(),
                                                  f.begin() + t->generics.size());
   return f;
@@ -1046,24 +1260,24 @@ TypecheckVisitor::getClassFieldTypes(types::ClassType *cls) {
 }
 
 types::Type *TypecheckVisitor::extractType(types::Type *t) const {
-  while (t && t->is(TYPE_TYPE))
+  while (t && t->is(StdlibTypes::Type) && !isMetaclassType(t))
     t = extractClassGeneric(t);
   return t;
 }
 
 types::Type *TypecheckVisitor::extractType(Expr *e) const {
-  if (cast<IdExpr>(e) && cast<IdExpr>(e)->getValue() == TYPE_TYPE)
+  if (cast<IdExpr>(e) && cast<IdExpr>(e)->getValue() == StdlibTypes::Type)
     return e->getType();
   if (auto i = cast<InstantiateExpr>(e))
     if (cast<IdExpr>(i->getExpr()) &&
-        cast<IdExpr>(i->getExpr())->getValue() == TYPE_TYPE)
+        cast<IdExpr>(i->getExpr())->getValue() == StdlibTypes::Type)
       return e->getType();
   return extractType(e->getType());
 }
 
 types::Type *TypecheckVisitor::extractType(const std::string &s) const {
   auto c = ctx->forceFind(s);
-  return s == TYPE_TYPE ? c->getType() : extractType(c->getType());
+  return s == StdlibTypes::Type ? c->getType() : extractType(c->getType());
 }
 
 types::ClassType *TypecheckVisitor::extractClassType(Expr *e) const {
@@ -1095,9 +1309,12 @@ std::vector<std::string> TypecheckVisitor::getOverloads(const std::string &root)
 }
 
 std::string TypecheckVisitor::getUnmangledName(const std::string &s) const {
-  if (in(ctx->cache->reverseIdentifierLookup, s))
-    return ctx->cache->rev(s);
-  return s;
+  return getUnmangledNameRef(s);
+}
+
+const std::string &TypecheckVisitor::getUnmangledNameRef(const std::string &s) const {
+  auto found = ctx->cache->reverseIdentifierLookup.find(s);
+  return found == ctx->cache->reverseIdentifierLookup.end() ? s : found->second;
 }
 
 std::string TypecheckVisitor::getUserFacingName(const std::string &s) const {
@@ -1136,7 +1353,7 @@ Cache::Class::ClassRealization *
 TypecheckVisitor::getClassRealization(types::Type *t) const {
   seqassert(t->canRealize(), "bad class");
   auto i = in(getClass(t)->realizations, t->getClass()->realizedName());
-  seqassert(i, "bad class realization");
+  seqassert(i, "bad class realization: {}", t->debugString(2));
   return i->get();
 }
 
@@ -1146,8 +1363,36 @@ std::string TypecheckVisitor::getRootName(const types::FuncType *t) const {
   return i->rootName;
 }
 
+bool TypecheckVisitor::isPolymorphic(types::FuncType *t) const {
+  if (t->size() == 0 || !t->ast)
+    return false;
+  if (getUnmangledName(t->ast->begin()->getName()) != "self")
+    return false;
+  auto slf = extractFuncArgType(t)->getClass();
+  auto cls = getClass(slf);
+  auto member = getUnmangledName(t->ast->getName());
+  bool virtualMethod = in(cls->virtuals, member);
+  // class_inherited_self: Self can bind the receiver to a subclass while
+  // the virtual method remains declared on its original base class.
+  if (std::ranges::any_of(t->funcGenerics, [&](const auto &generic) {
+        return getUnmangledName(generic.name) == "Self";
+      }))
+    if (auto parent = t->ast->getAttribute<ir::StringValueAttribute>(Attr::ParentClass))
+      virtualMethod |= in(getClass(parent->value)->virtuals, member) != nullptr;
+  return cls && cls->hasRTTI() && virtualMethod && !isDispatch(t) &&
+         !t->ast->hasAttribute(Attr::StaticMethod) &&
+         !t->ast->hasAttribute(Attr::Property);
+}
+
 bool TypecheckVisitor::isTypeExpr(const Expr *e) {
-  return e && e->getType() && e->getType()->is(TYPE_TYPE);
+  return e && e->getType() && e->getType()->is(StdlibTypes::Type);
+}
+
+bool TypecheckVisitor::isFunctionExpr(const Expr *e, const std::string &fnName) {
+  bool isF = e && e->getType() && e->getType()->getFunc();
+  if (!fnName.empty())
+    return e->getType()->getFunc()->getFuncName() == fnName;
+  return isF;
 }
 
 Cache::Module *TypecheckVisitor::getImport(const std::string &s) const {
@@ -1172,7 +1417,7 @@ bool TypecheckVisitor::isHeterogenous(types::Type *type) {
   if (!type->getClass() || !type->getClass()->isRecord())
     return false;
   std::vector<TypePtr> fs;
-  if (type->is(TYPE_TUPLE)) {
+  if (type->is(StdlibTypes::Tuple)) {
     for (auto &g : type->getClass()->generics)
       fs.push_back(g.getType()->shared_from_this());
   } else {
@@ -1187,8 +1432,10 @@ bool TypecheckVisitor::isHeterogenous(types::Type *type) {
   return false;
 }
 
-void TypecheckVisitor::addClassGenerics(types::ClassType *typ, bool func,
-                                        bool onlyMangled, bool instantiate) {
+llvm::SmallVector<std::string_view, 8>
+TypecheckVisitor::addClassGenerics(types::ClassType *typ, bool func, bool onlyMangled,
+                                   bool instantiate) {
+  llvm::SmallVector<std::string_view, 8> added;
   auto addGen = [&](const types::ClassType::Generic &g) {
     auto t = g.type;
     if (instantiate) {
@@ -1201,10 +1448,13 @@ void TypecheckVisitor::addClassGenerics(types::ClassType *typ, bool func,
     }
     seqassert(!g.staticKind || t->getStaticKind(), "{} not a static: {}", g.name,
               *(g.type));
-    if (!g.staticKind && !t->is(TYPE_TYPE))
+    if (!g.staticKind && (!t->is(StdlibTypes::Type) || isMetaclassType(t.get())))
       t = instantiateTypeVar(t.get());
-    auto n = onlyMangled ? g.name : getUnmangledName(g.name);
+    const auto &n = onlyMangled ? g.name.str() : getUnmangledNameRef(g.name.str());
     auto v = ctx->addType(n, g.name, t);
+    added.push_back(n);
+    if (n != g.name)
+      added.push_back(g.name.str());
     v->generic = true;
   };
 
@@ -1234,10 +1484,12 @@ void TypecheckVisitor::addClassGenerics(types::ClassType *typ, bool func,
     for (auto &g : typ->generics)
       addGen(g);
   }
+  return added;
 }
 
 types::TypePtr TypecheckVisitor::instantiateTypeVar(types::Type *t) {
-  return instantiateType(ctx->forceFind(TYPE_TYPE)->getType(), {t});
+  // A local variable named "type" must not replace the standard type constructor.
+  return instantiateType(getStdLibType(StdlibTypes::Type), {t});
 }
 
 void TypecheckVisitor::registerGlobal(const std::string &name) const {
@@ -1248,9 +1500,21 @@ void TypecheckVisitor::registerGlobal(const std::string &name) const {
 
 types::ClassType *TypecheckVisitor::getStdLibType(const std::string &type) const {
   auto t = getImport(STDLIB_IMPORT)->ctx->forceFind(type)->getType();
-  if (type == TYPE_TYPE)
+  if (type == StdlibTypes::Type)
     return t->getClass();
   return extractClassType(t);
+}
+
+/// Create the concrete type metaclass without the type[T] wrapper's generic.
+std::shared_ptr<types::ClassType> TypecheckVisitor::getMetaclassType() const {
+  auto metaclass = std::make_shared<ClassType>(getStdLibType(StdlibTypes::Type));
+  metaclass->generics.clear();
+  return metaclass;
+}
+
+/// Identify the concrete, zero-argument type metaclass.
+bool TypecheckVisitor::isMetaclassType(types::Type *type) {
+  return type && type->is(StdlibTypes::Type) && type->getClass()->generics.empty();
 }
 
 types::Type *TypecheckVisitor::extractClassGeneric(types::Type *t, size_t idx) const {
@@ -1312,8 +1576,8 @@ bool TypecheckVisitor::getBoolLiteral(types::Type *t, size_t pos) const {
 Expr *TypecheckVisitor::getParamType(Type *t) {
   if (!t)
     return nullptr;
-  if (t->is(TYPE_TYPE)) {
-    return N<IdExpr>(TYPE_TYPE);
+  if (t->is(StdlibTypes::Type)) {
+    return N<IdExpr>(StdlibTypes::Type);
   } else if (auto st = t->getStaticKind()) {
     return N<IndexExpr>(N<IdExpr>("Literal"), N<IdExpr>(Type::stringFromLiteral(st)));
   } else {
@@ -1348,6 +1612,18 @@ types::Type *TypecheckVisitor::getUnderlyingStaticType(types::Type *t) const {
   return t;
 }
 
+types::TypePtr TypecheckVisitor::getSelfType(types::Type *t) const {
+  if (auto *receiver = getUnderlyingStaticType(t)->getClass()) {
+    // python_pybridge: Function methods take a runtime function pointer. Binding
+    // Self to a compile-time FuncType would erase their self argument from CIR.
+    // TODO: why?!
+    if (receiver->getFunc())
+      return std::make_shared<ClassType>(receiver);
+    return receiver->shared_from_this();
+  }
+  return nullptr;
+}
+
 std::shared_ptr<types::LinkType>
 TypecheckVisitor::instantiateUnbound(const SrcInfo &srcInfo, int level) const {
   auto typ = std::make_shared<types::LinkType>(
@@ -1369,10 +1645,9 @@ types::TypePtr TypecheckVisitor::instantiateType(const SrcInfo &srcInfo,
                                                  types::Type *type,
                                                  types::ClassType *generics) const {
   seqassert(type, "type is null");
-  std::unordered_map<int, types::TypePtr> genericCache;
+  types::InstantiationCache genericCache;
   if (generics) {
-    if (generics->getIntStatic())
-      generics = getStdLibType("Int[64]");
+    generics = getUnderlyingStaticType(generics)->getClass();
     for (auto &g : generics->hiddenGenerics)
       if (g.type &&
           !(g.type->getLink() && g.type->getLink()->kind == types::LinkType::Generic)) {
@@ -1383,25 +1658,22 @@ types::TypePtr TypecheckVisitor::instantiateType(const SrcInfo &srcInfo,
           !(g.type->getLink() && g.type->getLink()->kind == types::LinkType::Generic)) {
         genericCache[g.id] = g.type;
       }
-    // special case: __SELF__
-    if (type->getFunc() && !type->getFunc()->funcGenerics.empty() &&
-        getUnmangledName(type->getFunc()->funcGenerics[0].name) == "__SELF__") {
-      genericCache[type->getFunc()->funcGenerics[0].id] = generics->shared_from_this();
-    }
+    // Self binds to the static receiver, including non-polymorphic Tuple types.
+    // Other method generics may precede the implicit Self parameter.
+    if (auto *function = type->getFunc())
+      for (const auto &generic : function->funcGenerics)
+        if (getUnmangledName(generic.name) == "Self")
+          genericCache[generic.id] = getSelfType(generics);
   }
   auto t = type->instantiate(ctx->typecheckLevel, &(ctx->cache->unboundCount),
                              &genericCache);
-  for (auto &val : genericCache | std::views::values) {
+  for (auto &[id, val] : genericCache) {
     if (auto l = val->getLink()) {
       val->setSrcInfo(srcInfo);
       if (l->defaultType) {
         ctx->getBase()->pendingDefaults[0].insert(val);
       }
     }
-  }
-  if (t->getUnion() && !t->getUnion()->isSealed()) {
-    t->setSrcInfo(srcInfo);
-    ctx->getBase()->pendingDefaults[0].insert(t);
   }
   return t;
 }
@@ -1429,39 +1701,27 @@ TypecheckVisitor::instantiateType(const SrcInfo &srcInfo, types::Type *root,
 }
 
 std::vector<types::FuncType *> TypecheckVisitor::findMethod(types::ClassType *type,
-                                                            const std::string &method,
-                                                            bool hideShadowed) {
+                                                            const std::string &method) {
   std::vector<types::FuncType *> vv;
-  std::unordered_set<std::string> signatureLoci;
 
   auto populate = [&](const auto &cls) {
     auto t = in(cls.methods, method);
     if (!t)
       return;
 
-    auto mt = getOverloads(*t);
+    const auto &mt = ctx->cache->overloads.at(*t);
     for (int mti = static_cast<int>(mt.size()) - 1; mti >= 0; --mti) {
       const auto &exactMethod = mt[mti];
       auto f = getFunction(exactMethod);
       if (isDispatch(exactMethod) || !f->getType())
         continue;
-      if (hideShadowed) {
-        auto sig = f->ast->getSignature();
-        if (!in(signatureLoci, sig)) {
-          signatureLoci.insert(sig);
-          vv.emplace_back(f->getType());
-        }
-      } else {
-        vv.emplace_back(f->getType());
-      }
+      vv.emplace_back(f->getType());
     }
   };
-  if (type->is("Capsule") || type->is("Super")) {
-    type = extractClassGeneric(type)->getClass();
-  }
-  if (type && type->is(TYPE_TUPLE) && method == "__new__" && !type->generics.empty()) {
+  if (type && type->is(StdlibTypes::Tuple) && method == "__new__" &&
+      !type->generics.empty()) {
     generateTuple(type->generics.size());
-    auto mc = getClass(TYPE_TUPLE);
+    auto mc = getClass(StdlibTypes::Tuple);
     populate(*mc);
     for (auto f : vv)
       if (f->size() == type->generics.size())
@@ -1470,7 +1730,7 @@ std::vector<types::FuncType *> TypecheckVisitor::findMethod(types::ClassType *ty
   }
   if (auto cls = getClass(type)) {
     for (const auto &pc : cls->mro) {
-      auto mc = getClass(pc->name == "__NTuple__" ? TYPE_TUPLE : pc->name);
+      auto mc = getClass(pc->name == "__NTuple__" ? StdlibTypes::Tuple : pc->name);
       populate(*mc);
     }
   }
@@ -1479,14 +1739,12 @@ std::vector<types::FuncType *> TypecheckVisitor::findMethod(types::ClassType *ty
 
 Cache::Class::ClassField *
 TypecheckVisitor::findMember(types::ClassType *type, const std::string &member) const {
-  if (type->is("Capsule")) {
-    type = extractClassGeneric(type)->getClass();
-  }
   if (auto cls = getClass(type)) {
     for (const auto &pc : cls->mro) {
       auto mc = getClass(pc.get());
       for (auto &mm : mc->fields) {
-        if (pc->is(TYPE_TUPLE) && (&mm - &(mc->fields[0])) >= type->generics.size())
+        if (pc->is(StdlibTypes::Tuple) &&
+            (&mm - &(mc->fields[0])) >= type->generics.size())
           break;
         if (mm.name == member)
           return &mm;
@@ -1496,117 +1754,164 @@ TypecheckVisitor::findMember(types::ClassType *type, const std::string &member) 
   return nullptr;
 }
 
+std::vector<types::TypePtr> TypecheckVisitor::getBaseClasses(types::ClassType *type) {
+  const auto &mros = getClass(type)->mro;
+  std::vector<TypePtr> bases;
+  for (auto &mro : getClass(type)->mro) {
+    auto t = instantiateType(mro.get(), type);
+    bases.push_back(t);
+  }
+  return bases;
+}
+
+bool TypecheckVisitor::acceptsCallShape(const FuncType *func,
+                                        const std::vector<CallArg> &args) const {
+  // Ellipsis/captured calls have additional slot rules. Leave them to the
+  // existing full matcher, without making a speculative arity decision here.
+  for (const auto &arg : args)
+    if (cast<EllipsisExpr>(arg.value))
+      return true;
+  const auto &layout = func->ast->getCallLayout();
+  size_t positional = 0;
+  for (const auto &arg : args)
+    positional += arg.name.empty();
+  if (positional > layout.positionalLimit && layout.star == -1)
+    return false;
+  llvm::SmallVector<int, 8> namedSlots;
+  for (const auto &arg : args) {
+    if (arg.name.empty())
+      continue;
+    int slot = -1;
+    for (auto i = layout.keywords.rbegin(); i != layout.keywords.rend(); ++i)
+      if (i->first == arg.name) {
+        slot = i->second;
+        break;
+      }
+    if (slot == -1) {
+      if (layout.kwstar == -1)
+        return false;
+    } else {
+      if (slot < std::min<size_t>(positional, layout.positionalLimit))
+        return false;
+      namedSlots.push_back(slot);
+    }
+  }
+  for (auto slot : layout.requiredValues)
+    if (slot >= positional &&
+        std::find(namedSlots.begin(), namedSlots.end(), slot) == namedSlots.end())
+      return false;
+  return true;
+}
+
 int TypecheckVisitor::reorderNamedArgs(const types::FuncType *func,
                                        const std::vector<CallArg> &args,
                                        const ReorderDoneFn &onDone,
                                        const ReorderErrorFn &onError,
                                        const std::string &known) const {
-  // See https://docs.python.org/3.6/reference/expressions.html#calls for details.
-  // Final score:
-  //  - +1 for each matched argument
-  //  -  0 for *args/**kwargs/default arguments
-  //  - -1 for failed match
-  int score = 0;
-
-  // 0. Find *args and **kwargs
-  // True if there is a trailing ellipsis (full partial: fn(all_args, ...))
+  // Preserve argument ordering/scoring for ordinary calls and partials. Probe
+  // callers leave onError empty, avoiding diagnostic construction on rejection.
   bool partial = !args.empty() && args.back().name.empty() &&
                  cast<EllipsisExpr>(args.back().value) &&
                  cast<EllipsisExpr>(args.back().value)->isPartial();
-
-  int starArgIndex = -1, kwstarArgIndex = -1;
-  for (int i = 0; i < func->ast->size(); i++) {
-    if (startswith((*func->ast)[i].name, "**"))
-      kwstarArgIndex = i, score -= 2;
-    else if (startswith((*func->ast)[i].name, "*"))
-      starArgIndex = i, score -= 2;
-  }
-
-  // 1. Assign positional arguments to slots
-  // Each slot contains a list of arg's indices
-  std::vector<std::vector<int>> slots(func->ast->size());
-  seqassert(known.empty() || func->ast->size() == known.size(), "bad 'known' string");
-  std::vector<int> extra;
-  std::map<std::string, int> namedArgs,
-      extraNamedArgs; // keep the map---we need it sorted!
-  for (int ai = 0, si = 0; ai < args.size() - partial; ai++) {
+  const auto &layout = func->ast->getCallLayout();
+  const int starArgIndex = layout.star, kwstarArgIndex = layout.kwstar;
+  const int positionalLimit = layout.positionalLimit;
+  int score = layout.variadicPenalty +
+              2 * static_cast<int>(func->ast->size() - func->funcGenerics.size());
+  CallArgSlots slots(func->ast->size());
+  seqassert(known.empty() || slots.size() == known.size(), "bad 'known' string");
+  llvm::SmallVector<int, 4> extra;
+  using NamedArgs = llvm::SmallVector<std::pair<std::string_view, int>, 8>;
+  NamedArgs namedArgs, extraNamedArgs;
+  for (int ai = 0, si = 0; ai < args.size() - partial; ++ai) {
     if (args[ai].name.empty()) {
       while (!known.empty() && si < slots.size() &&
              known[si] == ClassType::PartialFlag::Included)
-        si++;
-      if (si < slots.size() && (starArgIndex == -1 || si < starArgIndex))
-        slots[si++] = {ai};
+        ++si;
+      if (si < positionalLimit)
+        slots[si++].push_back(ai);
       else
-        extra.emplace_back(ai);
+        extra.push_back(ai);
     } else {
-      namedArgs[args[ai].name] = ai;
-    }
-  }
-  score += 2 * static_cast<int>(slots.size() - func->funcGenerics.size());
-
-  for (auto ai : std::vector<int>{std::max(starArgIndex, kwstarArgIndex),
-                                  std::min(starArgIndex, kwstarArgIndex)})
-    if (ai != -1 && !slots[ai].empty()) {
-      extra.insert(extra.begin(), ai);
-      slots[ai].clear();
-    }
-
-  // 2. Assign named arguments to slots
-  if (!namedArgs.empty()) {
-    std::map<std::string, int> slotNames;
-    for (int i = 0; i < func->ast->size(); i++)
-      if (known.empty() || known[i] != ClassType::PartialFlag::Included) {
-        auto [_, n] = (*func->ast)[i].getNameWithStars();
-        slotNames[getUnmangledName(n)] = i;
-      }
-    for (auto &n : namedArgs) {
-      if (!in(slotNames, n.first))
-        extraNamedArgs[n.first] = n.second;
-      else if (slots[slotNames[n.first]].empty())
-        slots[slotNames[n.first]].push_back(n.second);
+      auto previous =
+          std::find_if(namedArgs.begin(), namedArgs.end(),
+                       [&](const auto &v) { return v.first == args[ai].name; });
+      if (previous == namedArgs.end())
+        namedArgs.emplace_back(args[ai].name, ai);
       else
-        return onError(Error::CALL_REPEATED_NAME, args[n.second].value->getSrcInfo(),
-                       Emsg(Error::CALL_REPEATED_NAME, n.first));
+        previous->second = ai; // same last-value behavior as the original map
     }
   }
-
-  // 3. Fill in *args, if present
-  if (!extra.empty() && starArgIndex == -1)
+  std::sort(namedArgs.begin(), namedArgs.end(),
+            [](const auto &a, const auto &b) { return a.first < b.first; });
+  for (auto index :
+       {std::max(starArgIndex, kwstarArgIndex), std::min(starArgIndex, kwstarArgIndex)})
+    if (index != -1 && !slots[index].empty()) {
+      extra.insert(extra.begin(), index);
+      slots[index].clear();
+    }
+  for (const auto &[name, argument] : namedArgs) {
+    int slot = -1;
+    for (auto i = layout.keywords.rbegin(); i != layout.keywords.rend(); ++i)
+      if (i->first == name &&
+          (known.empty() || known[i->second] != ClassType::PartialFlag::Included)) {
+        slot = i->second;
+        break;
+      }
+    if (slot == -1) {
+      extraNamedArgs.emplace_back(name, argument);
+    } else if (slots[slot].empty()) {
+      slots[slot].push_back(argument);
+    } else {
+      if (!onError)
+        return -1;
+      return onError(Error::CALL_REPEATED_NAME, args[argument].value->getSrcInfo(),
+                     Emsg(Error::CALL_REPEATED_NAME, name));
+    }
+  }
+  if (!extra.empty() && starArgIndex == -1) {
+    if (!onError)
+      return -1;
     return onError(Error::CALL_ARGS_MANY, getSrcInfo(),
                    Emsg(Error::CALL_ARGS_MANY, getUserFacingName(func->ast->getName()),
-                        func->ast->size(), args.size() - partial));
-
+                        positionalLimit, args.size() - partial));
+  }
   if (starArgIndex != -1)
-    slots[starArgIndex] = extra;
-
-  // 4. Fill in **kwargs, if present
-  if (!extraNamedArgs.empty() && kwstarArgIndex == -1)
+    slots[starArgIndex].assign(extra.begin(), extra.end());
+  if (!extraNamedArgs.empty() && kwstarArgIndex == -1) {
+    if (!onError)
+      return -1;
     return onError(Error::CALL_ARGS_INVALID,
-                   args[extraNamedArgs.begin()->second].value->getSrcInfo(),
-                   Emsg(Error::CALL_ARGS_INVALID, extraNamedArgs.begin()->first,
+                   args[extraNamedArgs.front().second].value->getSrcInfo(),
+                   Emsg(Error::CALL_ARGS_INVALID, extraNamedArgs.front().first,
                         getUnmangledName(func->ast->getName())));
+  }
   if (kwstarArgIndex != -1)
-    for (auto &val : extraNamedArgs | std::views::values)
-      slots[kwstarArgIndex].push_back(val);
-
-  // 5. Fill in the default arguments
-  for (auto i = 0; i < func->ast->size(); i++)
-    if (slots[i].empty() && i != starArgIndex && i != kwstarArgIndex) {
-      if (((*func->ast)[i].isValue() &&
-           ((*func->ast)[i].getDefault() ||
-            (!known.empty() && known[i] == ClassType::PartialFlag::Included))) ||
-          startswith((*func->ast)[i].getName(), "$")) {
-        score -= 2;
-      } else if (!partial && (*func->ast)[i].isValue()) {
-        auto [_, n] = (*func->ast)[i].getNameWithStars();
-        return onError(Error::CALL_ARGS_MISSING, getSrcInfo(),
-                       Emsg(Error::CALL_ARGS_MISSING,
+    for (const auto &[name, argument] : extraNamedArgs)
+      slots[kwstarArgIndex].push_back(argument);
+  for (int i = 0; i < slots.size(); ++i) {
+    if (!slots[i].empty() || i == starArgIndex || i == kwstarArgIndex)
+      continue;
+    const auto &parameter = (*func->ast)[i];
+    if (layout.optional[i] || (parameter.isValue() && !known.empty() &&
+                               known[i] == ClassType::PartialFlag::Included)) {
+      score -= 2;
+    } else if (!partial && parameter.isValue()) {
+      if (!onError)
+        return -1;
+      auto [stars, name] = parameter.getNameWithStars();
+      return onError(
+          Error::CALL_ARGS_MISSING, getSrcInfo(),
+          parameter.kind == Param::KeywordOnly
+              ? fmt::format("{}() missing 1 required keyword-only argument: '{}'",
                             getUnmangledName(func->ast->getName()),
-                            getUnmangledName(n)));
-      }
+                            getUnmangledName(name))
+              : Emsg(Error::CALL_ARGS_MISSING, getUnmangledName(func->ast->getName()),
+                     getUnmangledName(name)));
     }
-  auto s = onDone(starArgIndex, kwstarArgIndex, slots, partial);
-  return s != -1 ? score + s : -1;
+  }
+  auto result = onDone(starArgIndex, kwstarArgIndex, slots, partial);
+  return result != -1 ? score + result : -1;
 }
 
 bool TypecheckVisitor::isCanonicalName(const std::string &name) {
@@ -1658,11 +1963,13 @@ ParserErrors TypecheckVisitor::findTypecheckErrors(Stmt *n) const {
   std::vector<ErrorMessage> errors;
   for (auto e : v.result) {
     auto code = ctx->cache->getContent(e->getSrcInfo());
-    if (!code.empty())
+    if (!code.empty()) {
       errors.emplace_back(fmt::format("cannot typecheck '{}'", code), e->getSrcInfo());
-    else
+      // LOG("-> {}", e->toString(2));
+    } else {
       errors.emplace_back(fmt::format("cannot typecheck the expression"),
                           e->getSrcInfo());
+    }
   }
   return ParserErrors(errors);
 }
@@ -1711,7 +2018,7 @@ ir::PyType TypecheckVisitor::cythonizeClass(const std::string &name) {
     auto fn = getFunction(fnn);
     ir::Func *oldIR = nullptr;
     if (!fn->realizations.empty())
-      oldIR = fn->realizations.begin()->second->ir;
+      oldIR = sorted_view(fn->realizations).front().second->ir;
     fn->realizations.clear();
     auto tf = realize(fn->type);
     seqassertn(tf, "cannot re-realize '{}'", fnn);
@@ -1720,13 +2027,13 @@ ir::PyType TypecheckVisitor::cythonizeClass(const std::string &name) {
       for (auto it = oldIR->arg_begin(); it != oldIR->arg_end(); ++it) {
         args.push_back(ctx->cache->module->Nr<ir::VarValue>(*it));
       }
-      cast<ir::BodiedFunc>(oldIR)->setBody(
-          ir::util::series(ir::util::call(fn->realizations.begin()->second->ir, args)));
+      cast<ir::BodiedFunc>(oldIR)->setBody(ir::util::series(
+          ir::util::call(sorted_view(fn->realizations).front().second->ir, args)));
     }
   }
-  for (auto &r : getFunction(getMangledMethod(CYTHON_MODULE, CYTHON_WRAP, "py_type"))
-                         ->realizations |
-                     std::views::values) {
+  for (const auto &[_, r] :
+       sorted_view(getFunction(getMangledMethod(CYTHON_MODULE, CYTHON_WRAP, "py_type"))
+                       ->realizations)) {
     if (r->type->funcGenerics[0].type->unify(tc, nullptr) >= 0) {
       py.typePtrHook = r->ir;
       break;
@@ -1735,7 +2042,7 @@ ir::PyType TypecheckVisitor::cythonizeClass(const std::string &name) {
 
   // 2. Handle methods
   auto methods = c->methods;
-  for (const auto &[n, ofnn] : methods) {
+  for (const auto &[n, ofnn] : sorted_view(methods)) {
     auto canonicalName = getOverloads(ofnn).back();
     auto fn = getFunction(canonicalName);
     if (getOverloads(ofnn).size() == 1 && fn->ast->hasAttribute(Attr::AutoGenerated))
@@ -1891,9 +2198,9 @@ ir::PyType TypecheckVisitor::cythonizeClass(const std::string &name) {
 
   if (c->realizations.size() != 1)
     E(Error::CUSTOM, c->ast, "cannot pythonize generic class '{}'", name);
-  auto r = c->realizations.begin()->second;
+  auto r = sorted_view(c->realizations).front().second;
   py.type = r->ir;
-  seqassertn(!r->type->is(TYPE_TUPLE), "tuples not yet done");
+  seqassertn(!r->type->is(StdlibTypes::Tuple), "tuples not yet done");
   for (auto &mn : r->fields | std::views::keys) {
     /// TODO: handle PyMember for tuples
     // Generate getters & setters
@@ -1920,9 +2227,9 @@ ir::PyType TypecheckVisitor::cythonizeIterator(const std::string &name) {
   ir::PyType py{name, ""};
   auto cr = ctx->cache->classes[CYTHON_ITER].realizations[name];
   auto tc = cr->getType();
-  for (auto &r : getFunction(getMangledMethod(CYTHON_MODULE, CYTHON_WRAP, "py_type"))
-                         ->realizations |
-                     std::views::values) {
+  for (const auto &[_, r] :
+       sorted_view(getFunction(getMangledMethod(CYTHON_MODULE, CYTHON_WRAP, "py_type"))
+                       ->realizations)) {
     if (extractFuncGeneric(r->getType())->unify(tc, nullptr) >= 0) {
       py.typePtrHook = r->ir;
       break;
@@ -1963,10 +2270,10 @@ ir::PyType TypecheckVisitor::cythonizeIterator(const std::string &name) {
 ir::PyFunction TypecheckVisitor::cythonizeFunction(const std::string &name) {
   if (auto f = getFunction(name); f->isToplevel) {
     auto fnName = getMangledMethod(CYTHON_MODULE, CYTHON_WRAP, "wrap_multiple");
-    auto generics =
-        std::vector<types::TypePtr>{getStdLibType("NoneType")->shared_from_this(),
-                                    instantiateStatic(f->ast->getName()),
-                                    instantiateStatic(static_cast<int64_t>(0))};
+    auto generics = std::vector<types::TypePtr>{
+        getStdLibType(StdlibTypes::NoneType)->shared_from_this(),
+        instantiateStatic(f->ast->getName()),
+        instantiateStatic(static_cast<int64_t>(0))};
     if (auto ir = realizeIRFunc(getFunction(fnName)->getType(), generics)) {
       LOG_USER("[py] toplevel -> {} ({}): ({})", getUserFacingName(name), name,
                f->getType()->debugString(2));

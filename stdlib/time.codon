@@ -18,7 +18,7 @@ def perf_counter() -> float:
 def perf_counter_ns() -> int:
     return _C.seq_time_highres()
 
-def sleep(secs: float):
+def sleep(secs: float, /):
     if secs < 0:
         raise ValueError("sleep length must be non-negative")
     _C.seq_sleep(secs)
@@ -37,6 +37,7 @@ class TimeInterval:
 
     def __enter__(self):
         self.start = _C.seq_time()
+        return self
 
     def __exit__(self):
         from sys import stderr
@@ -44,8 +45,6 @@ class TimeInterval:
 
     def report(self, msg="", memory=False) -> str:
         msg = f"{'Block' if not self.msg else self.msg} took {self.elapsed():.3f} s"
-        # if memory:
-        # msg = f'{msg} ({_C.memory()} MB)'
         return msg
 
     def elapsed(self) -> float:
@@ -94,7 +93,7 @@ class struct_time:
         return x
 
     def __new__(
-        year: int = 0,
+        year: int = 0, /,
         mon: int = 0,
         mday: int = 0,
         hour: int = 0,
@@ -153,7 +152,7 @@ class struct_time:
         return int(self._isdst)
 
 
-def localtime(secs: int = -1) -> struct_time:
+def localtime(secs: int = -1, /) -> struct_time:
     tm = struct_time()
     worked = _C.seq_localtime(secs, __ptr__(tm).as_byte())
     if not worked:
@@ -161,7 +160,7 @@ def localtime(secs: int = -1) -> struct_time:
     return tm
 
 
-def gmtime(secs: int = -1) -> struct_time:
+def gmtime(secs: int = -1, /) -> struct_time:
     tm = struct_time()
     worked = _C.seq_gmtime(secs, __ptr__(tm).as_byte())
     if not worked:
@@ -169,7 +168,7 @@ def gmtime(secs: int = -1) -> struct_time:
     return tm
 
 
-def mktime(t) -> int:
+def mktime(t, /) -> int:
     if isinstance(t, struct_time):
         return _C.seq_mktime(__ptr__(t).as_byte())
     else:

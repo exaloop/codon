@@ -2,6 +2,7 @@
 
 #include "translate.h"
 
+#include <iterator>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -9,6 +10,7 @@
 
 #include "codon/cir/transform/parallel/schedule.h"
 #include "codon/cir/util/cloning.h"
+#include "codon/cir/util/irtools.h"
 #include "codon/compiler/compiler.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
@@ -40,8 +42,8 @@ ir::Func *TranslateVisitor::apply(Cache *cache, Stmt *stmts) {
     auto irType =
         cache->module->unsafeGetFuncType("<internal_func_type>", none, {}, false);
     main->realize(irType, {});
-    auto path = cache->fs->get_module0().generic_string();
-    main->setSrcInfo({path, 0, 0, 0});
+    auto path = cache->fs->get_module0();
+    main->setSrcInfo({path.string(), 0, 0, 0});
   }
 
   auto block = cache->module->Nr<ir::SeriesFlow>("body");
@@ -53,7 +55,28 @@ ir::Func *TranslateVisitor::apply(Cache *cache, Stmt *stmts) {
   cache->codegenCtx->series = {block};
 
   cache->populatePythonModule();
-  TranslateVisitor(cache->codegenCtx).translateStmts(stmts);
+  auto ctx = cache->codegenCtx;
+  ctx->mainFunc = main;
+  ctx->mainUserStart = nullptr;
+  TranslateVisitor v(ctx);
+  v.initializeGlobals();
+  auto *suite = cast<SuiteStmt>(stmts);
+  // Full typechecking returns [runtime preamble, user code]. JIT cells instead
+  // contain [user code, pending functions...]; their runtime is already running.
+  bool hasPreamble = !cache->compiler->getOptions()->jit && suite && !suite->empty();
+  if (hasPreamble)
+    v.transform(suite->front());
+  auto before = std::distance(block->begin(), block->end());
+  if (hasPreamble) {
+    for (size_t i = 1; i < suite->size(); ++i)
+      v.transform((*suite)[i]);
+  } else {
+    v.transform(stmts);
+  }
+  if (std::distance(block->begin(), block->end()) > before)
+    ctx->mainUserStart = *std::next(block->begin(), before);
+  for (auto &f : cache->functions | std::views::values)
+    v.transform(f.ast);
   return main;
 }
 
@@ -69,7 +92,7 @@ void TranslateVisitor::initializeGlobals() const {
     if (!ir) {
       ir::Type *vt = nullptr;
       if (auto t = ctx->cache->typeCtx->forceFind(name)->getType()) {
-        if (!t->isInstantiated() || (t->is(TYPE_TYPE)) || t->getFunc())
+        if (!t->isInstantiated() || (t->is(StdlibTypes::Type)) || t->getFunc())
           continue;
         vt = getType(t);
       }
@@ -172,8 +195,10 @@ void TranslateVisitor::defaultVisit(Expr *n) {
 }
 
 void TranslateVisitor::visit(NoneExpr *expr) {
-  auto f = expr->getType()->realizedName() + ":" +
-           getMangledMethod("std.internal.core", TYPE_OPTIONAL, "__new__");
+  auto f = expr->getType()->is(StdlibTypes::Optional)
+               ? expr->getType()->realizedName() + ":" +
+                     getMangledMethod("", "Optional", "__new__")
+               : getMangledMethod("", "NoneType", "__new__");
   auto val = ctx->find(f);
   seqassert(val, "cannot find '{}'", f);
   result = make<ir::CallInstr>(expr, make<ir::VarValue>(expr, val->getFunc()),
@@ -205,17 +230,13 @@ void TranslateVisitor::visit(IdExpr *expr) {
     // ctx->find(expr->getValue());
     seqassert(val, "cannot find '{}'", expr->getValue());
   }
-  if (expr->getValue() == getMangledVar("", "__vtable_size__")) {
-    result = make<ir::IntConst>(expr, ctx->cache->classRealizationCnt + 2,
-                                getType(expr->getType()));
-  } else if (auto *v = val->getVar()) {
+  if (auto *v = val->getVar()) {
     result = make<ir::VarValue>(expr, v);
   } else if (auto *f = val->getFunc()) {
     result = make<ir::VarValue>(expr, f);
   } else {
     // Just use NoneType which is {} (same as type)
-    auto ntval =
-        ctx->find(getMangledMethod("std.internal.core", "NoneType", "__new__"));
+    auto ntval = ctx->find(getMangledMethod("", "NoneType", "__new__"));
     seqassert(ntval, "cannot find '{}'", "NoneType.__new__");
     result = make<ir::CallInstr>(expr, make<ir::VarValue>(expr, ntval->getFunc()),
                                  std::vector<ir::Value *>{});
@@ -293,7 +314,7 @@ void TranslateVisitor::visit(GeneratorExpr *expr) {
 
 void TranslateVisitor::visit(CallExpr *expr) {
   auto ei = cast<IdExpr>(expr->getExpr());
-  if (ei && ei->getValue() == getMangledFunc("std.internal.core", "__ptr__")) {
+  if (ei && ei->getValue() == getMangledFunc("", "__ptr__")) {
     auto head = expr->begin()->getExpr();
     ir::FlowInstr *pre = cast<ir::FlowInstr>(transform(head));
     while (auto sexp = cast<StmtExpr>(head))
@@ -319,8 +340,7 @@ void TranslateVisitor::visit(CallExpr *expr) {
       result = pv;
     }
     return;
-  } else if (ei && ei->getValue() ==
-                       getMangledMethod("std.internal.core", "__array__", "__new__")) {
+  } else if (ei && ei->getValue() == getMangledMethod("", "__array__", "__new__")) {
     auto fnt = expr->getExpr()->getType()->getFunc();
     auto sz = fnt->funcGenerics[0].type->getIntStatic()->value;
     auto typ = fnt->funcParent->getClass()->generics[0].getType();
@@ -329,9 +349,9 @@ void TranslateVisitor::visit(CallExpr *expr) {
     ptrType->setAstType(expr->getType()->shared_from_this());
     result = make<ir::StackAllocInstr>(expr, ptrType, sz);
     return;
-  } else if (ei && startswith(ei->getValue(),
-                              getMangledMethod("std.internal.core", "Generator",
-                                               "_yield_in_no_suspend"))) {
+  } else if (ei &&
+             startswith(ei->getValue(),
+                        getMangledMethod("", "Generator", "_yield_in_no_suspend"))) {
     result = make<ir::YieldInInstr>(expr, getType(expr->getType()), false);
     return;
   }
@@ -354,7 +374,26 @@ void TranslateVisitor::visit(CallExpr *expr) {
     }
     i++;
   }
-  result = make<ir::CallInstr>(expr, callee, std::move(items));
+
+  size_t thunkId = 0;
+  auto *id = expr->getAttribute<ir::IntValueAttribute>(Attr::ExprVirtual);
+  if (id && id->value != -1) {
+    thunkId = id->value;
+  } else if (auto ft = expr->getExpr()->getType()->getFunc(); ft && id) {
+    TypecheckVisitor tv(ctx->cache->typeCtx);
+    if (tv.isPolymorphic(ft)) {
+      auto sig = tv.vTableSignature(ft);
+      auto key = in(ctx->cache->thunkIds, sig);
+      seqassert(key, "not a valid thunk: {}", sig);
+      thunkId = *key;
+    }
+  }
+  if (thunkId) {
+    result = ir::util::virtualCall(callee, std::move(items), thunkId, ctx->getBase());
+    result->setSrcInfo(expr->getSrcInfo());
+  } else {
+    result = make<ir::CallInstr>(expr, callee, std::move(items));
+  }
 }
 
 void TranslateVisitor::visit(DotExpr *expr) {
@@ -365,16 +404,18 @@ void TranslateVisitor::visit(DotExpr *expr) {
     auto t = TypecheckVisitor(ctx->cache->typeCtx).extractType(ei->getType());
     auto type = ctx->find(t->realizedName())->getType();
     seqassert(type, "{} is not a type", ei->getValue());
-    result = make<ir::TypePropertyInstr>(
-        expr, type,
-        expr->getMember() == "__atomic__"
-            ? ir::TypePropertyInstr::Property::IS_ATOMIC
-            : (expr->getMember() == "__contents_atomic__"
-                   ? ir::TypePropertyInstr::Property::IS_CONTENT_ATOMIC
-                   : ir::TypePropertyInstr::Property::SIZEOF));
+    auto kind = expr->getMember() == "__atomic__"
+                    ? ir::InternalFunc::Intrinsic::IS_ATOMIC
+                    : (expr->getMember() == "__contents_atomic__"
+                           ? ir::InternalFunc::Intrinsic::IS_CONTENT_ATOMIC
+                           : ir::InternalFunc::Intrinsic::SIZEOF);
+    auto *intrinsic = ctx->getModule()->getIntrinsic(kind, type);
+    result = make<ir::CallInstr>(expr, make<ir::VarValue>(expr, intrinsic));
   } else {
-    result =
-        make<ir::ExtractInstr>(expr, transform(expr->getExpr()), expr->getMember());
+    auto name = expr->getExpr()->getClassType()->name;
+    auto cls = in(ctx->cache->classes, name);
+    result = make<ir::ExtractInstr>(expr, transform(expr->getExpr()), expr->getMember(),
+                                    "", cls && cls->hasRTTI());
   }
 }
 
@@ -437,8 +478,7 @@ void TranslateVisitor::visit(PipeExpr *expr) {
 void TranslateVisitor::visit(AwaitExpr *expr) {
   result =
       make<ir::AwaitInstr>(expr, transform(expr->getExpr()), getType(expr->getType()),
-                           expr->getExpr()->getType()->is(
-                               getMangledClass("std.internal.core", "Generator")));
+                           expr->getExpr()->getType()->is(StdlibTypes::Generator));
 }
 
 void TranslateVisitor::visit(StmtExpr *expr) {
@@ -480,8 +520,7 @@ void TranslateVisitor::visit(ExprStmt *stmt) {
   IdExpr *ei = nullptr;
   auto ce = cast<CallExpr>(stmt->getExpr());
   if (ce && ((ei = cast<IdExpr>(ce->getExpr()))) &&
-      ei->getValue() ==
-          getMangledMethod("std.internal.core", "Generator", "_yield_final")) {
+      ei->getValue() == getMangledMethod("", "Generator", "_yield_final")) {
     result = make<ir::YieldInstr>(stmt, transform((*ce)[0].value), true);
     ctx->getBase()->setGenerator();
   } else {
@@ -509,16 +548,19 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
       if ((v = val->getVar())) {
         if (!v->getType()) {
           v->setSrcInfo(stmt->getSrcInfo());
-          v->setType(getType(stmt->getRhs()->getType()));
+          // A name annotation (no RHS) establishes storage type without storing value!
+          v->setType(
+              getType((stmt->getRhs() ? stmt->getRhs() : stmt->getLhs())->getType()));
         }
-        result = make<ir::AssignInstr>(stmt, v, transform(stmt->getRhs()));
+        if (stmt->getRhs())
+          result = make<ir::AssignInstr>(stmt, v, transform(stmt->getRhs()));
       }
     }
     return;
   }
 
   if (!stmt->getLhs()->getType()->isInstantiated() ||
-      (stmt->getLhs()->getType()->is(TYPE_TYPE)) ||
+      (stmt->getLhs()->getType()->is(StdlibTypes::Type)) ||
       stmt->getLhs()->getType()->getFunc()) {
     if (stmt->getRhs() && !cast<IdExpr>(stmt->getRhs())) {
       // Side effect
@@ -559,8 +601,10 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
 }
 
 void TranslateVisitor::visit(AssignMemberStmt *stmt) {
+  auto name = stmt->getLhs()->getClassType()->name;
+  auto cls = in(ctx->cache->classes, name);
   result = make<ir::InsertInstr>(stmt, transform(stmt->getLhs()), stmt->getMember(),
-                                 transform(stmt->getRhs()));
+                                 transform(stmt->getRhs()), "", cls && cls->hasRTTI());
 }
 
 void TranslateVisitor::visit(ReturnStmt *stmt) {

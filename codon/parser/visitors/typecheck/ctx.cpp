@@ -16,24 +16,46 @@ using namespace codon::error;
 
 namespace codon::ast {
 
-TypecheckItem::TypecheckItem(std::string canonicalName, std::string baseName,
-                             std::string moduleName, types::TypePtr type,
-                             std::vector<int> scope)
+TypecheckItem::TypecheckItem(std::string canonicalName, InternedString baseName,
+                             InternedString moduleName, types::TypePtr type,
+                             int blockLevel)
     : canonicalName(std::move(canonicalName)), baseName(std::move(baseName)),
-      moduleName(std::move(moduleName)), type(std::move(type)),
-      scope(std::move(scope)) {}
+      moduleName(std::move(moduleName)), type(std::move(type)), blockLevel(blockLevel),
+      alternative(nullptr) {}
+
+TypecheckItem::TypecheckItem(std::string canonicalName, std::string_view baseName,
+                             InternedString moduleName, types::TypePtr type,
+                             int blockLevel)
+    : TypecheckItem(std::move(canonicalName), InternedString(baseName), moduleName,
+                    std::move(type), blockLevel) {}
 
 TypeContext::TypeContext(Cache *cache, std::string filename)
     : Context<TypecheckItem>(std::move(filename)), cache(cache) {
   bases.emplace_back();
-  scope.emplace_back(0);
   auto e = cache->N<NoneExpr>();
   e->setSrcInfo(cache->generateSrcInfo());
   pushNode(e); // Always have srcInfo() around
 }
 
+TypeContext TypeContext::saveInferenceState() {
+  Map bindings;
+  bindings.swap(map);
+  try {
+    TypeContext saved(*this);
+    bindings.swap(map);
+    return saved;
+  } catch (...) {
+    bindings.swap(map);
+    throw;
+  }
+}
+
+void TypeContext::restoreInferenceState(TypeContext &&saved) {
+  saved.map.swap(map);
+  *this = std::move(saved);
+}
+
 void TypeContext::add(const std::string &name, const TypeContext::Item &var) {
-  seqassert(!var->scope.empty(), "bad scope for '{}'", name);
   Context<TypecheckItem>::add(name, var);
 }
 
@@ -48,7 +70,7 @@ TypeContext::Item TypeContext::addVar(const std::string &name,
   seqassert(!canonicalName.empty(), "empty canonical name for '{}'", name);
   // seqassert(type->getLink(), "bad var");
   auto t = std::make_shared<TypecheckItem>(canonicalName, getBaseName(), getModule(),
-                                           type, getScope());
+                                           type, blockLevel);
   t->setSrcInfo(srcInfo);
   t->time = time;
   add(name, t);
@@ -63,7 +85,7 @@ TypeContext::Item TypeContext::addType(const std::string &name,
   seqassert(!canonicalName.empty(), "empty canonical name for '{}'", name);
   // seqassert(type->getClass(), "bad type");
   auto t = std::make_shared<TypecheckItem>(canonicalName, getBaseName(), getModule(),
-                                           type, getScope());
+                                           type, blockLevel);
   t->setSrcInfo(srcInfo);
   add(name, t);
   addAlwaysVisible(t);
@@ -77,7 +99,7 @@ TypeContext::Item TypeContext::addFunc(const std::string &name,
   seqassert(!canonicalName.empty(), "empty canonical name for '{}'", name);
   seqassert(type->getFunc(), "bad func");
   auto t = std::make_shared<TypecheckItem>(canonicalName, getBaseName(), getModule(),
-                                           type, getScope());
+                                           type, blockLevel);
   t->setSrcInfo(srcInfo);
   add(name, t);
   addAlwaysVisible(t);
@@ -105,14 +127,18 @@ TypeContext::Item TypeContext::find(const std::string &name, int64_t time,
                                     const char *inBase) const {
   auto it = map.find(name);
   bool isMangled = in(name, ".");
-  std::string base = inBase ? inBase : getBaseName();
   if (it != map.end()) {
+    if (isMangled)
+      return it->second.front();
+    std::string_view base =
+        inBase ? std::string_view(inBase) : std::string_view(bases.back().name);
     for (auto &i : it->second) {
-      if (!isMangled && !startswith(base, i->getBaseName())) {
+      const bool sameBase =
+          inBase ? i->baseName == base : i->baseName == bases.back().name;
+      if (!sameBase && !base.starts_with(i->baseName.str())) {
         continue; // avoid middle realizations
       }
-      if (isMangled || i->getBaseName() != base || !time ||
-          i->getModule() != getModule()) {
+      if (!sameBase || !time || i->moduleName != getModule()) {
         return i;
       } else {
         if (i->getTime() <= time)
@@ -143,25 +169,27 @@ TypeContext::Item TypeContext::forceFind(const std::string &name) const {
 
 /// Getters and setters
 
-std::string TypeContext::getBaseName() const { return bases.back().name; }
+InternedString TypeContext::getBaseName() const { return bases.back().name; }
 
-std::string TypeContext::getModule() const {
-  std::string base = moduleName.status == ImportFile::STDLIB ? "std." : "";
-  base += moduleName.module;
+void TypeContext::setModule(ImportFile module) {
+  std::string base = module.status == ImportFile::STDLIB ? "std." : "";
+  base += module.module;
   if (auto sz = startswith(base, "__main__"))
     base = base.substr(sz);
-  return base;
+  InternedString identifier(base);
+  moduleInfo = std::move(module);
+  moduleIdentifier = identifier;
 }
 
-std::string TypeContext::getModulePath() const { return moduleName.path; }
+std::string TypeContext::getModulePath() const { return moduleInfo.path; }
 
 void TypeContext::dump() { dump(0); }
 
 std::string TypeContext::generateCanonicalName(const std::string &name,
                                                bool includeBase, bool noSuffix) const {
-  std::string newName = name;
   if (name.find('.') != std::string::npos)
     return name;
+  std::string newName = name;
   includeBase &= !(!name.empty() && name[0] == '%');
   if (includeBase) {
     std::string base = getBaseName();
@@ -184,7 +212,7 @@ std::string TypeContext::generateCanonicalName(const std::string &name,
 
 bool TypeContext::isGlobal() const { return bases.size() == 1; }
 
-bool TypeContext::isConditional() const { return scope.size() > 1; }
+bool TypeContext::isConditional() const { return blockLevel > 0; }
 
 TypeContext::Base *TypeContext::getBase() {
   return bases.empty() ? nullptr : &(bases.back());
@@ -219,7 +247,7 @@ std::string TypeContext::getRealizationStackName() const {
 void TypeContext::dump(int pad) {
   auto ordered =
       std::map<std::string, decltype(map)::mapped_type>(map.begin(), map.end());
-  LOG("current module: {} ({})", moduleName.module, moduleName.path);
+  LOG("current module: {} ({})", moduleInfo.module, moduleInfo.path);
   LOG("current base:   {} / {}", getRealizationStackName(), getBase()->name);
   for (auto &i : ordered) {
     std::string s;
@@ -230,7 +258,6 @@ void TypeContext::dump(int pad) {
     LOG("   ... base:      {}", t->baseName);
     LOG("   ... module:    {}", t->moduleName);
     LOG("   ... type:      {}", t->type ? t->type->debugString(2) : "<null>");
-    LOG("   ... scope:     {}", t->scope);
     LOG("   ... gnrc/sttc: {} / {}", t->generic, static_cast<int>(t->getStaticKind()));
   }
 }

@@ -20,6 +20,10 @@ namespace codon::ast {
   using AcceptorExtend::accept;                                                        \
   ASTNode *clone(bool c) const override;                                               \
   void accept(VISITOR &visitor) override;                                              \
+  std::string toPythonString(bool attributes = false, int indent = -1, int level = 0)  \
+      const override;                                                                  \
+  detail::CodonString formatCodonString(bool attributes, int indent, int level)        \
+      const override;                                                                  \
   std::string toString(int) const override;                                            \
   friend class TypecheckVisitor;                                                       \
   template <typename TE, typename TS> friend struct CallbackASTVisitor;                \
@@ -49,6 +53,8 @@ struct Stmt : public AcceptorExtend<Stmt, ASTNode> {
   virtual Stmt *firstInBlock() { return this; }
 
   static const char NodeId;
+  virtual std::string toPythonString(bool attributes = false, int indent = -1,
+                                     int level = 0) const = 0;
   SERIALIZE(Stmt, BASE(ASTNode), done);
 
   virtual std::string wrapStmt(const std::string &) const;
@@ -487,12 +493,23 @@ private:
 /// @li: @decorator
 ///           def foo[T=int, U: int](a, b: int = 0) -> list[T]: pass
 struct FunctionStmt : public AcceptorExtend<FunctionStmt, Stmt>, Items<Param> {
+  /// Argument structure computed once for the normalized declaration.
+  struct CallLayout {
+    int positionalLimit = 0;
+    int star = -1, kwstar = -1;
+    int variadicPenalty = 0;
+    std::vector<std::pair<std::string, int>> keywords;
+    std::vector<int> requiredValues;
+    std::vector<bool> optional;
+  };
+
   FunctionStmt(std::string name = "", Expr *ret = nullptr, std::vector<Param> args = {},
                Stmt *suite = nullptr, std::vector<Expr *> decorators = {},
                bool async = false);
   FunctionStmt(const FunctionStmt &, bool);
+  static std::vector<Param> parseParams(std::vector<Param>);
 
-  std::string getName() const { return name; }
+  const std::string &getName() const { return name; }
   void setName(const std::string &n) { name = n; }
   Expr *getReturn() const { return ret; }
   SuiteStmt *getSuite() const { return suite; }
@@ -502,20 +519,21 @@ struct FunctionStmt : public AcceptorExtend<FunctionStmt, Stmt>, Items<Param> {
   bool isAsync() const { return async; }
   void setAsync() { async = true; }
   void addParam(const Param &p) {
+    seqassertn(!callLayout, "cannot add a parameter to a finalized function");
     items.push_back(p);
     if (nonInferrableGenerics)
       nonInferrableGenerics->clear();
   }
 
-  /// @return a function signature that consists of generics and arguments in a
-  /// S-expression form.
-  /// @li (T U (int 0))
-  std::string getSignature();
   size_t getStarArgs() const;
   size_t getKwStarArgs() const;
   std::string getDocstr() const;
   const std::unordered_set<std::string> &getNonInferrableGenerics();
   bool hasFunctionAttribute(const std::string &attr) const;
+  const CallLayout &getCallLayout() const {
+    seqassertn(callLayout, "function call layout was not initialized");
+    return *callLayout;
+  }
 
   ACCEPT(FunctionStmt, ASTVisitor, name, items, ret, suite, decorators, async);
 
@@ -525,10 +543,12 @@ private:
   SuiteStmt *suite;
   std::vector<Expr *> decorators;
   bool async;
-  std::string signature;
 
   // Cache non-inferrable generics for speed.
   std::shared_ptr<std::unordered_set<std::string>> nonInferrableGenerics;
+
+  /// Only canonical declarations have a layout; AST clones start without one.
+  std::unique_ptr<CallLayout> callLayout;
 
   friend struct Cache;
 };
@@ -541,16 +561,14 @@ private:
 struct ClassStmt : public AcceptorExtend<ClassStmt, Stmt>, Items<Param> {
   ClassStmt(std::string name = "", std::vector<Param> args = {}, Stmt *suite = nullptr,
             std::vector<Expr *> decorators = {},
-            const std::vector<Expr *> &baseClasses = {},
-            std::vector<Expr *> staticBaseClasses = {});
+            const std::vector<Expr *> &baseClasses = {});
   ClassStmt(const ClassStmt &, bool);
 
-  std::string getName() const { return name; }
+  const std::string &getName() const { return name; }
   SuiteStmt *getSuite() const { return suite; }
   const std::vector<Expr *> &getDecorators() const { return decorators; }
   void setDecorators(const std::vector<Expr *> &d) { decorators = d; }
   const std::vector<Expr *> &getBaseClasses() const { return baseClasses; }
-  const std::vector<Expr *> &getStaticBaseClasses() const { return staticBaseClasses; }
 
   /// @return true if a class is a tuple-like record (e.g. has a "@tuple" attribute)
   bool isRecord() const;
@@ -558,15 +576,13 @@ struct ClassStmt : public AcceptorExtend<ClassStmt, Stmt>, Items<Param> {
 
   static bool isClassVar(const Param &p);
 
-  ACCEPT(ClassStmt, ASTVisitor, name, suite, items, decorators, baseClasses,
-         staticBaseClasses);
+  ACCEPT(ClassStmt, ASTVisitor, name, suite, items, decorators, baseClasses);
 
 private:
   std::string name;
   SuiteStmt *suite;
   std::vector<Expr *> decorators;
   std::vector<Expr *> baseClasses;
-  std::vector<Expr *> staticBaseClasses;
 };
 
 /// Yield-from statement (yield from expr).

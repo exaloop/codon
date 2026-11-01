@@ -56,12 +56,15 @@ struct Attr {
     ExprKwStarArgument,
     ExprOrderedCall,
     ExprExternVar,
-    ExprDominatedUndefCheck,
+    ExprNoUndefCheck,
     ExprDominatedUsed,
     ExprTime,
     ExprDoNotRealize,
     ExprNoSpecial,
-    TryPyVar
+    ExprVirtual,
+    TryPyVar,
+    LocalRenames,
+    MaybeLiteral,
   };
 };
 } // namespace codon::ast

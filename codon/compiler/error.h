@@ -6,8 +6,8 @@
 #include <unordered_set>
 #include <vector>
 
+#include "codon/cir/llvm/llvm.h"
 #include "codon/parser/ast/error.h"
-#include "llvm/Support/Error.h"
 #include <fmt/format.h>
 
 #if defined(_WIN32)
@@ -19,6 +19,14 @@
 #else
 #define CODON_API
 #endif
+
+template <>
+struct fmt::formatter<codon::SourceFile> : fmt::formatter<std::string_view> {
+  template <typename Context>
+  auto format(const codon::SourceFile &file, Context &ctx) const {
+    return fmt::formatter<std::string_view>::format(file.str(), ctx);
+  }
+};
 
 namespace codon {
 namespace error {
@@ -429,7 +437,8 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
   case Error::CALL_SUPER_PARENT:
     return fmt::format("no super methods found");
   case Error::CALL_PTR_VAR:
-    return fmt::format("__ptr__() only takes identifiers or tuple fields as arguments");
+    return fmt::format("__ptr__() only takes identifiers or fields rooted in "
+                       "identifiers as arguments");
   case Error::EXPECTED_TUPLE:
     return fmt::format("expected tuple type");
   case Error::CALL_REALIZED_FN:

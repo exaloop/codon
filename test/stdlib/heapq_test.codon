@@ -215,6 +215,232 @@ def test_merge():
     assert ['kangaroo', 'horse', 'fish', 'dog', 'cat'] == list(heapq.merge(['horse', 'dog'], ['kangaroo', 'fish', 'cat'], key=len, reverse=True))
 
 
+@test
+def test_max_heap_api():
+    for size in range(40):
+        values = [(index * 17) % 23 for index in range(size)]
+        heap = values.copy()
+        heapq.heapify_max(heap)
+        assert [heapq.heappop_max(heap) for _ in range(size)] == sorted(values, reverse=True)
+        for value in values:
+            heapq.heappush_max(heap, value)
+        assert [heapq.heappop_max(heap) for _ in range(size)] == sorted(values, reverse=True)
+    heap = [10]
+    assert heapq.heappushpop_max(heap, 11) == 11
+    assert heap == [10]
+    assert heapq.heappushpop_max(heap, 9) == 10
+    assert heap == [9]
+    assert heapq.heapreplace_max(heap, 12) == 9
+    assert heap == [12]
+    assert heapq.heappushpop_max(List[int](), 7) == 7
+    for operation in (heapq.heappop, heapq.heappop_max):
+        try:
+            operation(List[int]())
+            assert False
+        except IndexError as error:
+            assert error.message == 'index out of range'
+    for operation in (heapq.heapreplace, heapq.heapreplace_max):
+        try:
+            operation(List[int](), 7)
+            assert False
+        except IndexError as error:
+            assert error.message == 'index out of range'
+
+
+@test
+def test_key_semantics():
+    def record_key(value: int, calls: List[int]):
+        calls.append(value)
+        return value
+
+    values = [4, 1, 3, 2, 1]
+    for select, expected in ((heapq.nsmallest, [1]), (heapq.nlargest, [4])):
+        calls = []
+        assert select(1, values, key=record_key(calls=calls, ...)) == expected
+        assert calls == values
+        assert select(-3, values, key=None) == List[int]()
+        assert select(0, values, key=None) == List[int]()
+        assert select(1, List[int](), key=None) == List[int]()
+    assert heapq.nsmallest(n=2, iterable=values, key=None) == [1, 1]
+    assert heapq.nlargest(n=2, iterable=values, key=None) == [4, 3]
+
+    records = [(2, 'a'), (1, 'b'), (2, 'c'), (1, 'd')]
+    for count in (1, 2, 3, 4, 6):
+        assert heapq.nsmallest(count, records, key=lambda item: item[0]) == sorted(records, key=lambda item: item[0])[:count]
+        assert heapq.nlargest(count, records, key=lambda item: item[0]) == sorted(records, key=lambda item: item[0], reverse=True)[:count]
+
+    calls = []
+    assert list(heapq.merge([1, 3], [2, 4], key=record_key(calls=calls, ...))) == [1, 2, 3, 4]
+    assert calls == [1, 2, 3, 4]
+    calls.clear()
+    assert list(heapq.merge([1, 2, 3], key=record_key(calls=calls, ...))) == [1, 2, 3]
+    assert calls == [1]
+    assert list(heapq.merge([1, 3], [2, 4], key=None)) == [1, 2, 3, 4]
+    assert not list(heapq.merge())
+    assert not list(heapq.merge(List[int](), List[int](), key=None))
+    left = [(1, 'a'), (2, 'b')]
+    right = [(1, 'c'), (2, 'd')]
+    assert list(heapq.merge(left, right, key=lambda item: item[0])) == [(1, 'a'), (1, 'c'), (2, 'b'), (2, 'd')]
+    assert list(heapq.merge(left[::-1], right[::-1], key=lambda item: item[0], reverse=True)) == [(2, 'b'), (2, 'd'), (1, 'a'), (1, 'c')]
+
+
+@tuple
+class HeapMutationItem:
+    value: int
+    mutate: Callable[[], int]
+
+    def __lt__(self, other):
+        self.mutate()
+        return self.value < other.value
+
+
+@test
+def test_heap_mutation():
+    def clear_heap(heap: List[HeapMutationItem]) -> int:
+        heap.clear()
+        return 0
+
+    def relocate_heap(heap: List[HeapMutationItem], changed: Ptr[bool]) -> int:
+        if not changed[0]:
+            changed[0] = True
+            saved = heap.copy()
+            heap.extend(saved * 128)
+            heap.clear()
+            heap.extend(saved)
+        return 0
+
+    for operation in (heapq.heapify, heapq.heapify_max, heapq.heappop, heapq.heappop_max):
+        heap = List[HeapMutationItem]()
+        mutate = clear_heap(heap, ...)
+        heap.extend(HeapMutationItem(value, mutate) for value in (4, 3, 2, 1))
+        try:
+            operation(heap)
+            assert False
+        except RuntimeError as error:
+            assert error.message == 'list changed size during iteration'
+    for operation in (heapq.heappush, heapq.heappush_max, heapq.heapreplace, heapq.heapreplace_max):
+        heap = List[HeapMutationItem]()
+        mutate = clear_heap(heap, ...)
+        heap.extend(HeapMutationItem(value, mutate) for value in (4, 3, 2, 1))
+        try:
+            operation(heap, HeapMutationItem(5, mutate))
+            assert False
+        except RuntimeError as error:
+            assert error.message == 'list changed size during iteration'
+
+    for operation, reverse in ((heapq.heappushpop, False), (heapq.heappushpop_max, True)):
+        for replace in (False, True):
+            heap = List[HeapMutationItem]()
+            mutate = clear_heap(heap, ...)
+            heap.append(HeapMutationItem(2, mutate))
+            item = HeapMutationItem(1 if replace == reverse else 3, mutate)
+            try:
+                result = operation(heap, item)
+                assert not replace
+                assert result.value == item.value
+            except IndexError as error:
+                assert replace
+                assert error.message == 'index out of range'
+            assert not heap
+
+    for initialize, pop, reverse in ((heapq.heapify, heapq.heappop, False), (heapq.heapify_max, heapq.heappop_max, True)):
+        heap = List[HeapMutationItem]()
+        changed = False
+        mutate = relocate_heap(heap, __ptr__(changed), ...)
+        values = [9, 1, 8, 2, 7, 3, 6, 4, 5]
+        heap.extend(HeapMutationItem(value, mutate) for value in values)
+        previous = heap._ptr
+        initialize(heap)
+        assert changed
+        assert previous != heap._ptr
+        assert [pop(heap).value for _ in range(len(heap))] == sorted(values, reverse=reverse)
+
+    heap = [1, 3, 2]
+    heapq.heapify_max(heap)
+    heapq._heappush_max(heap, 4)
+    assert heapq._heappushpop_max(heap, 5) == 5
+    assert heapq.heappop_max(heap) == 4
+
+
+@tuple
+class MergeSource:
+    values: List[int]
+    events: List[int]
+
+    def __iter__(self):
+        self.events.append(-1)
+        return self.items()
+
+    def items(self):
+        for value in self.values:
+            self.events.append(value)
+            yield value
+
+
+@test
+def test_merge_consumption():
+    events = List[int]()
+    source = MergeSource([1, 4, 7], events)
+    merged = heapq.merge(source, (2, 5, 8), range(3, 10, 3))
+    assert not events
+    assert next(merged) == 1
+    assert events == [-1, 1]
+    assert next(merged) == 2
+    assert events == [-1, 1, 4]
+    assert list(merged) == [3, 4, 5, 6, 7, 8, 9]
+    assert events == [-1, 1, 4, 7]
+
+    def failing_key(value: int):
+        raise ValueError('merge key')
+        return value
+
+    merged = heapq.merge([1], [2], key=failing_key)
+    try:
+        next(merged)
+        assert False
+    except ValueError as error:
+        assert error.message == 'merge key'
+
+    assert list(heapq.merge(List[int](), (1, 2), List[int]())) == [1, 2]
+    assert not list(heapq.merge(key=None, reverse=True))
+
+
+@test
+def test_primitive_heaps():
+    def check(Element: type):
+        values = [Element(value) for value in (3, 1, 2, 1)]
+        for initialize, push, pop, pushpop, reverse in (
+            (heapq.heapify, heapq.heappush, heapq.heappop, heapq.heappushpop, False),
+            (heapq.heapify_max, heapq.heappush_max, heapq.heappop_max, heapq.heappushpop_max, True),
+        ):
+            heap = values.copy()
+            initialize(heap)
+            assert [pop(heap) for _ in range(len(heap))] == sorted(values, reverse=reverse)
+            for value in values:
+                push(heap, value)
+            ordered = sorted(values + [Element(2)], reverse=reverse)
+            assert pushpop(heap, Element(2)) == ordered[0]
+            assert [pop(heap) for _ in range(len(heap))] == ordered[1:]
+    check(bool)
+    check(int)
+    check(Int[17])
+    check(UInt[17])
+    check(float)
+    check(float32)
+    check(float16)
+    check(bfloat16)
+    check(float128)
+    check(str)
+    values = [b'c', b'a', b'b', b'a']
+    heapq.heapify(values)
+    assert [heapq.heappop(values) for _ in range(len(values))] == [b'a', b'a', b'b', b'c']
+
+
+test_primitive_heaps()
+test_heap_mutation()
+test_merge_consumption()
+test_key_semantics()
+test_max_heap_api()
 test_heapify()
 test_naive_nbest()
 test_nsmallest()

@@ -152,7 +152,7 @@ def _adv_idx_iter_non_arrays(indexes, shape):
     else:
         idx = indexes[0]
         dim = shape[0]
-        start, stop, step = idx.adjust_indices(dim)
+        start, stop, step, _ = idx.adjust_indices(dim)
 
         k = 0
         for i in range(start, stop, step):

@@ -35,8 +35,17 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
   // Fetch the import
   auto components = getImportPath(stmt->getFrom(), stmt->getDots());
   auto path = combine2(components, "/");
+  const bool relativeFrom = stmt->getDots() > 0 && !stmt->getFrom();
   auto file = getImportFile(ctx->cache, path, ctx->getFilename());
   if (!file) {
+    if (relativeFrom) {
+      resultStmt = transform(N<ImportStmt>(
+          stmt->getWhat(), nullptr, std::vector<Param>{}, nullptr,
+          stmt->getAs().empty() ? cast<IdExpr>(stmt->getWhat())->getValue()
+                                : stmt->getAs(),
+          stmt->getDots()));
+      return;
+    }
     if (stmt->getDots() == 0 &&
         (ctx->autoPython || ctx->cache->compiler->getOptions()->autopy)) {
       auto newStr = FormatVisitor::apply(stmt->getFrom());
@@ -85,6 +94,10 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
 
   const auto &import = getImport(file->path);
   std::string importVar = import->importVar;
+  // The main module has no runtime import variable. Check its identity
+  // instead, so `from internal import gc` is not mistaken for a main-module import.
+  if (import->ctx->getModuleInfo().module == MODULE_MAIN && !ctx->isStdlibLoading)
+    E(Error::CUSTOM, stmt, "cannot import main module '{}'", file->module);
   if (!import->loadedAtToplevel)
     handled = false;
 
@@ -93,8 +106,8 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
   // imports are "clean" and do not need guards). Note that the importVar is empty if
   // the import has been loaded during the standard library loading.
   if (!handled) {
-    resultStmt = N<ExprStmt>(
-        N<CallExpr>(N<IdExpr>(getMangledFunc("", fmt::format("{}_call", importVar)))));
+    resultStmt = N<ExprStmt>(N<CallExpr>(N<IdExpr>(getMangledFunc(
+        "", fmt::format("{}_call", importVar), 0, 0, /* noCore */ true))));
     LOG_TYPECHECK("[import] loading {}", importVar);
   }
 
@@ -124,8 +137,21 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
     // Case 3: from foo import bar
     auto i = cast<IdExpr>(stmt->getWhat());
     seqassert(i, "not a valid import what expression");
-    auto c = import->ctx->find(i->getValue());
+    auto c = relativeFrom ? import->ctx->Context<TypecheckItem>::find(i->getValue())
+                          : import->ctx->find(i->getValue());
     // Make sure that we are importing an existing global symbol
+    if (!c && relativeFrom &&
+        getImportFile(ctx->cache,
+                      path.empty() ? i->getValue() : path + "/" + i->getValue(),
+                      ctx->getFilename())) {
+      // Support from . import int and similar commands
+      auto relativeImport = N<ImportStmt>(
+          stmt->getWhat(), nullptr, std::vector<Param>{}, nullptr,
+          stmt->getAs().empty() ? i->getValue() : stmt->getAs(), stmt->getDots());
+      resultStmt =
+          transform(N<SuiteStmt>(std::vector<Stmt *>{resultStmt, relativeImport}));
+      return;
+    }
     if (!c)
       E(Error::IMPORT_NO_NAME, i, i->getValue(), file->module);
     if (c->isConditional())
@@ -212,8 +238,8 @@ Stmt *TypecheckVisitor::transformCImport(const std::string &name,
     }
   }
   auto _ = ctx->generateCanonicalName(name); // avoid canonicalName == name
-  Stmt *f =
-      N<FunctionStmt>(name, ret ? clone(ret) : N<IdExpr>("NoneType"), fnArgs, nullptr);
+  Stmt *f = N<FunctionStmt>(name, ret ? clone(ret) : N<IdExpr>(StdlibTypes::NoneType),
+                            fnArgs, nullptr);
   f->setAttribute(Attr::C);
   if (hasVarArgs)
     f->setAttribute(Attr::CVarArg);
@@ -258,14 +284,15 @@ Stmt *TypecheckVisitor::transformCDLLImport(Expr *dylib, const std::string &name
                                             bool isFunction) {
   Expr *type = nullptr;
   if (isFunction) {
-    std::vector<Expr *> fnArgs{N<ListExpr>(), ret ? clone(ret) : N<IdExpr>("NoneType")};
+    std::vector<Expr *> fnArgs{N<ListExpr>(),
+                               ret ? clone(ret) : N<IdExpr>(StdlibTypes::NoneType)};
     for (const auto &a : args) {
       seqassert(a.getName().empty(), "unexpected argument name");
       seqassert(!a.getDefault(), "unexpected default argument");
       seqassert(a.getType(), "missing type");
       cast<ListExpr>(fnArgs[0])->items.emplace_back(clone(a.getType()));
     }
-    type = N<IndexExpr>(N<IdExpr>("Function"), N<TupleExpr>(fnArgs));
+    type = N<IndexExpr>(N<IdExpr>(StdlibTypes::Function), N<TupleExpr>(fnArgs));
   } else {
     type = clone(ret);
   }
@@ -323,7 +350,8 @@ Stmt *TypecheckVisitor::transformPythonImport(Expr *what,
     callArgs.emplace_back(N<IdExpr>(fmt::format("a{}", i)));
   }
   // `return ret.__from_py__(f(a1, ...))`
-  auto retType = (ret && !cast<NoneExpr>(ret)) ? clone(ret) : N<IdExpr>("NoneType");
+  auto retType =
+      (ret && !cast<NoneExpr>(ret)) ? clone(ret) : N<IdExpr>(StdlibTypes::NoneType);
   auto retExpr = N<CallExpr>(N<DotExpr>(clone(retType), "__from_py__"),
                              N<DotExpr>(N<CallExpr>(N<IdExpr>("f"), callArgs), "p"));
   auto retStmt = N<ReturnStmt>(retExpr);
@@ -346,12 +374,12 @@ Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
   std::ranges::replace(moduleID, '.', '_');
   auto ictx = std::make_shared<TypeContext>(ctx->cache, file.path);
   ictx->isStdlibLoading = ctx->isStdlibLoading;
-  ictx->moduleName = file;
+  ictx->setModule(file);
   auto &import = ctx->cache->imports[file.path];
   import.update(file.module, file.path, ictx);
   import.loadedAtToplevel =
-      getImport(ctx->moduleName.path)->loadedAtToplevel &&
-      (ctx->isStdlibLoading || (ctx->isGlobal() && ctx->scope.size() == 1));
+      getImport(ctx->getModuleInfo().path)->loadedAtToplevel &&
+      (ctx->isStdlibLoading || (ctx->isGlobal() && ctx->blockLevel == 0));
   auto importVar = import.importVar =
       getTemporaryVar(fmt::format("import_{}", moduleID));
   LOG_REALIZE("[import] initializing {} (location: {}, toplevel: {})", importVar,
@@ -361,9 +389,10 @@ Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
   Stmt *n = nullptr;
   if (file.module != "internal.core") {
     // str is not defined when loading internal.core; __name__ is not needed anyway
-    n = N<SuiteStmt>(
-        N<AssignStmt>(N<IdExpr>("__name__"), N<StringExpr>(ictx->moduleName.module)),
-        N<AssignStmt>(N<IdExpr>("__file__"), N<StringExpr>(ictx->moduleName.path)));
+    n = N<SuiteStmt>(N<AssignStmt>(N<IdExpr>("__name__"),
+                                   N<StringExpr>(ictx->getModuleInfo().module)),
+                     N<AssignStmt>(N<IdExpr>("__file__"),
+                                   N<StringExpr>(ictx->getModuleInfo().path)));
     ctx->addBlock();
     preamble->addStmt(transform(
         N<AssignStmt>(N<IdExpr>(importVar),
@@ -372,7 +401,7 @@ Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
                       N<IdExpr>("Import"))));
     auto val = ctx->forceFind(importVar);
     ctx->popBlock();
-    val->scope = {0};
+    val->blockLevel = 0;
     val->baseName = "";
     val->moduleName = MODULE_MAIN;
     val->time = 0;
@@ -384,7 +413,8 @@ Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
     throw exc::ParserException(nodeOrErr.takeError());
   n = N<SuiteStmt>(n, *nodeOrErr);
   auto tv = TypecheckVisitor(ictx, preamble);
-  if (auto err = ScopingVisitor::apply(ctx->cache, n, &ictx->globalShadows))
+  if (auto err = ScopingVisitor::apply(ctx->cache, n, &ictx->globalShadows,
+                                       !ctx->isStdlibLoading))
     throw exc::ParserException(std::move(err));
 
   if (!ctx->cache->errors.empty())
@@ -412,8 +442,8 @@ Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
 
     // Wrap all imported top-level statements into a function.
     auto fnName = fmt::format("{}_call", importVar);
-    Stmt *fn =
-        N<FunctionStmt>(fnName, N<IdExpr>("NoneType"), std::vector<Param>{}, stmts);
+    Stmt *fn = N<FunctionStmt>(fnName, N<IdExpr>(StdlibTypes::NoneType),
+                               std::vector<Param>{}, stmts);
     fn = tv.transform(fn);
     tv.realize(ictx->forceFind(fnName)->getType());
     preamble->addStmt(fn);

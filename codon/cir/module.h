@@ -3,8 +3,10 @@
 #pragma once
 
 #include <iterator>
+#include <map>
 #include <memory>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 
 #include "codon/cir/func.h"
@@ -133,7 +135,9 @@ private:
   std::unordered_map<std::string, std::list<std::unique_ptr<Type>>::iterator> typesMap;
   /// the arena stack
   std::vector<Arena> arenas;
-
+  /// intrinsic declarations cached by identity
+  std::map<std::tuple<InternalFunc::Intrinsic, std::string, std::string>, id_t>
+      intrinsics;
   /// the type-checker cache
   ast::Cache *cache = nullptr;
 
@@ -310,7 +314,9 @@ public:
   /// @param c the cache
   void setCache(ast::Cache *c) { cache = c; }
 
-  /// Parse a codon code block.
+  /// Parse a Codon code block. Top-level statements run before user code in main
+  /// (or in the current JIT cell), after the runtime preamble.
+  /// Call before optimization passes remove/restructure the user entry statement.
   void parseCode(const std::string &code);
 
   /// Gets or realizes a method.
@@ -370,9 +376,9 @@ public:
   /// @param base the base type
   /// @return a generator type that yields the base
   Type *getGeneratorType(Type *base);
-  /// Gets an optional type.
+  /// Gets a canonical optional type, collapsing optional and NoneType bases.
   /// @param base the base type
-  /// @return an optional type that contains the base
+  /// @return the base for Optional or NoneType, otherwise Optional[base]
   Type *getOptionalType(Type *base);
   /// Gets a function type.
   /// @param rType the return type
@@ -380,6 +386,16 @@ public:
   /// @param variadic true if variadic (e.g. "printf" in C)
   /// @return the void type
   Type *getFuncType(Type *rType, std::vector<Type *> argTypes, bool variadic = false);
+  /// Gets an intrinsic function declaration.
+  /// Reuses a validated intrinsic declaration. A null signature is allowed only
+  /// for the three zero-argument type queries, whose signatures are inferred.
+  /// The signature and type operand must be valid for the selected intrinsic.
+  /// @param kind the kind of intrinsic function
+  /// @param type the intrinsic's type operand, or null if unused
+  /// @param signature the function type, or null to infer a type query's signature
+  /// @return the intrinsic function declaration
+  InternalFunc *getIntrinsic(InternalFunc::Intrinsic kind, Type *type,
+                             Type *signature = nullptr);
   /// Gets a vector type.
   /// @param count the vector size
   /// @param base the vector base type (MUST be a primitive type)
@@ -424,7 +440,7 @@ public:
   /// @return a generator type that yields the base
   Type *unsafeGetGeneratorType(Type *base);
   /// Gets an optional type. Should generally not be used as no type-checker
-  /// information is generated.
+  /// information is generated and optional layers are not canonicalized.
   /// @param base the base type
   /// @return an optional type that contains the base
   Type *unsafeGetOptionalType(Type *base);

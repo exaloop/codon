@@ -2,9 +2,7 @@
 
 #include "options.h"
 
-#include "llvm/CodeGen/CommandFlags.h"
-#include "llvm/Support/CommandLine.h"
-#include "llvm/TargetParser/Host.h"
+#include "codon/cir/llvm/llvm.h"
 
 namespace codon {
 namespace {

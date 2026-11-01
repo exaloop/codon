@@ -57,6 +57,59 @@ q = Point(5, 6, p)
 print(q)  # (5, 6) -> (3, 4)
 ```
 
+## Field initialization
+
+Codon reports a compile-time error when a field may be uninitialized when
+`__init__` returns normally.
+The check follows calls to known helper functions and methods, including base
+constructors called through `super()`. Initialization can therefore be split
+across helpers:
+
+``` python
+class Buffer:
+    values: list[int]
+
+    def __init__(self):
+        self.initialize()
+
+    def initialize(self):
+        self.values = []
+```
+
+The analysis is conservative: assignments on only one branch do not guarantee
+initialization, and initialization that cannot be verified statically may still
+produce an error. The check applies to regular classes; tuple classes and
+compiler-internal classes are exempt. Tuple classes return complete tuple values
+from `__new__` rather than initializing fields through `__init__`.
+
+This check does not initialize storage or add runtime checks. Every
+field must still be initialized before it is read.
+
+## Self
+
+An unannotated instance-method argument named `self` has type `Self`. Codon binds
+`Self` to the receiver's static type, so an inherited method can use the derived
+type without upcasting to the class that defined the method:
+
+``` python
+class A:
+    def foo(self):
+        return f"{type(self)} ({Self})"
+class B(A):
+    pass
+
+print(A().foo())  # <class 'A'> (<class 'A'>)
+print(B().foo())  # <class 'B'> (<class 'B'>)
+```
+
+Return types are inferred normally. A method can also explicitly annotate its
+return type as `Self` if needed. An explicit `self` annotation such as `self: Context`
+keeps that annotation and does not default to `Self`.
+
+`Self` also works for tuple classes and can be declared explicitly as a generic
+parameter (`Self: type`), including in static methods. It does not itself make
+a method virtual.
+
 ## Overloading methods
 
 In Python, class methods can be defined to take arguments of arbitrary types,
@@ -85,6 +138,11 @@ p.foo('abc')  # str-foo called! abc
 
 Method resolution occurs *bottom-up*, meaning if multiple methods are applicable
 for a given set of arguments, the latest one will be used.
+
+Reference classes can define a static `__new__` method to control allocation or
+return an existing instance. Constructor arguments are evaluated once and passed
+to both the custom `__new__` and `__init__`. If `__new__` returns an unrelated type,
+`__init__` is skipped.
 
 !!! note
 
@@ -283,3 +341,40 @@ print(foo.x, bar.x)  # 1 2
 foo.hello()          # Foo
 bar.hello()          # Bar
 ```
+
+## Enumerations
+
+Use `Enum` to define named singleton values:
+
+```python
+from enum import Enum, auto
+
+class Color(Enum):
+    RED = auto()
+    GREEN = auto()
+    BLUE = auto()
+    CRIMSON = RED
+
+assert Color.RED.name == 'RED'
+assert Color.RED.value == 1
+assert Color(1) is Color.RED
+assert Color['CRIMSON'] is Color.RED
+assert list(Color) == [Color.RED, Color.GREEN, Color.BLUE]
+```
+
+Equal values become aliases of the first member. Iteration skips aliases and
+preserves declaration order; `Color.__members__` includes all declared names.
+Members support identity comparisons, equality, hashing, and use as dictionary
+keys. `Enum` subclasses may define methods and be nested inside other classes.
+Class iteration, subscription, length, and containment use ordinary static
+methods inherited from `Enum`, and `__members__` is a normal `ClassVar`. These
+follow Codon's usual attribute lookup and override rules.
+Calling an enum with an unknown value raises `ValueError`; an unknown member name
+raises `KeyError`. Existing members cannot be reassigned, and an enum with members
+cannot be subclassed to add more members.
+
+Codon supports class-based `Enum` declarations with one native value type per
+enumeration, including integer and string values. `auto()` generates integer
+values starting at 1, or one above the largest preceding value. Custom
+`__init__`/`__new__` constructors, enum mixins, the functional `Enum(...)` factory,
+`IntEnum`, and flag types are not currently supported.

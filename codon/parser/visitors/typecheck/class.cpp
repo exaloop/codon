@@ -1,5 +1,6 @@
 // Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
+#include <map>
 #include <string>
 #include <tuple>
 
@@ -19,6 +20,408 @@ namespace codon::ast {
 using namespace types;
 using namespace matcher;
 
+namespace {
+/// Initialization facts for the tracked receiver on a modeled control-flow path.
+struct InitializedFields {
+  /// Fields assigned on every reachable path merged into this state.
+  std::set<std::string> fields;
+  /// Local names known to refer to the receiver, including supported wrappers.
+  std::set<std::string> aliases;
+  /// Whether execution can continue along the current path.
+  bool reachable = true;
+
+  /// Keep only facts shared by continuing paths; terminated paths impose no facts.
+  void intersect(const InitializedFields &other) {
+    if (!other.reachable)
+      return;
+    if (!reachable) {
+      *this = other;
+      return;
+    }
+    std::erase_if(fields,
+                  [&](const auto &field) { return !other.fields.count(field); });
+    std::erase_if(aliases,
+                  [&](const auto &alias) { return !other.aliases.count(alias); });
+  }
+};
+
+class ReboundLocalsVisitor : public CallbackASTVisitor<void, void> {
+public:
+  std::set<std::string> names;
+
+  void transform(Expr *expr) override {
+    if (expr)
+      expr->accept(*this);
+  }
+
+  void transform(Stmt *stmt) override {
+    if (stmt)
+      stmt->accept(*this);
+  }
+
+  void visit(FunctionStmt *) override {}
+  void visit(ClassStmt *) override {}
+
+  void visit(AssignStmt *stmt) override {
+    if (auto target = cast<IdExpr>(stmt->getLhs()))
+      names.insert(target->getValue());
+    CallbackASTVisitor<void, void>::visit(stmt);
+  }
+
+  void visit(ForStmt *stmt) override {
+    if (auto target = cast<IdExpr>(stmt->getVar()))
+      names.insert(target->getValue());
+    CallbackASTVisitor<void, void>::visit(stmt);
+  }
+
+  void visit(ExceptStmt *stmt) override {
+    names.insert(stmt->getVar());
+    CallbackASTVisitor<void, void>::visit(stmt);
+  }
+};
+
+/// Conservatively track constructor field writes in a realized, typed AST.
+/// Follow known helper bodies so delegated initialization is not spuriously rejected;
+/// this analysis emits diagnostics only and does not insert runtime field guards.
+class FieldInitializationVisitor : public CallbackASTVisitor<void, void> {
+  /// Provides specialized helper bodies after call resolution.
+  Cache *cache;
+  /// Concrete receiver realization used to resolve cooperative super() dispatch.
+  Cache::Class::ClassRealization *receiver;
+  /// Shared recursion guard keyed by helper body and tracked parameter position.
+  std::set<std::pair<FunctionStmt *, size_t>> &active;
+  /// Reuse completed summaries across shared helper paths. A recursion guard alone
+  /// does not prevent exponential work when both branches call the same next helper.
+  /// The parameter index distinguishes writes to different receivers in one helper.
+  std::map<std::pair<FunctionStmt *, size_t>, InitializedFields> &summaries;
+  /// Facts at the current point in the body being analyzed.
+  InitializedFields state;
+  enum class ExitKind { Return, Break, Continue };
+  struct Exit {
+    ExitKind kind;
+    InitializedFields state;
+  };
+  /// Pending abrupt exits, intercepted by enclosing loops and finally blocks.
+  std::vector<Exit> exits;
+  /// Facts shared by potential exceptions in each enclosing protected region.
+  std::vector<InitializedFields> exceptions;
+
+  void recordException() {
+    if (state.reachable && !exceptions.empty())
+      exceptions.back().intersect(state);
+  }
+
+  void forgetReboundAliases(Stmt *stmt) {
+    ReboundLocalsVisitor rebound;
+    rebound.transform(stmt);
+    for (const auto &name : rebound.names)
+      state.aliases.erase(name);
+  }
+
+  void analyzeLoopBody(Stmt *body) {
+    auto incoming = state;
+    auto previousExits = exits.size();
+    transform(body);
+    std::vector<Exit> pending(exits.begin() + previousExits, exits.end());
+    exits.resize(previousExits);
+    state = incoming;
+    for (const auto &exit : pending) {
+      if (exit.kind == ExitKind::Break)
+        state.intersect(exit.state);
+      else if (exit.kind == ExitKind::Return)
+        exits.push_back(exit);
+    }
+  }
+
+  /// Recognize receiver aliases through known casts and lowered super() wrappers.
+  /// Super.__getattr__ captures the receiver in a Partial's first bound argument;
+  /// its dispatcher extracts Super._obj before calling the base implementation.
+  bool isInstance(Expr *expr) const {
+    auto identifier = cast<IdExpr>(expr);
+    if (identifier)
+      return state.aliases.count(identifier->getValue());
+    if (auto member = cast<DotExpr>(expr)) {
+      if (member->getMember() == "_obj" && member->getExpr()->getType()->is("Super"))
+        return isInstance(member->getExpr());
+      if (auto arguments = cast<DotExpr>(member->getExpr());
+          arguments && member->getMember() == "item1" &&
+          arguments->getMember() == "args" &&
+          arguments->getExpr()->getType()->is("Partial"))
+        return isInstance(arguments->getExpr());
+    }
+    if (auto call = cast<CallExpr>(expr); call && !call->empty()) {
+      auto type = call->getExpr()->getType();
+      auto function = type ? type->getFunc() : nullptr;
+      if (!function)
+        return false;
+      auto name = function->getFuncName();
+      if (startswith(name, getMangledFunc("std.internal.types.rtti", "force_cast")) ||
+          startswith(name, getMangledMethod("", "type", "_force_cast")) ||
+          startswith(name, getMangledMethod("", "Super", "__getattr__")))
+        return isInstance(call->front().getExpr());
+      if (startswith(name, getMangledMethod("", "Super", "__new__")))
+        for (const auto &argument : *call)
+          if (isInstance(argument.getExpr()))
+            return true;
+    }
+    return false;
+  }
+
+public:
+  /// Share cached summaries and the recursion guard, but keep helper dataflow local.
+  FieldInitializationVisitor(
+      Cache *cache, Cache::Class::ClassRealization *receiver,
+      std::set<std::pair<FunctionStmt *, size_t>> &active,
+      std::map<std::pair<FunctionStmt *, size_t>, InitializedFields> &summaries)
+      : cache(cache), receiver(receiver), active(active), summaries(summaries) {}
+
+  /// Summarize normal exits with the receiver bound to an AST parameter index.
+  /// Recursive re-entry contributes no new facts rather than assuming a write.
+  /// Publish a summary only after merging all exits, never from a partial traversal.
+  InitializedFields analyze(FunctionStmt *function, size_t argument) {
+    if (function->isAsync() || function->hasAttribute(Attr::IsGenerator))
+      return {};
+    auto key = std::make_pair(function, argument);
+    if (auto summary = summaries.find(key); summary != summaries.end())
+      return summary->second;
+    if (!active.insert(key).second)
+      return state;
+    state.aliases.insert((*function)[argument].getName());
+    transform(function->getSuite());
+    for (const auto &exit : exits)
+      if (exit.kind == ExitKind::Return)
+        state.intersect(exit.state);
+    active.erase(key);
+    summaries.emplace(key, state);
+    return state;
+  }
+
+  /// Ignore expression effects on paths that have already terminated.
+  void transform(Expr *expr) override {
+    if (expr && state.reachable)
+      expr->accept(*this);
+  }
+
+  /// Stop traversing statements after an abrupt control-flow transfer.
+  void transform(Stmt *stmt) override {
+    if (stmt && state.reachable)
+      stmt->accept(*this);
+  }
+
+  /// Declaring a nested function does not execute its initialization helpers.
+  void visit(FunctionStmt *) override {}
+  /// Nested class bodies do not initialize the tracked receiver.
+  void visit(ClassStmt *) override {}
+
+  /// Track local receiver aliases, discarding them when reassigned to other values.
+  void visit(AssignStmt *stmt) override {
+    transform(stmt->getRhs());
+    if (auto target = cast<IdExpr>(stmt->getLhs()); target && stmt->getRhs()) {
+      if (isInstance(stmt->getRhs()))
+        state.aliases.insert(target->getValue());
+      else
+        state.aliases.erase(target->getValue());
+    }
+  }
+
+  /// Credit writes to the receiver only after evaluating their operands.
+  void visit(AssignMemberStmt *stmt) override {
+    transform(stmt->getLhs());
+    transform(stmt->getRhs());
+    if (isInstance(stmt->getLhs()))
+      state.fields.insert(stmt->getMember());
+  }
+
+  /// Incorporate guaranteed writes from known helpers receiving the receiver.
+  /// Typed calls omit generic arguments, so match only value parameters in the AST.
+  void visit(CallExpr *expr) override {
+    CallbackASTVisitor<void, void>::visit(expr);
+    if (!state.reachable)
+      return;
+    recordException();
+    auto type = expr->getExpr()->getType();
+    auto function = type ? type->getFunc() : nullptr;
+    if (!function)
+      return;
+    if (auto dispatch = expr->getAttribute<ir::IntValueAttribute>(Attr::ExprVirtual)) {
+      size_t thunk = 0;
+      if (dispatch->value >= 0) {
+        thunk = dispatch->value;
+      } else {
+        TypecheckVisitor visitor(cache->typeCtx);
+        if (visitor.isPolymorphic(function)) {
+          auto key = in(cache->thunkIds, visitor.vTableSignature(function));
+          if (!key)
+            return;
+          thunk = *key;
+        }
+      }
+      if (thunk) {
+        if (expr->empty() || !isInstance(expr->front().getExpr()))
+          return;
+        auto target = in(receiver->vtable, thunk);
+        if (!target)
+          return;
+        function = target->get();
+      }
+    }
+    auto cached = in(cache->functions, function->getFuncName());
+    if (!cached)
+      return;
+    auto realization = in(cached->realizations, function->realizedName());
+    if (!realization || !(*realization)->ast)
+      return;
+    auto body = (*realization)->ast;
+    for (size_t parameter = 0, argument = 0; parameter < body->size(); ++parameter) {
+      if (!(*body)[parameter].isValue())
+        continue;
+      if (argument >= expr->size())
+        break;
+      if (!isInstance((*expr)[argument++].getExpr()))
+        continue;
+      FieldInitializationVisitor helper(cache, receiver, active, summaries);
+      auto initialized = helper.analyze(body, parameter);
+      state.fields.insert(initialized.fields.begin(), initialized.fields.end());
+      state.reachable &= initialized.reachable;
+    }
+  }
+
+  /// Merge branch facts without requiring initialization on terminated paths.
+  void visit(IfStmt *stmt) override {
+    transform(stmt->getCond());
+    auto incoming = state;
+    transform(stmt->getIf());
+    auto first = state;
+    state = incoming;
+    transform(stmt->getElse());
+    state.intersect(first);
+  }
+
+  /// Conditional expressions may invoke different initialization helpers.
+  void visit(IfExpr *expr) override {
+    transform(expr->getCond());
+    auto incoming = state;
+    transform(expr->getIf());
+    auto first = state;
+    state = incoming;
+    transform(expr->getElse());
+    state.intersect(first);
+  }
+
+  /// Collect body returns without assuming that the loop executes an iteration.
+  void visit(WhileStmt *stmt) override {
+    forgetReboundAliases(stmt);
+    transform(stmt->getCond());
+    analyzeLoopBody(stmt->getSuite());
+  }
+
+  /// Collect body returns while allowing an empty iterable to skip all writes.
+  void visit(ForStmt *stmt) override {
+    transform(stmt->getIter());
+    forgetReboundAliases(stmt);
+    recordException();
+    analyzeLoopBody(stmt->getSuite());
+  }
+
+  /// Exclude statements after a break from the current loop-body path.
+  void visit(BreakStmt *) override {
+    exits.push_back({ExitKind::Break, state});
+    state.reachable = false;
+  }
+  /// Exclude statements after a continue from the current loop-body path.
+  void visit(ContinueStmt *) override {
+    exits.push_back({ExitKind::Continue, state});
+    state.reachable = false;
+  }
+
+  /// Save normal-return facts, including writes performed by the return expression.
+  void visit(ReturnStmt *stmt) override {
+    transform(stmt->getExpr());
+    if (state.reachable)
+      exits.push_back({ExitKind::Return, state});
+    state.reachable = false;
+  }
+
+  /// Exceptional exits do not require a fully initialized returned instance.
+  void visit(ThrowStmt *stmt) override {
+    transform(stmt->getExpr());
+    recordException();
+    state.reachable = false;
+  }
+
+  /// Merge exception-site facts and apply finally to every pending exit kind.
+  void visit(TryStmt *stmt) override {
+    auto previousExits = exits.size();
+    exceptions.push_back({{}, {}, false});
+    transform(stmt->getSuite());
+    auto thrown = exceptions.back();
+    exceptions.back() = {{}, {}, false};
+    transform(stmt->getElse());
+    auto normal = state;
+    bool catchesAll = false;
+    for (auto handler : *stmt) {
+      state = thrown;
+      state.aliases.erase(handler->getVar());
+      transform(handler->getSuite());
+      normal.intersect(state);
+      if (!handler->getException() ||
+          TypecheckVisitor(cache->typeCtx)
+              .extractType(handler->getException()->getType())
+              ->is(StdlibTypes::BaseException))
+        catchesAll = true;
+    }
+    if (!catchesAll)
+      exceptions.back().intersect(thrown);
+    auto unhandled = exceptions.back();
+    exceptions.pop_back();
+    std::vector<Exit> pending(exits.begin() + previousExits, exits.end());
+    exits.resize(previousExits);
+    for (const auto &exit : pending) {
+      state = exit.state;
+      transform(stmt->getFinally());
+      if (state.reachable)
+        exits.push_back({exit.kind, state});
+    }
+    state = unhandled;
+    transform(stmt->getFinally());
+    recordException();
+    state = normal;
+    transform(stmt->getFinally());
+  }
+};
+} // namespace
+
+/// Reject fields not proven initialized at a realized __init__'s normal exits.
+/// Tuple classes & internal classes are exempt.
+void TypecheckVisitor::checkFieldInitialization(types::FuncType *type,
+                                                FunctionStmt *function) {
+  if (!type->getParentType() || getUnmangledName(type->getFuncName()) != "__init__" ||
+      function->size() == 0)
+    return;
+  auto parent = type->getParentType()->getClass();
+  if (parent->isTuple)
+    return;
+  auto cls = getClass(parent);
+  if (!cls || !cls->ast || cls->ast->hasAttribute(Attr::Internal))
+    return;
+  std::set<std::pair<FunctionStmt *, size_t>> active;
+  std::map<std::pair<FunctionStmt *, size_t>, InitializedFields> summaries;
+  auto receiverType = extractFuncArgType(type)->getClass();
+  FieldInitializationVisitor visitor(
+      ctx->cache, getClassRealization(receiverType ? receiverType : parent), active,
+      summaries);
+  auto initialized = visitor.analyze(function, 0);
+  if (!initialized.reachable)
+    return;
+  for (const auto &field : getClassFields(parent)) {
+    if (!initialized.fields.count(field.name)) {
+      E(Error::CUSTOM, function,
+        "field '{}.{}' may be uninitialized when __init__ returns",
+        getUnmangledName(parent->name), field.name);
+    }
+  }
+}
+
 /// Parse a class (type) declaration and add a (generic) type to the context.
 void TypecheckVisitor::visit(ClassStmt *stmt) {
   // Get root name
@@ -30,7 +433,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
 
   // classItem will be added later when the scope is different
   auto classItem = std::make_shared<TypecheckItem>("", "", ctx->getModule(), nullptr,
-                                                   ctx->getScope());
+                                                   ctx->blockLevel);
   classItem->setSrcInfo(stmt->getSrcInfo());
   std::shared_ptr<TypecheckItem> timedItem = nullptr;
   types::ClassType *typ = nullptr;
@@ -39,7 +442,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         ctx->generateCanonicalName(name, !stmt->hasAttribute(Attr::Internal),
                                    /* noSuffix*/ stmt->hasAttribute(Attr::Internal));
 
-    if (canonicalName == "Union")
+    if (canonicalName == StdlibTypes::Union)
       classItem->type = std::make_shared<types::UnionType>(ctx->cache);
     else
       classItem->type = std::make_shared<types::ClassType>(ctx->cache, canonicalName);
@@ -48,7 +451,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     classItem->type->setSrcInfo(stmt->getSrcInfo());
 
     typ = classItem->getType()->getClass();
-    if (canonicalName != TYPE_TYPE)
+    if (canonicalName != StdlibTypes::Type)
       classItem->type = instantiateTypeVar(classItem->getType());
 
     timedItem = std::make_shared<TypecheckItem>(*classItem);
@@ -68,8 +471,8 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     auto val = ctx->find(name, getTime());
     if (!val || !val->isType())
       E(Error::CLASS_ID_NOT_FOUND, getSrcInfo(), name);
-    typ = val->getName() == TYPE_TYPE ? val->getType()->getClass()
-                                      : extractClassType(val->getType());
+    typ = val->getName() == StdlibTypes::Type ? val->getType()->getClass()
+                                              : extractClassType(val->getType());
     if (getClass(typ)->ast->hasAttribute(Attr::NoExtend))
       if (!ctx->isStdlibLoading && !stmt->hasAttribute(Attr::AutoGenerated))
         E(Error::CLASS_NO_EXTEND, getSrcInfo(), name);
@@ -81,6 +484,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
   std::vector<Stmt *> clsStmts; // Will be filled later!
   std::vector<Stmt *> varStmts; // Will be filled later!
   std::vector<Stmt *> fnStmts;  // Will be filled later!
+  std::vector<Stmt *> enumInit;
   std::vector<TypeContext::Item> addLater;
   try {
     // Add the class base
@@ -126,7 +530,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           if (cast<IndexExpr>(a.getType())) { // Parse TraitVar
             a.type = transform(a.getType());
             auto ti = cast<InstantiateExpr>(a.getType());
-            seqassert(ti && isId(ti->getExpr(), TRAIT_TYPE),
+            seqassert(ti && isId(ti->getExpr(), StdlibTypes::TypeTrait),
                       "not a TypeTrait instantiation: {}", *(a.getType()));
             auto l = extractType(ti->front());
             if (l->getLink() && l->getLink()->trait)
@@ -142,6 +546,8 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         args.emplace_back(varName, a.getType(), defType, a.status);
       }
     }
+
+    enumInit = prepareEnum(stmt, typ, varStmts);
 
     // Form class type node (e.g. `Foo`, or `Foo[T, U]` for generic classes)
     Expr *transformedTypeAst = nullptr;
@@ -159,17 +565,6 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
       }
     }
 
-    // Collect classes (and their fields) that are to be statically inherited
-    std::vector<TypePtr> staticBaseASTs;
-    if (!stmt->hasAttribute(Attr::Extend)) {
-      // Handle static inheritance
-      staticBaseASTs = parseBaseClasses(stmt->staticBaseClasses, args, stmt,
-                                        canonicalName, nullptr, typ);
-      // Handle RTTI inheritance
-      parseBaseClasses(stmt->baseClasses, args, stmt, canonicalName, transformedTypeAst,
-                       typ);
-    }
-
     // A ClassStmt will be separated into class variable assignments, method-free
     // ClassStmts (that include nested classes) and method FunctionStmts
     transformNestedClasses(stmt, clsStmts, varStmts, fnStmts);
@@ -184,7 +579,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           preamble->addStmt(h);
           auto val = ctx->forceFind(varName);
           val->baseName = "";
-          val->scope = {0};
+          val->blockLevel = 0;
           registerGlobal(val->canonicalName);
           if (a.getDefault()) {
             auto assign = N<AssignStmt>(
@@ -204,17 +599,26 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
       }
     }
 
+    // Handle RTTI inheritance. Must come after other arguments are handled.
+    if (!stmt->hasAttribute(Attr::Extend)) {
+      parseBaseClasses(stmt->baseClasses, args, stmt, canonicalName, typ);
+    }
+
     // ASTs for member arguments to be used for populating magic methods
     std::vector<Param> memberArgs;
+    std::unordered_map<std::string, std::string> argBases;
+    for (auto &f : cls.fields)
+      argBases[f.name] = f.baseClass;
     for (auto &a : args) {
-      if (a.isValue())
+      if (a.isValue() && argBases[a.getName()] == canonicalName) {
         memberArgs.emplace_back(clone(a));
+      }
     }
 
     // Handle class members
     if (!stmt->hasAttribute(Attr::Extend)) {
       ctx->typecheckLevel++; // to avoid unifying generics early
-      if (canonicalName == TYPE_TUPLE) {
+      if (canonicalName == StdlibTypes::Tuple) {
         // Special tuple handling!
         for (auto aj = 0; aj < MAX_TUPLE; aj++) {
           auto genName = fmt::format("T{}", aj + 1);
@@ -247,53 +651,31 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         ctx->addAlwaysVisible(classItem);
       }
       // Create a cached AST.
-      stmt->setAttribute(Attr::Module, ctx->moduleName.status == ImportFile::STDLIB
+      stmt->setAttribute(Attr::Module, ctx->getModuleInfo().status == ImportFile::STDLIB
                                            ? STDLIB_IMPORT
-                                           : ctx->moduleName.path);
+                                           : ctx->getModuleInfo().path);
       cls.ast = N<ClassStmt>(canonicalName, args, N<SuiteStmt>());
       cls.ast->cloneAttributesFrom(stmt);
       cls.ast->baseClasses = stmt->baseClasses;
-      for (auto &b : staticBaseASTs)
-        cls.staticParentClasses.emplace_back(b->getClass()->name);
-      cls.module = ctx->moduleName.path;
+      cls.module = ctx->getModuleInfo().path;
       cls.jitCell = ctx->cache->jitCell;
 
       // Codegen default magic methods
       // __new__ must be the first
+      auto methods = getClassMethods(stmt->getSuite());
+      bool customNew = std::ranges::any_of(methods, [](auto *s) {
+        auto f = cast<FunctionStmt>(s);
+        return f && f->getName() == "__new__";
+      });
       if (auto aa = stmt->getAttribute<ir::StringListAttribute>(Attr::ClassMagic))
         for (const auto &m : aa->values) {
+          // class_custom_new_err: a custom allocator must not silently fall back
+          // to the generated zero-argument allocator on an invalid call.
+          if (m == "new" && customNew && !stmt->isRecord())
+            continue;
           fnStmts.push_back(transform(codegenMagic(m, transformedTypeAst, memberArgs,
                                                    stmt->hasAttribute(Attr::Tuple))));
         }
-      // Add inherited methods
-      for (auto &base : staticBaseASTs) {
-        for (auto &val : getClass(base->getClass())->methods | std::views::values)
-          for (auto &mf : getOverloads(val)) {
-            const auto &fp = getFunction(mf);
-            auto f = fp->origAst;
-            if (f && !f->hasAttribute(Attr::AutoGenerated)) {
-              fnStmts.push_back(
-                  cast<FunctionStmt>(withClassGenerics(base->getClass(), [&]() {
-                    // since functions can come from other modules
-                    // make sure to transform them in their respective module
-                    // however make sure to add/pop generics :/
-                    if (!ctx->isStdlibLoading && fp->module != ctx->moduleName.path) {
-                      auto ictx = getImport(fp->module)->ctx;
-                      TypeContext::BaseGuard _(ictx.get(), canonicalName);
-                      ictx->getBase()->type = typ->shared_from_this();
-                      auto tv = TypecheckVisitor(ictx);
-                      auto e = tv.withClassGenerics(
-                          typ, [&]() { return tv.transform(clean_clone(f)); }, false,
-                          false,
-                          /*instantiate*/ true);
-                      return e;
-                    } else {
-                      return transform(clean_clone(f));
-                    }
-                  })));
-            }
-          }
-      }
     }
 
     // Add class methods
@@ -302,7 +684,8 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         for (auto *&dc : fp->decorators) {
           // Handle @setter setters
           if (match(dc, M<DotExpr>(M<IdExpr>(fp->getName()), "setter")) &&
-              fp->size() == 2) {
+              std::ranges::count_if(*fp, [](const Param &p) { return p.isValue(); }) ==
+                  2) {
             fp->name = fmt::format("{}{}", FN_SETTER_SUFFIX, fp->getName());
             dc = nullptr;
             break;
@@ -310,7 +693,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         }
         // All tuple methods are marked with AutoGenerated for later convenience
         // (e.g. heterogenous tuple processing).
-        if (canonicalName == TYPE_TUPLE)
+        if (canonicalName == StdlibTypes::Tuple)
           sp->setAttribute(Attr::AutoGenerated);
         fnStmts.emplace_back(transform(sp));
       }
@@ -324,10 +707,10 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     if (stmt->hasAttribute(Attr::Tuple))
       addLater.emplace_back(ctx->forceFind(name));
 
-    // Mark functions as virtual:
+    // Mark functions as virtual
     auto banned = std::set<std::string>{"__init__", "__new__", "__raw__",
                                         "__tuplesize__", "__repr_default__"};
-    for (const auto &method : cls.methods | std::views::keys) {
+    for (const auto &[method, root] : sorted_view(cls.methods)) {
       for (size_t mi = 1; mi < cls.mro.size(); mi++) {
         // ... in the current class
         auto b = cls.mro[mi]->name;
@@ -335,7 +718,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           cls.virtuals.insert(method);
         }
       }
-      for (auto &v : cls.virtuals) {
+      for (const auto &v : sorted_view(cls.virtuals)) {
         for (size_t mi = 1; mi < cls.mro.size(); mi++) {
           // ... and in parent classes
           auto b = cls.mro[mi]->name;
@@ -360,11 +743,11 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
       }
 
     // Debug information
-    if (!startswith(canonicalName, "Tuple") && false) {
+    if (!startswith(canonicalName, "Tuple")) {
       LOG_REALIZE("[class] {} -> {:c} / {}", canonicalName, *typ, cls.fields.size());
       for (auto &m : cls.fields)
         LOG_REALIZE("       - member: {}: {:c}", m.name, *(m.type));
-      for (auto &m : cls.methods)
+      for (const auto &m : sorted_view(cls.methods))
         LOG_REALIZE("       - method: {}: {}", m.first, m.second);
       for (auto &m : cls.mro)
         LOG_REALIZE("       - mro: {:c}", *m);
@@ -409,42 +792,198 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     // Transform class variables here to allow self-references
     clsStmts.push_back(transform(a));
   }
+  // enum_test: allocate singletons only after the class layout and methods exist.
+  for (auto *s : enumInit)
+    clsStmts.push_back(transform(s));
   resultStmt = N<SuiteStmt>(clsStmts);
+}
+
+bool TypecheckVisitor::isEnum(ClassType *typ) const {
+  for (const auto &base : getClass(typ)->mro)
+    if (base->is(getMangledClass("std.enum", "Enum")))
+      return true;
+  return false;
+}
+
+/// Lower Enum declarations to ordinary reference classes and singleton globals.
+std::vector<Stmt *> TypecheckVisitor::prepareEnum(ClassStmt *stmt, ClassType *typ,
+                                                  std::vector<Stmt *> &values) {
+  if (stmt->hasAttribute(Attr::Extend))
+    return {};
+  bool enumeration = false;
+  for (auto *base : stmt->getBaseClasses()) {
+    auto t = extractClassType(transformType(clone(base), true));
+    if (!t)
+      continue;
+    if (!isEnum(t))
+      continue;
+    // enum_extend_err: members already have ordinary classVars bindings;
+    // enum_test: memberless bases may also have ordinary typed ClassVars;
+    // only bindings holding instances of the enum are enumeration members.
+    for (const auto &[name, var] : getClass(t)->classVars)
+      if (!startswith(name, "__") && ctx->forceFind(var)->getType()->is(t->name))
+        E(Error::CUSTOM, stmt, "cannot extend an enumeration with members");
+    enumeration = true;
+  }
+  if (!enumeration)
+    return {};
+  if (stmt->getBaseClasses().size() != 1 || stmt->hasAttribute(Attr::Tuple))
+    E(Error::CUSTOM, stmt, "Enum requires a single enumeration base class");
+  for (auto *s : getClassMethods(stmt->getSuite()))
+    if (auto f = cast<FunctionStmt>(s);
+        f && (f->getName() == "__init__" || f->getName() == "__new__"))
+      E(Error::CUSTOM, f, "custom enumeration constructors are not supported");
+
+  std::vector<std::string> names;
+  std::vector<Expr *> rawValues, members;
+  std::vector<Stmt *> init;
+  auto memberBuffer = getTemporaryVar("enum_members");
+  std::string autoMaximum;
+  auto self = [&]() { return N<IdExpr>(typ->name); };
+  auto helper = [&](const std::string &name) {
+    return N<IdExpr>(getMangledFunc("std.enum", name));
+  };
+  auto classVar = [&]() { return N<IndexExpr>(N<IdExpr>("ClassVar"), self()); };
+
+  // enum_test: class-body references use raw values (B = A + 1), and each
+  // initializer runs once. Bindings are replaced by members later in visit(ClassStmt).
+  for (auto &a : *stmt) {
+    if (!a.isValue() || !ClassStmt::isClassVar(a) || !a.getDefault() ||
+        startswith(a.getName(), "__"))
+      continue;
+    if (a.getName() == "_name_" || a.getName() == "_value_" || a.getName() == "name" ||
+        a.getName() == "value")
+      E(Error::CUSTOM, a.getSrcInfo(), "reserved enumeration member name '{}'",
+        a.getName());
+    Expr *value = clone(a.getDefault());
+    if (auto call = cast<CallExpr>(value)) {
+      auto head = transform(clone(call->getExpr()));
+      if (isTypeExpr(head) &&
+          extractClassType(head)->is(getMangledClass("std.enum", "auto"))) {
+        if (!call->empty())
+          E(Error::CUSTOM, call, "auto() does not accept arguments");
+        value = rawValues.empty()
+                    ? static_cast<Expr *>(N<IntExpr>(1))
+                    : N<CallExpr>(helper("_next_value"), N<IdExpr>(autoMaximum),
+                                  clone(rawValues.front()));
+      }
+    }
+    auto raw = getTemporaryVar("enum_value");
+    values.push_back(transform(N<AssignStmt>(N<IdExpr>(raw), value)));
+    auto binding = ctx->forceFind(raw);
+    binding->baseName = "";
+    binding->blockLevel = 0;
+    registerGlobal(binding->canonicalName);
+    ctx->add(a.getName(), binding);
+    rawValues.push_back(N<IdExpr>(binding->canonicalName));
+    if (autoMaximum.empty()) {
+      autoMaximum = getTemporaryVar("enum_maximum");
+      values.push_back(transform(
+          N<AssignStmt>(N<IdExpr>(autoMaximum),
+                        N<CallExpr>(helper("_auto_maximum"), clone(rawValues.back()),
+                                    N<IntExpr>(0), N<BoolExpr>(true)))));
+      auto maximumBinding = ctx->forceFind(autoMaximum);
+      maximumBinding->baseName = "";
+      maximumBinding->blockLevel = 0;
+      registerGlobal(maximumBinding->canonicalName);
+      autoMaximum = maximumBinding->canonicalName;
+    } else {
+      values.push_back(transform(
+          N<AssignStmt>(N<IdExpr>(autoMaximum),
+                        N<CallExpr>(helper("_auto_maximum"), clone(rawValues.back()),
+                                    N<IdExpr>(autoMaximum), N<BoolExpr>(false)),
+                        nullptr, AssignStmt::Update)));
+    }
+    auto member = N<IdExpr>(fmt::format("{}.{}", typ->name, a.getName()));
+    init.push_back(
+        N<AssignStmt>(clone(member),
+                      N<CallExpr>(helper("_make_member"), self(),
+                                  N<StringExpr>(a.getName()), clone(rawValues.back()),
+                                  N<IdExpr>(memberBuffer), N<IntExpr>(members.size())),
+                      self(), AssignStmt::Update));
+    names.push_back(a.getName());
+    members.push_back(member);
+    a.type = classVar();
+    a.defaultValue = nullptr;
+  }
+  if (!rawValues.empty()) {
+    auto valueType =
+        ctx->forceFind(cast<IdExpr>(rawValues.front())->getValue())->getType();
+    for (auto *value : rawValues) {
+      auto t = ctx->forceFind(cast<IdExpr>(value)->getValue())->getType();
+      if (getUnderlyingStaticType(valueType)->unify(getUnderlyingStaticType(t),
+                                                    nullptr) < 0)
+        E(Error::CUSTOM, stmt, "enumeration values must have the same type");
+    }
+    auto realized = realize(getUnderlyingStaticType(valueType));
+    if (!realized)
+      E(Error::CUSTOM, stmt, "cannot infer enumeration value type");
+    stmt->items.emplace_back("_value_", N<IdExpr>(realized->realizedName()));
+    auto indexType = N<IndexExpr>(
+        N<IdExpr>(getMangledClass("std.enum", "_ValueIndex")),
+        N<TupleExpr>(std::vector<Expr *>{N<IdExpr>(realized->realizedName()), self()}));
+    stmt->items.emplace_back("__value_index__",
+                             N<IndexExpr>(N<IdExpr>("ClassVar"), indexType));
+    init.insert(init.begin(),
+                N<AssignStmt>(N<IdExpr>(memberBuffer),
+                              N<CallExpr>(N<IndexExpr>(N<IdExpr>("Ptr"), self()),
+                                          N<IntExpr>(members.size()))));
+  }
+  auto mappingType = N<IndexExpr>(
+      N<IdExpr>(getMangledClass("std.internal.types.collections.dict", "OrderedDict")),
+      N<TupleExpr>(std::vector<Expr *>{N<IdExpr>(StdlibTypes::String), self()}));
+  stmt->items.emplace_back("__members__",
+                           N<IndexExpr>(N<IdExpr>("ClassVar"), clone(mappingType)));
+  std::vector<Expr *> entries;
+  for (size_t i = 0; i < names.size(); ++i)
+    entries.push_back(
+        N<TupleExpr>(std::vector<Expr *>{N<StringExpr>(names[i]), clone(members[i])}));
+  Expr *mapping =
+      names.empty()
+          ? static_cast<Expr *>(N<CallExpr>(mappingType))
+          : N<CallExpr>(mappingType,
+                        N<CallExpr>(N<DotExpr>(N<ListExpr>(entries), "__iter__")));
+  init.push_back(N<AssignStmt>(N<IdExpr>(fmt::format("{}.__members__", typ->name)),
+                               mapping, nullptr, AssignStmt::Update));
+  if (!rawValues.empty())
+    init.push_back(N<AssignStmt>(
+        N<IdExpr>(fmt::format("{}.__value_index__", typ->name)),
+        N<CallExpr>(helper("_make_value_index"), self(), clone(rawValues.front())),
+        nullptr, AssignStmt::Update));
+
+  stmt->eraseAttribute(Attr::ClassDeduce);
+  if (auto magic = stmt->getAttribute<ir::StringListAttribute>(Attr::ClassMagic))
+    std::erase_if(magic->values,
+                  [](const auto &name) { return name == "init" || name == "new"; });
+  return init;
 }
 
 /// Parse statically inherited classes.
 /// Returns a list of their ASTs. Also updates the class fields.
 /// @param args Class fields that are to be updated with base classes' fields.
-/// @param typeAst Transformed AST for base class type (e.g., `A[T]`).
-///                Only set when dealing with dynamic polymorphism.
-std::vector<TypePtr> TypecheckVisitor::parseBaseClasses(
+std::vector<std::shared_ptr<ClassType>> TypecheckVisitor::parseBaseClasses(
     std::vector<Expr *> &baseClasses, std::vector<Param> &args, const Stmt *attr,
-    const std::string &canonicalName, const Expr *typeAst, types::ClassType *typ) {
-  std::vector<TypePtr> asts;
+    const std::string &canonicalName, types::ClassType *typ) {
 
-  // TODO)) fix MRO it to work with generic classes (maybe replacements? IDK...)
+  std::vector<std::shared_ptr<ClassType>> asts;
   std::vector<std::vector<TypePtr>> mro{{typ->shared_from_this()}};
   for (auto &cls : baseClasses) {
     std::vector<Expr *> subs;
 
     // Get the base class and generic replacements (e.g., if there is Bar[T],
     // Bar in Foo(Bar[int]) will have `T = int`)
+    auto orig = clone(cls);
     cls = transformType(cls, true);
     if (!cls->getClassType())
-      E(Error::CLASS_ID_NOT_FOUND, getSrcInfo(), FormatVisitor::apply(cls));
+      E(Error::CUSTOM, getSrcInfo(), "cannot use '{}' as a base class",
+        getUnmangledName(FormatVisitor::apply(orig)));
 
     auto clsTyp = extractClassType(cls);
-    asts.push_back(clsTyp->shared_from_this());
     auto cachedCls = getClass(clsTyp);
     if (!cachedCls->ast)
       E(Error::CLASS_NO_INHERIT, getSrcInfo(), "nested", "surrounding");
-    std::vector<TypePtr> rootMro;
-    for (auto &t : cachedCls->mro)
-      rootMro.push_back(instantiateType(t.get(), clsTyp));
-    mro.push_back(rootMro);
-
     // Sanity checks
-    if (attr->hasAttribute(Attr::Tuple) && typeAst)
+    if (attr->hasAttribute(Attr::Tuple))
       E(Error::CLASS_NO_INHERIT, getSrcInfo(), "tuple", "other");
     if (!attr->hasAttribute(Attr::Tuple) && cachedCls->ast->hasAttribute(Attr::Tuple))
       E(Error::CLASS_TUPLE_INHERIT, getSrcInfo());
@@ -452,15 +991,39 @@ std::vector<TypePtr> TypecheckVisitor::parseBaseClasses(
       E(Error::CLASS_NO_INHERIT, getSrcInfo(), "internal", "other");
 
     // Mark parent classes as polymorphic as well.
-    if (typeAst && !cachedCls->hasRTTI()) {
+    if (!cachedCls->hasRTTI()) {
       if (ctx->cache->compiler->getOptions()->jit &&
           cachedCls->jitCell != ctx->cache->jitCell)
         E(Error::CUSTOM, cls,
           "cannot inherit from a non-RTTI class defined in previous cell '{}' "
           "in JIT mode",
           getUnmangledName(clsTyp->name));
-      cachedCls->rtti = true;
+      auto object = StdlibTypes::Object;
+      if (clsTyp->name != object && cachedCls->mro.size() == 1) {
+        auto objectType = std::static_pointer_cast<ClassType>(
+            getStdLibType(object)->shared_from_this());
+        cachedCls->mro.push_back(objectType);
+        getClass(objectType.get())->descendants.insert(clsTyp->name);
+
+        // Fix IR stuff [TODO: maybe move this to translate?!]
+        realize(objectType.get());
+        auto *objectIR = makeIRType(objectType.get());
+        for (const auto &[name, realization] : cachedCls->realizations) {
+          realization->bases.push_back(objectType);
+          if (auto *reference = cast<ir::RefType>(realization->ir)) {
+            reference->setPolymorphic();
+            if (auto *info = reference->getRuntimeInfo())
+              info->mro.push_back(objectIR);
+          }
+        }
+      }
     }
+
+    std::vector<TypePtr> rootMro;
+    for (auto &t : cachedCls->mro)
+      rootMro.push_back(instantiateType(t.get(), clsTyp));
+    mro.push_back(rootMro);
+    asts.push_back(std::static_pointer_cast<ClassType>(clsTyp->shared_from_this()));
 
     // Add hidden generics
     addClassGenerics(clsTyp);
@@ -472,56 +1035,70 @@ std::vector<TypePtr> TypecheckVisitor::parseBaseClasses(
       g.type = g.getType()->generalize(ctx->typecheckLevel);
       typ->hiddenGenerics.push_back(g);
     }
+  }
 
-    // Add class variables
-    for (auto &[varName, varCanonicalName] : cachedCls->classVars) {
-      // Handle class variables. Transform them later to allow self-references
+  auto cls = getClass(canonicalName);
+  if (!asts.empty() || typ->name == StdlibTypes::Object) {
+    mro.push_back({});
+    for (auto &i : asts)
+      mro.back().emplace_back(i);
+  }
+  cls->mro = Cache::mergeC3(mro);
+  if (cls->mro.empty()) {
+    E(Error::CLASS_BAD_MRO, getSrcInfo());
+  }
+  asts = cls->mro; // use MRO order
+  for (auto &m : cls->mro) {
+    getClass(m.get())->descendants.insert(canonicalName);
+  }
+
+  // Resolve class names in C3 order so a sibling's override
+  // also wins over an earlier base's inherited variable.
+  for (const auto &base : asts) {
+    if (base->name == canonicalName)
+      continue;
+    for (const auto &[varName, varCanonicalName] :
+         sorted_view(getClass(base.get())->classVars)) {
+      if (varCanonicalName != fmt::format("{}.{}", base->name, varName) ||
+          in(cls->classVars, varName))
+        continue;
       auto newName = fmt::format("{}.{}", canonicalName, varName);
       auto newCanonicalName = ctx->generateCanonicalName(newName);
-      getClass(typ)->classVars[varName] = varCanonicalName;
+      cls->classVars[varName] = varCanonicalName;
       ctx->add(newName, ctx->forceFind(varCanonicalName));
       ctx->add(newCanonicalName, ctx->forceFind(varCanonicalName));
     }
   }
+
   // Add normal fields
-  auto cls = getClass(canonicalName);
   for (auto &clsTyp : asts) {
+    if (clsTyp->is(typ->name))
+      continue;
+
     withClassGenerics(clsTyp->getClass(), [&]() {
       int ai = 0;
       auto ast = getClass(clsTyp->getClass())->ast;
       for (auto &a : *ast) {
         auto acls = getClass(ast->name);
         if (a.isValue() && !ClassStmt::isClassVar(a)) {
-          auto name = a.getName();
-          int i = 0;
-          for (auto &aa : args)
-            i += aa.getName() == a.getName() ||
-                 startswith(aa.getName(), a.getName() + "#");
-          if (i)
-            name = fmt::format("{}#{}", name, i);
-          seqassert(acls->fields[ai].name == a.getName(), "bad class fields: {} vs {}",
-                    acls->fields[ai].name, a.getName());
-          args.emplace_back(name, transformType(clean_clone(a.getType()), true),
-                            transform(clean_clone(a.getDefault())));
-          cls->fields.emplace_back(
-              name, extractType(args.back().getType())->shared_from_this(),
-              acls->fields[ai].baseClass);
+          if (acls->fields[ai].baseClass == acls->ast->getName()) {
+            auto name = a.getName();
+            for (auto &aa : args) {
+              if (aa.getName() == name)
+                E(Error::CUSTOM, getSrcInfo(), "field '{}' already defined",
+                  getUnmangledName(a.getName()));
+            }
+            args.emplace_back(name, transformType(clean_clone(a.getType()), true),
+                              transform(clean_clone(a.getDefault())));
+            cls->fields.emplace_back(
+                name, extractType(args.back().getType())->shared_from_this(),
+                acls->fields[ai].baseClass);
+          }
           ai++;
         }
       }
       return true;
     });
-  }
-  if (typeAst) {
-    if (!asts.empty() ||
-        typ->name == getMangledClass("std.internal.builtin", "object")) {
-      mro.push_back(asts);
-      cls->rtti = true;
-    }
-    cls->mro = Cache::mergeC3(mro);
-    if (cls->mro.empty()) {
-      E(Error::CLASS_BAD_MRO, getSrcInfo());
-    }
   }
   return asts;
 }
@@ -555,8 +1132,8 @@ bool TypecheckVisitor::autoDeduceMembers(ClassStmt *stmt, std::vector<Param> &ar
       std::erase(aa->values, "init");
     for (auto m : members) {
       auto genericName = fmt::format("T_{}", m);
-      args.emplace_back(genericName, N<IdExpr>(TYPE_TYPE), N<IdExpr>("NoneType"),
-                        Param::Generic);
+      args.emplace_back(genericName, N<IdExpr>(StdlibTypes::Type),
+                        N<IdExpr>(StdlibTypes::NoneType), Param::Generic);
       args.emplace_back(m, N<IdExpr>(genericName));
     }
     return true;
@@ -634,8 +1211,9 @@ Stmt *TypecheckVisitor::codegenMagic(const std::string &op, Expr *typExpr,
 
   std::vector<Param> args;
   args.reserve(allArgs.size());
-  for (auto &a : allArgs)
+  for (auto &a : allArgs) {
     args.push_back(clone(a));
+  }
 
   if (op == "new") {
     ret = clone(typExpr);
@@ -651,13 +1229,22 @@ Stmt *TypecheckVisitor::codegenMagic(const std::string &op, Expr *typExpr,
   } else if (op == "init") {
     // Classes: def __init__(self: T, a1: T1, ..., aN: TN) -> None:
     //            self.aI = aI ...
-    ret = I("NoneType");
+    ret = I(StdlibTypes::NoneType);
     fargs.emplace_back("self", clone(typExpr));
+    stmts.push_back(N<IfStmt>(
+        N<CallExpr>(N<IdExpr>(getMangledFunc("std.internal.static", "has_rtti")),
+                    clone(typExpr)),
+        N<ExprStmt>(N<CallExpr>(N<DotExpr>(N<CallExpr>(N<IdExpr>("super")), "__init__"),
+                                N<StarExpr>(N<IdExpr>("_args")),
+                                N<KeywordStarExpr>(N<IdExpr>("_kwargs"))))));
     for (auto &a : args) {
       fargs.emplace_back(a.getName(), clean_clone(a.getType()), clone(a.getDefault()));
       stmts.push_back(
           N<AssignStmt>(N<DotExpr>(I("self"), a.getName()), I(a.getName())));
     }
+    fargs.emplace_back("*_args");
+    fargs.emplace_back("**_kwargs");
+    attrs.push_back(Attr::HasSelf);
   } else if (op == "raw" || op == "dict") {
     // Classes: def __raw__(self: T)
     fargs.emplace_back("self", clone(typExpr));
@@ -679,14 +1266,14 @@ Stmt *TypecheckVisitor::codegenMagic(const std::string &op, Expr *typExpr,
     // Tuples: def __contains__(self: T, what) -> bool
     fargs.emplace_back("self", clone(typExpr));
     fargs.emplace_back("what", nullptr);
-    ret = I("bool");
+    ret = I(StdlibTypes::Bool);
     stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("self"), I("what"))));
   } else if (op == "eq" || op == "ne" || op == "lt" || op == "le" || op == "gt" ||
              op == "ge") {
     // def __op__(self: T, obj: T) -> bool
     fargs.emplace_back("self", clone(typExpr));
     fargs.emplace_back("obj", clone(typExpr));
-    ret = I("bool");
+    ret = I(StdlibTypes::Bool);
     stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("self"), I("obj"))));
   } else if (op == "hash" || op == "len") {
     // def __hash__(self: T) -> int
@@ -696,17 +1283,17 @@ Stmt *TypecheckVisitor::codegenMagic(const std::string &op, Expr *typExpr,
   } else if (op == "pickle") {
     // def __pickle__(self: T, dest: Ptr[u8])
     fargs.emplace_back("self", clone(typExpr));
-    fargs.emplace_back("dest", N<IndexExpr>(I("Ptr"), I("u8")));
+    fargs.emplace_back("dest", N<IndexExpr>(I(StdlibTypes::Ptr), I("u8")));
     stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("self"), I("dest"))));
   } else if (op == "unpickle" || op == "from_py") {
     // def __unpickle__(src: Ptr[u8]) -> T
-    fargs.emplace_back("src", N<IndexExpr>(I("Ptr"), I("u8")));
+    fargs.emplace_back("src", N<IndexExpr>(I(StdlibTypes::Ptr), I("u8")));
     ret = clone(typExpr);
     stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("src"), clone(typExpr))));
   } else if (op == "to_py") {
     // def __to_py__(self: T) -> Ptr[u8]
     fargs.emplace_back("self", clone(typExpr));
-    ret = N<IndexExpr>(I("Ptr"), I("u8"));
+    ret = N<IndexExpr>(I(StdlibTypes::Ptr), I("u8"));
     stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("self"))));
   } else if (op == "to_gpu") {
     // def __to_gpu__(self: T, cache) -> T
@@ -727,12 +1314,12 @@ Stmt *TypecheckVisitor::codegenMagic(const std::string &op, Expr *typExpr,
   } else if (op == "repr") {
     // def __repr__(self: T) -> str
     fargs.emplace_back("self", clone(typExpr));
-    ret = I("str");
+    ret = I(StdlibTypes::String);
     stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("self"))));
   } else if (op == "repr_default") {
     // def __repr_default__(self: T) -> str
     fargs.emplace_back("self", clone(typExpr));
-    ret = I("str");
+    ret = I(StdlibTypes::String);
     stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("self"))));
   } else if (op == "add") {
     // def __add__(self, obj)
@@ -779,10 +1366,10 @@ types::ClassType *TypecheckVisitor::generateTuple(size_t n, bool generateNew) {
   if (n > MAX_TUPLE)
     E(Error::CUSTOM, getSrcInfo(), "tuple too large ({})", n);
 
-  auto key = fmt::format("{}.{}", TYPE_TUPLE, n);
+  auto key = fmt::format("{}.{}", StdlibTypes::Tuple, n);
   auto val = getImport(STDLIB_IMPORT)->ctx->find(key);
   if (!val) {
-    auto t = std::make_shared<types::ClassType>(ctx->cache, TYPE_TUPLE);
+    auto t = std::make_shared<types::ClassType>(ctx->cache, StdlibTypes::Tuple);
     t->isTuple = true;
     auto cls = getClass(t.get());
     seqassert(n <= cls->fields.size(), "tuple too large");
@@ -805,24 +1392,28 @@ types::ClassType *TypecheckVisitor::generateTuple(size_t n, bool generateNew) {
       typeArgs.emplace_back(N<IdExpr>(fmt::format("T{}", i + 1)));
     }
     for (size_t i = 0; i < n; i++) {
-      newFnArgs.emplace_back(fmt::format("T{}", i + 1), N<IdExpr>(TYPE_TYPE));
+      newFnArgs.emplace_back(fmt::format("T{}", i + 1), N<IdExpr>(StdlibTypes::Type));
     }
     Stmt *fn = N<FunctionStmt>(
-        "__new__", N<IndexExpr>(N<IdExpr>(TYPE_TUPLE), N<TupleExpr>(typeArgs)),
+        "__new__", N<IndexExpr>(N<IdExpr>(StdlibTypes::Tuple), N<TupleExpr>(typeArgs)),
         newFnArgs, nullptr);
     fn->setAttribute(Attr::Internal);
-    Stmt *ext = N<ClassStmt>(TYPE_TUPLE, std::vector<Param>{}, fn);
+    Stmt *ext = N<ClassStmt>(StdlibTypes::Tuple, std::vector<Param>{}, fn);
     ext->setAttribute(Attr::Extend);
     ext->setAttribute(Attr::AutoGenerated);
     ext = N<SuiteStmt>(ext);
 
     llvm::cantFail(ScopingVisitor::apply(ctx->cache, ext));
     auto rctx = getImport(STDLIB_IMPORT)->ctx;
+    rctx->prepareCheckpoint();
     auto oldBases = rctx->bases;
     rctx->bases.clear();
     rctx->bases.push_back(oldBases[0]);
+    auto oldBlockLevel = 0;
+    std::swap(oldBlockLevel, rctx->blockLevel);
     ext =
         TypecheckVisitor::apply(rctx, ext, "<internal>", /* sweepForceRealize */ false);
+    std::swap(oldBlockLevel, rctx->blockLevel);
     rctx->bases = oldBases;
     preamble->addStmt(ext);
   }

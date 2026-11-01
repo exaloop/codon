@@ -62,6 +62,41 @@ TEST_F(CIRCoreTest, RDAnalysisSimple) {
   ASSERT_EQ(second->getId(), *endRd.begin());
 }
 
+TEST_F(CIRCoreTest, RDAnalysisIndexedLocations) {
+  auto *function = module->Nr<BodiedFunc>("indexed");
+  auto *body = module->Nr<SeriesFlow>();
+  function->setBody(body);
+  auto *variable = module->Nr<Var>(module->getIntType());
+  function->push_back(variable);
+  auto *first = module->getInt(1);
+  auto *second = module->getInt(2);
+  auto *shared = module->getBool(false);
+  auto *firstAssign = module->Nr<AssignInstr>(variable, first);
+  auto *secondAssign = module->Nr<AssignInstr>(variable, second);
+  body->push_back(shared);
+  body->push_back(firstAssign);
+  body->push_back(shared);
+  body->push_back(secondAssign);
+  auto graph = analyze::dataflow::buildCFGraph(function);
+  analyze::dataflow::RDInspector inspector(graph.get());
+  inspector.analyze();
+
+  EXPECT_TRUE(rdset(inspector, variable, shared).empty());
+  EXPECT_EQ(rdset(inspector, variable, firstAssign),
+            std::unordered_set<codon::ir::id_t>{first->getId()});
+  EXPECT_EQ(rdset(inspector, variable, secondAssign),
+            std::unordered_set<codon::ir::id_t>{second->getId()});
+  auto *missing = module->getBool(true);
+  EXPECT_TRUE(rdset(inspector, variable, missing).empty());
+  graph->remapValue(missing, firstAssign);
+  EXPECT_EQ(rdset(inspector, variable, missing),
+            std::unordered_set<codon::ir::id_t>{second->getId()});
+  auto *replacement = module->getInt(3);
+  secondAssign->setRhs(replacement);
+  EXPECT_EQ(rdset(inspector, variable, secondAssign),
+            std::unordered_set<codon::ir::id_t>{replacement->getId()});
+}
+
 TEST_F(CIRCoreTest, RDAnalysisIfConditional) {
   auto *f = module->Nr<BodiedFunc>("test_f");
 

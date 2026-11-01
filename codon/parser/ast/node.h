@@ -15,6 +15,13 @@ using ir::cast;
 struct Cache;
 struct ASTVisitor;
 
+namespace detail {
+struct CodonString {
+  std::string value;
+  bool simple;
+};
+} // namespace detail
+
 struct ASTNode : public ir::Node {
   static const char NodeId;
   using ir::Node::Node;
@@ -36,6 +43,12 @@ struct ASTNode : public ir::Node {
   /// Convert a node to an S-expression.
   virtual std::string toString(int) const = 0;
   virtual std::string toString() const { return toString(-1); }
+
+  /// Convert a node to the native Codon AST dump representation.
+  std::string toCodonString(bool attributes = false, int indent = -1,
+                            int level = 0) const;
+  virtual detail::CodonString formatCodonString(bool attributes, int indent,
+                                                int level) const = 0;
 
   /// Deep copy a node.
   virtual ASTNode *clone(bool clean) const = 0;
@@ -66,6 +79,14 @@ struct ASTNode : public ir::Node {
     return std::tie(a);
   }
 };
+
+struct ASTNodeDeleter {
+  void operator()(ASTNode *node) const noexcept {
+    if (node)
+      node->~ASTNode();
+  }
+};
+using ASTNodePtr = std::unique_ptr<ASTNode, ASTNodeDeleter>;
 
 template <class... TA> void E(error::Error e, ASTNode *o, const TA &...args) {
   E(e, o->getSrcInfo(), args...);

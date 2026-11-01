@@ -7,6 +7,15 @@
 namespace codon {
 namespace ir {
 namespace util {
+namespace {
+const std::string EXPORT_ATTR =
+    ast::getMangledFunc("std.internal.attributes", "export");
+const std::string GPU_KERNEL_ATTR = ast::getMangledFunc("std.internal.gpu", "kernel");
+const std::string INLINE_ATTR =
+    ast::getMangledFunc("std.internal.attributes", "inline");
+const std::string NOINLINE_ATTR =
+    ast::getMangledFunc("std.internal.attributes", "noinline");
+} // namespace
 
 bool hasAttribute(const Func *func, const std::string &attribute) {
   if (auto *attr = func->getAttribute<KeyValueAttribute>()) {
@@ -14,6 +23,28 @@ bool hasAttribute(const Func *func, const std::string &attribute) {
   }
   return false;
 }
+
+bool isExport(const Func *func) { return hasAttribute(func, EXPORT_ATTR); }
+
+void setExport(Func *func, bool value) {
+  auto *attributes = func->getAttribute<KeyValueAttribute>();
+  if (!attributes) {
+    if (!value)
+      return;
+    func->setAttribute(std::make_unique<KeyValueAttribute>());
+    attributes = func->getAttribute<KeyValueAttribute>();
+  }
+  if (value)
+    attributes->attributes[EXPORT_ATTR] = "";
+  else
+    attributes->attributes.erase(EXPORT_ATTR);
+}
+
+bool isGPUKernel(const Func *func) { return hasAttribute(func, GPU_KERNEL_ATTR); }
+
+bool isInline(const Func *func) { return hasAttribute(func, INLINE_ATTR); }
+
+bool isNoInline(const Func *func) { return hasAttribute(func, NOINLINE_ATTR); }
 
 bool isStdlibFunc(const Func *func, const std::string &submodule) {
   if (auto *attr = func->getAttribute<KeyValueAttribute>()) {
@@ -32,6 +63,30 @@ bool isInt(const Type *type, unsigned len, bool sign) {
 CallInstr *call(Func *func, const std::vector<Value *> &args) {
   auto *M = func->getModule();
   return M->Nr<CallInstr>(M->Nr<VarValue>(func), args);
+}
+
+CallInstr *virtualCall(Value *callee, std::vector<Value *> args, size_t thunkId,
+                       BodiedFunc *parent) {
+  seqassertn(parent && thunkId && !args.empty(),
+             "virtual call requires a parent, method ID and receiver");
+  auto *module = callee->getModule();
+  auto *receiver = args.front();
+  auto *temporary =
+      module->Nr<Var>(receiver->getType(), false, false, false, "rtti.self");
+  parent->push_back(temporary);
+  auto *signature = module->unsafeGetFuncType(
+      "rtti.lookup[" + receiver->getType()->getName() + "]." +
+          callee->getType()->getName(),
+      callee->getType(), {receiver->getType(), module->getIntType()});
+  auto *lookup = module->getIntrinsic(InternalFunc::Intrinsic::VIRTUAL_LOOKUP,
+                                      receiver->getType(), signature);
+  auto *prefix = module->Nr<SeriesFlow>();
+  prefix->push_back(callee);
+  prefix->push_back(module->Nr<AssignInstr>(temporary, receiver));
+  auto *target = module->Nr<FlowInstr>(
+      prefix, call(lookup, {module->Nr<VarValue>(temporary), module->getInt(thunkId)}));
+  args.front() = module->Nr<VarValue>(temporary);
+  return module->N<CallInstr>(callee, target, std::move(args));
 }
 
 bool isCallOf(const Value *value, const std::string &name,

@@ -63,6 +63,9 @@ class RDInspector {
 private:
   struct BlockData {
     std::unordered_map<id_t, std::unordered_set<ReachingDef>> in;
+    std::unordered_map<id_t, size_t> positions;
+    std::unordered_map<id_t, std::vector<std::pair<size_t, const Value *>>> assignments;
+    bool indexed = false;
     BlockData() = default;
   };
   std::unordered_set<id_t> invalid;

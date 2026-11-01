@@ -11,6 +11,64 @@ export codon="$arg/codon"
 $codon build -release -o "$arg/test_binary" "$testdir/build.codon"
 [ "$($arg/test_binary)" == "hello" ] || exit 2
 
+"$codon" build -release -linker-flags=--pie -o "$arg/test_pie" "$testdir/build.codon" || exit 2
+[[ "$("$arg/test_pie")" == "hello" ]] || exit 2
+
+if [[ "$(uname -s)" == "Linux" ]]; then
+	check_executable() {
+		local expected_type=$1 optimization=$2
+		shift 2
+		"$codon" build "$optimization" "$@" -o "$arg/test_pie" "$testdir/build.codon" || exit 2
+		[[ "$("$arg/test_pie")" == "hello" ]] || exit 2
+		readelf -hW "$arg/test_pie" | grep -Eq "Type: +$expected_type " || exit 2
+		if [[ "$expected_type" == "DYN" ]]; then
+			readelf -dW "$arg/test_pie" | grep -Eq 'FLAGS_1.*PIE' || exit 2
+			if readelf -dW "$arg/test_pie" | grep -q TEXTREL; then
+				exit 2
+			fi
+		fi
+	}
+	check_executable EXEC -release
+	check_executable EXEC -release --relocation-model=pic
+	check_executable DYN -debug --pie
+	check_executable DYN -release --pie
+	check_executable DYN -release --pie --relocation-model=static
+	check_executable DYN -release -linker-flags=-pie
+	check_executable DYN -release --relocation-model=pic -linker-flags=-pie
+	check_executable DYN -release --relocation-model=static -linker-flags=-pie
+	check_executable DYN -release -linker-flags=--pie
+	check_executable DYN -release --relocation-model=static -linker-flags=--pie
+	check_executable EXEC -release -linker-flags='-pie -no-pie'
+	check_executable DYN -release -linker-flags='-no-pie -pie'
+	check_executable EXEC -release -linker-flags='--pie -no-pie'
+	check_executable DYN -release -linker-flags='-no-pie --pie'
+	check_executable DYN -release --pie -linker-flags=-no-pie
+
+	if [[ "$(uname -m)" == "x86_64" ]]; then
+		"$codon" build -release -obj --relocation-model=static \
+			-o "$arg/test_pie_static.o" "$testdir/build.codon" || exit 2
+		if g++ -pie "$arg/test_pie_static.o" -L"$arg" -Wl,-rpath,"$arg" \
+			-lcodonrt -lomp -lpthread -ldl -lz -lm -lc -o "$arg/test_pie_static" \
+			> "$arg/pie_stdout" 2> "$arg/pie_stderr"; then
+			exit 2
+		fi
+		grep -Eq 'relocation R_X86_64_32S?.*PIE' "$arg/pie_stderr" || exit 2
+	fi
+
+	if "$codon" build --pie -obj -o "$arg/test_pie.o" "$testdir/build.codon" \
+		> "$arg/pie_stdout" 2> "$arg/pie_stderr"; then
+		exit 2
+	fi
+	grep -q -- '--pie requires executable output' "$arg/pie_stderr" || exit 2
+	for flag in -pie --pie; do
+		if "$codon" build -lib "-linker-flags=$flag" -o "$arg/test_pie.so" "$testdir/build.codon" \
+			> "$arg/pie_stdout" 2> "$arg/pie_stderr"; then
+			exit 2
+		fi
+		grep -q 'PIE is only supported for executables' "$arg/pie_stderr" || exit 2
+	done
+fi
+
 # library test
 $codon build -relocation-model=pic -o "$arg/libcodon_export_test.so" "$testdir/export.codon"
 gcc "$testdir/test.c" -L"$arg" -Wl,-rpath,"$arg" -lcodon_export_test -o "$arg/test_binary"

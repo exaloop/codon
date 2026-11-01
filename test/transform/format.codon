@@ -185,6 +185,18 @@ def test_scalar_formatting():
     ) == "-170141183460469231731687303715884105728"
 
 
+@test
+def test_percent_return_contracts():
+    assert "%c:%3c" % (65, "x") == "A:  x"
+    assert "%d" % 42 == "42"
+    try:
+        "%d" % "not a number"
+        assert False
+    except TypeError as error:
+        assert error.message == "a number is required"
+
+
+test_percent_return_contracts()
 test_compound_formatting()
 test_compound_fields()
 test_argument_evaluation()

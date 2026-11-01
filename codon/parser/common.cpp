@@ -9,10 +9,9 @@
 #include <string>
 #include <vector>
 
+#include "codon/cir/llvm/llvm.h"
 #include "codon/compiler/compiler.h"
 #include "codon/parser/cache.h"
-#include "llvm/Support/FileSystem.h"
-#include "llvm/Support/Path.h"
 #include <fmt/format.h>
 
 #include <cmrc/cmrc.hpp>
@@ -404,6 +403,15 @@ std::string utf8_substr(const std::string &s, std::size_t start, std::size_t sto
   return result;
 }
 
+std::string replace(const std::string &text, const std::string &match,
+                    const std::string &replace) {
+  size_t pos = text.find(match);
+  if (pos != std::string::npos) {
+    return std::string(text).replace(pos, match.length(), replace);
+  }
+  return text;
+}
+
 // Adapted from https://github.com/gpakosz/whereami/blob/master/src/whereami.c (MIT)
 #ifdef __APPLE__
 #include <dlfcn.h>
@@ -556,7 +564,7 @@ std::shared_ptr<ImportFile> getImportFile(Cache *cache, const std::string &what,
 
 std::string getMangledClass(const std::string &module, const std::string &cls,
                             size_t id) {
-  if (module == "std.internal.core")
+  if (module.empty() || module == "std.internal.core")
     return cls;
   std::string num;
   if (!in(cls, '.'))
@@ -565,8 +573,8 @@ std::string getMangledClass(const std::string &module, const std::string &cls,
 }
 
 std::string getMangledFunc(const std::string &module, const std::string &fn,
-                           size_t overload, size_t id) {
-  if (module == "std.internal.core")
+                           size_t overload, size_t id, bool noCore) {
+  if (!noCore && (module.empty() || module == "std.internal.core"))
     return fn + ":" + std::to_string(overload);
   std::string num;
   if (!in(fn, '.'))
@@ -577,7 +585,7 @@ std::string getMangledFunc(const std::string &module, const std::string &fn,
 
 std::string getMangledMethod(const std::string &module, const std::string &cls,
                              const std::string &method, size_t overload, size_t id) {
-  if (module == "std.internal.core")
+  if (module.empty() || module == "std.internal.core")
     return cls + "." + method + ":" + std::to_string(overload);
   std::string num;
   if (!in(cls, '.'))

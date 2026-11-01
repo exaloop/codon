@@ -4,6 +4,7 @@
 #include <cerrno>
 #include <chrono>
 #include <climits>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -275,13 +276,32 @@ void seq_exc_init(int flags);
 
 int seq_flags;
 
+#if !USE_STANDARD_MALLOC
+static void run_finalizers() {
+  static thread_local bool dispatching = false;
+  if (dispatching || !GC_should_invoke_finalizers())
+    return;
+  dispatching = true;
+  // Allocating callbacks may notify recursively; only the outer invocation drains.
+  struct ResetDispatch {
+    bool &flag;
+    ~ResetDispatch() { flag = false; }
+  } reset{dispatching};
+  GC_invoke_finalizers();
+}
+#endif
+
 SEQ_FUNC void seq_init(int flags) {
 #if !USE_STANDARD_MALLOC
-  GC_INIT();
-  GC_set_warn_proc(GC_ignore_warn_proc);
-  GC_allow_register_threads();
-  __kmpc_set_gc_callbacks(GC_get_stack_base, (gc_setup_callback)GC_register_my_thread,
-                          GC_add_roots, GC_remove_roots);
+  static std::once_flag initialized;
+  std::call_once(initialized, [] {
+    GC_set_finalize_on_demand(1);
+    GC_INIT();
+    GC_set_warn_proc(GC_ignore_warn_proc);
+    GC_set_finalizer_notifier(run_finalizers);
+    __kmpc_set_gc_callbacks(GC_get_stack_base, (gc_setup_callback)GC_register_my_thread,
+                            GC_add_roots, GC_remove_roots);
+  });
 #endif
 
   seq_exc_init(flags);
@@ -883,6 +903,30 @@ SEQ_FUNC bool seq_lock_acquire(void *lock, bool block, double timeout) {
 SEQ_FUNC void seq_lock_release(void *lock) {
   auto *m = (std::timed_mutex *)lock;
   m->unlock();
+}
+
+SEQ_FUNC void *seq_cond_new() {
+  auto *condition = new (seq_alloc_atomic(sizeof(std::condition_variable_any)))
+      std::condition_variable_any();
+  seq_register_finalizer(condition, [](void *object, void *) {
+    static_cast<std::condition_variable_any *>(object)->~condition_variable_any();
+  });
+  return condition;
+}
+
+SEQ_FUNC void seq_cond_wait(void *condition, void *lock, double timeout) {
+  auto *variable = static_cast<std::condition_variable_any *>(condition);
+  std::unique_lock<std::timed_mutex> guard(*static_cast<std::timed_mutex *>(lock),
+                                           std::adopt_lock);
+  if (timeout < 0.0)
+    variable->wait(guard);
+  else
+    variable->wait_for(guard, std::chrono::duration<double>(timeout));
+  guard.release();
+}
+
+SEQ_FUNC void seq_cond_notify(void *condition) {
+  static_cast<std::condition_variable_any *>(condition)->notify_one();
 }
 
 SEQ_FUNC void *seq_rlock_new() {

@@ -2,9 +2,31 @@
 
 #include <algorithm>
 
+#include "codon/cir/util/irtools.h"
 #include "codon/cir/util/matching.h"
 
 using namespace codon::ir;
+
+TEST_F(CIRCoreTest, FunctionExportAttributes) {
+  auto *function = module->Nr<BodiedFunc>();
+  EXPECT_FALSE(util::isExport(function));
+  EXPECT_FALSE(util::isGPUKernel(function));
+  util::setExport(function, false);
+  EXPECT_FALSE(function->hasAttribute<KeyValueAttribute>());
+
+  util::setExport(function);
+  EXPECT_TRUE(util::isExport(function));
+  auto *attributes = function->getAttribute<KeyValueAttribute>();
+  ASSERT_NE(attributes, nullptr);
+  attributes->attributes["custom.attribute"] = "preserved";
+  util::setExport(function);
+  EXPECT_TRUE(util::isExport(function));
+  util::setExport(function, false);
+  util::setExport(function, false);
+  EXPECT_FALSE(util::isExport(function));
+  EXPECT_FALSE(util::isGPUKernel(function));
+  EXPECT_EQ(attributes->get("custom.attribute"), "preserved");
+}
 
 TEST_F(CIRCoreTest, FuncRealizationAndVarInsertionEraseAndIterators) {
   auto *fn = module->Nr<BodiedFunc>();
@@ -92,6 +114,88 @@ TEST_F(CIRCoreTest, InternalFuncParentTypeUnmangledNameAndCloning) {
   ASSERT_EQ("fn", fn->getUnmangledName());
   ASSERT_EQ(fn->getParentType(), module->getIntType());
   ASSERT_TRUE(util::match(fn, cv->clone(fn)));
+  fn->setIntrinsic(InternalFunc::Intrinsic::TYPEINFO, module->getBoolType());
+  auto *cloned = cast<InternalFunc>(cv->forceClone(fn));
+  ASSERT_NE(cloned, fn);
+  ASSERT_EQ(cloned->getIntrinsic(), InternalFunc::Intrinsic::TYPEINFO);
+  ASSERT_EQ(cloned->getIntrinsicType(), module->getBoolType());
+  ASSERT_TRUE(util::match(fn, cloned));
+  cloned->setIntrinsic(InternalFunc::Intrinsic::ALLOCATE, module->getBoolType());
+  ASSERT_FALSE(util::match(fn, cloned));
+  cloned->setIntrinsic(InternalFunc::Intrinsic::TYPEINFO, module->getIntType());
+  ASSERT_FALSE(util::match(fn, cloned));
+  ASSERT_EQ(fn->replaceUsedType(module->getBoolType(), module->getIntType()), 1);
+  ASSERT_EQ(fn->getIntrinsicType(), module->getIntType());
+}
+
+TEST_F(CIRCoreTest, TypeInfoMethodLookupContract) {
+  auto *descriptor = module->unsafeGetMemberedType("lookup.descriptor", true);
+  auto *pointer = module->unsafeGetPointerType(module->getIntType());
+  auto *lookup = module->Nr<InternalFunc>("lookup.method");
+  lookup->realize(module->unsafeGetFuncType("lookup.signature", pointer,
+                                            {descriptor, module->getIntType()}),
+                  {"info", "id"});
+  lookup->setIntrinsic(InternalFunc::Intrinsic::TYPEINFO_METHOD_LOOKUP);
+  ASSERT_TRUE(lookup->hasValidIntrinsicSignature());
+  ASSERT_STREQ(InternalFunc::getIntrinsicName(lookup->getIntrinsic()),
+               "typeinfo_method_lookup");
+  ASSERT_EQ(lookup->getIntrinsicSideEffectStatus(), util::UNKNOWN);
+  auto *cloned = cast<InternalFunc>(cv->forceClone(lookup));
+  ASSERT_TRUE(cloned->hasValidIntrinsicSignature());
+  ASSERT_TRUE(util::match(lookup, cloned));
+  lookup->realize(
+      module->unsafeGetFuncType("lookup.invalid", pointer,
+                                {module->getIntType(), module->getIntType()}),
+      {"info", "id"});
+  ASSERT_FALSE(lookup->hasValidIntrinsicSignature());
+}
+
+TEST_F(CIRCoreTest, RepresentationCastIntrinsicContracts) {
+  auto *source = module->unsafeGetMemberedType("cast.source", true);
+  auto *target = module->unsafeGetMemberedType("cast.target", true);
+  auto *function = module->Nr<InternalFunc>("cast.representation");
+  function->realize(module->unsafeGetFuncType("cast.valid", target, {source}),
+                    {"value"});
+  function->setIntrinsic(InternalFunc::Intrinsic::REPRESENTATION_CAST, target);
+  EXPECT_TRUE(function->hasValidIntrinsicSignature());
+  EXPECT_STREQ(InternalFunc::getIntrinsicName(function->getIntrinsic()),
+               "representation_cast");
+  EXPECT_EQ(function->getIntrinsicSideEffectStatus(), util::PURE);
+  EXPECT_TRUE(function->intrinsicDerivesFromArguments());
+  auto *cloned = cast<InternalFunc>(cv->forceClone(function));
+  EXPECT_TRUE(util::match(function, cloned));
+  function->realize(
+      module->unsafeGetFuncType("cast.structural", target, {module->getIntType()}),
+      {"value"});
+  EXPECT_TRUE(function->hasValidIntrinsicSignature());
+  EXPECT_TRUE(function->intrinsicDerivesFromArguments());
+  function->setIntrinsic(InternalFunc::Intrinsic::REPRESENTATION_CAST, source);
+  EXPECT_FALSE(function->hasValidIntrinsicSignature());
+  function->setIntrinsic(InternalFunc::Intrinsic::REPRESENTATION_CAST, target);
+  function->realize(module->unsafeGetFuncType("cast.empty", target, {}), {});
+  EXPECT_FALSE(function->hasValidIntrinsicSignature());
+  function->realize(module->unsafeGetFuncType("cast.extra", target, {source, source}),
+                    {"first", "second"});
+  EXPECT_FALSE(function->hasValidIntrinsicSignature());
+}
+
+TEST_F(CIRCoreTest, RuntimeMetadataDependencies) {
+  auto *type = module->unsafeGetMemberedType("runtime.dependencies", true);
+  auto *method = module->Nr<BodiedFunc>("runtime.method");
+  auto *replacement = module->Nr<BodiedFunc>("runtime.replacement");
+  Type::RuntimeInfo info;
+  info.mro = {type, module->getIntType()};
+  info.parameters = {module->getBoolType()};
+  info.methods[1] = method;
+  type->setRuntimeInfo(std::move(info));
+  auto types = type->getUsedTypes();
+  ASSERT_NE(std::find(types.begin(), types.end(), module->getIntType()), types.end());
+  ASSERT_NE(std::find(types.begin(), types.end(), module->getBoolType()), types.end());
+  ASSERT_EQ(type->getUsedVariables(), std::vector<Var *>{method});
+  ASSERT_EQ(type->replaceUsedVariable(method, replacement), 1);
+  ASSERT_EQ(type->getRuntimeInfo()->methods.at(1), replacement);
+  ASSERT_EQ(type->replaceUsedVariable(replacement, nullptr), 1);
+  ASSERT_TRUE(type->getUsedVariables().empty());
 }
 
 TEST_F(CIRCoreTest, LLVMFuncUnmangledNameQueryAndReplace) {
@@ -101,6 +205,7 @@ TEST_F(CIRCoreTest, LLVMFuncUnmangledNameQueryAndReplace) {
 
   fn->setLLVMBody("body");
   fn->setLLVMDeclarations("decl");
+  fn->setParentType(module->getIntType());
 
   std::vector<Generic> literals = {Generic(1), Generic(module->getIntType())};
   fn->setLLVMLiterals(literals);
@@ -108,6 +213,31 @@ TEST_F(CIRCoreTest, LLVMFuncUnmangledNameQueryAndReplace) {
   ASSERT_EQ("body", fn->getLLVMBody());
   ASSERT_EQ("decl", fn->getLLVMDeclarations());
 
-  ASSERT_EQ(1, fn->replaceUsedType(module->getIntType(), module->getFloatType()));
+  std::vector<Type *> expectedTypes = {fn->getType(), module->getIntType(),
+                                       module->getIntType()};
+  ASSERT_EQ(expectedTypes, fn->getUsedTypes());
+  ASSERT_EQ(2, fn->replaceUsedType(module->getIntType(), module->getFloatType()));
+  ASSERT_EQ(module->getFloatType(), fn->getParentType());
   ASSERT_EQ(module->getFloatType(), fn->literal_back().getTypeValue());
+  expectedTypes[1] = expectedTypes[2] = module->getFloatType();
+  ASSERT_EQ(expectedTypes, fn->getUsedTypes());
+
+  auto *alias = module->Nr<Var>(module->getBoolType());
+  auto *forwarder = module->Nr<Var>(module->getIntType());
+  alias->replaceAll(forwarder);
+  forwarder->replaceAll(fn);
+  const Node *replacedNode = alias;
+  ASSERT_EQ(expectedTypes, replacedNode->getUsedTypes());
+  ASSERT_EQ(2, alias->replaceUsedType(module->getFloatType(), module->getBoolType()));
+  ASSERT_EQ(module->getBoolType(), fn->getParentType());
+  ASSERT_EQ(module->getBoolType(), fn->literal_back().getTypeValue());
+  expectedTypes[1] = expectedTypes[2] = module->getBoolType();
+  ASSERT_EQ(expectedTypes, replacedNode->getUsedTypes());
+
+  auto *replacementType =
+      module->unsafeGetFuncType("<replacement_func_type>", module->getBoolType(), {});
+  ASSERT_EQ(1, alias->replaceUsedType(fn->getType(), replacementType));
+  ASSERT_EQ(replacementType, fn->getType());
+  expectedTypes[0] = replacementType;
+  ASSERT_EQ(expectedTypes, replacedNode->getUsedTypes());
 }

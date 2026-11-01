@@ -14,6 +14,31 @@ namespace util {
 /// @return true if the function has the given attribute
 bool hasAttribute(const Func *func, const std::string &attribute);
 
+/// Checks whether a function has the export attribute.
+/// @param func the function
+/// @return true if the function is marked for export
+bool isExport(const Func *func);
+
+/// Sets or removes a function's export attribute.
+/// @param func the function
+/// @param value true to export the function, false to remove the attribute
+void setExport(Func *func, bool value = true);
+
+/// Checks whether a function has the GPU kernel attribute.
+/// @param func the function
+/// @return true if the function is a GPU kernel
+bool isGPUKernel(const Func *func);
+
+/// Checks whether a function has the inline attribute.
+/// @param func the function
+/// @return true if the function is marked for inlining
+bool isInline(const Func *func);
+
+/// Checks whether a function has the noinline attribute.
+/// @param func the function
+/// @return true if the function is marked to prevent inlining
+bool isNoInline(const Func *func);
+
 /// Checks whether a function comes from the standard library, and
 /// optionally a specific module therein.
 /// @param func the function
@@ -35,6 +60,16 @@ bool isInt(const Type *type, unsigned len = 64, bool sign = true);
 /// @param args vector of call arguments
 /// @return call instruction with the given function and arguments
 CallInstr *call(Func *func, const std::vector<Value *> &args);
+
+/// Calls a virtual method through an explicit runtime lookup.
+/// Evaluates the callee and receiver once before lookup and remaining arguments.
+/// @param callee the statically resolved callee expression
+/// @param args call arguments, with the receiver first
+/// @param thunkId nonzero semantic method ID
+/// @param parent function owning the receiver temporary
+/// @return indirect call with expression-contained dispatch setup
+CallInstr *virtualCall(Value *callee, std::vector<Value *> args, size_t thunkId,
+                       BodiedFunc *parent);
 
 /// Checks if a value represents a call of a particular function.
 /// @param value the value to check

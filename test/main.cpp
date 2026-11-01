@@ -122,7 +122,10 @@ class TestInliner : public ir::transform::OperatorPass {
         return;
       for (auto *var : res.newVars)
         ir::cast<ir::BodiedFunc>(getParentFunc())->push_back(var);
-      v->replaceAll(ir::util::call(neg, {res.result}));
+      auto *result = res.result;
+      if (result->getType()->is(M->getIntType()))
+        result = ir::util::call(neg, {result});
+      v->replaceAll(result);
     }
   }
 };
@@ -563,7 +566,8 @@ INSTANTIATE_TEST_SUITE_P(
       "parser/typecheck/test_op.codon",
       "parser/typecheck/test_parser.codon",
       "parser/typecheck/test_python.codon",
-      "parser/typecheck/test_typecheck.codon"
+      "parser/typecheck/test_typecheck.codon",
+      "parser/typecheck/test_poly.codon"
     })),
     getTypeTestNameFromParam);
 
@@ -577,6 +581,7 @@ INSTANTIATE_TEST_SUITE_P(
         "core/parser.codon",
         "core/generics.codon",
         "core/generators.codon",
+        "core/gc.codon",
         "core/exceptions.codon",
         "core/containers.codon",
         "core/trees.codon",
@@ -606,11 +611,13 @@ INSTANTIATE_TEST_SUITE_P(
         "stdlib/llvm_test.codon",
         "stdlib/str_test.codon",
         "stdlib/bytearray_test.codon",
+        "stdlib/enum_test.codon",
         "stdlib/re_test.codon",
         "stdlib/math_test.codon",
         "stdlib/cmath_test.codon",
         "stdlib/datetime_test.codon",
         "stdlib/getopt_test.codon",
+        "stdlib/argparse_test.codon",
         "stdlib/itertools_test.codon",
         "stdlib/json_test.codon",
         "stdlib/bisect_test.codon",
@@ -628,6 +635,7 @@ INSTANTIATE_TEST_SUITE_P(
         "stdlib/ntpath_test.codon",
         "stdlib/win32_os_test.codon",
         "stdlib/unicode_test.codon",
+        "stdlib/functools_test.codon",
         "python/pybridge.codon"
       ),
       testing::Values(true, false),
@@ -645,7 +653,9 @@ INSTANTIATE_TEST_SUITE_P(
     testing::Combine(
       testing::Values(
         "core/numerics.codon",
-        "stdlib/math_test.codon"
+        "stdlib/math_test.codon",
+        "numpy/test_routines.codon",
+        "numpy/fusion/test_producers.codon"
       ),
       testing::Values(true, false),
       testing::Values(""),

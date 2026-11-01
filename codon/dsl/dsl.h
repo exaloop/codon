@@ -3,10 +3,10 @@
 #pragma once
 
 #include "codon/cir/cir.h"
+#include "codon/cir/llvm/llvm.h"
 #include "codon/cir/transform/manager.h"
 #include "codon/cir/transform/pass.h"
 #include "codon/parser/cache.h"
-#include "llvm/Passes/PassBuilder.h"
 #include <functional>
 #include <optional>
 #include <string>

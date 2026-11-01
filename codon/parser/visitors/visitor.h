@@ -291,8 +291,6 @@ public:
       transform(d);
     for (auto &d : stmt->baseClasses)
       transform(d);
-    for (auto &d : stmt->staticBaseClasses)
-      transform(d);
   }
   void visit(YieldFromStmt *stmt) override { transform(stmt->expr); }
   void visit(WithStmt *stmt) override {
@@ -492,8 +490,6 @@ public:
     for (auto &d : stmt->decorators)
       d = transform(d);
     for (auto &d : stmt->baseClasses)
-      d = transform(d);
-    for (auto &d : stmt->staticBaseClasses)
       d = transform(d);
   }
   void visit(YieldFromStmt *stmt) override { stmt->expr = transform(stmt->expr); }

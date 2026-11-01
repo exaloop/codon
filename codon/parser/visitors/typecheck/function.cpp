@@ -1,8 +1,10 @@
 // Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
 #include <algorithm>
+#include <memory>
 #include <string>
 #include <tuple>
+#include <unordered_set>
 
 #include "codon/cir/attribute.h"
 #include "codon/parser/ast.h"
@@ -64,17 +66,16 @@ void TypecheckVisitor::visit(AwaitExpr *expr) {
   expr->expr = transform(expr->getExpr());
   if (!expr->transformed) {
     if (auto c = expr->getExpr()->getType()->getClass()) {
-      bool isCoroutine = c->is(getMangledClass("std.internal.core", "Coroutine")) ||
+      bool isCoroutine = c->is(StdlibTypes::Coroutine) ||
                          c->is(getMangledClass("std.asyncio", "Future")) ||
                          c->is(getMangledClass("std.asyncio", "Task"));
       if (!isCoroutine) {
         if (!findMethod(c, "__await__").empty()) {
           auto e = transform(N<CallExpr>(N<DotExpr>(expr->getExpr(), "__await__")));
-          isCoroutine =
-              e->getType()->is(getMangledClass("std.internal.core", "Coroutine")) ||
-              e->getType()->is(getMangledClass("std.asyncio", "Future")) ||
-              e->getType()->is(getMangledClass("std.asyncio", "Task")) ||
-              e->getType()->is(getMangledClass("std.internal.core", "Generator"));
+          isCoroutine = e->getType()->is(StdlibTypes::Coroutine) ||
+                        e->getType()->is(getMangledClass("std.asyncio", "Future")) ||
+                        e->getType()->is(getMangledClass("std.asyncio", "Task")) ||
+                        e->getType()->is(StdlibTypes::Generator);
           if (!isCoroutine) {
             E(Error::EXPECTED_TYPE, expr, "awaitable");
           } else {
@@ -100,8 +101,8 @@ void TypecheckVisitor::visit(AwaitExpr *expr) {
 /// See @c wrapExpr for more details.
 void TypecheckVisitor::visit(ReturnStmt *stmt) {
   if (stmt->hasAttribute(Attr::Internal)) {
-    stmt->expr = transform(N<CallExpr>(
-        N<IdExpr>(getMangledMethod("std.internal.core", "NoneType", "__new__"))));
+    stmt->expr =
+        transform(N<CallExpr>(N<IdExpr>(getMangledMethod("", "NoneType", "__new__"))));
     stmt->setDone();
     return;
   }
@@ -109,6 +110,7 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
   if (!ctx->inFunction())
     E(Error::FN_OUTSIDE_ERROR, stmt, "return");
   auto isAsync = ctx->getBase()->func->isAsync();
+  bool hasEmptyReturn = !stmt->expr;
 
   if (!stmt->expr && ctx->getBase()->func->hasAttribute(Attr::IsGenerator)) {
     stmt->setDone();
@@ -116,11 +118,12 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
     if (ctx->getBase()->func->hasAttribute(Attr::IsGenerator))
       E(Error::CUSTOM, stmt, "returning values from generators not yet supported");
     if (!stmt->expr)
-      stmt->expr = N<CallExpr>(N<IdExpr>("NoneType"));
+      stmt->expr = N<CallExpr>(N<IdExpr>(StdlibTypes::NoneType));
     stmt->expr = transform(stmt->getExpr());
+    bool canRealize = stmt->getExpr()->getType()->canRealize();
 
     // Wrap expression to match the return type
-    if (!ctx->getBase()->returnType->getUnbound())
+    if (!ctx->getBase()->inferReturnType && !ctx->getBase()->returnType->getUnbound())
       if (!wrapExpr(&stmt->expr, ctx->getBase()->returnType.get())) {
         return;
       }
@@ -128,7 +131,7 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
     // Special case: partialize functions if we are returning them
     if (stmt->getExpr()->getType()->getFunc() &&
         !(ctx->getBase()->returnType->getClass() &&
-          ctx->getBase()->returnType->is("Function"))) {
+          ctx->getBase()->returnType->is(StdlibTypes::Function))) {
       stmt->expr = transform(
           N<CallExpr>(N<IdExpr>(stmt->getExpr()->getType()->getFunc()->ast->getName()),
                       N<EllipsisExpr>(EllipsisExpr::PARTIAL)));
@@ -144,10 +147,18 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
 
     if (isAsync) {
       unify(ctx->getBase()->returnType.get(),
-            instantiateType(getStdLibType("Coroutine"), {stmt->getExpr()->getType()}));
+            instantiateType(getStdLibType(StdlibTypes::Coroutine),
+                            {stmt->getExpr()->getType()}));
+    } else if (ctx->getBase()->inferReturnType) {
+      auto &returns = ctx->getBase()->returnStatements;
+      if (std::ranges::none_of(
+              returns, [stmt](const auto &entry) { return entry.first == stmt; }))
+        returns.emplace_back(stmt, hasEmptyReturn);
     } else {
       unify(ctx->getBase()->returnType.get(), stmt->getExpr()->getType());
     }
+    if (!canRealize && stmt->getExpr()->getType()->canRealize())
+      ctx->changedNodes++;
   }
 
   // If we are not within conditional block, ignore later statements in this function.
@@ -155,7 +166,8 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
   if (!ctx->blockLevel)
     ctx->returnEarly = true;
 
-  if (!stmt->getExpr() || stmt->getExpr()->isDone())
+  if (!ctx->getBase()->inferReturnType &&
+      (!stmt->getExpr() || stmt->getExpr()->isDone()))
     stmt->setDone();
 }
 
@@ -166,7 +178,8 @@ void TypecheckVisitor::visit(YieldStmt *stmt) {
   auto isAsync = ctx->getBase()->func->isAsync();
 
   stmt->expr =
-      transform(stmt->getExpr() ? stmt->getExpr() : N<CallExpr>(N<IdExpr>("NoneType")));
+      transform(stmt->getExpr() ? stmt->getExpr()
+                                : N<CallExpr>(N<IdExpr>(StdlibTypes::NoneType)));
   unify(ctx->getBase()->returnType.get(),
         instantiateType(getStdLibType(!isAsync ? "Generator" : "AsyncGenerator"),
                         {stmt->getExpr()->getType()}));
@@ -186,6 +199,36 @@ void TypecheckVisitor::visit(YieldFromStmt *stmt) {
 
 /// Process `global` statements. Remove them upon completion.
 void TypecheckVisitor::visit(GlobalStmt *stmt) { resultStmt = N<SuiteStmt>(); }
+
+/// Finalize the argument structure after captures, names, and defaults are normalized.
+void TypecheckVisitor::prepareCallLayout(FunctionStmt *ast) const {
+  seqassertn(!ast->callLayout, "function call layout was already initialized");
+  auto layout = std::make_unique<FunctionStmt::CallLayout>();
+  layout->positionalLimit = ast->size();
+  layout->optional.reserve(ast->size());
+  for (int i = 0; i < ast->size(); ++i) {
+    const auto &parameter = (*ast)[i];
+    if (parameter.kind == Param::KeywordOnly || startswith(parameter.name, "*"))
+      layout->positionalLimit = std::min(layout->positionalLimit, i);
+    if (startswith(parameter.name, "**")) {
+      layout->kwstar = i;
+      layout->variadicPenalty -= 2;
+    } else if (startswith(parameter.name, "*")) {
+      layout->star = i;
+      layout->variadicPenalty -= 2;
+    }
+    bool optional = (parameter.isValue() && parameter.getDefault()) ||
+                    startswith(parameter.name, "$");
+    layout->optional.push_back(optional);
+    if (parameter.isValue() && !optional && !startswith(parameter.name, "*"))
+      layout->requiredValues.push_back(i);
+    if (parameter.kind != Param::PositionalOnly) {
+      auto [stars, name] = parameter.getNameWithStars();
+      layout->keywords.emplace_back(getUnmangledName(name), i);
+    }
+  }
+  ast->callLayout = std::move(layout);
+}
 
 /// Parse a function stub and create a corresponding generic function type.
 /// Also realize built-ins and extern C functions.
@@ -215,7 +258,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
         stmt->setAttribute(Attr::Inline);
       else if (attrName == getMangledFunc("std.internal.attributes", "no_arg_reorder"))
         stmt->setAttribute(Attr::NoArgReorder);
-      else if (attrName == getMangledFunc("std.internal.core", "overload"))
+      else if (attrName == getMangledFunc("", "overload"))
         stmt->setAttribute(Attr::Overload);
 
       if (!stmt->hasAttribute(Attr::FunctionAttributes))
@@ -307,7 +350,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     size_t insertSize = stmt->size();
     if (!stmt->empty() && startswith(stmt->back().name, "**"))
       insertSize--;
-    for (auto &[c, t] : b->captures) {
+    for (const auto &[c, t] : sorted_view(b->captures)) {
       std::string cc = "$" + c;
       if (auto v = ctx->find(c, getTime())) {
         if (t != BindingsAttribute::CaptureType::Global && !v->isGlobal()) {
@@ -320,12 +363,15 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
             if (!v->isFunc()) {
               if (v->isType()) {
                 stmt->items.insert(stmt->items.begin() + insertSize++,
-                                   Param(cc, N<IdExpr>(TYPE_TYPE)));
+                                   Param(cc, N<IdExpr>(StdlibTypes::Type)));
               } else if (auto si = v->getStaticKind()) {
                 stmt->items.insert(
                     stmt->items.begin() + insertSize++,
                     Param(cc, N<IndexExpr>(N<IdExpr>("Literal"),
                                            N<IdExpr>(Type::stringFromLiteral(si)))));
+              } else if (t == BindingsAttribute::CaptureType::Nonlocal) {
+                stmt->items.insert(stmt->items.begin() + insertSize++,
+                                   Param(cc, N<IdExpr>(StdlibTypes::Capsule)));
               } else {
                 stmt->items.insert(stmt->items.begin() + insertSize++, Param(cc));
               }
@@ -374,9 +420,10 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
         // Special case: all simple types and Nones are handled at call site
         // (as they are not mutable).
         if (match(defaultValue, M<NoneExpr>())) {
-          if (match(a.getType(), M<IdExpr>(MOr(TYPE_TYPE, TRAIT_TYPE)))) {
-            // Special case: `arg: type = None` -> `arg: type = NoneType`
-            defaultValue = N<IdExpr>("NoneType");
+          if (match(a.getType(),
+                    M<IdExpr>(MOr(StdlibTypes::Type, StdlibTypes::TypeTrait)))) {
+            // Special case: `arg: type = None` -> `arg: type = NoneType
+            defaultValue = N<IdExpr>(StdlibTypes::NoneType);
           } else {
             ; // Do nothing. NoneExpr will be handled later (we don't want it
               // to be converted to Optional call yet.)
@@ -420,7 +467,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
         }
       }
       args.emplace_back(std::string(stars, '*') + name, a.getType(), defaultValue,
-                        a.status);
+                        a.status, a.kind);
 
       // Add generics to the context
       if (!a.isValue()) {
@@ -436,7 +483,8 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
           if (defType)
             generic->defaultType = extractType(defType)->shared_from_this();
         } else {
-          if (match(a.getType(), M<InstantiateExpr>(M<IdExpr>(TRAIT_TYPE), M_))) {
+          if (match(a.getType(),
+                    M<InstantiateExpr>(M<IdExpr>(StdlibTypes::TypeTrait), M_))) {
             // Parse TraitVar
             auto l = transformType(cast<InstantiateExpr>(a.getType())->front(), true)
                          ->getType();
@@ -489,22 +537,17 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       if (!(*stmt)[ai].isValue())
         continue;
       auto [_, canName] = (*stmt)[ai].getNameWithStars();
-      if (!(*stmt)[ai].getType()) {
-        if (parentClass && ai == 0 && (*stmt)[ai].getName() == "self") {
-          // Special case: self in methods
-          auto *st = unify(extractClassGeneric(argType, aj), parentClass);
-          if (getClass(parentClass->name)->ast->hasAttribute(Attr::ClassDeduce) &&
-              stmt->hasAttribute(Attr::ClassDeduce) && stmt->getName() == "__init__") {
-            for (auto &u : st->getUnbounds(true)) {
-              stmt->setAttribute(Attr::AllowPassThrough);
-              // log("pass-through: {}.__init__ / {}", parentClass->name,
-              //     u->debugString(2));
-              u->getLink()->passThrough = true;
-            }
-          }
-        } else {
-          generics.push_back(extractClassGeneric(argType, aj)->shared_from_this());
+      // Mark __init__ generics as AllowPassThrough
+      if (parentClass && ai == 0 && stmt->hasAttribute(Attr::HasSelf) &&
+          getClass(parentClass->name)->ast->hasAttribute(Attr::ClassDeduce) &&
+          stmt->hasAttribute(Attr::ClassDeduce) && stmt->getName() == "__init__") {
+        for (auto &u : parentClass->getUnbounds(true)) {
+          stmt->setAttribute(Attr::AllowPassThrough);
+          u->getLink()->passThrough = true;
         }
+      }
+      if (!(*stmt)[ai].getType()) {
+        generics.push_back(extractClassGeneric(argType, aj)->shared_from_this());
       } else if (startswith((*stmt)[ai].getName(), "*")) {
         // Special case: `*args: type` and `**kwargs: type`. Do not add this type to the
         // signature (as the real type is `Tuple[type, ...]`); it will be used during
@@ -524,19 +567,22 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       // Fix for functions returning Literal types
       if (auto st = getStaticGeneric(ret))
         baseType->generics[1].staticKind = st;
-
       unify(retType, extractType(ret));
-      if (isId(ret, "Union"))
-        extractClassGeneric(retType)->getUnbound()->kind = LinkType::Generic;
     } else {
       generics.push_back(unify(retType, instantiateUnbound())->shared_from_this());
     }
     ctx->typecheckLevel--;
 
+    // Callable factory constraints can link a method generic to a class generic
+    // (defaultdict.__new__). Generalizing the method must not mutate that outer slot.
+    std::unordered_set<int> parentGenerics;
+    if (parentClass)
+      for (auto u : parentClass->getUnbounds(true))
+        parentGenerics.insert(u->getLink()->id);
     // Generalize generics and remove them from the context
     for (const auto &g : generics) {
       for (auto &u : g->getUnbounds(false))
-        if (u->getUnbound()) {
+        if (u->getUnbound() && !in(parentGenerics, u->getUnbound()->id)) {
           u->getUnbound()->kind = LinkType::Generic;
         }
     }
@@ -552,12 +598,13 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       }
     }
   }
-  stmt->setAttribute(Attr::Module, ctx->moduleName.path);
+  stmt->setAttribute(Attr::Module, ctx->getModuleInfo().path);
 
   // Make function AST and cache it for later realization
   auto f = N<FunctionStmt>(canonicalName, ret, args, suite, std::vector<Expr *>{},
                            stmt->isAsync());
   f->cloneAttributesFrom(stmt);
+  prepareCallLayout(f);
   auto &fn = ctx->cache->functions[canonicalName] =
       Cache::Function{ctx->getModulePath(),
                       rootName,
@@ -629,8 +676,13 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   for (auto i = stmt->decorators.size(); i-- > 0;) {
     if (stmt->decorators[i]) {
       // Replace each decorator with `decorator(finalExpr)` in the reverse order
-      finalExpr = N<CallExpr>(stmt->decorators[i],
-                              finalExpr ? finalExpr : N<IdExpr>(canonicalName));
+      if (finalExpr) {
+        finalExpr = N<CallExpr>(stmt->decorators[i], finalExpr);
+      } else {
+        auto id = N<IdExpr>(canonicalName);
+        id->setAttribute(Attr::ExprDoNotRealize);
+        finalExpr = N<CallExpr>(stmt->decorators[i], id);
+      }
     }
   }
   if (finalExpr) {
@@ -813,7 +865,7 @@ std::tuple<bool, std::string, std::string> TypecheckVisitor::getDecorator(Expr *
 
 /// Generate and return `Function[Tuple[args...], ret]` type
 std::shared_ptr<ClassType> TypecheckVisitor::getFuncTypeBase(size_t nargs) {
-  auto baseType = instantiateType(getStdLibType("Function"));
+  auto baseType = instantiateType(getStdLibType(StdlibTypes::Function));
   unify(extractClassGeneric(baseType->getClass()),
         instantiateType(generateTuple(nargs, false)));
   return std::static_pointer_cast<types::ClassType>(baseType);
