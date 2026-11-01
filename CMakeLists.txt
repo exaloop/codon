@@ -37,6 +37,36 @@ if(WIN32)
   set(CMAKE_C_STANDARD_LIBRARIES "${CMAKE_C_STANDARD_LIBRARIES} ${_codon_win_crt}")
   set(CMAKE_CXX_STANDARD_LIBRARIES "${CMAKE_CXX_STANDARD_LIBRARIES} ${_codon_win_crt}")
 endif()
+
+# Highway 1.3.0 emits an `evex512` target attribute for its AVX3 variants.
+# Some Clang targets warn that this attribute is unsupported, ignore the entire
+# target attribute, and then fail when compiling AVX-512 intrinsics. Probe the
+# actual compiler target instead of relying on a Clang version check. Keep the
+# AVX3 targets when supported; otherwise disable AVX10.2 and the AVX3 variants
+# (Highway 1.3.0 target bits 3, 4, 6, 7, and 8), while retaining AVX2 and below.
+string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" _codon_system_processor)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND
+   _codon_system_processor MATCHES "^(x86_64|amd64|x64)$")
+  include(CheckCXXSourceCompiles)
+  set(_codon_saved_required_flags "${CMAKE_REQUIRED_FLAGS}")
+  set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -Werror=ignored-attributes")
+  check_cxx_source_compiles([[
+    #include <immintrin.h>
+    __attribute__((target("sse2,ssse3,sse4.1,sse4.2,pclmul,aes,avx,avx2,bmi,bmi2,fma,f16c,avx512f,avx512cd,avx512vl,avx512dq,avx512bw,evex512")))
+    static __m256i codon_highway_evex512_probe(__m256i source, __mmask8 mask,
+                                               const void *address) {
+      return _mm256_mask_loadu_epi64(source, mask, address);
+    }
+    int main() { return 0; }
+  ]] CODON_CLANG_SUPPORTS_HIGHWAY_EVEX512)
+  set(CMAKE_REQUIRED_FLAGS "${_codon_saved_required_flags}")
+
+  if(NOT CODON_CLANG_SUPPORTS_HIGHWAY_EVEX512)
+    add_compile_definitions(HWY_DISABLED_TARGETS=0x1D8)
+    message(STATUS "Clang does not support Highway's evex512 target attribute; disabling Highway AVX3/AVX10 targets")
+  endif()
+endif()
+
 include_directories(.)
 
 set(APPLE_ARM OFF)
