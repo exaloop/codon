@@ -385,7 +385,7 @@ public:
     si.dwFlags = STARTF_USESTDHANDLES;
     si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
     si.hStdOutput = wr;
-    si.hStdError = wr;
+    si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
     PROCESS_INFORMATION pi{};
     BOOL ok = CreateProcessA(nullptr, cmdv.data(), nullptr, nullptr, TRUE, 0, nullptr,
                              nullptr, &si, &pi);
