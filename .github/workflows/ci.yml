@@ -160,7 +160,7 @@ jobs:
   build:
     name: Build Codon
     if: always()
-    needs: [compile, test]
+    needs: [compile, test, build_windows]
     strategy:
       matrix:
         include:
@@ -180,7 +180,8 @@ jobs:
         env:
           COMPILE_RESULT: ${{ needs.compile.result }}
           TEST_RESULT: ${{ needs.test.result }}
-        run: test "$COMPILE_RESULT" = success && test "$TEST_RESULT" = success
+          WINDOWS_RESULT: ${{ needs.build_windows.result }}
+        run: test "$COMPILE_RESULT" = success && test "$TEST_RESULT" = success && test "$WINDOWS_RESULT" = success
 
   publish:
     name: Publish Codon
@@ -204,140 +205,142 @@ jobs:
           name: codon-python
           path: dist/
 
+      - name: Download Windows SDKs
+        uses: actions/download-artifact@v8
+        with:
+          pattern: codon-windows-*.zip
+          path: release/
+          merge-multiple: true
+
       - name: Create Release and Upload SDKs
         if: contains(github.ref, 'tags/v')
         uses: ncipollo/release-action@v1
         with:
-          artifacts: release/codon-*.tar.gz
-          artifactContentType: application/gzip
+          artifacts: release/codon-*.tar.gz,release/codon-windows-*.zip
           artifactErrorsFailBuild: true
 
       - name: Publish PyPI Package
         uses: pypa/gh-action-pypi-publish@release/v1
 
   build_windows:
-    name: Build Codon (Windows)
-    runs-on: windows-latest
-    needs: create_release
-    # Fail fast rather than burning the full 6h runner budget if a test hangs.
-    timeout-minutes: 180
+    name: Build and Test Codon (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            arch: windows-x86_64
+            msvc_arch: amd64
+            python_arch: x64
+            target: x86_64-pc-windows-msvc
+          - os: windows-11-arm
+            arch: windows-arm64
+            msvc_arch: arm64
+            python_arch: arm64
+            target: aarch64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    needs: unicode_tables
+    timeout-minutes: 360
     permissions:
-      contents: write
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      CMAKE_POLICY_VERSION_MINIMUM: '3.5'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+          architecture: ${{ matrix.python_arch }}
 
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
         with:
-          arch: amd64
+          arch: ${{ matrix.msvc_arch }}
 
-      - name: Set up toolchain on PATH
-        shell: pwsh
+      - name: Install build and test dependencies
         run: |
-          echo "C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          choco install ninja -y --no-progress
-          clang --version
+          $PSNativeCommandUseErrorActionPreference = $true
+          python -m pip install --only-binary=:all: ninja numpy==2.3.4
           ninja --version
 
-      - name: Cache LLVM
-        id: cache-llvm
-        uses: actions/cache@v4
-        with:
-          path: llvm
-          key: windows-msvc-llvm-20-1-7-omp
-
-      - name: Build LLVM
-        if: steps.cache-llvm.outputs.cache-hit != 'true'
-        shell: pwsh
+      - name: Download LLVM release
         run: |
-          git clone --depth 1 -b codon-20.1.7 https://github.com/exaloop/llvm-project llvm-project
-          cmake -S llvm-project/llvm -B llvm-build -G Ninja `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DLLVM_HOST_TRIPLE=x86_64-pc-windows-msvc `
-            -DLLVM_DEFAULT_TARGET_TRIPLE=x86_64-pc-windows-msvc `
-            -DCMAKE_C_COMPILER=clang `
-            -DCMAKE_CXX_COMPILER=clang++ `
-            -DLLVM_INCLUDE_TESTS=OFF `
-            -DLLVM_INCLUDE_BENCHMARKS=OFF `
-            -DLLVM_INCLUDE_EXAMPLES=OFF `
-            -DLLVM_ENABLE_WERROR=OFF `
-            -DLLVM_ENABLE_RTTI=ON `
-            -DLLVM_ENABLE_ZLIB=OFF `
-            -DLLVM_ENABLE_ZSTD=OFF `
-            -DLLVM_ENABLE_TERMINFO=OFF `
-            -DLLVM_TARGETS_TO_BUILD=X86 `
-            -DLLVM_BUILD_TOOLS=OFF `
-            -DLLVM_ENABLE_PROJECTS=""
-          cmake --build llvm-build --config Release
-          cmake --install llvm-build --prefix llvm
-          # exaloop's libomp omits __kmpc_omp_task_alloc_size from the Windows export
-          # list (Linux/macOS do not gate exports on dllexports), so codon's task-based
-          # @par - exercised by test/core/pipeline.codon - cannot resolve it from the
-          # JIT or AOT. Add it to the no-ordinal section before building.
-          $exports = "llvm-project/openmp/runtime/src/dllexports"
-          $anchor = "__kmpc_push_num_threads_list"
-          if (-not (Select-String -Path $exports -Pattern $anchor -Quiet)) {
-            throw "libomp dllexports anchor '$anchor' not found"
+          $PSNativeCommandUseErrorActionPreference = $true
+          $archive = "$env:RUNNER_TEMP/llvm-codon-${{ matrix.arch }}.zip"
+          curl.exe --fail --location --retry 5 --output $archive `
+            "https://github.com/exaloop/llvm-project/releases/download/codon/llvm-codon-${{ matrix.arch }}.zip"
+          New-Item -ItemType Directory -Force C:/opt | Out-Null
+          # The release contains llvm-codon/, including Clang and GC-patched libomp.
+          tar -xf $archive -C C:/opt
+          foreach ($file in @('bin/clang.exe', 'bin/clang++.exe', 'bin/libomp.dll', 'lib/libomp.lib', 'lib/cmake/llvm/LLVMConfig.cmake')) {
+            if (-not (Test-Path "C:/opt/llvm-codon/$file")) {
+              throw "LLVM release is missing $file"
+            }
           }
-          if (-not (Select-String -Path $exports -Pattern "__kmpc_omp_task_alloc_size" -Quiet)) {
-            (Get-Content $exports) -replace "^(\s*)$anchor\s*$", "`$1__kmpc_omp_task_alloc_size`r`n`$1$anchor" | Set-Content $exports
+          'C:\opt\llvm-codon\bin' | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          # Verify the task allocation extension required by Codon's @par lowering.
+          $exports = & C:/opt/llvm-codon/bin/llvm-readobj.exe --coff-exports C:/opt/llvm-codon/bin/libomp.dll
+          if (-not ($exports -match 'Name: __kmpc_omp_task_alloc_size$')) {
+            throw 'The LLVM release libomp lacks __kmpc_omp_task_alloc_size'
           }
-          # GC-patched libomp (enables @par). Built standalone with clang-cl so CMake sets
-          # MSVC=TRUE -> KMP_MSVC_COMPAT=1 (the pid_t shim etc.); a plain clang build fails.
-          cmake -S llvm-project/openmp -B libomp-build -G Ninja `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_C_COMPILER=clang-cl `
-            -DCMAKE_CXX_COMPILER=clang-cl `
-            -DOPENMP_STANDALONE_BUILD=ON `
-            -DLIBOMP_ENABLE_SHARED=ON `
-            -DOPENMP_ENABLE_LIBOMPTARGET=OFF
-          cmake --build libomp-build --target omp
-          Copy-Item libomp-build/runtime/src/libomp.dll llvm/bin/
-          Copy-Item libomp-build/runtime/src/libomp.lib llvm/lib/
-          Copy-Item libomp-build/runtime/src/omp.h llvm/include/
 
       - name: Build Codon
-        shell: pwsh
         run: |
-          # Passed via environment rather than -D: the runner's pwsh mangles the
-          # dotted value in "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" to "3", which
-          # CMake rejects. The env var initializes the cache entry equivalently.
-          $env:CMAKE_POLICY_VERSION_MINIMUM = '3.5'
+          $PSNativeCommandUseErrorActionPreference = $true
+          clang --version
           cmake -S . -B build -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
-            -DLLVM_DIR="llvm/lib/cmake/llvm" `
-            -DCMAKE_C_COMPILER=clang `
-            -DCMAKE_CXX_COMPILER=clang++ `
+            -DLLVM_DIR=C:/opt/llvm-codon/lib/cmake/llvm `
+            -DCMAKE_C_COMPILER=C:/opt/llvm-codon/bin/clang.exe `
+            -DCMAKE_CXX_COMPILER=C:/opt/llvm-codon/bin/clang++.exe `
+            -DCMAKE_C_COMPILER_TARGET=${{ matrix.target }} `
+            -DCMAKE_CXX_COMPILER_TARGET=${{ matrix.target }} `
+            -DCMAKE_LINKER=C:/opt/llvm-codon/bin/lld-link.exe `
             -DCODON_GPU=OFF
-          cmake --build build --config Release
+          # codon_test is EXCLUDE_FROM_ALL on Windows and must be requested explicitly.
+          cmake --build build --config Release --target all codon_test --parallel 2
           cmake --install build --prefix codon-deploy
 
-      - name: Test
-        shell: pwsh
+      - name: Run all Windows tests
         run: |
           $ErrorActionPreference = 'Stop'
-          # codon_test is EXCLUDE_FROM_ALL on Windows (it statically links the compiler),
-          # so it has to be built explicitly.
-          cmake --build build --config Release --target codon_test
           $env:PATH = "$PWD\build;$env:PATH"
           $env:CODON_PATH = "$PWD\stdlib"
-          # Mirror .github/build-linux/test.sh. find-python-library.py does not work on
-          # Windows (sysconfig LIBPL is unset), so locate pythonXY.dll directly.
+          $env:CODON_DIR = "$PWD\codon-deploy"
           $env:CODON_PYTHON = python -c "import sys, os; print(os.path.join(sys.base_prefix, 'python{}{}.dll'.format(*sys.version_info[:2])))"
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $env:CODON_PYTHON)) {
+            throw 'Cannot locate the Python DLL'
+          }
           $env:PYTHONPATH = "$PWD\test\python"
-          python -m pip install --upgrade pip
-          python -m pip install numpy==2.0.2
-          # test/core/serialization.codon writes into ./build (which already exists here),
-          # and test_import's C-dylib case dlopens ./libcodonrt.dll (test.sh symlinks the
-          # .so on Linux).
-          Copy-Item build/codonrt.dll libcodonrt.dll -Force
-          # Two upstream cases assert POSIX-only behaviour and cannot pass on Windows:
-          #   test_python 8_python           - asserts os.name == 'posix' (Windows reports 'nt')
-          #   test_python 36_python_import_fn_2 - os.system("echo 'hello!'"), cmd.exe keeps the quotes
-          # Skipped here rather than editing the shared test files. This mirrors the
-          # per-platform filter test.sh already applies for darwin-x86_64.
-          & build/codon_test.exe --gtest_filter=-*_8_python:*_36_python_import_fn_2
-          if ($LASTEXITCODE -ne 0) { throw "codon_test failed" }
+          New-Item -ItemType Directory -Force test-results | Out-Null
+          # GoogleTest shards cover the entire suite with at most two test workers.
+          $env:GTEST_TOTAL_SHARDS = '2'
+          $processes = @(foreach ($shard in 0..1) {
+            $env:GTEST_SHARD_INDEX = "$shard"
+            Start-Process -FilePath "$PWD\build\codon_test.exe" -WindowStyle Hidden -PassThru `
+              -ArgumentList "--gtest_output=xml:test-results/unit-$shard.xml" `
+              -RedirectStandardOutput "test-results/unit-$shard.log" `
+              -RedirectStandardError "test-results/unit-$shard.stderr.log"
+          })
+          foreach ($process in $processes) { $process.WaitForExit() }
+          Get-Content test-results/*.log
+          if (@($processes | Where-Object ExitCode -NE 0).Count -ne 0) {
+            throw 'Windows tests failed; see the test-results artifact'
+          }
+
+      - name: Upload Windows test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-${{ matrix.arch }}
+          path: test-results/
+          if-no-files-found: ignore
 
       - name: Package
         shell: pwsh
@@ -349,7 +352,7 @@ jobs:
           Copy-Item codon-deploy/lib/codon/codon_jupyter.dll codon-deploy/bin/
           Copy-Item codon-deploy/lib/codon/libomp.dll codon-deploy/bin/        # @par
           Copy-Item codon-deploy/lib/codon/libopenblas.dll codon-deploy/bin/   # numpy.linalg
-          Compress-Archive -Path codon-deploy -DestinationPath codon-windows-x86_64.zip -Force
+          Compress-Archive -Path codon-deploy -DestinationPath codon-${{ matrix.arch }}.zip -Force
 
       - name: Smoke test
         shell: pwsh
@@ -385,19 +388,9 @@ jobs:
       - name: Upload Artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: codon-windows-x86_64.zip
-          path: codon-windows-x86_64.zip
-
-      - name: Upload Release Asset
-        if: contains(github.ref, 'tags/v')
-        uses: actions/upload-release-asset@v1.0.2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create_release.outputs.upload_url }}
-          asset_path: ./codon-windows-x86_64.zip
-          asset_name: codon-windows-x86_64.zip
-          asset_content_type: application/zip
+          name: codon-${{ matrix.arch }}.zip
+          path: codon-${{ matrix.arch }}.zip
+          if-no-files-found: error
 
   build_documentation:
     name: Build Docs
