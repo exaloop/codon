@@ -39,6 +39,14 @@ bool isInline(const Func *func);
 /// @return true if the function is marked to prevent inlining
 bool isNoInline(const Func *func);
 
+/// Names a generated function using its semantic owner and optional source site.
+/// @param name generated function's base name
+/// @param parent function whose context determines the generated body
+/// @param site source node within that function, or null for a per-function helper
+/// @return name independent of CIR allocation and module visitation order
+std::string getDerivedFuncName(const std::string &name, const Func *parent,
+                               const Node *site = nullptr);
+
 /// Checks whether a function comes from the standard library, and
 /// optionally a specific module therein.
 /// @param func the function

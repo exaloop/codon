@@ -144,6 +144,10 @@ private:
   std::unordered_map<id_t, llvm::Value *> vars;
   /// LLVM functions corresponding to IR functions
   std::unordered_map<id_t, llvm::Function *> funcs;
+  /// Cached AOT LLVM function names keyed by CIR function ID
+  std::unordered_map<id_t, std::string> functionNames;
+  /// Next numeric suffix per full CIR function name, distinguishing clones
+  std::unordered_map<std::string, size_t> functionNameCounts;
   /// AOT resolution of an owner's segment offset, before adding a field's local
   /// offset. Neither a constant nor a function means dynamic MRO lookup is needed.
   struct FieldOffsetResolver {
@@ -319,6 +323,7 @@ private:
   bool isStorableType(llvm::Type *type);
   llvm::Value *getDummyValue(llvm::Type *type);
   llvm::DISubprogram *getDISubprogramForFunc(const Func *x);
+  std::string getLLVMNameForFunction(const Func *function);
   void clearLLVMData();
 
 public:

@@ -829,7 +829,7 @@ ir::Func *TypecheckVisitor::makeIRFunction(
   // Create and store a function IR node and a realized AST for IR passes
   if (r->ast->hasAttribute(Attr::Internal)) {
     // e.g., __new__, Ptr.__new__, etc.
-    fn = irm->Nr<ir::InternalFunc>(r->type->ast->name);
+    fn = irm->Nr<ir::InternalFunc>(r->type->realizedName());
   } else if (r->ast->hasAttribute(Attr::LLVM)) {
     fn = irm->Nr<ir::LLVMFunc>(r->type->realizedName());
   } else if (r->ast->hasAttribute(Attr::C)) {

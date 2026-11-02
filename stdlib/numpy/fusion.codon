@@ -90,7 +90,7 @@ def _ptrset(p: Ptr[T], x: T, T: type):
 @tuple
 class _ReductionFunction:
     func: F
-    identity: Literal[int]
+    identity: Literal[str]
     F: type
 
     @inline
@@ -98,7 +98,7 @@ class _ReductionFunction:
         return self.func(*args)
 
 @inline
-def _reduction_function(func, identity: Literal[int]):
+def _reduction_function(func, identity: Literal[str]):
     return _ReductionFunction[identity, type(func)](func)
 
 @inline

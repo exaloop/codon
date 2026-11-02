@@ -1327,6 +1327,9 @@ TEST(RTTICodegenTest, SpecializesExactArgumentContextsWithoutInlining) {
             "@noinline\n"
             "def context_local(value: ContextBase):\n"
             "    return ContextBase(4).result() + value.value\n"
+            "@noinline\n"
+            "def context_late(value: int):\n"
+            "    return value + 1\n"
             R"(
 @export
 @noinline
@@ -1367,6 +1370,12 @@ print(context_local(ContextChild(value=5, extra=7)))
           source += "print(context_read(" + name + "(1, 2)))\n";
         }
         llvm::cantFail(compiler.parseCode("devirtualize_contexts.codon", source));
+        auto *cirModule = compiler.getModule();
+        auto *late =
+            cirModule->getOrRealizeFunc("context_late", {cirModule->getIntType()});
+        ASSERT_NE(late, nullptr);
+        auto lateId = late->getId();
+        auto lateReference = late->referenceString();
         llvm::cantFail(compiler.compile());
         auto *module = compiler.getLLVMVisitor()->getModule();
         EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
@@ -1439,11 +1448,422 @@ print(context_local(ContextChild(value=5, extra=7)))
         EXPECT_EQ(readVariants, 8u);
         EXPECT_EQ(recursiveVariants, 2u);
         EXPECT_EQ(localVariants, 1u);
+        auto emittedNames = [](llvm::Module *module) {
+          std::vector<std::string> names;
+          for (auto &function : *module)
+            if (function.getName().contains(".devirtualized") ||
+                function.getName().starts_with("context_late"))
+              names.push_back(function.getName().str());
+          std::sort(names.begin(), names.end());
+          return names;
+        };
+        auto emittedTargets = [](llvm::Module *module) {
+          std::vector<std::vector<std::string>> targets;
+          for (auto &function : *module) {
+            size_t callIndex = 0;
+            for (auto &block : function)
+              for (auto &instruction : block)
+                if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction))
+                  if (auto *callee = call->getCalledFunction())
+                    if (callee->getName().contains(".devirtualized"))
+                      targets.push_back({function.getName().str(),
+                                         std::to_string(callIndex++),
+                                         callee->getName().str()});
+          }
+          std::sort(targets.begin(), targets.end());
+          return targets;
+        };
+        auto names = emittedNames(module);
+        auto targets = emittedTargets(module);
+        EXPECT_FALSE(targets.empty());
+        EXPECT_TRUE(std::any_of(names.begin(), names.end(), [](const auto &name) {
+          return name.find("context_late") == 0;
+        }));
+        Compiler shiftedCompiler(*options);
+        llvm::cantFail(
+            shiftedCompiler.parseCode("devirtualize_contexts.codon", source));
+        auto *shiftedCIR = shiftedCompiler.getModule();
+        for (int index = 0; index < 97; ++index)
+          shiftedCIR->N<ir::Var>(SrcInfo(), shiftedCIR->getIntType());
+        auto *shiftedLate =
+            shiftedCIR->getOrRealizeFunc("context_late", {shiftedCIR->getIntType()});
+        ASSERT_NE(shiftedLate, nullptr);
+        EXPECT_NE(lateId, shiftedLate->getId());
+        EXPECT_NE(lateReference, shiftedLate->referenceString());
+        llvm::cantFail(shiftedCompiler.compile());
+        auto *shiftedModule = shiftedCompiler.getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*shiftedModule, &llvm::errs()));
+        EXPECT_EQ(names, emittedNames(shiftedModule));
+        EXPECT_EQ(targets, emittedTargets(shiftedModule));
+        llvm::Function *other = nullptr;
+        for (auto &function : *module)
+          if (&function != first && function.getName().starts_with("context_read") &&
+              function.getName().contains(".devirtualized")) {
+            other = &function;
+            break;
+          }
+        ASSERT_NE(other, nullptr);
+        auto firstName = first->getName().str();
+        auto otherName = other->getName().str();
+        first->setName(firstName + ".swap");
+        other->setName(firstName);
+        first->setName(otherName);
+        EXPECT_EQ(names, emittedNames(module));
+        EXPECT_NE(targets, emittedTargets(module));
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
         if (testing::Test::HasFailure()) {
           llvm::errs() << "read variants: " << readVariants
                        << ", recursive variants: " << recursiveVariants << '\n';
           first->print(llvm::errs());
           nested->print(llvm::errs());
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(RTTICodegenTest, StabilizesSpecializationsAcrossRealizationOrder) {
+  ASSERT_EXIT(
+      {
+        auto options = Options::getDefault("build/codon_test");
+        options->debug = false;
+        options->standalone = true;
+        std::vector<std::string> originalTargets;
+        std::vector<std::string> originalQueries;
+        for (int reversed = 0; reversed < 2; ++reversed) {
+          Compiler compiler(*options);
+          llvm::cantFail(compiler.parseCode("pgo_order.codon", R"(
+class OrderBase(object):
+    value: int
+    @noinline
+    def result(self):
+        return self.value
+
+class OrderFirst(OrderBase):
+    extra: int
+    @noinline
+    def result(self):
+        return self.extra
+
+class OrderSecond(OrderBase):
+    extra: int
+    @noinline
+    def result(self):
+        return self.extra
+
+@noinline
+def order_read(value: OrderBase):
+    return value.result()
+
+def order_first(number: int):
+    return order_read(OrderFirst(number, number + 1))
+
+def order_second(number: int):
+    return order_read(OrderSecond(number, number + 2))
+)"));
+          auto *cirModule = compiler.getModule();
+          auto queryTypes = (std::vector<ir::Type *>{cirModule->getIntType(),
+                                                     cirModule->getBoolType()});
+          if (reversed)
+            std::reverse(queryTypes.begin(), queryTypes.end());
+          for (auto *type : queryTypes)
+            cirModule->getIntrinsic(ir::InternalFunc::Intrinsic::SIZEOF, type);
+          std::sort(queryTypes.begin(), queryTypes.end(), [](auto *left, auto *right) {
+            return left->getName() < right->getName();
+          });
+          std::vector<std::string> queries;
+          for (auto *type : queryTypes)
+            queries.push_back(
+                cirModule->getIntrinsic(ir::InternalFunc::Intrinsic::SIZEOF, type)
+                    ->getName());
+          EXPECT_NE(queries.front(), queries.back());
+          if (reversed)
+            EXPECT_EQ(originalQueries, queries);
+          else
+            originalQueries = queries;
+          auto entries = (std::vector<std::string>{"order_first", "order_second"});
+          if (reversed)
+            std::reverse(entries.begin(), entries.end());
+          for (const auto &entry : entries) {
+            auto *function =
+                cirModule->getOrRealizeFunc(entry, {cirModule->getIntType()});
+            ASSERT_NE(function, nullptr);
+            ir::util::setExport(function, true);
+          }
+          llvm::cantFail(compiler.compile());
+          auto *module = compiler.getLLVMVisitor()->getModule();
+          EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+          std::sort(entries.begin(), entries.end());
+          std::vector<std::string> targets;
+          for (const auto &entry : entries) {
+            auto *function = module->getFunction(entry);
+            ASSERT_NE(function, nullptr);
+            llvm::Function *target = nullptr;
+            for (auto &block : *function)
+              for (auto &instruction : block)
+                if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction))
+                  if (auto *callee = call->getCalledFunction())
+                    if (callee->getName().starts_with("order_read") &&
+                        callee->getName().contains(".devirtualized")) {
+                      EXPECT_EQ(target, nullptr);
+                      target = callee;
+                    }
+            ASSERT_NE(target, nullptr);
+            targets.push_back(target->getName().str());
+          }
+          ASSERT_EQ(targets.size(), 2u);
+          EXPECT_NE(targets.front(), targets.back());
+          if (reversed)
+            EXPECT_EQ(originalTargets, targets);
+          else
+            originalTargets = targets;
+          if (testing::Test::HasFailure())
+            for (const auto &target : targets)
+              llvm::errs() << "reversed=" << reversed << " target=" << target << '\n';
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(LLVMOptimizationTest, StabilizesGeneratedHelpersAcrossRealizationOrder) {
+  ASSERT_EXIT(
+      {
+        auto options = Options::getDefault("build/codon_test");
+        options->debug = false;
+        options->standalone = true;
+        std::vector<std::vector<std::string>> originalTargets;
+        for (int reversed = 0; reversed < 2; ++reversed) {
+          Compiler compiler(*options);
+          llvm::cantFail(compiler.parseCode("helper_order.codon", R"(
+import numpy as np
+
+def helper_values(count: int):
+    for index in range(count):
+        yield index + 1
+
+def helper_first(count: int):
+    total = 0
+    @par
+    for index in range(count):
+        total += index
+    @par
+    for value in helper_values(count):
+        total += value
+    values = np.arange(count, dtype=float)
+    return total + sum(helper_values(count)) + (values * values + 1.0).sum()
+
+def helper_second(count: int):
+    total = 0
+    @par
+    for index in range(count):
+        total += index * index
+    @par
+    for value in helper_values(count):
+        total += value * value
+    values = np.arange(count, dtype=float)
+    return total + sum(helper_values(count), 2) + (values * values + 2.0).sum()
+)"));
+          auto *cirModule = compiler.getModule();
+          auto entries = (std::vector<std::string>{"helper_first", "helper_second"});
+          if (reversed)
+            std::reverse(entries.begin(), entries.end());
+          for (const auto &entry : entries) {
+            auto *function =
+                cirModule->getOrRealizeFunc(entry, {cirModule->getIntType()});
+            ASSERT_NE(function, nullptr);
+            ir::util::setExport(function, true);
+          }
+          llvm::cantFail(compiler.compile());
+          auto *module = compiler.getLLVMVisitor()->getModule();
+          EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+          std::sort(entries.begin(), entries.end());
+          std::vector<std::vector<std::string>> targets;
+          for (const auto &entry : entries) {
+            auto *function = module->getFunction(entry);
+            ASSERT_NE(function, nullptr);
+            std::vector<llvm::Function *> pending{function};
+            std::set<llvm::Function *> seen;
+            std::vector<std::string> names;
+            bool foundOutline = false;
+            bool foundTaskReduction = false;
+            bool foundGenerator = false;
+            bool foundNumPy = false;
+            while (!pending.empty()) {
+              auto *current = pending.back();
+              pending.pop_back();
+              if (!seen.insert(current).second)
+                continue;
+              auto name = current->getName();
+              bool outline = name.starts_with("__outlined");
+              bool taskReduction = name.starts_with("__red_");
+              bool generator = name.starts_with("__sum_wrapper");
+              bool numpy = name.starts_with("__numpy_fusion_scalar_fn");
+              if (outline || taskReduction || generator || numpy ||
+                  name.starts_with("__omp_reducer") ||
+                  name.contains("_loop_outline_template"))
+                names.push_back(name.str());
+              foundOutline |= outline;
+              foundTaskReduction |= taskReduction;
+              foundGenerator |= generator;
+              foundNumPy |= numpy;
+              for (auto &block : *current)
+                for (auto &instruction : block)
+                  for (auto &operand : instruction.operands())
+                    if (auto *callee = llvm::dyn_cast<llvm::Function>(operand.get()))
+                      pending.push_back(callee);
+            }
+            EXPECT_TRUE(foundOutline) << entry;
+            EXPECT_TRUE(foundTaskReduction) << entry;
+            EXPECT_TRUE(foundGenerator) << entry;
+            EXPECT_TRUE(foundNumPy) << entry;
+            std::sort(names.begin(), names.end());
+            targets.push_back(std::move(names));
+          }
+          if (reversed)
+            EXPECT_EQ(originalTargets, targets);
+          else
+            originalTargets = targets;
+          if (testing::Test::HasFailure())
+            for (size_t index = 0; index < targets.size(); ++index)
+              for (const auto &name : targets[index])
+                llvm::errs() << "reversed=" << reversed << " " << entries[index]
+                             << " -> " << name << '\n';
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(RTTICodegenTest, StabilizesRealizationsAndClones) {
+  ASSERT_EXIT(
+      {
+        auto options = Options::getDefault("build/codon_test");
+        options->debug = false;
+        options->standalone = true;
+        std::vector<std::string> originalNames;
+        std::string originalReference;
+        for (int shifted = 0; shifted < 2; ++shifted) {
+          Compiler compiler(*options);
+          llvm::cantFail(compiler.parseCode("pgo_names.codon",
+                                            "@noinline\n"
+                                            "def naming_pair(value):\n"
+                                            "    return (value, value)\n"
+                                            "def naming_unrelated(value: int):\n"
+                                            "    return value + 3\n"));
+          auto *cirModule = compiler.getModule();
+          if (shifted)
+            for (int index = 0; index < 97; ++index)
+              cirModule->N<ir::Var>(SrcInfo(), cirModule->getIntType());
+          auto *integer =
+              cirModule->getOrRealizeFunc("naming_pair", {cirModule->getIntType()});
+          auto *floating =
+              cirModule->getOrRealizeFunc("naming_pair", {cirModule->getFloatType()});
+          ASSERT_NE(integer, nullptr);
+          ASSERT_NE(floating, nullptr);
+          EXPECT_NE(integer, floating);
+          EXPECT_EQ(integer, cirModule->getOrRealizeFunc("naming_pair",
+                                                         {cirModule->getIntType()}));
+          if (shifted)
+            EXPECT_NE(originalReference, integer->referenceString());
+          else
+            originalReference = integer->referenceString();
+          auto *unrelated = cirModule->getOrRealizeFunc("naming_unrelated",
+                                                        {cirModule->getIntType()});
+          ASSERT_NE(unrelated, nullptr);
+          ir::util::CloneVisitor firstCloner(cirModule);
+          if (shifted)
+            firstCloner.forceClone(unrelated);
+          auto *first = firstCloner.forceClone(integer);
+          EXPECT_NE(first, integer);
+          EXPECT_EQ(first, firstCloner.forceClone(integer));
+          ir::util::CloneVisitor secondCloner(cirModule);
+          auto *second = secondCloner.forceClone(integer);
+          EXPECT_NE(second, first);
+          EXPECT_NE(second->referenceString(), first->referenceString());
+          auto *integerType = ir::cast<ir::FuncType>(integer->getType());
+          auto *floatingType = ir::cast<ir::FuncType>(floating->getType());
+          ir::Func *integerConstructor = nullptr;
+          ir::Func *floatingConstructor = nullptr;
+          for (auto *variable : *cirModule) {
+            auto *function = ir::cast<ir::InternalFunc>(variable);
+            if (!function ||
+                function->getIntrinsic() != ir::InternalFunc::Intrinsic::RECORD_NEW)
+              continue;
+            auto *signature = ir::cast<ir::FuncType>(function->getType());
+            if (signature->getReturnType() == integerType->getReturnType())
+              integerConstructor = function;
+            if (signature->getReturnType() == floatingType->getReturnType())
+              floatingConstructor = function;
+          }
+          ASSERT_NE(integerConstructor, nullptr);
+          ASSERT_NE(floatingConstructor, nullptr);
+          EXPECT_NE(integerConstructor->getName(), floatingConstructor->getName());
+          EXPECT_EQ(integerConstructor->getName(),
+                    integerConstructor->getType()->getName());
+          EXPECT_EQ(floatingConstructor->getName(),
+                    floatingConstructor->getType()->getName());
+          EXPECT_NE(integerConstructor->getType(), floatingConstructor->getType());
+          llvm::cantFail(compiler.compile());
+          auto *module = compiler.getLLVMVisitor()->getModule();
+          EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+          const auto &functions = compiler.getLLVMVisitor()->getFuncs();
+          EXPECT_EQ(functions.at(integer->getId())->getName(),
+                    integer->getName() + ".0");
+          EXPECT_EQ(functions.at(first->getId())->getName(), integer->getName() + ".1");
+          EXPECT_EQ(functions.at(second->getId())->getName(),
+                    integer->getName() + ".2");
+          std::vector<std::string> names;
+          size_t integerFunctions = 0;
+          size_t floatingFunctions = 0;
+          size_t tupleConstructors = 0;
+          for (auto &function : *module) {
+            auto *tuple = llvm::dyn_cast<llvm::StructType>(function.getReturnType());
+            if (!tuple || tuple->getNumElements() != 2)
+              continue;
+            if (tuple->getElementType(0) != tuple->getElementType(1) ||
+                (!tuple->getElementType(0)->isIntegerTy(64) &&
+                 !tuple->getElementType(0)->isDoubleTy()))
+              continue;
+            if (function.getName().starts_with("naming_pair")) {
+              integerFunctions += tuple->getElementType(0)->isIntegerTy(64);
+              floatingFunctions += tuple->getElementType(0)->isDoubleTy();
+            } else if (function.getName().starts_with(integerConstructor->getName() +
+                                                      ".") ||
+                       function.getName().starts_with(floatingConstructor->getName() +
+                                                      ".")) {
+              ++tupleConstructors;
+            } else {
+              continue;
+            }
+            names.push_back(function.getName().str());
+          }
+          EXPECT_EQ(integerFunctions, 3u);
+          EXPECT_EQ(floatingFunctions, 1u);
+          EXPECT_EQ(tupleConstructors, 2u);
+          std::sort(names.begin(), names.end());
+          EXPECT_EQ(std::adjacent_find(names.begin(), names.end()), names.end());
+          std::vector<std::string> expectedNames;
+          expectedNames.push_back(integerConstructor->getName() + ".0");
+          expectedNames.push_back(floatingConstructor->getName() + ".0");
+          expectedNames.push_back(floating->getName() + ".0");
+          for (int index = 0; index < 3; ++index)
+            expectedNames.push_back(integer->getName() + "." + std::to_string(index));
+          std::sort(expectedNames.begin(), expectedNames.end());
+          EXPECT_EQ(expectedNames, names);
+          if (shifted)
+            EXPECT_EQ(originalNames, names);
+          else
+            originalNames = names;
+          if (testing::Test::HasFailure()) {
+            llvm::errs() << "shifted=" << shifted << " integer=" << integerFunctions
+                         << " floating=" << floatingFunctions
+                         << " constructors=" << tupleConstructors << '\n';
+            llvm::errs() << integerConstructor->getName() << " / "
+                         << floatingConstructor->getName() << '\n';
+            for (const auto &name : names)
+              llvm::errs() << name << '\n';
+          }
         }
         std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
       },
@@ -4465,7 +4885,9 @@ def task_ids(data: Ptr[int], count: int):
         for (auto &function : *compiler->getLLVMVisitor()->getModule()) {
           if (function.isDeclaration())
             continue;
-          bool outlined = function.getName().contains("_loop_outline_template");
+          bool outlined = function.getName()
+                              .split(".context.")
+                              .first.contains("_loop_outline_template");
           outlines += outlined;
           for (auto &block : function) {
             for (auto &instruction : block) {
@@ -4509,7 +4931,9 @@ def sum_float(data: Ptr[float], count: int):
         unsigned outlines = 0;
         unsigned loopBlocks = 0;
         for (auto &function : *compiler->getLLVMVisitor()->getModule()) {
-          if (!function.getName().contains("_loop_outline_template"))
+          if (!function.getName()
+                   .split(".context.")
+                   .first.contains("_loop_outline_template"))
             continue;
           ++outlines;
           llvm::DominatorTree dominators(function);
