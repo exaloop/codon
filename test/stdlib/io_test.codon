@@ -1,5 +1,6 @@
 import gzip
 import bz2
+import os
 import sys
 from internal.types.str import (
     _encoding_matches,
@@ -18,7 +19,7 @@ from internal.file import (
 from C import remove(cobj) -> i32
 
 FIXTURE = "test/stdlib/data/io_fixture.txt"
-PREFIX = "build/io-test"
+PREFIX = "build/io-test-" + str(os.getpid())
 
 
 def _latin1_value() -> str:
