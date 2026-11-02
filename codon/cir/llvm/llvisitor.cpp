@@ -1583,7 +1583,8 @@ llvm::Value *LLVMVisitor::call(llvm::FunctionCallee callee,
   B->SetInsertPoint(block);
   if ((trycatch.empty() && finally.empty()) || options->noexc) {
     auto *target = llvm::dyn_cast<llvm::Function>(callee.getCallee());
-    if (!options->noexc && isWinMSVC(M.get()) && target &&
+    if (!options->noexc && isWinMSVC(M.get()) &&
+        func->hasFnAttribute("codon.seh.scopes") && target &&
         target->getName() == "seq_throw") {
       // Give a rethrow outside all local handlers an explicit unwind-to-caller
       // edge, so SEH scope ranges cannot absorb it into an earlier try region.
@@ -1634,6 +1635,11 @@ void LLVMVisitor::exitLoop() {
 }
 
 void LLVMVisitor::enterTry(TryCatchData data) {
+  // Only functions with local SEH scopes need an explicit rethrow boundary.
+  // Direct raises must inline into the caller's invoke edge without an extra
+  // cleanup, so values live into the caller's catch are spilled on that edge.
+  if (isWinMSVC(M.get()))
+    func->addFnAttr("codon.seh.scopes");
   trycatch.push_back(std::move(data));
   trycatch.back().sequenceNumber = nextSequenceNumber++;
 }
