@@ -35,8 +35,14 @@ protected:
   PluginManager manager{""};
   std::string compilerStem;
   std::string runtimeStem;
+#ifdef _WIN32
+  std::string previousPath;
+#endif
 
   void SetUp() override {
+#ifdef _WIN32
+    previousPath = llvm::sys::Process::GetEnv("PATH").value_or("");
+#endif
     auto error =
         llvm::sys::fs::createUniqueDirectory("codon-plugin-libraries", directory);
     ASSERT_FALSE(error) << error.message();
@@ -50,10 +56,28 @@ protected:
       ASSERT_FALSE(error) << error.message();
       error = llvm::sys::fs::copy_file(entry.first, destination);
       ASSERT_FALSE(error) << error.message();
+#ifdef _WIN32
+      llvm::SmallString<128> sourceImport(entry.first), destImport(destination);
+      llvm::sys::path::replace_extension(sourceImport, "lib");
+      llvm::sys::path::replace_extension(destImport, "lib");
+      error = llvm::sys::fs::copy_file(sourceImport, destImport);
+      ASSERT_FALSE(error) << error.message();
+#endif
     }
+#ifdef _WIN32
+    auto path = llvm::sys::path::parent_path(TEST_CODON).str() + ";" +
+                std::string(directory.str()) + "/compiler;" +
+                std::string(directory.str()) + "/runtime;" + previousPath;
+    _putenv_s("PATH", path.c_str());
+#endif
   }
 
-  void TearDown() override { llvm::sys::fs::remove_directories(directory); }
+  void TearDown() override {
+#ifdef _WIN32
+    _putenv_s("PATH", previousPath.c_str());
+#endif
+    llvm::sys::fs::remove_directories(directory);
+  }
 
   void manifest(const std::string &libraries,
                 const std::string &supported = "supported = \">=0.0.0\"\n") {
@@ -71,6 +95,8 @@ protected:
     llvm::SmallString<128> filename(directory);
 #ifdef __APPLE__
     llvm::sys::path::append(filename, name + ".dylib");
+#elif defined(_WIN32)
+    llvm::sys::path::append(filename, name + ".dll");
 #else
     llvm::sys::path::append(filename, name + ".so");
 #endif
@@ -89,7 +115,12 @@ protected:
     auto output = llvm::MemoryBuffer::getFile(outputPath);
     auto errors = llvm::MemoryBuffer::getFile(errorPath);
     EXPECT_EQ(result, 0) << message << (errors ? (*errors)->getBuffer().str() : "");
-    return output ? (*output)->getBuffer().str() : "";
+    auto text = output ? (*output)->getBuffer().str() : "";
+#ifdef _WIN32
+    for (size_t position = 0; (position = text.find("\r\n", position)) != std::string::npos;)
+      text.erase(position, 1);
+#endif
+    return text;
   }
 
   void checkExecution(const std::string &libraries, const std::string &code,
@@ -99,6 +130,9 @@ protected:
     std::string root(directory.str());
     std::string source = root + "/program.codon";
     std::string executable = root + "/program";
+#ifdef _WIN32
+    executable += ".exe";
+#endif
     std::error_code error;
     {
       llvm::raw_fd_ostream output(source, error);
@@ -301,6 +335,8 @@ TEST_F(PluginLibrariesTest, ExecutesWithExplicitRuntimeLinkArguments) {
                      "\"\nlink = [\"{root}/" + runtimeStem +
 #ifdef __APPLE__
                      ".dylib\"]",
+#elif defined(_WIN32)
+                     ".lib\"]",
 #else
                      ".so\"]",
 #endif

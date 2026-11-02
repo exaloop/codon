@@ -365,11 +365,15 @@ add_custom_command(
           ${CMAKE_BINARY_DIR})
 
 if(WIN32)
-  # Same for libopenblas.dll (numpy.linalg).
+  # Copy OpenBLAS and the import libraries used by build-tree `codon build`.
   add_custom_command(
     TARGET codonrt
     POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:openblas>
+            ${CMAKE_BINARY_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_LINKER_FILE:openblas>
+            ${CMAKE_BINARY_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_LINKER_FILE:omp>
             ${CMAKE_BINARY_DIR})
 endif()
 

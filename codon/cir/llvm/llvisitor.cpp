@@ -641,11 +641,18 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
         if (dylibPath.empty())
           continue;
 
+#ifdef _WIN32
+        // MSVC links the DLL's import library, not the DLL itself.
+        llvm::SmallString<128> importLibrary(dylibPath);
+        llvm::sys::path::replace_extension(importLibrary, "lib");
+        command.push_back(std::string(importLibrary));
+#else
         auto stem = llvm::sys::path::stem(dylibPath);
         if (stem.starts_with("lib"))
           stem = stem.substr(3);
 
         command.push_back("-l" + stem.str());
+#endif
       } else {
         for (auto &l : plugin->info.linkArgs)
           command.push_back(l);

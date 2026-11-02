@@ -22,6 +22,8 @@ typedef std::unique_ptr<DSL> LoadFunc();
 llvm::Expected<Plugin *> PluginManager::load(const std::string &path) {
 #if __APPLE__
   const std::string libExt = "dylib";
+#elif defined(_WIN32)
+  const std::string libExt = "dll";
 #else
   const std::string libExt = "so";
 #endif
