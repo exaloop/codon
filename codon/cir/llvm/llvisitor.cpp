@@ -3149,11 +3149,11 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
       auto *finallyCaughtResult = B->CreateLandingPad(padType, 1);
       finallyCaughtResult->setCleanup(true);
       finallyCaughtResult->addClause(getTypeIdxVar(nullptr));
-
-    B->CreateStore(finallyCaughtResult, tc.catchStore);
-    B->CreateStore(excStateRethrow, tc.excFlag);
-    B->CreateStore(B->getInt64(0), tc.delegateDepth);
-    B->CreateBr(tc.finallyBlock);
+      B->CreateStore(finallyCaughtResult, tc.catchStore);
+      B->CreateStore(excStateRethrow, tc.excFlag);
+      B->CreateStore(B->getInt64(0), tc.delegateDepth);
+      B->CreateBr(tc.finallyBlock);
+    }
   } else {
     B->CreateUnreachable();
   }

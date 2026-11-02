@@ -399,6 +399,18 @@ SEQ_FUNC void seq_throw(void *exc) {
 #endif
 }
 
+static bool isinstance(void *obj, seq_int_t type) {
+  auto *info = *static_cast<codon::runtime::TypeInfo **>(obj);
+  if (info->id == type)
+    return true;
+  if (info->n_mro > codon::runtime::MAX_LINEAR_MRO)
+    return std::binary_search(info->sorted_mro, info->sorted_mro + info->n_mro, type);
+  for (seq_int_t index = 1; index < info->n_mro; ++index)
+    if (info->mro[index] == type)
+      return true;
+  return false;
+}
+
 #ifndef _WIN32
 static uintptr_t readULEB128(const uint8_t **data) {
   uintptr_t result = 0;
@@ -530,18 +542,6 @@ static uintptr_t readEncodedPointer(const uint8_t **data, uint8_t encoding) {
   *data = p;
 
   return result;
-}
-
-static bool isinstance(void *obj, seq_int_t type) {
-  auto *info = *static_cast<codon::runtime::TypeInfo **>(obj);
-  if (info->id == type)
-    return true;
-  if (info->n_mro > codon::runtime::MAX_LINEAR_MRO)
-    return std::binary_search(info->sorted_mro, info->sorted_mro + info->n_mro, type);
-  for (seq_int_t index = 1; index < info->n_mro; ++index)
-    if (info->mro[index] == type)
-      return true;
-  return false;
 }
 
 static bool handleActionValue(int64_t *resultAction, uint8_t TTypeEncoding,
@@ -742,18 +742,12 @@ SEQ_FUNC int32_t seq_exc_match(void *unwindExc, int32_t *ids, int32_t n) {
   if (!unwindExc)
     return 0;
   auto *base = (CodonBaseException *)((char *)unwindExc + seq_exc_offset());
-  auto *type = ((RTTIObject *)base->obj)->type;
   for (int32_t i = 0; i < n; i++) {
     seq_int_t t = (seq_int_t)ids[i];
-    if (type->id == t)
+    if (t == codon::runtime::CATCH_ALL_SELECTOR ||
+        t == codon::runtime::BASE_EXCEPTION_SELECTOR ||
+        isinstance(base->obj, t))
       return ids[i];
-    if (type->parent_ids) {
-      auto *p = type->parent_ids;
-      while (*p) {
-        if (*p++ == t)
-          return ids[i];
-      }
-    }
   }
   return 0;
 }
