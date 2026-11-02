@@ -89,6 +89,12 @@ void Engine::defineImageBase() {
   symbols[mangle("__ImageBase")] = {
       llvm::orc::ExecutorAddr(imageBase),
       llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Absolute};
+  // The UCRT generator also exports this name, at a different address. Bind the
+  // handler used to choose our image base so its 32-bit SEH RVA stays in range.
+  if (handler)
+    symbols[mangle("__C_specific_handler")] = {
+        llvm::orc::ExecutorAddr(handler),
+        llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Absolute};
   llvm::cantFail(jd.define(llvm::orc::absoluteSymbols(std::move(symbols))));
 }
 #endif

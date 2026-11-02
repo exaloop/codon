@@ -1378,6 +1378,12 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
     llvm::orc::SymbolMap winSymbols;
     winSymbols[jit->getExecutionSession().intern("__ImageBase")] = {
         base, llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Absolute};
+    // Match the handler used by the allocator and unwind registration plugin.
+    // UCRT's same-named export can lie outside this image base's 4GB window.
+    if (handler)
+      winSymbols[jit->getExecutionSession().intern("__C_specific_handler")] = {
+          llvm::orc::ExecutorAddr(handler),
+          llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Absolute};
     llvm::cantFail(jit->getMainJITDylib().define(
         llvm::orc::absoluteSymbols(std::move(winSymbols))));
   }

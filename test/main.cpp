@@ -40,6 +40,7 @@
 #include "codon/cir/util/operator.h"
 #include "codon/cir/util/outlining.h"
 #include "codon/compiler/compiler.h"
+#include "codon/compiler/engine.h"
 #include "codon/compiler/error.h"
 #include "codon/parser/common.h"
 #include "codon/util/common.h"
@@ -47,6 +48,7 @@
 #include "gtest/gtest.h"
 
 #ifdef _WIN32
+#include "llvm/Support/Signals.h"
 // Pull in the Win32 API only after the LLVM/Codon headers so windows.h's macros
 // (min/max, GDI's PASSTHROUGH, ...) can't clobber LLVM's identifiers.
 #define WIN32_LEAN_AND_MEAN
@@ -276,6 +278,24 @@ static pair<vector<string>, bool> findExpects(const string &filename, bool isCod
 
 string argv0;
 void seq_exc_init(int flags);
+
+#ifdef _WIN32
+TEST(WindowsJITTest, SEHHandlerMatchesImageBase) {
+  auto options = Options::getDefault(argv0);
+  Compiler compiler(*options); // Initialize the native LLVM target.
+  jit::Engine engine(options.get());
+  auto handler = engine.lookup("__C_specific_handler");
+  ASSERT_TRUE(bool(handler)) << llvm::toString(handler.takeError());
+  auto imageBase = engine.lookup("__ImageBase");
+  ASSERT_TRUE(bool(imageBase)) << llvm::toString(imageBase.takeError());
+  auto crt = GetModuleHandleW(L"vcruntime140.dll");
+  ASSERT_NE(crt, nullptr);
+  auto expected = GetProcAddress(crt, "__C_specific_handler");
+  ASSERT_NE(expected, nullptr);
+  EXPECT_EQ(handler->getValue(), reinterpret_cast<uintptr_t>(expected));
+  EXPECT_EQ(handler->getValue() - imageBase->getValue(), 0xE0000000ull);
+}
+#endif
 
 // Compile (and optionally run) a single test case. Extracted so the same logic
 // serves both the POSIX forked child and the Windows re-exec'd child process.
@@ -791,6 +811,12 @@ INSTANTIATE_TEST_SUITE_P(
 // clang-format on
 
 int main(int argc, char *argv[]) {
+#ifdef _WIN32
+  // The re-executed case is a separate process: install the native crash handler
+  // there too, so CRT aborts report a backtrace instead of just an exit status.
+  llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
+  llvm::sys::DisableSystemDialogsOnCrash();
+#endif
   argv0 = ast::Filesystem::executable_path(argv[0]).string();
   // The Python bridge imports the fixture modules from test/python, including
   // when the executable is launched directly instead of through the CI script.
