@@ -1749,6 +1749,10 @@ def test_compressed_modes_and_closed_errors():
         assert reader.seek(0, 2) == 6
         assert reader.read() == ""
 
+    # Windows treats /dev/full as a regular path on the current drive. It can
+    # open successfully when that directory exists, without failing on close.
+    if sys.platform == "win32":
+        return
     try:
         failed_writer = bz2.open("/dev/full", "wb")
     except IOError:
