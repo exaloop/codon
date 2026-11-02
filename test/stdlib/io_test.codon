@@ -227,7 +227,7 @@ def test_regular_file_basics():
         assert reader.read() == "alpha\nbeta\ngamma\n"
 
     path = PREFIX + "-basic.txt"
-    writer = open(path, "w")
+    writer = open(path, "w", newline="\n")
     assert writer.write("alpha\nbeta\ngamma\n") == 17
     writer.flush()
     assert writer.seekable()
