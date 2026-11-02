@@ -3138,8 +3138,9 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
       padVal = B->CreateInsertValue(padVal, B->getInt32(0), 1);
       B->CreateStore(padVal, tc.catchStore);
       B->CreateStore(excStateRethrow, tc.excFlag);
-      auto *depthMax = B->getInt64(trycatch.size());
-      B->CreateStore(depthMax, tc.delegateDepth);
+      // The cleanup pad has no type selector. Rethrow after finally so the
+      // enclosing catch pad selects a handler for this exception.
+      B->CreateStore(B->getInt64(0), tc.delegateDepth);
       auto *cont =
           llvm::BasicBlock::Create(*context, "trycatch.finally.catchret", func);
       B->CreateCatchRet(llvm::cast<llvm::CatchPadInst>(cp), cont);
