@@ -882,6 +882,16 @@ TEST(RTTICodegenTest, UsesUnconditionalBaseExceptionSelector) {
         bool foundAll = false;
         for (auto &global : module->globals()) {
           auto name = global.getName();
+          if (name.starts_with("codon.win.catchids")) {
+            auto *ids = global.getInitializer();
+            for (unsigned i = 0; i < ids->getType()->getArrayNumElements(); ++i) {
+              auto selector = llvm::cast<llvm::ConstantInt>(ids->getAggregateElement(i))
+                                  ->getSExtValue();
+              foundRoot |= selector == runtime::BASE_EXCEPTION_SELECTOR;
+              foundTyped |= selector > runtime::CATCH_ALL_SELECTOR;
+            }
+            continue;
+          }
           if (!name.starts_with("codon.typeidx."))
             continue;
           auto selector = llvm::cast<llvm::ConstantInt>(
@@ -897,6 +907,18 @@ TEST(RTTICodegenTest, UsesUnconditionalBaseExceptionSelector) {
             foundAll = true;
             EXPECT_EQ(selector, runtime::CATCH_ALL_SELECTOR);
           }
+        }
+        if (llvm::Triple(module->getTargetTriple()).isWindowsMSVCEnvironment()) {
+          // SEH catch-all handlers use selector zero directly, without a typeidx
+          // global or a call to the typed exception matcher.
+          auto *catchAll = module->getFunction("catch_all");
+          ASSERT_NE(catchAll, nullptr);
+          foundAll = true;
+          for (auto &block : *catchAll)
+            for (auto &instruction : block)
+              if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction))
+                if (auto *callee = call->getCalledFunction())
+                  EXPECT_NE(callee->getName(), "seq_exc_match");
         }
         EXPECT_TRUE(foundRoot && foundTyped && foundAll);
         std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
