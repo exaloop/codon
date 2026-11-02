@@ -105,15 +105,18 @@ static __inline dst_t __truncXfYf2__(src_t a) {
     // zero.  The result may be a denormal or zero.  Extract the exponent
     // to get the shift amount for the denormalization.
     const int aExp = aAbs >> srcSigBits;
-    const int shift = srcExpBias - dstExpBias - aExp + 1;
-
-    const src_rep_t significand = (aRep & srcSignificandMask) | srcMinNormal;
+    int shift = srcExpBias - dstExpBias - aExp;
+    src_rep_t significand = aRep & srcSignificandMask;
+    if (aExp) {
+      significand |= srcMinNormal;
+      ++shift;
+    }
 
     // Right shift by the denormalization amount with sticky.
     if (shift > srcSigBits) {
       absResult = 0;
     } else {
-      const bool sticky = (significand << (srcBits - shift)) != 0;
+      const bool sticky = shift && (significand << (srcBits - shift)) != 0;
       src_rep_t denormalizedSignificand = significand >> shift | sticky;
       absResult = denormalizedSignificand >> (srcSigBits - dstSigBits);
       const src_rep_t roundBits = denormalizedSignificand & roundMask;
