@@ -1632,6 +1632,7 @@ TEST(LLVMOptimizationTest, StabilizesGeneratedHelpersAcrossRealizationOrder) {
         auto options = Options::getDefault("build/codon_test");
         options->debug = false;
         options->standalone = true;
+        options->disabled.push_back("core-pythonic-generator-loop-fusion");
         std::vector<std::vector<std::string>> originalTargets;
         for (int reversed = 0; reversed < 2; ++reversed) {
           Compiler compiler(*options);

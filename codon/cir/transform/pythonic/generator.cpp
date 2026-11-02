@@ -440,7 +440,8 @@ const std::string GeneratorLoopFusion::KEY = "core-pythonic-generator-loop-fusio
 void GeneratorLoopFusion::handle(CallInstr *call) {
   auto *parent = cast<BodiedFunc>(getParentFunc());
   auto *function = cast<BodiedFunc>(util::getFunc(call->getCallee()));
-  if (!parent || !function || function->getName() != "__sum_wrapper")
+  if (!parent || !function ||
+      !llvm::StringRef(function->getName()).starts_with("__sum_wrapper."))
     return;
 
   FusionVerifier verifier;
