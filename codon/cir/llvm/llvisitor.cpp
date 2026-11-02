@@ -43,6 +43,8 @@ const std::string LLVM_NO_CAPTURE_ATTR =
     ast::getMangledFunc("std.internal.attributes", "llvm_nocapture");
 const std::string LLVM_NO_FREE_ATTR =
     ast::getMangledFunc("std.internal.attributes", "llvm_nofree");
+const std::string LLVM_C_CALL_ATTR =
+    ast::getMangledFunc("std.internal.attributes", "llvm_c_call");
 
 const std::string MAIN_UNCLASH = ".main.unclash";
 const std::string MAIN_CTOR = ".main.ctor";
@@ -2030,6 +2032,71 @@ void LLVMVisitor::visit(const LLVMFunc *x) {
   coro = {};
   if (func)
     return;
+
+  if (isWinMSVC(M.get()) && util::hasAttribute(x, LLVM_C_CALL_ATTR)) {
+    // dlsym yields a C pointer, while Function normally uses Codon's aggregate
+    // ABI. Keep the adapter's public signature native and marshal its indirect
+    // call just like a direct ExternalFunc call.
+    auto *signature = getLLVMFuncType(x->getType());
+    func = llvm::Function::Create(signature, llvm::GlobalValue::PrivateLinkage,
+                                  getNameForFunction(x), M.get());
+    func->addFnAttr(llvm::Attribute::AlwaysInline);
+    func->setSubprogram(getDISubprogramForFunc(x));
+    auto *entry = llvm::BasicBlock::Create(*context, "entry", func);
+    llvm::IRBuilder<> builder(entry);
+    auto *src = getSrcInfo(x);
+    builder.SetCurrentDebugLocation(llvm::DILocation::get(
+        *context, src->line, src->col, func->getSubprogram()));
+
+    auto *returnType = signature->getReturnType();
+    const bool sret = win64IsIndirect(M.get(), returnType);
+    // Codon's NoneType is an empty aggregate; C functions return void.
+    const bool emptyReturn = returnType->isAggregateType() &&
+                             M->getDataLayout().getTypeAllocSize(returnType) == 0;
+    llvm::Value *returnSlot = nullptr;
+    std::vector<llvm::Type *> abiTypes;
+    std::vector<llvm::Value *> abiArgs;
+    std::vector<std::pair<unsigned, llvm::Type *>> byval;
+    if (sret) {
+      returnSlot = builder.CreateAlloca(returnType);
+      abiTypes.push_back(builder.getPtrTy());
+      abiArgs.push_back(returnSlot);
+    }
+    auto *args = func->getArg(1);
+    auto *tupleType = llvm::cast<llvm::StructType>(args->getType());
+    for (unsigned i = 0; i < tupleType->getNumElements(); ++i) {
+      auto *arg = builder.CreateExtractValue(args, i);
+      if (win64IsIndirect(M.get(), arg->getType())) {
+        auto *slot = builder.CreateAlloca(arg->getType());
+        slot->setAlignment(llvm::Align(16));
+        builder.CreateStore(arg, slot);
+        byval.emplace_back(abiArgs.size(), arg->getType());
+        abiTypes.push_back(builder.getPtrTy());
+        abiArgs.push_back(slot);
+      } else {
+        abiTypes.push_back(arg->getType());
+        abiArgs.push_back(arg);
+      }
+    }
+    auto *abiType = llvm::FunctionType::get(
+        sret || emptyReturn ? builder.getVoidTy() : returnType, abiTypes, false);
+    auto *result = builder.CreateCall(abiType, func->getArg(0), abiArgs);
+    if (sret)
+      result->addParamAttr(
+          0, llvm::Attribute::get(*context, llvm::Attribute::StructRet, returnType));
+    for (auto [index, type] : byval)
+      result->addParamAttr(
+          index, llvm::Attribute::get(*context, llvm::Attribute::ByVal, type));
+    if (sret)
+      builder.CreateRet(builder.CreateLoad(returnType, returnSlot));
+    else if (returnType->isVoidTy())
+      builder.CreateRetVoid();
+    else if (emptyReturn)
+      builder.CreateRet(llvm::Constant::getNullValue(returnType));
+    else
+      builder.CreateRet(result);
+    return;
+  }
 
   // build code
   std::string code = buildLLVMCodeString(x);

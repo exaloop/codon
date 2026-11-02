@@ -44,6 +44,23 @@ def dlopen(name: str, flag: int = RTLD_NOW | RTLD_GLOBAL) -> cobj:
         raise CError(dlerror())
     return h
 
+@__generated__
+@llvm_c_call
+@llvm
+def _call_c(self: Function[T, TR], args: T, T: type, TR: type) -> TR:
+    noop  # compiler supplies the platform C calling convention
+
+@tuple
+class _CFunction:
+    fn: Fn
+    Fn: type
+
+    def __call__(self, *args):
+        return _call_c(self.fn, args)
+
+    def __raw__(self) -> cobj:
+        return self.fn.__raw__()
+
 def dlsym(lib, name: str, Fn: type) -> Fn:
     h = cobj()
     if isinstance(lib, str):
@@ -54,6 +71,13 @@ def dlsym(lib, name: str, Fn: type) -> Fn:
     if fn == cobj():
         raise CError(dlerror())
     return Fn(fn)
+
+def dlsym_c(lib, name: str, Fn: type):
+    fn = dlsym(lib, name, Fn)
+    if __windows__:
+        return _CFunction(fn)
+    else:
+        return fn
 
 def dlclose(handle: cobj):
     if c_dlclose(handle) != i32(0):

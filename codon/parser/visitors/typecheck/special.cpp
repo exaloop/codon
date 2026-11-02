@@ -888,7 +888,9 @@ SuiteStmt *TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
              isHeterogenous(extractFuncArgType(type, 0))) {
     // Special case: do not realize auto-generated heterogenous __getitem__
     E(Error::EXPECTED_TYPE, getSrcInfo(), "iterable");
-  } else if (startswith(ast->name, "Function.__call_internal__")) {
+  } else if (startswith(ast->name, "Function.__call_internal__") ||
+             startswith(ast->name,
+                        getMangledFunc("std.internal.dlopen", "_call_c"))) {
     return generateFunctionCallInternalAST(type);
   } else if (startswith(ast->name, "Union.__new__")) {
     return generateUnionNewAST(type);
