@@ -19,6 +19,7 @@
 #include <cstdlib>
 
 #include <llvm/AsmParser/Parser.h>
+#include <llvm/IR/CFG.h>
 #include <llvm/IR/Verifier.h>
 #include <llvm/MC/TargetRegistry.h>
 #include <llvm/Support/CommandLine.h>
@@ -3900,10 +3901,35 @@ def destination_reference(values: np.ndarray[float, 2]):
   return np.empty_like(values)
 )");
         auto *module = compiler->getLLVMVisitor()->getModule();
-        auto allocationCount = [](llvm::Function *function) {
+        // Count allocations on paths that can return normally. On SEH targets a
+        // throw ends in invoke, with unreachable in a separate successor block.
+        // Merely checking the current terminator also counts error formatting
+        // and all of its callees as array allocations.
+        auto normalBlocks = [](llvm::Function *function) {
+          auto result = (llvm::SmallPtrSet<llvm::BasicBlock *, 32>());
+          std::vector<llvm::BasicBlock *> pending;
+          for (auto &block : *function)
+            if (llvm::isa<llvm::ReturnInst>(block.getTerminator()))
+              pending.push_back(&block);
+          while (!pending.empty()) {
+            auto *block = pending.back();
+            pending.pop_back();
+            if (!result.insert(block).second)
+              continue;
+            for (auto *predecessor : llvm::predecessors(block)) {
+              auto *invoke = llvm::dyn_cast<llvm::InvokeInst>(
+                  predecessor->getTerminator());
+              if (!invoke || invoke->getNormalDest() == block)
+                pending.push_back(predecessor);
+            }
+          }
+          return result;
+        };
+        auto allocationCount = [&](llvm::Function *function) {
           unsigned allocations = 0;
+          auto blocks = normalBlocks(function);
           for (auto &block : *function) {
-            if (llvm::isa<llvm::UnreachableInst>(block.getTerminator()))
+            if (!blocks.contains(&block))
               continue;
             for (auto &instruction : block) {
               auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
@@ -3955,8 +3981,9 @@ def destination_reference(values: np.ndarray[float, 2]):
                 return 0u;
               active.push_back(function);
               auto count = allocationCount(function);
+              auto blocks = normalBlocks(function);
               for (auto &block : *function) {
-                if (llvm::isa<llvm::UnreachableInst>(block.getTerminator()))
+                if (!blocks.contains(&block))
                   continue;
                 for (auto &instruction : block) {
                   auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
@@ -4086,8 +4113,9 @@ def destination_reference(values: np.ndarray[float, 2]):
               "fused_any_producer"}) {
           auto *reduction = module->getFunction(name);
           ASSERT_NE(nullptr, reduction);
+          auto blocks = normalBlocks(reduction);
           for (auto &block : *reduction) {
-            if (llvm::isa<llvm::UnreachableInst>(block.getTerminator()))
+            if (!blocks.contains(&block))
               continue;
             for (auto &instruction : block) {
               auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
