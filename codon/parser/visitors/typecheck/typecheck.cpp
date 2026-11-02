@@ -1842,8 +1842,6 @@ int TypecheckVisitor::reorderNamedArgs(const types::FuncType *func,
         previous->second = ai; // same last-value behavior as the original map
     }
   }
-  std::sort(namedArgs.begin(), namedArgs.end(),
-            [](const auto &a, const auto &b) { return a.first < b.first; });
   for (auto index :
        {std::max(starArgIndex, kwstarArgIndex), std::min(starArgIndex, kwstarArgIndex)})
     if (index != -1 && !slots[index].empty()) {

@@ -444,6 +444,26 @@ f1(2) #: 1 2 3
 f2 = partial(foo, y=2)
 f2(1, 2) #: 1 2 2
 
+def show_keywords(**kwargs):
+    print kwargs
+
+stored = show_keywords(z=1, a=2, ...)
+stored() #: (z: 1, a: 2)
+stored(z='updated', b=3) #: (z: 'updated', a: 2, b: 3)
+nested = stored(y=3, z=4, ...)
+nested(a=5, x=6) #: (z: 4, a: 5, y: 3, x: 6)
+wrapped = partial(show_keywords, z=1, a=2)
+wrapped(z=3, y=4) #: (z: 3, a: 2, y: 4)
+
+def traced_keyword(name, value):
+    print name
+    return value
+
+stored(b=traced_keyword('b', 3), z=traced_keyword('z', 4))
+#: b
+#: z
+#: (z: 4, a: 2, b: 3)
+
 #%% call,barebones
 def foo(a, b, c='hi'):
     print 'foo', a, b, c
@@ -619,7 +639,7 @@ def foo(a, b, c=1, *args, **kwargs):
 foo(1, 2, 3, 4, 5, arg1='s', kwa=2)
 #: 1 2 3 (4, 5) (arg1: 's', kwa: 2)
 #: a (1, 2, 4, 5, 3)
-#: k (arg1: 's', kwa: 2, x: 1)
+#: k (x: 1, arg1: 's', kwa: 2)
 foo(1, 2)
 #: 1 2 1 () ()
 #: a (1, 2, 1)
@@ -636,6 +656,44 @@ foo(1, 2, zamboni=3)
 #: 1 2 1 () (zamboni: 3)
 #: a (1, 2, 1)
 #: k (x: 1, zamboni: 3)
+
+#%% call_kwargs_order,barebones
+def show(**kwargs):
+    print kwargs
+
+show(z=1, a=2) #: (z: 1, a: 2)
+show(a=2, z=1) #: (a: 2, z: 1)
+
+def forward(**kwargs):
+    show(**kwargs)
+
+forward(z='last', a=2.5) #: (z: 'last', a: 2.5)
+
+def collect(**kwargs):
+    return kwargs
+
+show(**collect(z=1, a=2), **collect(y=3, b=4)) #: (z: 1, a: 2, y: 3, b: 4)
+show(before=0, **collect(z=1, a=2), after=3) #: (before: 0, z: 1, a: 2, after: 3)
+
+def typed(**kwargs: int):
+    print kwargs
+
+typed(z=1, a=2) #: (z: 1, a: 2)
+
+def with_formals(required, *, option=0, **kwargs):
+    print required, option, kwargs
+
+def traced(name, value):
+    print name
+    return value
+
+with_formals(z=traced('z', 1), required=traced('required', 10),
+             a=traced('a', 2), option=traced('option', 20))
+#: z
+#: required
+#: a
+#: option
+#: 10 20 (z: 1, a: 2)
 
 #%% call_unpack,barebones
 def foo(*args, **kwargs):
@@ -1754,7 +1812,7 @@ foo(z=side('z'), T=side_T(int), k=side('k'), b=side('b'), a=side('a'), N=side_N(
 #: side b
 #: side a
 #: side_N 5
-#: a b () (k: 'k', z: 'z') <class 'List[int]'> 25
+#: a b () (z: 'z', k: 'k') <class 'List[int]'> 25
 
 t = List[side_T(int)]
 #: side_T int
