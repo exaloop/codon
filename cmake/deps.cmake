@@ -215,9 +215,16 @@ elseif(WIN32)
     # binary (BLAS + LAPACK + CBLAS, built with MinGW). It is self-contained: the Fortran
     # runtime (libgfortran/libquadmath/libgcc) is statically baked into libopenblas.dll,
     # which only imports KERNEL32 + msvcrt. Mirrors the upstream "prebuilt OpenBLAS" model.
+    if(CMAKE_CXX_COMPILER_TARGET MATCHES "^(aarch64|arm64)")
+        set(OPENBLAS_WIN_URL
+            https://github.com/OpenMathLib/OpenBLAS/releases/download/v0.3.30/OpenBLAS-0.3.30-woa64-dll.zip)
+    else()
+        set(OPENBLAS_WIN_URL
+            https://github.com/OpenMathLib/OpenBLAS/releases/download/v0.3.29/OpenBLAS-0.3.29_x64.zip)
+    endif()
     CPMAddPackage(
         NAME openblas_win
-        URL https://github.com/OpenMathLib/OpenBLAS/releases/download/v0.3.29/OpenBLAS-0.3.29_x64.zip
+        URL ${OPENBLAS_WIN_URL}
         DOWNLOAD_ONLY YES)
     add_library(openblas SHARED IMPORTED GLOBAL)
     set_target_properties(openblas PROPERTIES
