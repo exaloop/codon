@@ -135,7 +135,7 @@ if(WIN32)
   # export) so the JIT resolves them via the process symbol table and AOT via codonrt's
   # import lib. So on Windows codonrt compiles floatlib directly and does not link
   # codonfloat (clang supports __int128 even on windows-msvc).
-  target_sources(codonrt PRIVATE
+  target_sources(codonrt PRIVATE codon/runtime/emutls.cpp
                  # float16/bf16 conversions (same set as codonfloat)
                  codon/runtime/floatlib/extenddftf2.c codon/runtime/floatlib/truncdfhf2.c
                  codon/runtime/floatlib/extendhfsf2.c codon/runtime/floatlib/truncdfsf2.c

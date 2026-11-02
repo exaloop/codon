@@ -171,8 +171,10 @@ void LLVMVisitor::registerGlobal(const Var *var) {
         } else {
           storage->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Local);
         }
-      } else {
+      } else if (!(tls && llvm::Triple(M->getTargetTriple()).isOSWindows())) {
         // debug info
+        // CodeView cannot describe LLVM's emulated TLS storage. Referring to the
+        // original TLS symbol leaves an undefined assembler label on COFF.
         auto *srcInfo = getSrcInfo(var);
         auto *file = db.getFile(srcInfo->file);
         auto *scope = db.unit;
