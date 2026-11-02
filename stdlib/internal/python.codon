@@ -417,8 +417,9 @@ def init_handles_dlopen(py_handle: cobj):
     PyEval_GetGlobals = dlsym(py_handle, "PyEval_GetGlobals")
     PyEval_GetBuiltins = dlsym(py_handle, "PyEval_GetBuiltins")
     PyOS_setsig = dlsym(py_handle, "PyOS_setsig")
-    PyLong_AsLong = dlsym(py_handle, "PyLong_AsLong")
-    PyLong_FromLong = dlsym(py_handle, "PyLong_FromLong")
+    # Codon int is 64 bits; C long is only 32 bits on Windows (LLP64).
+    PyLong_AsLong = dlsym(py_handle, "PyLong_AsLongLong")
+    PyLong_FromLong = dlsym(py_handle, "PyLong_FromLongLong")
     PyFloat_AsDouble = dlsym(py_handle, "PyFloat_AsDouble")
     PyFloat_FromDouble = dlsym(py_handle, "PyFloat_FromDouble")
     PyBool_FromLong = dlsym(py_handle, "PyBool_FromLong")
@@ -585,8 +586,8 @@ def init_handles_static():
     from C import PyEval_GetGlobals() -> cobj as _PyEval_GetGlobals
     from C import PyEval_GetBuiltins() -> cobj as _PyEval_GetBuiltins
     from C import PyOS_setsig(i32, cobj) -> cobj as _PyOS_setsig
-    from C import PyLong_AsLong(cobj) -> int as _PyLong_AsLong
-    from C import PyLong_FromLong(int) -> cobj as _PyLong_FromLong
+    from C import PyLong_AsLongLong(cobj) -> int as _PyLong_AsLong
+    from C import PyLong_FromLongLong(int) -> cobj as _PyLong_FromLong
     from C import PyFloat_AsDouble(cobj) -> float as _PyFloat_AsDouble
     from C import PyFloat_FromDouble(float) -> cobj as _PyFloat_FromDouble
     from C import PyBool_FromLong(int) -> cobj as _PyBool_FromLong
@@ -1679,7 +1680,9 @@ class int:
 
     def __from_py__(i: cobj) -> int:
         _ensure_type(i, PyLong_Type, "int")
-        return PyLong_AsLong(i)
+        value = PyLong_AsLong(i)
+        pyobj.exc_check()
+        return value
 
 @extend
 class float:
