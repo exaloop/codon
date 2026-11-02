@@ -32,7 +32,7 @@ print rs(r'\W+', 'Words, words, words.')  #: ['Words', 'words', 'words', '']
 
 #%% python_import_fn_2
 from python import os.system(str) -> int
-system("echo 'hello!'")  #: hello!
+system("echo hello!")  #: hello!
 
 #%% python_pydef
 @python
