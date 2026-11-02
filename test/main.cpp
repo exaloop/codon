@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <gc.h>
@@ -791,6 +792,22 @@ INSTANTIATE_TEST_SUITE_P(
 
 int main(int argc, char *argv[]) {
   argv0 = ast::Filesystem::executable_path(argv[0]).string();
+  // The Python bridge imports the fixture modules from test/python, including
+  // when the executable is launched directly instead of through the CI script.
+  std::string pythonPath = std::string(TEST_DIR) + "/python";
+  if (const char *existing = std::getenv("PYTHONPATH"); existing && *existing) {
+#ifdef _WIN32
+    pythonPath += ";";
+#else
+    pythonPath += ":";
+#endif
+    pythonPath += existing;
+  }
+#ifdef _WIN32
+  _putenv_s("PYTHONPATH", pythonPath.c_str());
+#else
+  setenv("PYTHONPATH", pythonPath.c_str(), 1);
+#endif
 #ifdef _WIN32
   // Child mode: a single case re-exec'd by runInChildProcess(). Read the
   // serialized parameters, compile/run the case, and let stdout + the exit code
