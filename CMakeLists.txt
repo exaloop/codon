@@ -161,6 +161,18 @@ if(WIN32)
     codon/runtime/floatlib/trunctfsf2.c
     PROPERTIES COMPILE_DEFINITIONS COMPILER_RT_HAS_FLOAT16)
   set_target_properties(codonrt PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+  # Clang's Windows default long double is binary64. Compile only the software
+  # quad helpers with binary128 so their fp128 signatures match LLVM libcalls.
+  set(CODON_QUAD_SOURCES
+      codon/runtime/floatlib/extenddftf2.c codon/runtime/floatlib/extendhftf2.c
+      codon/runtime/floatlib/extendsftf2.c codon/runtime/floatlib/trunctfdf2.c
+      codon/runtime/floatlib/trunctfhf2.c codon/runtime/floatlib/trunctfsf2.c
+      codon/runtime/floatlib/addtf3.c codon/runtime/floatlib/subtf3.c
+      codon/runtime/floatlib/multf3.c codon/runtime/floatlib/divtf3.c
+      codon/runtime/floatlib/comparetf2.c)
+  target_sources(codonrt PRIVATE ${CODON_QUAD_SOURCES} codon/runtime/floatlib/fp_mode.c)
+  set_source_files_properties(${CODON_QUAD_SOURCES}
+                             PROPERTIES COMPILE_OPTIONS "-mlong-double-128")
   add_dependencies(codonrt zlibstatic gc bz2 liblzma re2 hwy hwy_contrib openblas)
 else()
   add_dependencies(codonrt zlibstatic gc backtrace bz2 liblzma

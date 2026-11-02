@@ -130,6 +130,17 @@ static __inline tu_int make_tu(du_int h, du_int l) {
 #endif
 
 #if CRT_HAS_FLOATING_POINT
+#if __LDBL_MANT_DIG__ == 113
+#define CRT_HAS_F128
+#define CRT_HAS_IEEE_TF
+#define CRT_LDBL_128BIT
+typedef long double tf_float;
+#define TF_C(x) x##L
+#ifdef CRT_HAS_128BIT
+#define CRT_HAS_TF_MODE
+#endif
+#endif
+
 typedef union {
   su_int u;
   float f;

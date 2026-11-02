@@ -416,4 +416,8 @@ static __inline tf_float __compiler_rt_fmaxtf(tf_float x, tf_float y) {
 
 #endif // *_PRECISION
 
+#if defined(_WIN32) && defined(QUAD_PRECISION) && defined(CRT_HAS_TF_MODE)
+#include "quad_abi.h"
+#endif
+
 #endif // FP_LIB_HEADER
