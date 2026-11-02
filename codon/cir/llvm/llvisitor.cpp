@@ -1580,6 +1580,26 @@ llvm::Value *LLVMVisitor::call(llvm::FunctionCallee callee,
                                llvm::ArrayRef<llvm::Value *> args) {
   B->SetInsertPoint(block);
   if ((trycatch.empty() && finally.empty()) || options->noexc) {
+    auto *target = llvm::dyn_cast<llvm::Function>(callee.getCallee());
+    if (!options->noexc && isWinMSVC(M.get()) && target &&
+        target->getName() == "seq_throw") {
+      // Give a rethrow outside all local handlers an explicit unwind-to-caller
+      // edge, so SEH scope ranges cannot absorb it into an earlier try region.
+      auto *normal = llvm::BasicBlock::Create(*context, "throw.unreachable", func);
+      auto *unwind = llvm::BasicBlock::Create(*context, "throw.unwind", func);
+      auto *result = B->CreateInvoke(callee, normal, unwind, args);
+      B->SetInsertPoint(unwind);
+      auto *cleanup = B->CreateCleanupPad(llvm::ConstantTokenNone::get(*context));
+      // Keep this boundary through optimization: erasing an empty cleanup can
+      // make SEH range coalescing protect the rethrow with an earlier handler.
+      llvm::OperandBundleDef bundle("funclet", llvm::ArrayRef<llvm::Value *>(cleanup));
+      B->CreateCall(llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::sideeffect),
+                    {}, {bundle});
+      B->CreateCleanupRet(cleanup, nullptr);
+      block = normal;
+      B->SetInsertPoint(block);
+      return result;
+    }
     return B->CreateCall(callee, args);
   } else {
     auto *normalBlock = llvm::BasicBlock::Create(*context, "invoke.normal", func);
