@@ -1,6 +1,6 @@
 #%% python
 from python import os
-print os.name  #: posix
+print os.curdir  #: .
 
 from python import datetime
 z = datetime.datetime.utcfromtimestamp(0)

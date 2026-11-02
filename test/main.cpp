@@ -477,10 +477,6 @@ getTypeTestNameFromParam(const testing::TestParamInfo<SeqTest::ParamType> &info)
   return getTestNameFromParam(info) + "_" + get<2>(info.param);
 }
 TEST_P(SeqTest, Run) {
-#ifdef _WIN32
-  if (get<2>(GetParam()) == "413_os_fullpathname_posix")
-    GTEST_SKIP() << "POSIX-only os._getfullpathname error test";
-#endif
   const string file = get<0>(GetParam());
   int status;
   bool isCase = !get<2>(GetParam()).empty();
