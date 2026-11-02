@@ -1147,6 +1147,13 @@ def _exception_to_python(error: BaseException) -> pyobj:
     if isinstance(error, OSError):
         native = type._force_cast(error, OSError)
         if native.strerror is not None:
+            if native.winerror is None:
+                # On Windows, an explicit fourth argument of None still sets
+                # winerror and changes the message to "[WinError None] ...".
+                result = python_type(native.errno, native.strerror, native.filename)
+                if native.filename2 is not None:
+                    result._setattr("filename2", native.filename2)
+                return result
             return python_type(native.errno, native.strerror, native.filename, native.winerror, native.filename2)
     return python_type(error.message)
 
