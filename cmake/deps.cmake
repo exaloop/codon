@@ -54,6 +54,22 @@ CPMAddPackage(
             "CMAKE_POSITION_INDEPENDENT_CODE ON")
 if(zlibng_ADDED)
     set_target_properties(zlib PROPERTIES EXCLUDE_FROM_ALL ON)
+    if(WIN32 AND CMAKE_C_COMPILER_ID STREQUAL "Clang" AND
+       (CMAKE_C_COMPILER_TARGET MATCHES "^(aarch64|arm64)" OR
+        (NOT CMAKE_C_COMPILER_TARGET AND
+         CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")))
+        # Older Clang releases lack arm64_neon.h and pick MSVC's header,
+        # leaving unresolved neon_* calls. Forward to Clang's arm_neon.h.
+        foreach(_zlib_target IN ITEMS zlib zlibstatic)
+            if(TARGET ${_zlib_target})
+                get_target_property(_zlib_alias ${_zlib_target} ALIASED_TARGET)
+                if(NOT _zlib_alias)
+                    target_include_directories(${_zlib_target} BEFORE PRIVATE
+                        "${CMAKE_CURRENT_LIST_DIR}/compat/clang-arm64")
+                endif()
+            endif()
+        endforeach()
+    endif()
 endif()
 
 CPMAddPackage(
