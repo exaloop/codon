@@ -376,8 +376,10 @@ InternalFunc *Module::getIntrinsic(InternalFunc::Intrinsic kind, Type *type,
   }
   auto *functionType = cast<FuncType>(signature);
   seqassertn(functionType, "intrinsic signature is not a function type");
-  auto *function = Nr<InternalFunc>(std::string(".intrinsic.") +
-                                    InternalFunc::getIntrinsicName(kind));
+  auto name = std::string(".intrinsic.") + InternalFunc::getIntrinsicName(kind);
+  for (const auto &component : {std::get<1>(key), std::get<2>(key)})
+    name += "." + std::to_string(component.size()) + ":" + component;
+  auto *function = Nr<InternalFunc>(name);
   function->setIntrinsic(kind, type);
   function->setGlobal();
   std::vector<std::string> names;

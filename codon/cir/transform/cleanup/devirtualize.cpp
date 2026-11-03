@@ -151,8 +151,15 @@ class Specializer {
       growth += body(function).size;
       result->clone = std::make_unique<util::CloneVisitor>(module);
       auto &clone = *result->clone;
-      auto *target =
-          module->N<BodiedFunc>(function, function->getName() + ".devirtualized");
+      auto name = function->getName() + ".devirtualized";
+      for (const auto &fact : result->arguments) {
+        name += ".";
+        for (auto index : fact.first)
+          name += std::to_string(index) + "_";
+        const auto &typeName = fact.second->getName();
+        name += std::to_string(typeName.size()) + ":" + typeName;
+      }
+      auto *target = module->N<BodiedFunc>(function, name);
       result->target = target;
       target->setUnmangledName(function->getUnmangledName());
       target->setParentType(function->getParentType());

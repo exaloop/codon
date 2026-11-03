@@ -46,6 +46,17 @@ bool isInline(const Func *func) { return hasAttribute(func, INLINE_ATTR); }
 
 bool isNoInline(const Func *func) { return hasAttribute(func, NOINLINE_ATTR); }
 
+std::string getDerivedFuncName(const std::string &name, const Func *parent,
+                               const Node *site) {
+  const auto &owner = parent->getName();
+  auto result = name + ".context." + std::to_string(owner.size()) + ":" + owner;
+  if (site) {
+    auto source = site->getSrcInfo();
+    result += "." + std::to_string(source.line) + ":" + std::to_string(source.col);
+  }
+  return result;
+}
+
 bool isStdlibFunc(const Func *func, const std::string &submodule) {
   if (auto *attr = func->getAttribute<KeyValueAttribute>()) {
     std::string module = attr->get(".module");
