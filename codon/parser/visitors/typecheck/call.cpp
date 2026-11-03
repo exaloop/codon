@@ -652,23 +652,29 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
                          (*expr)[slots[si][0]].getExpr()->hasAttribute(
                              Attr::ExprKwStarArgument))) {
               // Case: **kwargs. Build the named tuple that holds them all
-              std::unordered_set<std::string> newNames;
-              for (auto &e : slots[si]) // kwargs names can be overriden later
-                newNames.insert((*expr)[e].getName());
+              std::unordered_map<std::string, int> newKeywords;
+              for (auto argument : slots[si])
+                newKeywords[(*expr)[argument].getName()] = argument;
               if (!part.known.empty()) {
-                auto e = transform(N<DotExpr>(N<IdExpr>(part.var), "kwargs"));
-                for (auto &[n, ne] : extractNamedTuple(e)) {
-                  if (!in(newNames, n)) {
-                    newNames.insert(n);
-                    kwStarNames.emplace_back(n);
-                    kwStarArgs.emplace_back(transform(ne));
+                auto captured = transform(N<DotExpr>(N<IdExpr>(part.var), "kwargs"));
+                for (auto &[name, value] : extractNamedTuple(captured)) {
+                  kwStarNames.emplace_back(name);
+                  auto replacement = newKeywords.find(name);
+                  if (replacement != newKeywords.end()) {
+                    kwStarArgs.emplace_back((*expr)[replacement->second].getExpr());
+                    addReordered(replacement->second);
+                    newKeywords.erase(replacement);
+                  } else {
+                    kwStarArgs.emplace_back(transform(value));
                   }
                 }
               }
-              for (auto &e : slots[si]) {
-                kwStarNames.emplace_back((*expr)[e].getName());
-                kwStarArgs.emplace_back((*expr)[e].getExpr());
-                addReordered(e);
+              for (auto argument : slots[si]) {
+                if (!in(newKeywords, (*expr)[argument].getName()))
+                  continue;
+                kwStarNames.emplace_back((*expr)[argument].getName());
+                kwStarArgs.emplace_back((*expr)[argument].getExpr());
+                addReordered(argument);
               }
 
               kwStarIdx = static_cast<int>(args.size());
