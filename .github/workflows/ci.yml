@@ -333,12 +333,9 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          Copy-Item codon-deploy/lib/codon/codonc.dll codon-deploy/bin/
-          Copy-Item codon-deploy/lib/codon/codonrt.dll codon-deploy/bin/
-          # codon.exe links the codon_jupyter stub, so it must sit next to the exe
-          Copy-Item codon-deploy/lib/codon/codon_jupyter.dll codon-deploy/bin/
-          Copy-Item codon-deploy/lib/codon/libomp.dll codon-deploy/bin/        # @par
-          Copy-Item codon-deploy/lib/codon/libopenblas.dll codon-deploy/bin/   # numpy.linalg
+          # Include every runtime DLL using its installed name. OpenBLAS is
+          # openblas.dll on ARM64 and libopenblas.dll on x64.
+          Copy-Item codon-deploy/lib/codon/*.dll codon-deploy/bin/
           Compress-Archive -Path codon-deploy -DestinationPath codon-${{ matrix.arch }}.zip -Force
 
       - name: Upload Artifacts

@@ -211,11 +211,11 @@ if(NOT APPLE AND NOT WIN32 AND NOT SYSTEM_BLAS)
                 "NUM_THREADS 64"
                 "CCOMMON_OPT -O3")
 elseif(WIN32)
-    # No native Fortran on MSVC, so use the OpenBLAS project's official prebuilt Windows
-    # binary (BLAS + LAPACK + CBLAS, built with MinGW). It is self-contained: the Fortran
-    # runtime (libgfortran/libquadmath/libgcc) is statically baked into libopenblas.dll,
-    # which only imports KERNEL32 + msvcrt. Mirrors the upstream "prebuilt OpenBLAS" model.
-    if(CMAKE_CXX_COMPILER_TARGET MATCHES "^(aarch64|arm64)")
+    # Use the OpenBLAS project's prebuilt BLAS + LAPACK + CBLAS for each Windows
+    # architecture. ARM64 and x64 packages use different library basenames.
+    if(CMAKE_CXX_COMPILER_TARGET MATCHES "^(aarch64|arm64)" OR
+       (NOT CMAKE_CXX_COMPILER_TARGET AND
+        CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$"))
         set(OPENBLAS_WIN_URL
             https://github.com/OpenMathLib/OpenBLAS/releases/download/v0.3.30/OpenBLAS-0.3.30-woa64-dll.zip)
     else()
@@ -226,11 +226,23 @@ elseif(WIN32)
         NAME openblas_win
         URL ${OPENBLAS_WIN_URL}
         DOWNLOAD_ONLY YES)
+    set(_openblas_win_basename "")
+    foreach(_basename IN ITEMS libopenblas openblas)
+        if(EXISTS "${openblas_win_SOURCE_DIR}/lib/${_basename}.lib" AND
+           EXISTS "${openblas_win_SOURCE_DIR}/bin/${_basename}.dll")
+            set(_openblas_win_basename "${_basename}")
+            break()
+        endif()
+    endforeach()
+    if(NOT _openblas_win_basename)
+        message(FATAL_ERROR
+            "OpenBLAS package at ${openblas_win_SOURCE_DIR} has no matching "
+            "lib/[lib]openblas.lib and bin/[lib]openblas.dll pair")
+    endif()
     add_library(openblas SHARED IMPORTED GLOBAL)
     set_target_properties(openblas PROPERTIES
-        IMPORTED_IMPLIB "${openblas_win_SOURCE_DIR}/lib/libopenblas.lib"
-        IMPORTED_LOCATION "${openblas_win_SOURCE_DIR}/bin/libopenblas.dll")
-    set(OPENBLAS_WIN_DIR "${openblas_win_SOURCE_DIR}" CACHE INTERNAL "")
+        IMPORTED_IMPLIB "${openblas_win_SOURCE_DIR}/lib/${_openblas_win_basename}.lib"
+        IMPORTED_LOCATION "${openblas_win_SOURCE_DIR}/bin/${_openblas_win_basename}.dll")
 endif()
 
 CPMAddPackage(

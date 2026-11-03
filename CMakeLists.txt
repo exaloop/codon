@@ -264,9 +264,9 @@ elseif(WIN32)
             -Wl,/WHOLEARCHIVE:$<TARGET_FILE:re2>
             -Wl,/WHOLEARCHIVE:$<TARGET_FILE:hwy>
             -Wl,/WHOLEARCHIVE:$<TARGET_FILE:hwy_contrib>
-            # OpenBLAS lives in libopenblas.dll; codon's numpy.linalg calls cblas_*/LAPACK
+            # Codon's numpy.linalg calls OpenBLAS cblas_*/LAPACK exports
             # from JIT/AOT code, not from codonrt itself. Link its import lib and force a
-            # reference so libopenblas.dll is a load-time dependency (and thus loaded for
+            # reference so the OpenBLAS DLL is a load-time dependency (and loaded for
             # the JIT symbol resolver).
             openblas
             -Wl,/INCLUDE:cblas_dgemm
@@ -328,14 +328,15 @@ add_custom_command(
           ${CMAKE_BINARY_DIR})
 
 if(WIN32)
-  # Copy OpenBLAS and the import libraries used by build-tree `codon build`.
+  # Preserve the DLL name embedded in OpenBLAS's import library. Give the import
+  # library a stable name for build-tree `codon build` (-llibopenblas).
   add_custom_command(
     TARGET codonrt
     POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:openblas>
             ${CMAKE_BINARY_DIR}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_LINKER_FILE:openblas>
-            ${CMAKE_BINARY_DIR}
+            "${CMAKE_BINARY_DIR}/libopenblas.lib"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_LINKER_FILE:${_codon_omp_target}>
             ${CMAKE_BINARY_DIR})
 endif()
@@ -829,10 +830,11 @@ if(WIN32)
   # programs can link the __kmpc_* import lib via -L../lib/codon.
   install(FILES "${LLVM_TOOLS_BINARY_DIR}/libomp.dll" DESTINATION lib/codon)
   install(FILES "${LLVM_LIBRARY_DIR}/libomp.lib" DESTINATION lib/codon)
-  # OpenBLAS: libopenblas.dll for runtime (JIT + AOT), libopenblas.lib so AOT
-  # `codon build` of numpy.linalg programs can link cblas_*/LAPACK via -L../lib/codon.
-  install(FILES "${OPENBLAS_WIN_DIR}/bin/libopenblas.dll" DESTINATION lib/codon)
-  install(FILES "${OPENBLAS_WIN_DIR}/lib/libopenblas.lib" DESTINATION lib/codon)
+  # The DLL keeps its upstream name; the import library has Codon's stable AOT
+  # link name regardless of the archive's architecture-specific basename.
+  install(FILES "$<TARGET_FILE:openblas>" DESTINATION lib/codon)
+  install(FILES "$<TARGET_LINKER_FILE:openblas>" DESTINATION lib/codon
+          RENAME libopenblas.lib)
 endif()
 if(NOT WIN32)
   install(FILES ${CMAKE_BINARY_DIR}/libomp${CMAKE_SHARED_LIBRARY_SUFFIX} DESTINATION lib/codon)
