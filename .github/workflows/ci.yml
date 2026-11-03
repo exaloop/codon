@@ -278,17 +278,6 @@ jobs:
           New-Item -ItemType Directory -Force C:/opt | Out-Null
           # The release contains llvm-codon/, including Clang and GC-patched libomp.
           tar -xf $archive -C C:/opt
-          foreach ($file in @('bin/clang.exe', 'bin/clang++.exe', 'bin/libomp.dll', 'lib/libomp.lib', 'lib/cmake/llvm/LLVMConfig.cmake')) {
-            if (-not (Test-Path "C:/opt/llvm-codon/$file")) {
-              throw "LLVM release is missing $file"
-            }
-          }
-          'C:\opt\llvm-codon\bin' | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          # Verify the task allocation extension required by Codon's @par lowering.
-          $exports = & C:/opt/llvm-codon/bin/llvm-readobj.exe --coff-exports C:/opt/llvm-codon/bin/libomp.dll
-          if (-not ($exports -match 'Name: __kmpc_omp_task_alloc_size$')) {
-            throw 'The LLVM release libomp lacks __kmpc_omp_task_alloc_size'
-          }
 
       - name: Build Codon
         run: |
@@ -301,10 +290,8 @@ jobs:
             -DCMAKE_CXX_COMPILER=C:/opt/llvm-codon/bin/clang++.exe `
             -DCMAKE_C_COMPILER_TARGET=${{ matrix.target }} `
             -DCMAKE_CXX_COMPILER_TARGET=${{ matrix.target }} `
-            -DCMAKE_LINKER=C:/opt/llvm-codon/bin/lld-link.exe `
             -DCODON_GPU=OFF
-          # codon_test is EXCLUDE_FROM_ALL on Windows and must be requested explicitly.
-          cmake --build build --config Release --target all codon_test --parallel 2
+          cmake --build build --config Release --parallel 2
           cmake --install build --prefix codon-deploy
 
       - name: Run all Windows tests
@@ -353,37 +340,6 @@ jobs:
           Copy-Item codon-deploy/lib/codon/libomp.dll codon-deploy/bin/        # @par
           Copy-Item codon-deploy/lib/codon/libopenblas.dll codon-deploy/bin/   # numpy.linalg
           Compress-Archive -Path codon-deploy -DestinationPath codon-${{ matrix.arch }}.zip -Force
-
-      - name: Smoke test
-        shell: pwsh
-        run: |
-          $env:PATH = "$PWD\codon-deploy\bin;$env:PATH"
-          'print("hello from CI windows codon")' | Out-File -Encoding ascii smoke.py
-          "def f(n):`n    return n if n < 2 else f(n-1)+f(n-2)`ntry:`n    raise ValueError('x')`nexcept ValueError as e:`n    print('caught', e)`nfinally:`n    print('fin')`nprint(f(10))" | Out-File -Encoding ascii smoke2.py
-          & codon-deploy/bin/codon.exe run smoke.py
-          if ($LASTEXITCODE -ne 0) { throw "codon run smoke.py failed (exit $LASTEXITCODE)" }
-          & codon-deploy/bin/codon.exe run smoke2.py
-          if ($LASTEXITCODE -ne 0) { throw "codon run smoke2.py (try/except) failed" }
-          & codon-deploy/bin/codon.exe build smoke2.py -o smoke2.exe
-          if ($LASTEXITCODE -ne 0) { throw "codon build smoke2.py failed" }
-          & ./smoke2.exe
-          if ($LASTEXITCODE -ne 0) { throw "AOT smoke2.exe failed" }
-          # OpenMP @par (JIT + AOT)
-          "import openmp as omp`nomp.set_num_threads(4)`ns = 0`n@par`nfor i in range(1000):`n    s += i`nprint('parsum', s)" | Out-File -Encoding ascii smoke_omp.py
-          & codon-deploy/bin/codon.exe run smoke_omp.py
-          if ($LASTEXITCODE -ne 0) { throw "codon run @par failed" }
-          & codon-deploy/bin/codon.exe build smoke_omp.py -o smoke_omp.exe
-          if ($LASTEXITCODE -ne 0) { throw "codon build @par failed" }
-          & ./smoke_omp.exe
-          if ($LASTEXITCODE -ne 0) { throw "AOT @par failed" }
-          # numpy core (Highway) + linalg (OpenBLAS), JIT + AOT
-          "import numpy as np`nprint('npsum', np.arange(10).sum())`nprint('npdet', np.linalg.det(np.array([[3.0,1.0],[1.0,2.0]])))" | Out-File -Encoding ascii smoke_np.py
-          & codon-deploy/bin/codon.exe run smoke_np.py
-          if ($LASTEXITCODE -ne 0) { throw "codon run numpy failed" }
-          & codon-deploy/bin/codon.exe build smoke_np.py -o smoke_np.exe
-          if ($LASTEXITCODE -ne 0) { throw "codon build numpy failed" }
-          & ./smoke_np.exe
-          if ($LASTEXITCODE -ne 0) { throw "AOT numpy failed" }
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v7

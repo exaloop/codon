@@ -83,13 +83,18 @@ find_package(LLVM REQUIRED)
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 if(WIN32)
-  # GC-patched libomp built from the exaloop LLVM fork's openmp/ with clang-cl and
-  # installed alongside LLVM (lib/libomp.lib, bin/libomp.dll). This imported `omp`
-  # target mirrors the one the prebuilt LLVM provides on Linux/macOS.
-  add_library(omp SHARED IMPORTED)
-  set_target_properties(omp PROPERTIES
+  # Use the LLVM distribution's GC-patched OpenMP runtime. Give this target a
+  # Codon-specific name so an `omp` target exported by LLVM cannot shadow it.
+  add_library(codon_omp SHARED IMPORTED GLOBAL)
+  set_target_properties(codon_omp PROPERTIES
+    IMPORTED_CONFIGURATIONS RELEASE
     IMPORTED_IMPLIB "${LLVM_LIBRARY_DIR}/libomp.lib"
-    IMPORTED_LOCATION "${LLVM_TOOLS_BINARY_DIR}/libomp.dll")
+    IMPORTED_LOCATION "${LLVM_TOOLS_BINARY_DIR}/libomp.dll"
+    IMPORTED_IMPLIB_RELEASE "${LLVM_LIBRARY_DIR}/libomp.lib"
+    IMPORTED_LOCATION_RELEASE "${LLVM_TOOLS_BINARY_DIR}/libomp.dll")
+  set(_codon_omp_target codon_omp)
+else()
+  set(_codon_omp_target omp)
 endif()
 include(${CMAKE_SOURCE_DIR}/cmake/deps.cmake)
 include(${CMAKE_SOURCE_DIR}/cmake/CMakeRC.cmake)
@@ -128,51 +133,10 @@ set(CODONRT_FILES codon/runtime/lib.h
                   codon/runtime/numpy/zmath.cpp)
 add_library(codonrt SHARED ${CODONRT_FILES})
 if(WIN32)
-  # MSVC's CRT lacks the compiler-rt builtins clang emits for float16/bf16 and 128-bit
-  # ints (Int[128]/UInt[128] div/mod, int<->fp). On Linux/macOS these come from
-  # libgcc/compiler-rt; on Windows we vendor them. They must be codonrt's OWN sources
-  # (NOT whole-archived codonfloat, whose symbols WINDOWS_EXPORT_ALL_SYMBOLS does not
-  # export) so the JIT resolves them via the process symbol table and AOT via codonrt's
-  # import lib. So on Windows codonrt compiles floatlib directly and does not link
-  # codonfloat (clang supports __int128 even on windows-msvc).
-  target_sources(codonrt PRIVATE codon/runtime/emutls.cpp
-                 # float16/bf16 conversions (same set as codonfloat)
-                 codon/runtime/floatlib/extenddftf2.c codon/runtime/floatlib/truncdfhf2.c
-                 codon/runtime/floatlib/extendhfsf2.c codon/runtime/floatlib/truncdfsf2.c
-                 codon/runtime/floatlib/extendhftf2.c codon/runtime/floatlib/truncsfbf2.c
-                 codon/runtime/floatlib/extendsfdf2.c codon/runtime/floatlib/truncsfhf2.c
-                 codon/runtime/floatlib/extendsftf2.c codon/runtime/floatlib/trunctfdf2.c
-                 codon/runtime/floatlib/trunctfhf2.c codon/runtime/floatlib/truncdfbf2.c
-                 codon/runtime/floatlib/trunctfsf2.c
-                 # 128-bit int div/mod and int<->fp conversions
-                 codon/runtime/floatlib/divti3.c codon/runtime/floatlib/modti3.c
-                 codon/runtime/floatlib/udivti3.c codon/runtime/floatlib/umodti3.c
-                 codon/runtime/floatlib/udivmodti4.c codon/runtime/floatlib/clzti2.c
-                 codon/runtime/floatlib/floattidf.c codon/runtime/floatlib/floatuntidf.c
-                 codon/runtime/floatlib/floattisf.c codon/runtime/floatlib/floatuntisf.c
-                 codon/runtime/floatlib/fixdfti.c codon/runtime/floatlib/fixunsdfti.c)
-  set_source_files_properties(
-    codon/runtime/floatlib/extenddftf2.c codon/runtime/floatlib/truncdfhf2.c
-    codon/runtime/floatlib/extendhfsf2.c codon/runtime/floatlib/truncdfsf2.c
-    codon/runtime/floatlib/extendhftf2.c codon/runtime/floatlib/truncsfbf2.c
-    codon/runtime/floatlib/extendsfdf2.c codon/runtime/floatlib/truncsfhf2.c
-    codon/runtime/floatlib/extendsftf2.c codon/runtime/floatlib/trunctfdf2.c
-    codon/runtime/floatlib/trunctfhf2.c codon/runtime/floatlib/truncdfbf2.c
-    codon/runtime/floatlib/trunctfsf2.c
-    PROPERTIES COMPILE_DEFINITIONS COMPILER_RT_HAS_FLOAT16)
+  # compiler-rt is shipped with the LLVM toolchain; only the Windows TLS
+  # emulation helper remains a Codon runtime source.
+  target_sources(codonrt PRIVATE codon/runtime/emutls.cpp)
   set_target_properties(codonrt PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
-  # Clang's Windows default long double is binary64. Compile only the software
-  # quad helpers with binary128 so their fp128 signatures match LLVM libcalls.
-  set(CODON_QUAD_SOURCES
-      codon/runtime/floatlib/extenddftf2.c codon/runtime/floatlib/extendhftf2.c
-      codon/runtime/floatlib/extendsftf2.c codon/runtime/floatlib/trunctfdf2.c
-      codon/runtime/floatlib/trunctfhf2.c codon/runtime/floatlib/trunctfsf2.c
-      codon/runtime/floatlib/addtf3.c codon/runtime/floatlib/subtf3.c
-      codon/runtime/floatlib/multf3.c codon/runtime/floatlib/divtf3.c
-      codon/runtime/floatlib/comparetf2.c)
-  target_sources(codonrt PRIVATE ${CODON_QUAD_SOURCES} codon/runtime/floatlib/fp_mode.c)
-  set_source_files_properties(${CODON_QUAD_SOURCES}
-                             PROPERTIES COMPILE_OPTIONS "-mlong-double-128")
   add_dependencies(codonrt zlibstatic gc bz2 liblzma re2 hwy hwy_contrib openblas)
 else()
   add_dependencies(codonrt zlibstatic gc backtrace bz2 liblzma
@@ -215,10 +179,9 @@ target_include_directories(codonrt PRIVATE ${backtrace_SOURCE_DIR}
                                            "${fast_float_SOURCE_DIR}/include" runtime)
 if(WIN32)
   # dbghelp: native Windows backtrace (replaces libbacktrace on Windows).
-  # omp: GC-patched libomp (enables @par); brings in __kmpc_set_gc_callbacks.
-  target_link_libraries(codonrt PRIVATE fmt LLVMSupport dbghelp omp)
+  target_link_libraries(codonrt PRIVATE fmt LLVMSupport dbghelp ${_codon_omp_target})
 else()
-  target_link_libraries(codonrt PRIVATE fmt omp backtrace LLVMSupport)
+  target_link_libraries(codonrt PRIVATE fmt ${_codon_omp_target} backtrace LLVMSupport)
 endif()
 
 if(APPLE)
@@ -361,7 +324,7 @@ endif()
 add_custom_command(
   TARGET codonrt
   POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:omp>
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:${_codon_omp_target}>
           ${CMAKE_BINARY_DIR})
 
 if(WIN32)
@@ -373,7 +336,7 @@ if(WIN32)
             ${CMAKE_BINARY_DIR}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_LINKER_FILE:openblas>
             ${CMAKE_BINARY_DIR}
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_LINKER_FILE:omp>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_LINKER_FILE:${_codon_omp_target}>
             ${CMAKE_BINARY_DIR})
 endif()
 
@@ -804,12 +767,6 @@ endif()
 add_library(codon_test_runtime_plugin SHARED EXCLUDE_FROM_ALL test/dsl/library.cpp)
 add_executable(codon_test ${CODON_TEST_CPPFILES})
 add_dependencies(codon_test codon codon_test_compiler_plugin codon_test_runtime_plugin)
-if(WIN32)
-  # On Windows codon_test statically links the whole compiler (see below), so keep it
-  # out of the default build to avoid compiling the compiler twice. Build on demand
-  # with: cmake --build <dir> --target codon_test
-  set_target_properties(codon_test PROPERTIES EXCLUDE_FROM_ALL ON)
-endif()
 target_include_directories(codon_test PRIVATE test/cir "${gc_SOURCE_DIR}/include")
 if(WIN32)
   # The unit tests ODR-use the compiler's static data members (NodeId, KEY,
