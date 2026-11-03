@@ -30,9 +30,17 @@ CPMAddPackage(
     GIT_TAG v1.0.1)
 
 if(WIN32)
-    set(_zlib_off64 "HAVE_OFF64_T OFF")
+    set(_zlib_platform_options "HAVE_OFF64_T OFF")
+    if(CMAKE_C_COMPILER_TARGET MATCHES "^(aarch64|arm64)" OR
+       (NOT CMAKE_C_COMPILER_TARGET AND
+        CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$"))
+        # zlib-ng 2.0.5 enables ACLE for GNU-style Clang but skips arm_acle.h
+        # when _MSC_VER is defined. Use portable CRC on Windows ARM until the
+        # dependency is updated; NEON optimizations remain enabled.
+        list(APPEND _zlib_platform_options "WITH_ACLE OFF")
+    endif()
 else()
-    set(_zlib_off64 "HAVE_OFF64_T ON")
+    set(_zlib_platform_options "HAVE_OFF64_T ON")
 endif()
 CPMAddPackage(
     NAME zlibng
@@ -40,7 +48,7 @@ CPMAddPackage(
     VERSION 2.0.5
     GIT_TAG 2.0.5
     EXCLUDE_FROM_ALL YES
-    OPTIONS "${_zlib_off64}"
+    OPTIONS ${_zlib_platform_options}
             "ZLIB_COMPAT ON"
             "ZLIB_ENABLE_TESTS OFF"
             "CMAKE_POSITION_INDEPENDENT_CODE ON")
