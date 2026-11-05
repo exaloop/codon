@@ -50,6 +50,10 @@ def check(compiler, root, mode, env, runtime_env):
                    f'if (!call) return 2; {ctype} result = call(value);',
                    *(f'if (result.{field} != value.{field}) return 3;' for field in fields), '}']
     client += ['return 0;', '}']
+    program += ['from C import seq_locale_decimal_point() -> str',
+                'expected_point = seq_locale_decimal_point()',
+                'for iteration in range(300000):',
+                '    assert seq_locale_decimal_point() == expected_point']
     fixture_source = root / 'C ABI fixture.c'
     fixture_source.write_text('\n'.join(declarations), encoding='utf-8')
     subprocess.run(['clang', '-shared', '-fms-runtime-lib=dll', str(fixture_source),
@@ -58,7 +62,7 @@ def check(compiler, root, mode, env, runtime_env):
     source = root / 'C ABI checks.codon'
     source.write_text('\n'.join(program), encoding='utf-8')
     executable = root / f'ABI checks {mode}.exe'
-    flags = '-linker-flags="' + import_library.as_posix() + '"'
+    flags = '-linker-flags="' + import_library.as_posix() + '" -Wl,/stack:1048576'
     subprocess.run([str(compiler), 'build', mode, '-o', str(executable), flags, str(source)],
                    env=env, cwd=root, check=True)
     subprocess.run([str(executable)], env=runtime_env, cwd=root, check=True)

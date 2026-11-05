@@ -1585,8 +1585,14 @@ static llvm::Type *winABIType(llvm::Module *module, llvm::Type *type,
 }
 
 static llvm::AllocaInst *winABISlot(llvm::IRBuilder<> &builder, llvm::Type *type) {
-  auto *slot = builder.CreateAlloca(type);
-  slot->setAlignment(llvm::Align(16));
+  // A call inside a loop must reuse a fixed frame slot, rather than subtracting
+  // from RSP on every iteration. Stores/loads remain at the call site.
+  auto *function = builder.GetInsertBlock()->getParent();
+  auto &entry = function->getEntryBlock();
+  llvm::IRBuilder<> allocation(&entry, entry.getFirstInsertionPt());
+  auto *slot = allocation.CreateAlloca(type);
+  auto alignment = function->getParent()->getDataLayout().getABITypeAlign(type);
+  slot->setAlignment(llvm::Align(std::max<uint64_t>(16, alignment.value())));
   return slot;
 }
 
