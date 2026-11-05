@@ -716,9 +716,6 @@ INSTANTIATE_TEST_SUITE_P(
     ),
     getTestNameFromParam);
 
-// GPU (CODON_GPU=OFF) and numpy (carved out: no native Fortran/BLAS on MSVC) are
-// unsupported on Windows — skip their suites so the runner reflects what's built.
-#ifndef _WIN32
   INSTANTIATE_TEST_SUITE_P(
     GpuTests, SeqTest,
     testing::Combine(
@@ -786,7 +783,7 @@ INSTANTIATE_TEST_SUITE_P(
             "numpy/test_lib.codon",
             "numpy/test_linalg.codon",
             "numpy/test_loops.codon",
-            // "numpy/test_misc.codon", // TODO: takes forever in debug mode
+            "numpy/test_misc.codon",
             "numpy/test_ndmath.codon",
             "numpy/test_npdatetime.codon",
             "numpy/test_pybridge.codon",
@@ -806,8 +803,6 @@ INSTANTIATE_TEST_SUITE_P(
         testing::Values(true)
     ),
     getTestNameFromParam);
-#endif // !_WIN32
-
 // clang-format on
 
 int main(int argc, char *argv[]) {
