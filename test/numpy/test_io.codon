@@ -1755,11 +1755,11 @@ def test_load_incorrect_filename_v1():
     filename = test_dir + "/binary_incorrect_filename-@!$%^&()_+=~`{}[].np_v1.npy"
     np.save(filename, array)
     assert np.array_equal(np.load(filename, dtype=int), array)
-    # These are valid POSIX filenames and reserved Windows characters. Exercise
-    # each native behavior instead of requiring Windows to create an illegal name.
+    # Most of these are reserved Windows characters. A colon also names an
+    # NTFS alternate data stream, so it is a valid roundtrip in this position.
     for character in '<>:"|?*':
         filename = test_dir + "/reserved-" + character + ".npy"
-        if __windows__:
+        if __windows__ and character != ':':
             try:
                 np.save(filename, array)
                 assert False, "reserved Windows filename was accepted"
