@@ -50,6 +50,10 @@ with tempfile.TemporaryDirectory(prefix='codon sdk ', dir=Path(sys.argv[1]).reso
          '-DNDEBUG', '-I' + str(relocated / 'include'),
          str(Path(__file__).with_name('sdk_plugin.cpp').resolve()),
          str(relocated / 'lib/codon/codonc.lib'), str(fmt_library),
+         str(relocated / 'lib/codon/LLVMSupport.lib'),
+         str(relocated / 'lib/codon/LLVMDemangle.lib'),
+         '-lpsapi', '-lshell32', '-lole32', '-luuid', '-ladvapi32',
+         '-lws2_32', '-lntdll', '-ldelayimp',
          '-o', str(plugin_library)], env, root)
     (plugin / 'plugin.toml').write_text(
         '[about]\nname = "SDK RTTI"\nsupported = ">=0.0.0"\n'

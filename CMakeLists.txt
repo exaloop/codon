@@ -853,6 +853,10 @@ if(WIN32)
   install(DIRECTORY "${fmt_SOURCE_DIR}/include/fmt" DESTINATION include)
   install(TARGETS fmt ARCHIVE DESTINATION lib/codon
                       LIBRARY DESTINATION lib/codon RUNTIME DESTINATION bin)
+  # Inline public CIR containers use LLVM allocation/SmallVector routines.
+  # Support and Demangle contain no target/pass registries to duplicate in a plugin.
+  install(FILES "$<TARGET_FILE:LLVMSupport>" "$<TARGET_FILE:LLVMDemangle>"
+          DESTINATION lib/codon)
   # libomp.dll for runtime (JIT + AOT exes), libomp.lib so AOT `codon build` of @par
   # programs can link the __kmpc_* import lib via -L../lib/codon.
   install(FILES "${LLVM_TOOLS_BINARY_DIR}/libomp.dll" DESTINATION lib/codon)
