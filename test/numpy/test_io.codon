@@ -1267,6 +1267,24 @@ def test_writable_memmap():
 test_writable_memmap()
 
 @test
+def test_memmap_offset_and_copy():
+    filename = test_dir + "/offset_memmap.bin"
+    source = np.memmap(filename, dtype=i32, mode="w+", shape=(20000,))
+    source[:] = np.zeros(20000, dtype=i32)
+    offset = 65536 + 12
+    index = offset // 4
+    source[index] = 7
+    readonly = np.memmap(filename, dtype=i32, mode="r", offset=offset, shape=(2,))
+    private = np.memmap(filename, dtype=i32, mode="c", offset=offset, shape=(2,))
+    private[0] = 99
+    assert readonly[0] == i32(7) and source[index] == i32(7)
+    shared = np.memmap(filename, dtype=i32, mode="r+", offset=offset, shape=(2,))
+    shared[1] = 17
+    assert readonly[1] == i32(17) and source[index + 1] == i32(17)
+
+test_memmap_offset_and_copy()
+
+@test
 def test_text_fromfile_unicode_separator():
     path = test_dir + "/unicode_npio_fromfile.txt"
     with open(path, "w") as output:

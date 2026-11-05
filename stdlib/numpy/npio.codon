@@ -9,7 +9,7 @@ import re
 import internal.static as static
 from internal.unicode.generated.properties import unicode_is_space
 
-_ALLOCATIONGRANULARITY: Literal[int] = 16384
+_ALLOCATIONGRANULARITY: Literal[int] = 65536 if __windows__ else 16384
 
 _PROT_NONE: Literal[int] = 0
 _PROT_READ: Literal[int] = 1
@@ -32,6 +32,39 @@ def _io_error(base_msg: str):
     raise IOError(f"{base_msg}: {c_msg}" if c_msg else base_msg)
 
 def _mmap(f, length: int, access: int, flags: int, offset: int = 0):
+    if __windows__:
+        from os._win32 import _winerror, _close_handle_status, _handle_pointer
+        from C import _fileno(cobj) -> i32
+        from C import _get_osfhandle(i32) -> int
+        from C import CreateFileMappingW(cobj, cobj, u32, u32, u32, Ptr[u16]) -> cobj
+        from C import MapViewOfFile(cobj, u32, u32, u32, int) -> cobj
+        from C import UnmapViewOfFile(cobj) -> i32
+        from C import GetLastError() -> u32
+        handle = _get_osfhandle(_fileno(f._state._fp))
+        if handle == -1:
+            _io_error("invalid file descriptor for memory mapping")
+        if length <= 0 or offset < 0:
+            raise ValueError("memory mapping requires a positive length and nonnegative offset")
+        # Win64 view offsets use 64 KiB allocation granularity. Copy-on-write
+        # views must not request write access to a read-only file descriptor.
+        copy = flags == _MAP_PRIVATE and (access & _PROT_WRITE) != 0
+        protection = 8 if copy else (4 if access & _PROT_WRITE else 2)
+        desired = 1 if copy else (2 if access & _PROT_WRITE else 4)
+        mapping = CreateFileMappingW(_handle_pointer(handle), cobj(), u32(protection),
+                                      u32(0), u32(0), Ptr[u16]())
+        if not mapping:
+            _winerror("CreateFileMappingW", GetLastError())
+        view = MapViewOfFile(mapping, u32(desired), u32(offset >> 32),
+                             u32(offset & 0xFFFFFFFF), length)
+        code = GetLastError() if not view else u32(0)
+        # A mapped view retains the mapping after its handle is closed.
+        cleanup = _close_handle_status(mapping)
+        if not view:
+            _winerror("MapViewOfFile", code)
+        if cleanup:
+            UnmapViewOfFile(view)
+            cleanup.raise_error("CloseHandle")
+        return view
     from C import mmap(cobj, int, i32, i32, i32, int) -> cobj
     from C import fileno(cobj) -> i32
 
@@ -42,6 +75,13 @@ def _mmap(f, length: int, access: int, flags: int, offset: int = 0):
     return mm
 
 def _munmap(p: cobj, length: int):
+    if __windows__:
+        from os._win32 import _winerror
+        from C import UnmapViewOfFile(cobj) -> i32
+        from C import GetLastError() -> u32
+        if not UnmapViewOfFile(p):
+            _winerror("UnmapViewOfFile", GetLastError())
+        return
     from C import munmap(cobj, int) -> i32
     if munmap(p, length) == i32(-1):
         _io_error("munmap() call failed")
