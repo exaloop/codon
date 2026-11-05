@@ -619,7 +619,9 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
   }
 
 #ifdef _WIN32
-  std::vector<std::string> command = {"clang", "-fuse-ld=lld"};
+  // codonrt uses /MD. Generated callers must share its CRT for FILE*, locale
+  // state and memory ownership across the DLL boundary.
+  std::vector<std::string> command = {"clang", "-fuse-ld=lld", "-fms-runtime-lib=dll"};
   if (!library) {
     for (const auto &rpath : rpaths) {
       llvm::SmallString<128> manifest(rpath);

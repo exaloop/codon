@@ -30,9 +30,14 @@ with tempfile.TemporaryDirectory(prefix='codon sdk ', dir=Path(sys.argv[1]).reso
     env['CODON_DIR'] = str(relocated)
     compiler = relocated / 'bin' / 'codon.exe'
     source = root / 'input with spaces.codon'
-    source.write_text('print("SDK with spaces")\n', encoding='utf-8')
+    source.write_text('print("SDK with spaces", flush=True)\n'
+                      'with open("runtime stream.txt", "w") as stream:\n'
+                      '    print("shared CRT", file=stream, flush=True)\n', encoding='utf-8')
     for mode in ('-debug', '-release'):
         output = root / f'my app {mode}.exe'
         run([str(compiler), 'build', mode, '-o', str(output), str(source)], env, root)
         assert run([str(output)], env, root).strip() == 'SDK with spaces'
+        assert (root / 'runtime stream.txt').read_text().strip() == 'shared CRT'
+        imports = run([shutil.which('llvm-readobj'), '--coff-imports', str(output)], env, root)
+        assert 'Symbol: fflush' in imports, imports
 print('Windows SDK path-with-spaces checks passed')
