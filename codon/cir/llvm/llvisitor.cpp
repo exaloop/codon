@@ -4132,6 +4132,8 @@ void LLVMVisitor::visit(const CallInstr *x) {
     return;
   }
 
+  B->SetInsertPoint(block);
+  auto *callResult = call({funcType, f}, args);
   auto *resultType = getLLVMType(x->getType());
   if (!isStorableType(resultType)) {
     value = getDummyValue(resultType);
