@@ -211,7 +211,8 @@ if(NOT APPLE AND NOT WIN32 AND NOT SYSTEM_BLAS)
                 "NUM_THREADS 64"
                 "CCOMMON_OPT -O3")
 elseif(WIN32)
-    # Use the prebuilt x64 BLAS + LAPACK + CBLAS runtime.
+    # This x64 BLAS + LAPACK + CBLAS release is LP64. Keep numpy.linalg.blas.fint
+    # at 32 bits on Windows, including all LAPACK output buffers and pivot arrays.
     set(OPENBLAS_WIN_URL
         https://github.com/OpenMathLib/OpenBLAS/releases/download/v0.3.29/OpenBLAS-0.3.29_x64.zip)
     CPMAddPackage(
