@@ -1,8 +1,21 @@
 import numpy as np
 import gzip
 import bz2
+import os
 
-test_dir = "test/numpy/data"
+def private_test_directory():
+    # Debug/release cases run concurrently. Shared writable/mapped files can
+    # expose truncated data or prevent another worker from replacing a file.
+    for attempt in range(100):
+        candidate = f"build/numpy-io-{os.getpid()}-{attempt}"
+        try:
+            os.mkdir(candidate)
+            return candidate
+        except OSError:
+            pass
+    raise OSError("could not create private NumPy I/O test directory")
+
+test_dir = private_test_directory()
 
 # TestSaveLoad
 
