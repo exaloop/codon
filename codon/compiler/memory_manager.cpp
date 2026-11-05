@@ -350,7 +350,7 @@ class Win64SEHRegistrationPlugin : public llvm::orc::ObjectLinkingLayer::Plugin 
                      std::weak_ptr<Materialization>> materializations;
 
   static llvm::Error unregister(std::vector<RegisteredTable> tables) {
-    auto error = llvm::Error::success();
+    llvm::Error error = llvm::Error::success();
     for (auto table : tables)
       if (!RtlDeleteFunctionTable(table.entries))
         error = llvm::joinErrors(std::move(error), llvm::make_error<llvm::StringError>(
