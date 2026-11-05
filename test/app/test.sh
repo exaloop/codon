@@ -127,3 +127,7 @@ done
 
 # input test
 [ "$($codon run "$testdir/input.codon" < "$testdir/input.txt")" == "input: aa bb,,cc,X" ] || exit 5
+
+if [ "$windows" -eq 1 ]; then
+  python "$testdir/windows_sdk.py" "$arg" || exit 6
+fi

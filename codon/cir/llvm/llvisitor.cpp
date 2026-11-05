@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <fmt/args.h>
 #include <utility>
+#include <llvm/Support/Program.h>
 
 #ifdef _WIN32
 #include <process.h>
@@ -501,10 +502,18 @@ void executeCommand(const std::vector<std::string> &args) {
   cArgs.push_back(nullptr);
 
 #ifdef _WIN32
-  intptr_t status = _spawnvp(_P_WAIT, cArgs[0], cArgs.data());
-  if (status < 0) {
-    compilationError("process for '" + args[0] + "' could not be started");
-  }
+  // LLVM quotes each Windows argument before CreateProcessW. _spawnvp joins
+  // raw arguments, which loses spaces and embedded quotes in paths and flags.
+  auto program = llvm::sys::findProgramByName(args.front());
+  if (!program)
+    compilationError("process for '" + args.front() + "' could not be found: " +
+                     program.getError().message());
+  std::vector<llvm::StringRef> arguments(args.begin(), args.end());
+  std::string message;
+  int status = llvm::sys::ExecuteAndWait(*program, arguments, std::nullopt, {},
+                                        0, 0, &message);
+  if (status < 0)
+    compilationError("process for '" + args.front() + "' failed: " + message);
   if (status != 0) {
     compilationError("process for '" + args[0] + "' exited with status " +
                      std::to_string(status));
