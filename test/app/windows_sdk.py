@@ -41,7 +41,7 @@ with tempfile.TemporaryDirectory(prefix='codon sdk ', dir=Path(sys.argv[1]).reso
     plugin_library = plugin / 'rtti-pass.dll'
     fmt_library = next(p for p in (relocated / 'lib/codon/fmt.lib',
                                    relocated / 'lib/codon/fmtd.lib') if p.exists())
-    run(['clang++', '-std=c++17', '-shared', '-fuse-ld=lld', '-fms-runtime-lib=dll',
+    run(['clang++', '-std=c++20', '-shared', '-fuse-ld=lld', '-fms-runtime-lib=dll',
          '-DNDEBUG', '-I' + str(relocated / 'include'),
          str(Path(__file__).with_name('sdk_plugin.cpp').resolve()),
          str(relocated / 'lib/codon/codonc.lib'), str(fmt_library),
