@@ -1,4 +1,4 @@
-"""Compare POSIX path resolution and access modes with the host CPython.
+"""Compare native path resolution and access modes with the host CPython.
 
 Legacy CPython stops resolving after a symlink loop, unlike modern CPython and
 Codon. Exclude those incomplete oracle results; os_test.codon covers post-loop
@@ -68,11 +68,43 @@ def realpath_cases(root, seed, graphs):
     return cases
 
 
+def windows_realpath_cases(root, seed, graphs):
+    """Use Windows paths and link types rather than POSIX root semantics."""
+    randomizer = random.Random(seed)
+    cases = ["", ".", "..", "\\", str(root), str(root).replace("\\", "/")]
+    for graph in range(graphs):
+        base = root / f"graph-{graph}"
+        base.mkdir()
+        (base / "dir" / "child").mkdir(parents=True)
+        (base / "file").write_text("data")
+        (base / "caf\u00e9").mkdir()
+        targets = {"self": ("self", True),
+                   "cycle-a": ("cycle-b", True), "cycle-b": ("cycle-a", True),
+                   "directory": ("dir", True), "relative": ("directory/child/..", True),
+                   "absolute": (str(base / "dir"), True),
+                   "dangling": ("missing/child", True), "file-link": ("file", False)}
+        names = [f"link-{index}" for index in range(12)]
+        pool = ["self", "cycle-a", "directory", "absolute", "dangling", "dir", "missing"] + names
+        for name in names:
+            target = randomizer.choice(pool)
+            if randomizer.randrange(3) == 0:
+                target = str(base / target)
+            targets[name] = (target, True)
+        for name, (target, directory) in targets.items():
+            os.symlink(target, base / name, target_is_directory=directory)
+        for name in [*targets, "dir", "file", "missing", "caf\u00e9"]:
+            for suffix in ("", "/", "/child", "/..", "/../directory", "/missing/.."):
+                path = str(base / name) + suffix
+                cases.extend((path, path.replace("\\", "/"), os.path.relpath(path)))
+        cases.append("\\\\?\\" + str(base / "dir"))
+    return cases
+
+
 def compare(binary, operation, values, expected, extra=()):
     result = subprocess.run(
         [str(binary), operation, *extra],
         input="".join(value + "\n" for value in values),
-        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, encoding="utf-8", stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         check=True, timeout=120,
     )
     actual = result.stdout.splitlines()
@@ -96,18 +128,17 @@ def main():
     parser.add_argument("--seed", type=int, default=1729)
     parser.add_argument("--graphs", type=int, default=12)
     args = parser.parse_args()
-    if os.name != "posix":
-        parser.error("this differential suite requires POSIX")
     with tempfile.TemporaryDirectory(prefix="codon-os-differential-") as temporary:
         root = Path(temporary)
         source = root / "probe.codon"
-        binary = root / "probe"
+        binary = root / ("probe.exe" if os.name == "nt" else "probe")
         source.write_text(PROBE)
         subprocess.run(
             [str(args.codon.resolve()), "build", "-release", "-o", str(binary), str(source)],
             check=True, timeout=120,
         )
-        cases = realpath_cases(root, args.seed, args.graphs)
+        corpus = windows_realpath_cases if os.name == "nt" else realpath_cases
+        cases = corpus(root, args.seed, args.graphs)
         legacy_resolver = getattr(os.path, "_joinrealpath", None)
         if legacy_resolver is not None:
             compatible = [

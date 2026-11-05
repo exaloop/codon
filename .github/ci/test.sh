@@ -81,10 +81,12 @@ if [ "$SHARD_INDEX" -ne 0 ]; then
   exit 0
 fi
 
-if [ "$WINDOWS" -eq 0 ]; then
-  echo "=> POSIX OS differential tests..."
-  python test/stdlib/os_differential.py --codon "${CODON_DIR}/bin/codon"
+echo "=> OS differential tests..."
+CODON_EXECUTABLE="${CODON_DIR}/bin/codon"
+if [ "$WINDOWS" -eq 1 ]; then
+  CODON_EXECUTABLE="${CODON_EXECUTABLE}.exe"
 fi
+python test/stdlib/os_differential.py --codon "$CODON_EXECUTABLE"
 
 echo "=> Standalone test..."
 CODON_PATH=${CODON_DIR}/lib/codon/stdlib bash test/app/test.sh "$BUILD_DIR"
