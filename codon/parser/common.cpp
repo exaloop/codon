@@ -432,10 +432,29 @@ std::string library_path() {
     break;
   }
 #elif defined(_WIN32)
-  char buffer[MAX_PATH];
-  DWORD n = GetModuleFileNameA(nullptr, buffer, (DWORD)sizeof(buffer));
-  if (n > 0 && n < (DWORD)sizeof(buffer))
-    result = std::string(buffer, n);
+  HMODULE module = nullptr;
+  if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                            GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                        reinterpret_cast<LPCWSTR>(&library_path), &module)) {
+    std::vector<wchar_t> buffer(256);
+    for (;;) {
+      DWORD n = GetModuleFileNameW(module, buffer.data(), DWORD(buffer.size()));
+      if (!n)
+        break;
+      if (n >= buffer.size()) {
+        buffer.resize(buffer.size() * 2);
+        continue;
+      }
+      int bytes = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, buffer.data(),
+                                      int(n), nullptr, 0, nullptr, nullptr);
+      if (bytes > 0) {
+        result.resize(bytes);
+        WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, buffer.data(), int(n),
+                            result.data(), bytes, nullptr, nullptr);
+      }
+      break;
+    }
+  }
 #else
   for (int r = 0; r < 5; r++) {
     FILE *maps = fopen("/proc/self/maps", "r");

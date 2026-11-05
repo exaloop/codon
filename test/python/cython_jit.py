@@ -1,8 +1,26 @@
 from typing import Dict, List, Tuple
 import subprocess
 import sys
+import os
+from pathlib import Path
 import numpy as np
 import codon
+
+if __name__ == "__main__" and "--stdlib-discovery-only" in sys.argv:
+    from codon.codon_jit import codon_library
+    expected = Path(os.environ['CODON_DIR']) / 'lib' / 'codon' / 'stdlib'
+    assert Path(os.environ['CODON_PATH']).resolve() == expected.resolve()
+    if os.name == 'nt':
+        assert Path(codon_library()).name.lower() == 'codonc.dll'
+    codon.execute('assert 6 * 7 == 42\n')
+    print('JIT stdlib discovery passed', flush=True)
+    sys.exit(0)
+
+if __name__ == "__main__" and "--options-only" not in sys.argv:
+    discovery_env = os.environ.copy()
+    discovery_env.pop('CODON_PATH', None)
+    subprocess.run([sys.executable, __file__, '--stdlib-discovery-only'],
+                   env=discovery_env, check=True, timeout=300)
 
 def test_options():
     for settings in ({"fastmath": 1}, {"fastmath": None}, {"mcpu": True},

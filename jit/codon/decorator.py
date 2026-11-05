@@ -28,9 +28,13 @@ from .codon_jit import JITWrapper, JITError, codon_library
 
 if "CODON_PATH" not in os.environ:
     codon_path = []
+    if os.environ.get("CODON_DIR"):
+        codon_path.append(Path(os.environ["CODON_DIR"]) / "lib" / "codon" / "stdlib")
     codon_lib_path = codon_library()
     if codon_lib_path:
-        codon_path.append(Path(codon_lib_path).parent / "stdlib")
+        library_dir = Path(codon_lib_path).parent
+        codon_path.append(library_dir / "stdlib")
+        codon_path.append(library_dir.parent / "lib" / "codon" / "stdlib")
     codon_path.append(
         Path(os.path.expanduser("~")) / ".codon" / "lib" / "codon" / "stdlib")
     for path in codon_path:
