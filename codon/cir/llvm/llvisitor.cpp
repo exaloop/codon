@@ -625,7 +625,11 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
 #ifdef _WIN32
   // codonrt uses /MD. Generated callers must share its CRT for FILE*, locale
   // state and memory ownership across the DLL boundary.
-  std::vector<std::string> command = {"clang", "-fuse-ld=lld", "-fms-runtime-lib=dll"};
+  // Clang's runtime flag affects frontend directives, but this input is an
+  // LLVM-generated object. Override the link driver's libcmt default as well.
+  std::vector<std::string> command = {
+      "clang", "-fuse-ld=lld", "-fms-runtime-lib=dll",
+      "-Wl,/nodefaultlib:libcmt", "-lmsvcrt", "-lvcruntime", "-lucrt"};
   if (!library) {
     for (const auto &rpath : rpaths) {
       llvm::SmallString<128> manifest(rpath);
