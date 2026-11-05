@@ -3522,7 +3522,7 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
   // exception handling
   B->SetInsertPoint(tc.exceptionBlock);
   llvm::Value *unwindException = nullptr;
-  if (isWinMSVC(&*M)) {
+  if (isWinMSVC(&*M) && !options->noexc) {
     // Win64 SEH/funclet form: the try-body invokes here to a catchswitch. A single
     // catchpad with the Codon SEH filter (seq_exc_filter) recovers the TLS-stashed
     // exception via seq_exc_current() (carrying the required funclet bundle), stores

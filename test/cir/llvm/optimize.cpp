@@ -6372,3 +6372,39 @@ TEST(LLVMOptimizationTest, DoesNotHoistReallocatedPointer) {
             0);
   EXPECT_EQ(0, countLazyFixedAllocationCaches(optimized.module.get(), 65536));
 }
+
+TEST(LLVMOptimizationTest, DisablesExceptionPads) {
+  ASSERT_EXIT(
+      {
+        for (bool debug : {false, true}) {
+          auto options = Options::getDefault("build/codon_test");
+          options->debug = debug;
+          options->standalone = true;
+          options->noexc = true;
+          Compiler compiler(*options);
+          llvm::cantFail(compiler.parseCode("no_exceptions.codon", R"(
+@export
+def no_exceptions(value: int):
+    try:
+        return 8 // value
+    except ZeroDivisionError:
+        return -1
+    finally:
+        value += 1
+)"));
+          llvm::cantFail(compiler.compile());
+          auto *module = compiler.getLLVMVisitor()->getModule();
+          EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+          auto *function = module->getFunction("no_exceptions");
+          ASSERT_NE(function, nullptr);
+          EXPECT_FALSE(function->hasPersonalityFn());
+          for (auto &block : *function)
+            for (auto &instruction : block) {
+              EXPECT_FALSE(instruction.isEHPad());
+              EXPECT_FALSE(llvm::isa<llvm::InvokeInst>(instruction));
+            }
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
