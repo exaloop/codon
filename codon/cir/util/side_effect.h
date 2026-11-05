@@ -4,6 +4,8 @@
 
 #include <string>
 
+#include "codon/compiler/error.h"
+
 namespace codon {
 namespace ir {
 namespace util {
