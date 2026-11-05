@@ -228,6 +228,17 @@ def test_windows_filesystem():
         assert os.access(file, os.F_OK)
         os.chmod(file, 0o400)
         assert not os.access(file, os.W_OK)
+        for mode in [-2147483648, -8, -1, *range(16), 255, 2147483647]:
+            assert os.access(root, mode)
+            assert os.access(file, mode) == ((mode & os.W_OK) == 0)
+            assert not os.access(missing, mode)
+        for mode in [-2147483649, 2147483648]:
+            try:
+                os.access(file, mode)
+            except OverflowError:
+                pass
+            else:
+                assert False
         os.chmod(file, 0o600)
         assert os.access(file, os.W_OK)
         os.link(file, hard)

@@ -667,8 +667,10 @@ def readlink(path: str) -> str:
 def access(path: str, mode: int) -> bool:
     from C import GetFileAttributesW(Ptr[u16]) -> u32
     from C import GetLastError() -> u32
-    if mode < 0 or (mode & ~7) != 0:
-        raise ValueError("access mode must contain only F_OK, R_OK, W_OK, X_OK")
+    # CPython's Windows implementation consults only W_OK; unrelated bits and
+    # negative C-int masks do not invalidate the request.
+    if mode < -2147483648 or mode > 2147483647:
+        raise OverflowError("Python int too large to convert to C int")
     attributes = GetFileAttributesW(_wide(path))
     if attributes == u32(0xFFFFFFFF):
         code = GetLastError()
