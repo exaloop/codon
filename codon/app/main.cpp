@@ -417,7 +417,11 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
     extension = ".s";
     break;
   case BuildKind::Library:
+#ifdef _WIN32
+    extension = ".dll";
+#else
     extension = isMacOS() ? ".dylib" : ".so";
+#endif
     break;
   case BuildKind::Executable:
   case BuildKind::Detect:

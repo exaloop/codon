@@ -1369,7 +1369,8 @@ void LLVMVisitor::compile(const std::string &filename, const std::string &argv0,
     writeToObjectFile(filename);
   } else if (f.ends_with(".s") || f.ends_with(".S") || f.ends_with(".asm")) {
     writeToObjectFile(filename, /*pic=*/false, /*assembly=*/true);
-  } else if (f.ends_with(".so") || f.ends_with(".dylib")) {
+  } else if (f.ends_with(".so") || f.ends_with(".dylib") ||
+             f.ends_with_insensitive(".dll")) {
     writeToExecutable(filename, argv0, /*library=*/true, libs, lflags);
   } else {
     writeToExecutable(filename, argv0, /*library=*/false, libs, lflags);
@@ -1687,6 +1688,8 @@ void LLVMVisitor::makeWinExportWrapper(llvm::StringRef name, llvm::Function *bod
   auto *signature = body->getFunctionType();
   auto *wrapper = llvm::cast<llvm::Function>(M->getOrInsertFunction(
       name, winABISignature(M.get(), signature)).getCallee());
+  if (!options->jit)
+    wrapper->setDLLStorageClass(llvm::GlobalValue::DLLExportStorageClass);
   if (!wrapper->empty())
     return;
   wrapper->addFnAttr("codon-abi-body", body->getName());

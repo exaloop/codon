@@ -81,8 +81,8 @@ fi
 
 # library test
 if [ "$windows" -eq 1 ]; then
-  "$codon" build -lib -release -o "$arg/codon_export_test.dll" \
-    "-linker-flags=-Wl,/EXPORT:foo -Wl,/IMPLIB:$(cygpath -am "$arg/codon_export_test.lib")" "$testdir/export.codon" || exit 3
+  "$codon" build -release -o "$arg/codon_export_test.dll" \
+    "-linker-flags=-Wl,/IMPLIB:$(cygpath -am "$arg/codon_export_test.lib")" "$testdir/export.codon" || exit 3
   clang "$testdir/test.c" "$arg/codon_export_test.lib" -o "$arg/test_binary$exe_suffix" || exit 3
 else
   "$codon" build -relocation-model=pic -o "$arg/libcodon_export_test.so" "$testdir/export.codon" || exit 3

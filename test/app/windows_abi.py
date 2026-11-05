@@ -67,9 +67,8 @@ def check(compiler, root, mode, env, runtime_env):
                    env=env, cwd=root, check=True)
     subprocess.run([str(executable)], env=runtime_env, cwd=root, check=True)
     codon_library = root / f'Codon exports {mode}.dll'
-    export_flags = flags + ' ' + ' '.join('-Wl,/EXPORT:' + name for name in exported)
-    subprocess.run([str(compiler), 'build', mode, '-lib', '-o', str(codon_library),
-                    export_flags, str(source)], env=env, cwd=root, check=True)
+    subprocess.run([str(compiler), 'build', mode, '-o', str(codon_library),
+                    flags, str(source)], env=env, cwd=root, check=True)
     client_source = root / 'C ABI consumer.c'
     client_source.write_text('\n'.join(declarations[:2] +
                            [f'typedef struct {{ {definition} }} S_{name};'
