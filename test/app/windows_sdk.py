@@ -15,9 +15,14 @@ def copy_file(source, destination):
 
 
 def run(arguments, env, cwd):
-    return subprocess.run(arguments, env=env, cwd=cwd, check=True,
-                          stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                          text=True).stdout
+    result = subprocess.run(arguments, env=env, cwd=cwd,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            text=True)
+    if result.returncode:
+        sys.stdout.write(result.stdout)
+        sys.stderr.write(result.stderr)
+        result.check_returncode()
+    return result.stdout
 
 
 sdk = Path(os.environ['CODON_DIR']).resolve()
