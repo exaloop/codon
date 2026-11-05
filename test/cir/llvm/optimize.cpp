@@ -269,6 +269,52 @@ TEST(LLVMOptimizationTest, InlineAttributes) {
       testing::ExitedWithCode(EXIT_SUCCESS), "");
 }
 
+#ifdef _WIN32
+TEST(LLVMOptimizationTest, StabilizesNativeCCallAdapters) {
+  ASSERT_EXIT(
+      {
+        for (bool debug : {false, true}) {
+          auto options = Options::getDefault("build/codon_test");
+          options->debug = debug;
+          options->standalone = true;
+          Compiler compiler(*options);
+          llvm::cantFail(compiler.parseCode("native_callback.codon", R"(
+from internal.dlopen import _call_c
+
+@export
+def invoke_native(callback: Function[[int], int], value: int):
+    return _call_c(callback, (value,))
+)"));
+          llvm::cantFail(compiler.compile());
+          auto *module = compiler.getLLVMVisitor()->getModule();
+          EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+          const auto &functions = compiler.getLLVMVisitor()->getFuncs();
+          size_t adapters = 0;
+          for (auto *variable : *compiler.getModule()) {
+            auto *function = ir::cast<ir::LLVMFunc>(variable);
+            if (!function ||
+                !ir::util::hasAttribute(
+                    function,
+                    ast::getMangledFunc("std.internal.attributes", "llvm_c_call")))
+              continue;
+            auto *adapter = functions.at(function->getId());
+            ASSERT_NE(adapter, nullptr);
+            EXPECT_EQ(adapter->getName(), function->getName() + ".0");
+            size_t definitions = 0;
+            for (auto &candidate : *module)
+              if (candidate.getName().starts_with(function->getName() + "."))
+                ++definitions;
+            EXPECT_EQ(definitions, 1u);
+            ++adapters;
+          }
+          EXPECT_GT(adapters, 0u);
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+#endif
+
 TEST(IntrinsicCodegenTest, TypeQueriesAreConstantsBeforeOptimization) {
   ASSERT_EXIT(
       {

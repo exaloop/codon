@@ -800,8 +800,20 @@ if(ASAN)
     codon_test PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address"
                        "-fsanitize-recover=address")
 endif()
+set(CODON_TEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/test")
+if(WIN32)
+  # A subst drive may exist only in the configuring session. Embed the physical
+  # fixture path so a fresh shell can run the test executable without that drive.
+  execute_process(
+    COMMAND "${Python3_EXECUTABLE}" -c
+            "from pathlib import Path; import sys; print(Path(sys.argv[1]).resolve().as_posix())"
+            "${CODON_TEST_DIR}"
+    OUTPUT_VARIABLE CODON_TEST_DIR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    COMMAND_ERROR_IS_FATAL ANY)
+endif()
 target_compile_definitions(codon_test
-                           PRIVATE TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test"
+                           PRIVATE TEST_DIR="${CODON_TEST_DIR}"
                            TEST_CODON="$<TARGET_FILE:codon>"
                            TEST_PLUGIN_COMPILER="$<TARGET_FILE:codon_test_compiler_plugin>"
                            TEST_PLUGIN_RUNTIME="$<TARGET_FILE:codon_test_runtime_plugin>")

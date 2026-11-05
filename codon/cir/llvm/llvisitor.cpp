@@ -2137,7 +2137,7 @@ void LLVMVisitor::visit(const LLVMFunc *x) {
     // call just like a direct ExternalFunc call.
     auto *signature = getLLVMFuncType(x->getType());
     func = llvm::Function::Create(signature, llvm::GlobalValue::PrivateLinkage,
-                                  getNameForFunction(x), M.get());
+                                  getLLVMNameForFunction(x), M.get());
     func->addFnAttr(llvm::Attribute::AlwaysInline);
     func->setSubprogram(getDISubprogramForFunc(x));
     auto *entry = llvm::BasicBlock::Create(*context, "entry", func);

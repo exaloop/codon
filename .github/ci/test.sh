@@ -36,6 +36,9 @@ else
   # needed for dylib test
   ln -s -f "$PWD/$BUILD_DIR/libcodonrt.dylib" .
 fi
+# Test the SDK's matching stdlib even when an out-of-tree build has an older
+# stdlib directory beside it.
+export CODON_PATH="${CODON_DIR}/lib/codon/stdlib"
 CODON_PYTHON=$(python "$WORKSPACE/test/python/find-python-library.py")
 export CODON_PYTHON
 if [ "$WINDOWS" -eq 0 ]; then
