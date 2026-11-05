@@ -223,29 +223,73 @@ def _final_path_status(path: str) -> Tuple[str, _Status]:
         cleanup = _close_handle_status(handle)
     return result, error if error else cleanup
 
+def _realpath_link_chain(path: str) -> Tuple[str, _Status]:
+    import os._ntpath as ntpath
+    seen: Set[str] = set()
+    while ntpath.normcase(path) not in seen:
+        seen.add(ntpath.normcase(path))
+        target, error = _readlink_status(path)
+        if error:
+            if error.kind == 1 or error.winerror in (1, 2, 3, 5, 21, 32, 50, 67, 87, 4390, 4392, 4393):
+                return path, _status()
+            return path, error
+        if not ntpath.isabs(target):
+            fields, error = _stat_status(path, False)
+            # A relative target is meaningful only for a symbolic link, not an
+            # arbitrary reparse point with filesystem-specific interpretation.
+            if error or fields[0] & 0o170000 != 0o120000:
+                break
+            target = ntpath.normpath(ntpath.join(ntpath.dirname(path), target))
+        path = target
+    return path, _status()
+
+def _realpath_nonstrict(path: str) -> str:
+    import os._ntpath as ntpath
+    tail = ""
+    while path:
+        resolved, error = _final_path_status(path)
+        if not error:
+            return ntpath.join(resolved, tail) if tail else resolved
+        if error.kind or error.winerror not in (1, 2, 3, 5, 21, 32, 50, 53, 65, 67, 87, 123, 161, 1005, 1920, 1921):
+            error.raise_error("realpath", path)
+        # Windows may refuse to traverse a relative or dangling link, or a
+        # cycle. Follow the reparse target before falling back to its parent.
+        linked, link_error = _realpath_link_chain(path)
+        if not link_error and linked != path:
+            return ntpath.join(linked, tail) if tail else linked
+        head, name = ntpath.split(path)
+        if head and not name:
+            return head + tail
+        tail = ntpath.join(name, tail) if tail else name
+        path = head
+    return tail
+
 def realpath(path: str, strict: bool = False) -> str:
     import os._ntpath as ntpath
-    current = getfullpathname(path if path else ".")
-    suffix: List[str] = []
-    while True:
-        result, error = _final_path_status(current)
-        if not error:
-            break
+    path = ntpath.normpath(path)
+    if ntpath.normcase(path) == "nul":
+        return "\\\\.\\NUL"
+    had_prefix = path.startswith("\\\\?\\")
+    if not had_prefix and not ntpath.isabs(path):
+        # Do not normalize this join: CPython's cycle detection distinguishes
+        # the original relative spelling from the first normalized link target.
+        path = ntpath.join(getcwd(), path)
+    result, error = _final_path_status(path)
+    initial_error = error.winerror
+    if error:
+        if error.kind == 1:
+            if strict:
+                raise OSError(error.message)
+            return ntpath.normpath(path)
         if strict or error.kind:
-            error.raise_error("realpath", current)
-        head, tail = ntpath.split(current)
-        if not tail or head == current:
-            result = current
-            break
-        suffix.append(tail)
-        current = head
-    for component in suffix[::-1]:
-        result = ntpath.join(result, component)
-    if not path.startswith("\\\\?\\"):
-        if result.startswith("\\\\?\\UNC\\"):
-            return "\\\\" + result[8:]
-        if result.startswith("\\\\?\\"):
-            return result[4:]
+            error.raise_error("realpath", path)
+        result = _realpath_nonstrict(path)
+    if not had_prefix and result.startswith("\\\\?\\"):
+        plain = "\\\\" + result[8:] if result.startswith("\\\\?\\UNC\\") else result[4:]
+        checked, check_error = _final_path_status(plain)
+        # Keep an extended prefix if removing it changes Windows interpretation.
+        if (not check_error and checked == result) or (check_error and check_error.winerror == initial_error):
+            result = plain
     return result
 
 def _wide(value: str) -> Ptr[u16]:

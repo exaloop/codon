@@ -153,6 +153,30 @@ def test_junction(root: str, directory: str):
         os.rmdir(junction)
 
 
+def test_realpath_fallback(root: str, directory: str):
+    original = os.getcwd()
+    child = path.join(directory, "child")
+    relative = path.join(root, "relative-target")
+    first, second = path.join(root, "cycle-a"), path.join(root, "cycle-b")
+    os.mkdir(child)
+    try:
+        os.symlink(path.basename(directory) + "/child/..", relative, target_is_directory=True)
+        os.symlink("cycle-b", first, target_is_directory=True)
+        os.symlink("cycle-a", second, target_is_directory=True)
+        assert path.normcase(path.realpath(relative)) == path.normcase(directory)
+        assert path.normcase(path.realpath(relative + "\\")) == path.normcase(directory)
+        assert path.realpath(first + "\\") == first
+        os.chdir(root)
+        assert path.realpath("..\\" + path.basename(root) + "\\cycle-a") == second
+        assert path.realpath("nul") == "\\\\.\\NUL"
+    finally:
+        os.chdir(original)
+        for link in [relative, first, second]:
+            if path.lexists(link):
+                os.rmdir(link)
+        os.rmdir(child)
+
+
 def create_file(name: str) -> int:
     from C import _wsopen_s(Ptr[i32], Ptr[u16], i32, i32, i32) -> i32
     fd = i32(-1)
@@ -189,6 +213,7 @@ def test_windows_filesystem():
         os.mkdir(sub)
         test_symlink_targets(root, sub)
         test_junction(root, sub)
+        test_realpath_fallback(root, sub)
         os.chdir(sub)
         assert path.normcase(os.getcwd()) == path.normcase(sub)
         assert os.getcwdb().decode("utf-8", "surrogatepass") == os.getcwd()
