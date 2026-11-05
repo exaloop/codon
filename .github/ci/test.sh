@@ -41,6 +41,12 @@ fi
 export CODON_PATH="${CODON_DIR}/lib/codon/stdlib"
 CODON_PYTHON=$(python "$WORKSPACE/test/python/find-python-library.py")
 export CODON_PYTHON
+if [ "$WINDOWS" -eq 1 ]; then
+  # Require the resources used by the native OS cases instead of silently
+  # omitting symlink and UNC coverage when their optional settings are absent.
+  CODON_OS_TEST_UNC_DIR=$(python "$WORKSPACE/test/stdlib/windows_test_fixture.py" "$WORKSPACE")
+  export CODON_OS_TEST_UNC_DIR
+fi
 if [ "$WINDOWS" -eq 0 ]; then
   export PYTHONPATH=${WORKSPACE}/test/python
 fi
