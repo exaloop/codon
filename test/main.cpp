@@ -295,6 +295,56 @@ TEST(WindowsJITTest, SEHHandlerMatchesImageBase) {
   EXPECT_EQ(handler->getValue(), reinterpret_cast<uintptr_t>(expected));
   EXPECT_EQ(handler->getValue() - imageBase->getValue(), 0xE0000000ull);
 }
+
+static int64_t unwindTestAnchor(int64_t value) { return value + 1; }
+
+TEST(WindowsJITTest, FailedMaterializationPreservesOtherUnwindTables) {
+  auto options = Options::getDefault(argv0);
+  options->debug = false;
+  Compiler compiler(*options);
+  jit::Engine engine(options.get());
+  auto &dylib = engine.getMainJITDylib();
+  llvm::orc::SymbolMap symbols;
+  symbols[dylib.getExecutionSession().intern("unwind_test_anchor")] = {
+      llvm::orc::ExecutorAddr::fromPtr(&unwindTestAnchor),
+      llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable};
+  llvm::cantFail(dylib.define(llvm::orc::absoluteSymbols(std::move(symbols))));
+  auto submit = [&](const char *name, const char *callee) {
+    auto context = std::make_unique<llvm::LLVMContext>();
+    auto module = std::make_unique<llvm::Module>(name, *context);
+    module->setDataLayout(engine.getDataLayout());
+    module->setTargetTriple(llvm::sys::getDefaultTargetTriple());
+    auto *integer = llvm::Type::getInt64Ty(*context);
+    auto *type = llvm::FunctionType::get(integer, {integer}, false);
+    auto *function = llvm::Function::Create(
+        type, llvm::GlobalValue::ExternalLinkage, name, *module);
+    function->setUWTableKind(llvm::UWTableKind::Async);
+    function->addFnAttr(llvm::Attribute::NoInline);
+    llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
+    auto *result = builder.CreateCall(module->getOrInsertFunction(callee, type),
+                                      {function->getArg(0)});
+    builder.CreateRet(builder.CreateAdd(result, builder.getInt64(1)));
+    return engine.addModule(llvm::orc::ThreadSafeModule(std::move(module),
+                                                       std::move(context)));
+  };
+  llvm::cantFail(submit("preserved_frame", "unwind_test_anchor"));
+  auto address = engine.lookup("preserved_frame");
+  ASSERT_TRUE(bool(address)) << llvm::toString(address.takeError());
+  DWORD64 base = 0;
+  auto *table = RtlLookupFunctionEntry(address->getValue(), &base, nullptr);
+  ASSERT_NE(table, nullptr);
+  llvm::cantFail(submit("failed_frame", "codon_intentionally_missing_unwind_symbol"));
+  auto failed = engine.lookup("failed_frame");
+  ASSERT_FALSE(bool(failed));
+  llvm::consumeError(failed.takeError());
+  EXPECT_EQ(RtlLookupFunctionEntry(address->getValue(), &base, nullptr), table);
+  EXPECT_EQ(address->toPtr<int64_t(int64_t)>()(40), 42);
+  auto destination = dylib.createResourceTracker();
+  dylib.getDefaultResourceTracker()->transferTo(*destination);
+  EXPECT_EQ(RtlLookupFunctionEntry(address->getValue(), &base, nullptr), table);
+  llvm::cantFail(destination->remove());
+  EXPECT_EQ(RtlLookupFunctionEntry(address->getValue(), &base, nullptr), nullptr);
+}
 #endif
 
 // Compile (and optionally run) a single test case. Extracted so the same logic

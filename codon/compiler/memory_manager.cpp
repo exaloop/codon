@@ -334,105 +334,148 @@ namespace {
 /// the table's base address. Without this, raised SEH exceptions cannot unwind
 /// through JIT'd funclet scopes.
 class Win64SEHRegistrationPlugin : public llvm::orc::ObjectLinkingLayer::Plugin {
-  struct RegisteredTable {
-    PRUNTIME_FUNCTION entries;
+  struct RegisteredTable { PRUNTIME_FUNCTION entries; };
+  struct Materialization {
+    llvm::orc::ResourceKey key = 0;
+    bool removed = false;
+    std::vector<RegisteredTable> tables;
   };
-
   uint64_t imageBase;
   std::mutex tablesMutex;
-  std::unordered_map<llvm::orc::ResourceKey, std::vector<RegisteredTable>> tables;
+  // A resource tracker can own many independent materializations. Keep their
+  // registrations separate so failure of one never invalidates its siblings.
+  std::unordered_map<llvm::orc::ResourceKey,
+                     std::vector<std::shared_ptr<Materialization>>> resources;
+  std::unordered_map<const llvm::orc::MaterializationResponsibility *,
+                     std::weak_ptr<Materialization>> materializations;
 
-  llvm::Error removeTables(llvm::orc::ResourceKey key) {
-    std::vector<RegisteredTable> removed;
-    {
-      std::lock_guard<std::mutex> lock(tablesMutex);
-      auto it = tables.find(key);
-      if (it == tables.end())
-        return llvm::Error::success();
-      removed = std::move(it->second);
-      tables.erase(it);
-    }
-    for (const auto &table : removed)
+  static llvm::Error unregister(std::vector<RegisteredTable> tables) {
+    auto error = llvm::Error::success();
+    for (auto table : tables)
       if (!RtlDeleteFunctionTable(table.entries))
-        return llvm::make_error<llvm::StringError>(
+        error = llvm::joinErrors(std::move(error), llvm::make_error<llvm::StringError>(
             "RtlDeleteFunctionTable failed for JIT'd .pdata",
-            llvm::inconvertibleErrorCode());
-    return llvm::Error::success();
+            llvm::inconvertibleErrorCode()));
+    return error;
   }
 
 public:
   Win64SEHRegistrationPlugin() {
     uintptr_t handler = 0;
     if (HMODULE crt = GetModuleHandleW(L"vcruntime140.dll"))
-      handler =
-          reinterpret_cast<uintptr_t>(GetProcAddress(crt, "__C_specific_handler"));
-    // 3.5GB below the handler — MUST match allocateNearImage / engine.cpp / llvisitor.
-    imageBase = handler ? (handler - 0xE0000000ull)
+      handler = reinterpret_cast<uintptr_t>(GetProcAddress(crt, "__C_specific_handler"));
+    // MUST match allocateNearImage, engine.cpp and llvisitor.cpp.
+    imageBase = handler ? handler - 0xE0000000ull
                         : reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
   }
 
   void modifyPassConfig(llvm::orc::MaterializationResponsibility &MR,
                         llvm::jitlink::LinkGraph &,
-                        llvm::jitlink::PassConfiguration &Config) override {
-    uint64_t base = imageBase;
-    llvm::orc::ResourceKey key = 0;
-    llvm::cantFail(MR.withResourceKeyDo([&](llvm::orc::ResourceKey resourceKey) {
-      key = resourceKey;
+                        llvm::jitlink::PassConfiguration &config) override {
+    auto owner = std::make_shared<Materialization>();
+    llvm::cantFail(MR.withResourceKeyDo([&](llvm::orc::ResourceKey key) {
+      std::lock_guard<std::mutex> lock(tablesMutex);
+      owner->key = key;
+      resources[key].push_back(owner);
+      // MR addresses may be reused. A distinct owner prevents a later failure
+      // from being confused with an earlier, successfully emitted module.
+      materializations[&MR] = owner;
       return llvm::Error::success();
     }));
-    Config.PostFixupPasses.push_back(
-        [this, base, key](llvm::jitlink::LinkGraph &G) -> llvm::Error {
-          auto *sec = G.findSectionByName(".pdata");
-          if (!sec)
+    config.PostFixupPasses.push_back(
+        [this, owner](llvm::jitlink::LinkGraph &graph) -> llvm::Error {
+          auto *section = graph.findSectionByName(".pdata");
+          if (!section)
             return llvm::Error::success();
           uint64_t lo = ~uint64_t(0), hi = 0;
-          for (auto *B : sec->blocks()) {
-            uint64_t a = B->getAddress().getValue();
-            if (a < lo)
-              lo = a;
-            if (a + B->getSize() > hi)
-              hi = a + B->getSize();
+          for (auto *block : section->blocks()) {
+            auto address = block->getAddress().getValue();
+            lo = std::min(lo, address);
+            hi = std::max(hi, address + block->getSize());
           }
           if (lo >= hi)
             return llvm::Error::success();
-          auto count = static_cast<DWORD>((hi - lo) / sizeof(RUNTIME_FUNCTION));
+          auto count = DWORD((hi - lo) / sizeof(RUNTIME_FUNCTION));
           auto *entries = reinterpret_cast<PRUNTIME_FUNCTION>(lo);
-          if (count && !RtlAddFunctionTable(entries, count, base))
+          std::lock_guard<std::mutex> lock(tablesMutex);
+          if (owner->removed)
+            return llvm::make_error<llvm::StringError>(
+                "JIT resources removed during materialization",
+                llvm::inconvertibleErrorCode());
+          if (count && !RtlAddFunctionTable(entries, count, imageBase))
             return llvm::make_error<llvm::StringError>(
                 "RtlAddFunctionTable failed for JIT'd .pdata",
                 llvm::inconvertibleErrorCode());
-          if (count) {
-            std::lock_guard<std::mutex> lock(tablesMutex);
-            tables[key].push_back({entries});
-          }
+          if (count)
+            owner->tables.push_back({entries});
           return llvm::Error::success();
         });
   }
 
-  llvm::Error notifyFailed(
-      llvm::orc::MaterializationResponsibility &MR) override {
-    llvm::orc::ResourceKey key = 0;
-    if (auto error = MR.withResourceKeyDo([&](llvm::orc::ResourceKey resourceKey) {
-          key = resourceKey;
-          return llvm::Error::success();
-        }))
-      return error;
-    return removeTables(key);
+  llvm::Error notifyFailed(llvm::orc::MaterializationResponsibility &MR) override {
+    std::vector<RegisteredTable> removed;
+    {
+      std::lock_guard<std::mutex> lock(tablesMutex);
+      auto found = materializations.find(&MR);
+      if (found == materializations.end())
+        return llvm::Error::success();
+      auto owner = found->second.lock();
+      materializations.erase(found);
+      if (!owner || owner->removed)
+        return llvm::Error::success();
+      owner->removed = true;
+      removed = std::move(owner->tables);
+      auto resource = resources.find(owner->key);
+      if (resource != resources.end()) {
+        auto &siblings = resource->second;
+        siblings.erase(std::remove(siblings.begin(), siblings.end(), owner), siblings.end());
+        if (siblings.empty())
+          resources.erase(resource);
+      }
+    }
+    return unregister(std::move(removed));
   }
+
   llvm::Error notifyRemovingResources(llvm::orc::JITDylib &,
                                       llvm::orc::ResourceKey key) override {
-    return removeTables(key);
+    std::vector<RegisteredTable> removed;
+    {
+      std::lock_guard<std::mutex> lock(tablesMutex);
+      auto resource = resources.find(key);
+      if (resource != resources.end()) {
+        for (auto &owner : resource->second) {
+          owner->removed = true;
+          removed.insert(removed.end(), owner->tables.begin(), owner->tables.end());
+          owner->tables.clear();
+        }
+        resources.erase(resource);
+      }
+      for (auto i = materializations.begin(); i != materializations.end();) {
+        auto owner = i->second.lock();
+        if (!owner || owner->removed)
+          i = materializations.erase(i);
+        else
+          ++i;
+      }
+    }
+    return unregister(std::move(removed));
   }
+
   void notifyTransferringResources(llvm::orc::JITDylib &,
-                                   llvm::orc::ResourceKey dstKey,
-                                   llvm::orc::ResourceKey srcKey) override {
-    std::lock_guard<std::mutex> lock(tablesMutex);
-    auto it = tables.find(srcKey);
-    if (it == tables.end())
+                                   llvm::orc::ResourceKey destination,
+                                   llvm::orc::ResourceKey source) override {
+    if (source == destination)
       return;
-    auto &dst = tables[dstKey];
-    dst.insert(dst.end(), it->second.begin(), it->second.end());
-    tables.erase(it);
+    std::lock_guard<std::mutex> lock(tablesMutex);
+    auto found = resources.find(source);
+    if (found == resources.end())
+      return;
+    auto moved = std::move(found->second);
+    resources.erase(found); // Inserting destination can rehash the map.
+    for (auto &owner : moved)
+      owner->key = destination;
+    auto &target = resources[destination];
+    target.insert(target.end(), moved.begin(), moved.end());
   }
 };
 } // namespace
