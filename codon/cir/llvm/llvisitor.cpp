@@ -9,6 +9,7 @@
 #include <fmt/args.h>
 #include <utility>
 #include <llvm/Support/Program.h>
+#include <llvm/Support/StringSaver.h>
 
 #ifdef _WIN32
 #include <process.h>
@@ -585,7 +586,16 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
                                     const std::vector<std::string> &libs,
                                     const std::string &lflags) {
   llvm::SmallVector<llvm::StringRef> userFlags(16);
+#ifdef _WIN32
+  llvm::BumpPtrAllocator flagAllocator;
+  llvm::StringSaver flagSaver(flagAllocator);
+  llvm::SmallVector<const char *> flagTokens;
+  llvm::cl::TokenizeWindowsCommandLine(lflags, flagSaver, flagTokens);
+  for (auto *flag : flagTokens)
+    userFlags.push_back(flag);
+#else
   llvm::StringRef(lflags).split(userFlags, " ", /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+#endif
   bool pie = false;
   for (auto &flag : userFlags) {
     if (flag == "--pie")
