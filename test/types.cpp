@@ -992,10 +992,7 @@ TEST(JITRTTITest, MatchesBaseExceptionAcrossCells) {
         "print('second')\n");
     ASSERT_TRUE(bool(second)) << llvm::toString(second.takeError());
     EXPECT_EQ(*second, "second\n");
-    auto unhandled =
-        instance.execute("from C import seq_alloc_exc(cobj) -> cobj\n"
-                         "from C import seq_terminate(cobj) -> None\n"
-                         "seq_terminate(seq_alloc_exc(type._ref_raw(future)))\n");
+    auto unhandled = instance.execute("raise future\n");
     ASSERT_FALSE(bool(unhandled));
     auto message = llvm::toString(unhandled.takeError());
     EXPECT_NE(message.find("FutureError"), std::string::npos);

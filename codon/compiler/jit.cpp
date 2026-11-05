@@ -64,6 +64,16 @@ typedef void InputFunc();
 typedef void *PyWrapperFunc(void *);
 
 #ifdef _WIN32
+// Codon raises SEH exceptions on Windows. Keep the SEH boundary free of C++
+// objects, then translate to JITError in the caller's ordinary C++ try block.
+static void invokeInput(InputFunc *input, void **exception) {
+  __try {
+    (*input)();
+  } __except (seq_exc_filter(GetExceptionInformation(), nullptr)) {
+    *exception = seq_exc_current();
+  }
+}
+
 // Exported Python wrappers have no top-level Codon exception handler. Translate
 // an escaping SEH exception at this boundary before returning to CPython.
 static void *invokePythonWrapper(PyWrapperFunc *wrap, void *arg, void **exception) {
@@ -291,7 +301,14 @@ llvm::Expected<std::string> JIT::run(const ir::Func *input,
 
   auto *repl = (InputFunc *)result.get();
   try {
+#ifdef _WIN32
+    void *exception = nullptr;
+    invokeInput(repl, &exception);
+    if (exception)
+      seq_terminate(exception);
+#else
     (*repl)();
+#endif
   } catch (const runtime::JITError &e) {
     return handleJITError(e);
   }
