@@ -776,11 +776,9 @@ add_executable(codon_test ${CODON_TEST_CPPFILES})
 add_dependencies(codon_test codon codon_test_compiler_plugin codon_test_runtime_plugin)
 target_include_directories(codon_test PRIVATE test/cir "${gc_SOURCE_DIR}/include")
 if(WIN32)
-  # The unit tests ODR-use the compiler's static data members (NodeId, KEY,
-  # NEG_MAGIC_NAME, IdMixin::currentId, ...). On MSVC those can't be referenced across
-  # the codonc.dll boundary without __declspec(dllimport) on each (235 of them, unlike
-  # ELF where it's transparent). So build the compiler sources straight into the test
-  # binary and link the LLVM libs directly, instead of going through codonc.dll.
+  # The tests directly exercise LLVM target/pass registries. With static LLVM,
+  # compile the compiler into the same image so both use one registry. The
+  # installed-SDK plugin smoke test separately validates codonc's DLL API.
   target_sources(codon_test PRIVATE ${CODON_HPPFILES} ${CODON_CPPFILES}
                                     codon_rules.cpp omp_rules.cpp)
   target_include_directories(codon_test PRIVATE ${peglib_SOURCE_DIR}
@@ -851,6 +849,10 @@ if(WIN32)
                 "$<TARGET_FILE:codon_jupyter>"
                 "${LLVM_TOOLS_BINARY_DIR}/libomp.dll" "$<TARGET_FILE:openblas>"
           DESTINATION bin)
+  # Public compiler headers depend on fmt; ship the plugin development files.
+  install(DIRECTORY "${fmt_SOURCE_DIR}/include/fmt" DESTINATION include)
+  install(TARGETS fmt ARCHIVE DESTINATION lib/codon
+                      LIBRARY DESTINATION lib/codon RUNTIME DESTINATION bin)
   # libomp.dll for runtime (JIT + AOT exes), libomp.lib so AOT `codon build` of @par
   # programs can link the __kmpc_* import lib via -L../lib/codon.
   install(FILES "${LLVM_TOOLS_BINARY_DIR}/libomp.dll" DESTINATION lib/codon)

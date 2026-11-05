@@ -16,7 +16,7 @@ private:
   int numReplacements;
 
 public:
-  static const std::string KEY;
+  static CODON_API const std::string KEY;
 
   /// Constructs a dead code elimination pass
   /// @param sideEffectsKey the side effect analysis' key

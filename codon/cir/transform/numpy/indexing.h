@@ -15,7 +15,7 @@ private:
   std::string reachingDefKey;
 
 public:
-  static const std::string KEY;
+  static CODON_API const std::string KEY;
 
   /// Constructs a NumPy bounds check elision pass.
   /// @param reachingDefKey the reaching definition analysis' key

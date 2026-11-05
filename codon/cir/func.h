@@ -33,7 +33,7 @@ protected:
   int doReplaceUsedType(const std::string &name, Type *newType) override;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs an unrealized CIR function.
   /// @param name the function's name
@@ -103,7 +103,7 @@ private:
   bool jit = false;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   using AcceptorExtend::AcceptorExtend;
 
@@ -165,7 +165,7 @@ protected:
 
 class ExternalFunc : public AcceptorExtend<ExternalFunc, Func> {
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   using AcceptorExtend::AcceptorExtend;
 
@@ -213,7 +213,7 @@ private:
   Type *intrinsicType = nullptr;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   using AcceptorExtend::AcceptorExtend;
 
@@ -282,7 +282,7 @@ private:
   std::string llvmBody;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   using AcceptorExtend::AcceptorExtend;
 

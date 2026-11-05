@@ -36,6 +36,24 @@ with tempfile.TemporaryDirectory(prefix='codon sdk ', dir=Path(sys.argv[1]).reso
     runtime_env = env.copy()
     runtime_env['PATH'] = str(relocated / 'bin') + os.pathsep + env['PATH']
     compiler = relocated / 'bin' / 'codon.exe'
+    plugin = root / 'installed SDK plugin'
+    plugin.mkdir()
+    plugin_library = plugin / 'rtti-pass.dll'
+    fmt_library = next(p for p in (relocated / 'lib/codon/fmt.lib',
+                                   relocated / 'lib/codon/fmtd.lib') if p.exists())
+    run(['clang++', '-std=c++17', '-shared', '-fuse-ld=lld', '-fms-runtime-lib=dll',
+         '-DNDEBUG', '-I' + str(relocated / 'include'),
+         str(Path(__file__).with_name('sdk_plugin.cpp').resolve()),
+         str(relocated / 'lib/codon/codonc.lib'), str(fmt_library),
+         '-o', str(plugin_library)], env, root)
+    (plugin / 'plugin.toml').write_text(
+        '[about]\nname = "SDK RTTI"\nsupported = ">=0.0.0"\n'
+        '[library]\ncompiler = "rtti-pass"\nruntime = ""\n', encoding='utf-8')
+    probe = root / 'plugin probe.codon'
+    probe.write_text('from sys import argv\n@noinline\ndef sdk_probe(value: int):\n'
+                     '    return value + 1\nprint(sdk_probe(len(argv)))\n', encoding='utf-8')
+    assert run([str(compiler), 'run', '-release', '-plugin', str(plugin), str(probe)],
+               env, root).strip() == '73'
     source = root / 'input with spaces.codon'
     source.write_text('print("SDK with spaces", flush=True)\n'
                       'with open("runtime stream.txt", "w") as stream:\n'

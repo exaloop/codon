@@ -12,7 +12,7 @@ namespace lowering {
 /// Converts pipelines to for-loops
 class PipelineLowering : public OperatorPass {
 public:
-  static const std::string KEY;
+  static CODON_API const std::string KEY;
   std::string getKey() const override { return KEY; }
   void handle(PipelineFlow *v) override;
 };
