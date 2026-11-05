@@ -36,8 +36,10 @@ with tempfile.TemporaryDirectory(prefix='codon sdk ', dir=Path(sys.argv[1]).reso
     # The CLI must load from its installed bin directory, without help from the
     # build tree or the original SDK's DLL directories.
     clang_dir = Path(shutil.which('clang')).parent
+    manifest_dir = Path(shutil.which('mt')).parent
     system_root = Path(os.environ['SystemRoot'])
-    env['PATH'] = os.pathsep.join(map(str, (clang_dir, system_root / 'System32', system_root)))
+    env['PATH'] = os.pathsep.join(map(str, (clang_dir, manifest_dir,
+                                          system_root / 'System32', system_root)))
     runtime_env = env.copy()
     runtime_env['PATH'] = str(relocated / 'bin') + os.pathsep + env['PATH']
     compiler = relocated / 'bin' / 'codon.exe'
