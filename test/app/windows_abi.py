@@ -57,6 +57,7 @@ def check(compiler, root, mode, env, runtime_env):
     fixture_source = root / 'C ABI fixture.c'
     fixture_source.write_text('\n'.join(declarations), encoding='utf-8')
     subprocess.run(['clang', '-shared', '-fms-runtime-lib=dll', str(fixture_source),
+                    '-Wl,/nodefaultlib:libcmt',
                     f'-Wl,/IMPLIB:{import_library}', '-o', str(library)],
                    env=env, cwd=root, check=True)
     source = root / 'C ABI checks.codon'
@@ -74,7 +75,8 @@ def check(compiler, root, mode, env, runtime_env):
                            [f'typedef struct {{ {definition} }} S_{name};'
                             for name, definition, *_ in cases] + client), encoding='utf-8')
     client_exe = root / 'C ABI consumer.exe'
-    subprocess.run(['clang', '-fms-runtime-lib=dll', str(client_source), '-o', str(client_exe)],
+    subprocess.run(['clang', '-fms-runtime-lib=dll', '-Wl,/nodefaultlib:libcmt',
+                    str(client_source), '-o', str(client_exe)],
                    env=env, cwd=root, check=True)
     subprocess.run([str(client_exe), str(codon_library)], env=runtime_env, cwd=root, check=True)
     print(f'Win64 POD ABI checks passed ({mode})', flush=True)
