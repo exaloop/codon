@@ -1,6 +1,6 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
-"""Windows backend for `os`; native little-endian Windows x64/ARM64 only.
+"""Windows backend for `os`; native little-endian Windows x64 only.
 
 All foreign declarations are local to functions and nothing calls Windows at
 module initialization. The public `os` module supplies compile-time dispatch and

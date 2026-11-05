@@ -175,6 +175,20 @@ def test_error_handling():
     else:
         assert False
 
+    @codon.jit
+    def runtime_error(value):
+        if value:
+            raise ValueError('native runtime failure')
+        return 0
+
+    try:
+        runtime_error(True)
+    except codon.JITError as error:
+        assert 'ValueError' in str(error)
+        assert 'native runtime failure' in str(error)
+    else:
+        raise AssertionError('runtime exception did not reach Python as JITError')
+
 test_convertible()
 test_many()
 test_roundtrip()
@@ -228,6 +242,17 @@ def d(x, y):
     return z
 
 def test_ndarray():
+    @codon.jit
+    def array_identity(value):
+        return value
+
+    for values, dtype in (([0, 2**63 - 1], np.int64),
+                          ([0, 2**63 + 1, 2**64 - 1], np.uint64)):
+        source = np.array(values, dtype=dtype)
+        result = array_identity(source)
+        assert result.dtype == source.dtype
+        assert np.array_equal(result, source)
+
     x = np.array([1, 2, 3, 4])
     y = np.array([10., 100., 1000., 10000.])
     z = d(x, y)

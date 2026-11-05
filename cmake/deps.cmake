@@ -31,14 +31,6 @@ CPMAddPackage(
 
 if(WIN32)
     set(_zlib_platform_options "HAVE_OFF64_T OFF")
-    if(CMAKE_C_COMPILER_TARGET MATCHES "^(aarch64|arm64)" OR
-       (NOT CMAKE_C_COMPILER_TARGET AND
-        CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$"))
-        # zlib-ng 2.0.5 enables ACLE for GNU-style Clang but skips arm_acle.h
-        # when _MSC_VER is defined. Use portable CRC on Windows ARM until the
-        # dependency is updated; NEON optimizations remain enabled.
-        list(APPEND _zlib_platform_options "WITH_ACLE OFF")
-    endif()
 else()
     set(_zlib_platform_options "HAVE_OFF64_T ON")
 endif()
@@ -54,22 +46,6 @@ CPMAddPackage(
             "CMAKE_POSITION_INDEPENDENT_CODE ON")
 if(zlibng_ADDED)
     set_target_properties(zlib PROPERTIES EXCLUDE_FROM_ALL ON)
-    if(WIN32 AND CMAKE_C_COMPILER_ID STREQUAL "Clang" AND
-       (CMAKE_C_COMPILER_TARGET MATCHES "^(aarch64|arm64)" OR
-        (NOT CMAKE_C_COMPILER_TARGET AND
-         CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")))
-        # Older Clang releases lack arm64_neon.h and pick MSVC's header,
-        # leaving unresolved neon_* calls. Forward to Clang's arm_neon.h.
-        foreach(_zlib_target IN ITEMS zlib zlibstatic)
-            if(TARGET ${_zlib_target})
-                get_target_property(_zlib_alias ${_zlib_target} ALIASED_TARGET)
-                if(NOT _zlib_alias)
-                    target_include_directories(${_zlib_target} BEFORE PRIVATE
-                        "${CMAKE_CURRENT_LIST_DIR}/compat/clang-arm64")
-                endif()
-            endif()
-        endforeach()
-    endif()
 endif()
 
 CPMAddPackage(
@@ -235,38 +211,17 @@ if(NOT APPLE AND NOT WIN32 AND NOT SYSTEM_BLAS)
                 "NUM_THREADS 64"
                 "CCOMMON_OPT -O3")
 elseif(WIN32)
-    # Use the OpenBLAS project's prebuilt BLAS + LAPACK + CBLAS for each Windows
-    # architecture. ARM64 and x64 packages use different library basenames.
-    if(CMAKE_CXX_COMPILER_TARGET MATCHES "^(aarch64|arm64)" OR
-       (NOT CMAKE_CXX_COMPILER_TARGET AND
-        CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$"))
-        set(OPENBLAS_WIN_URL
-            https://github.com/OpenMathLib/OpenBLAS/releases/download/v0.3.30/OpenBLAS-0.3.30-woa64-dll.zip)
-    else()
-        set(OPENBLAS_WIN_URL
-            https://github.com/OpenMathLib/OpenBLAS/releases/download/v0.3.29/OpenBLAS-0.3.29_x64.zip)
-    endif()
+    # Use the prebuilt x64 BLAS + LAPACK + CBLAS runtime.
+    set(OPENBLAS_WIN_URL
+        https://github.com/OpenMathLib/OpenBLAS/releases/download/v0.3.29/OpenBLAS-0.3.29_x64.zip)
     CPMAddPackage(
         NAME openblas_win
         URL ${OPENBLAS_WIN_URL}
         DOWNLOAD_ONLY YES)
-    set(_openblas_win_basename "")
-    foreach(_basename IN ITEMS libopenblas openblas)
-        if(EXISTS "${openblas_win_SOURCE_DIR}/lib/${_basename}.lib" AND
-           EXISTS "${openblas_win_SOURCE_DIR}/bin/${_basename}.dll")
-            set(_openblas_win_basename "${_basename}")
-            break()
-        endif()
-    endforeach()
-    if(NOT _openblas_win_basename)
-        message(FATAL_ERROR
-            "OpenBLAS package at ${openblas_win_SOURCE_DIR} has no matching "
-            "lib/[lib]openblas.lib and bin/[lib]openblas.dll pair")
-    endif()
     add_library(openblas SHARED IMPORTED GLOBAL)
     set_target_properties(openblas PROPERTIES
-        IMPORTED_IMPLIB "${openblas_win_SOURCE_DIR}/lib/${_openblas_win_basename}.lib"
-        IMPORTED_LOCATION "${openblas_win_SOURCE_DIR}/bin/${_openblas_win_basename}.dll")
+        IMPORTED_IMPLIB "${openblas_win_SOURCE_DIR}/lib/libopenblas.lib"
+        IMPORTED_LOCATION "${openblas_win_SOURCE_DIR}/bin/libopenblas.dll")
 endif()
 
 CPMAddPackage(

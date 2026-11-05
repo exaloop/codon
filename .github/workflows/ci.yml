@@ -233,11 +233,6 @@ jobs:
             msvc_arch: amd64
             python_arch: x64
             target: x86_64-pc-windows-msvc
-          - os: windows-11-arm
-            arch: windows-arm64
-            msvc_arch: arm64
-            python_arch: arm64
-            target: aarch64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
     needs: unicode_tables
     timeout-minutes: 360
@@ -266,7 +261,7 @@ jobs:
       - name: Install build and test dependencies
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
-          python -m pip install --only-binary=:all: ninja numpy==2.3.4
+          python -m pip install --only-binary=:all: ninja numpy==2.3.4 cython setuptools wheel astunparse
           ninja --version
 
       - name: Download LLVM release
@@ -294,32 +289,21 @@ jobs:
           cmake --build build --config Release --parallel 2
           cmake --install build --prefix codon-deploy
 
-      - name: Run all Windows tests
+      - name: Install Python JIT package
         run: |
-          $ErrorActionPreference = 'Stop'
-          $env:PATH = "$PWD\build;$env:PATH"
-          $env:CODON_PATH = "$PWD\stdlib"
-          $env:CODON_DIR = "$PWD\codon-deploy"
-          $env:CODON_PYTHON = python -c "import sys, os; print(os.path.join(sys.base_prefix, 'python{}{}.dll'.format(*sys.version_info[:2])))"
-          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $env:CODON_PYTHON)) {
-            throw 'Cannot locate the Python DLL'
-          }
-          $env:PYTHONPATH = "$PWD\test\python"
-          New-Item -ItemType Directory -Force test-results | Out-Null
-          # GoogleTest shards cover the entire suite with at most two test workers.
-          $env:GTEST_TOTAL_SHARDS = '2'
-          $processes = @(foreach ($shard in 0..1) {
-            $env:GTEST_SHARD_INDEX = "$shard"
-            Start-Process -FilePath "$PWD\build\codon_test.exe" -WindowStyle Hidden -PassThru `
-              -ArgumentList "--gtest_output=xml:test-results/unit-$shard.xml" `
-              -RedirectStandardOutput "test-results/unit-$shard.log" `
-              -RedirectStandardError "test-results/unit-$shard.stderr.log"
-          })
-          foreach ($process in $processes) { $process.WaitForExit() }
-          Get-Content test-results/*.log
-          if (@($processes | Where-Object ExitCode -NE 0).Count -ne 0) {
-            throw 'Windows tests failed; see the test-results artifact'
-          }
+          $PSNativeCommandUseErrorActionPreference = $true
+          $env:CODON_DIR = "$PWD/codon-deploy"
+          python -m pip install --no-build-isolation "$env:CODON_DIR/python"
+
+      - name: Run full test suite
+        shell: bash
+        env:
+          CODON_BUILD_DIR: build
+          CODON_DIR: codon-deploy
+          CODON_TEST_WORKERS: '2'
+        run: |
+          mkdir -p test-results/${{ matrix.arch }}
+          bash .github/ci/test.sh "$PWD" "${{ matrix.arch }}" 2>&1 | tee test-results/${{ matrix.arch }}/full-suite.log
 
       - name: Upload Windows test results
         if: always()
@@ -333,8 +317,6 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          # Include every runtime DLL using its installed name. OpenBLAS is
-          # openblas.dll on ARM64 and libopenblas.dll on x64.
           Copy-Item codon-deploy/lib/codon/*.dll codon-deploy/bin/
           Compress-Archive -Path codon-deploy -DestinationPath codon-${{ matrix.arch }}.zip -Force
 

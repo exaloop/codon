@@ -1,4 +1,5 @@
 *.codon linguist-language=Python
+*.sh text eol=lf
 
 # Patch files must stay LF in the working tree or `git apply` fails with
 # "corrupt patch" on Windows (autocrlf would otherwise convert them to CRLF).

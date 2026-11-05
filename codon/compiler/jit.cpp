@@ -7,6 +7,15 @@
 #include <sstream>
 
 #ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+
+extern "C" int32_t seq_exc_filter(void *info, void *frame);
+extern "C" void *seq_exc_current();
+extern "C" void seq_terminate(void *exc);
+
 // POSIX strndup is unavailable on Windows; provide a minimal equivalent.
 static char *strndup(const char *s, size_t n) {
   size_t len = 0;
@@ -53,6 +62,19 @@ namespace {
 typedef int MainFunc(int, char **);
 typedef void InputFunc();
 typedef void *PyWrapperFunc(void *);
+
+#ifdef _WIN32
+// Exported Python wrappers have no top-level Codon exception handler. Translate
+// an escaping SEH exception at this boundary before returning to CPython.
+static void *invokePythonWrapper(PyWrapperFunc *wrap, void *arg, void **exception) {
+  __try {
+    return (*wrap)(arg);
+  } __except (seq_exc_filter(GetExceptionInformation(), nullptr)) {
+    *exception = seq_exc_current();
+    return nullptr;
+  }
+}
+#endif
 
 const std::string JIT_FILENAME = "<jit>";
 } // namespace
@@ -414,7 +436,14 @@ JIT::JITResult JIT::executePython(const std::string &name,
   }
 
   try {
+#ifdef _WIN32
+    void *exception = nullptr;
+    auto *ans = invokePythonWrapper(wrap, arg, &exception);
+    if (exception)
+      seq_terminate(exception);
+#else
     auto *ans = (*wrap)(arg);
+#endif
     return JITResult::success(ans);
   } catch (const runtime::JITError &e) {
     auto err = handleJITError(e);

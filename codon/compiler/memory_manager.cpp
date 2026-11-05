@@ -6,6 +6,9 @@
 #include "llvm/ExecutionEngine/Orc/ObjectLinkingLayer.h"
 
 #include <algorithm>
+#include <mutex>
+#include <unordered_map>
+#include <vector>
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -331,7 +334,31 @@ namespace {
 /// the table's base address. Without this, raised SEH exceptions cannot unwind
 /// through JIT'd funclet scopes.
 class Win64SEHRegistrationPlugin : public llvm::orc::ObjectLinkingLayer::Plugin {
+  struct RegisteredTable {
+    PRUNTIME_FUNCTION entries;
+  };
+
   uint64_t imageBase;
+  std::mutex tablesMutex;
+  std::unordered_map<llvm::orc::ResourceKey, std::vector<RegisteredTable>> tables;
+
+  llvm::Error removeTables(llvm::orc::ResourceKey key) {
+    std::vector<RegisteredTable> removed;
+    {
+      std::lock_guard<std::mutex> lock(tablesMutex);
+      auto it = tables.find(key);
+      if (it == tables.end())
+        return llvm::Error::success();
+      removed = std::move(it->second);
+      tables.erase(it);
+    }
+    for (const auto &table : removed)
+      if (!RtlDeleteFunctionTable(table.entries))
+        return llvm::make_error<llvm::StringError>(
+            "RtlDeleteFunctionTable failed for JIT'd .pdata",
+            llvm::inconvertibleErrorCode());
+    return llvm::Error::success();
+  }
 
 public:
   Win64SEHRegistrationPlugin() {
@@ -344,12 +371,17 @@ public:
                         : reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
   }
 
-  void modifyPassConfig(llvm::orc::MaterializationResponsibility &,
+  void modifyPassConfig(llvm::orc::MaterializationResponsibility &MR,
                         llvm::jitlink::LinkGraph &,
                         llvm::jitlink::PassConfiguration &Config) override {
     uint64_t base = imageBase;
+    llvm::orc::ResourceKey key = 0;
+    llvm::cantFail(MR.withResourceKeyDo([&](llvm::orc::ResourceKey resourceKey) {
+      key = resourceKey;
+      return llvm::Error::success();
+    }));
     Config.PostFixupPasses.push_back(
-        [base](llvm::jitlink::LinkGraph &G) -> llvm::Error {
+        [this, base, key](llvm::jitlink::LinkGraph &G) -> llvm::Error {
           auto *sec = G.findSectionByName(".pdata");
           if (!sec)
             return llvm::Error::success();
@@ -364,24 +396,44 @@ public:
           if (lo >= hi)
             return llvm::Error::success();
           auto count = static_cast<DWORD>((hi - lo) / sizeof(RUNTIME_FUNCTION));
-          if (count && !RtlAddFunctionTable(reinterpret_cast<PRUNTIME_FUNCTION>(lo),
-                                            count, base))
+          auto *entries = reinterpret_cast<PRUNTIME_FUNCTION>(lo);
+          if (count && !RtlAddFunctionTable(entries, count, base))
             return llvm::make_error<llvm::StringError>(
                 "RtlAddFunctionTable failed for JIT'd .pdata",
                 llvm::inconvertibleErrorCode());
+          if (count) {
+            std::lock_guard<std::mutex> lock(tablesMutex);
+            tables[key].push_back({entries});
+          }
           return llvm::Error::success();
         });
   }
 
-  llvm::Error notifyFailed(llvm::orc::MaterializationResponsibility &) override {
-    return llvm::Error::success();
+  llvm::Error notifyFailed(
+      llvm::orc::MaterializationResponsibility &MR) override {
+    llvm::orc::ResourceKey key = 0;
+    if (auto error = MR.withResourceKeyDo([&](llvm::orc::ResourceKey resourceKey) {
+          key = resourceKey;
+          return llvm::Error::success();
+        }))
+      return error;
+    return removeTables(key);
   }
   llvm::Error notifyRemovingResources(llvm::orc::JITDylib &,
-                                      llvm::orc::ResourceKey) override {
-    return llvm::Error::success();
+                                      llvm::orc::ResourceKey key) override {
+    return removeTables(key);
   }
-  void notifyTransferringResources(llvm::orc::JITDylib &, llvm::orc::ResourceKey,
-                                   llvm::orc::ResourceKey) override {}
+  void notifyTransferringResources(llvm::orc::JITDylib &,
+                                   llvm::orc::ResourceKey dstKey,
+                                   llvm::orc::ResourceKey srcKey) override {
+    std::lock_guard<std::mutex> lock(tablesMutex);
+    auto it = tables.find(srcKey);
+    if (it == tables.end())
+      return;
+    auto &dst = tables[dstKey];
+    dst.insert(dst.end(), it->second.begin(), it->second.end());
+    tables.erase(it);
+  }
 };
 } // namespace
 

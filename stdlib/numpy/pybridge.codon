@@ -61,10 +61,10 @@ def _type_code(dtype: type):
         return NPY_UINT
 
     if dtype is int or dtype is i64:
-        return NPY_LONG
+        return NPY_LONGLONG if __windows__ else NPY_LONG
 
     if dtype is u64:
-        return NPY_ULONG
+        return NPY_ULONGLONG if __windows__ else NPY_ULONG
 
     if dtype is float16:
         return NPY_HALF

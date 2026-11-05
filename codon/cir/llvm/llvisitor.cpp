@@ -170,6 +170,9 @@ void LLVMVisitor::registerGlobal(const Var *var) {
           storage->setDSOLocal(true);
         } else {
           storage->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Local);
+          if (options->pyext &&
+              llvm::Triple(M->getTargetTriple()).isWindowsMSVCEnvironment())
+            storage->setDLLStorageClass(llvm::GlobalValue::DLLImportStorageClass);
         }
       } else if (!(tls && llvm::Triple(M->getTargetTriple()).isOSWindows())) {
         // debug info
@@ -592,6 +595,17 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
 
 #ifdef _WIN32
   std::vector<std::string> command = {"clang", "-fuse-ld=lld"};
+  if (!library) {
+    for (const auto &rpath : rpaths) {
+      llvm::SmallString<128> manifest(rpath);
+      llvm::sys::path::append(manifest, "codon-utf8.manifest");
+      if (llvm::sys::fs::exists(manifest)) {
+        command.push_back("-Wl,/manifest:embed");
+        command.push_back("-Wl,/manifestinput:" + std::string(manifest));
+        break;
+      }
+    }
+  }
 #else
   std::vector<std::string> command = {"g++"};
 #endif
@@ -736,6 +750,8 @@ llvm::Function *LLVMVisitor::createPyTryCatchWrapper(llvm::Function *func) {
   auto *unwind = llvm::BasicBlock::Create(*context, "unwind", wrap);
 
   B->SetInsertPoint(entry);
+  const bool win = llvm::Triple(M->getTargetTriple()).isWindowsMSVCEnvironment();
+  auto *exceptionStorage = win ? B->CreateAlloca(B->getPtrTy()) : nullptr;
   std::vector<llvm::Value *> args;
   for (auto &arg : wrap->args()) {
     args.push_back(&arg);
@@ -746,14 +762,27 @@ llvm::Function *LLVMVisitor::createPyTryCatchWrapper(llvm::Function *func) {
   B->CreateRet(result);
 
   B->SetInsertPoint(unwind);
-  auto *caughtResult = B->CreateLandingPad(getPadType(), 1);
-  caughtResult->setCleanup(true);
-  caughtResult->addClause(getTypeIdxVar(nullptr));
-  auto *unwindType = llvm::StructType::get(B->getInt64Ty()); // header only
-  auto *unwindException = B->CreateExtractValue(caughtResult, 0);
-  auto *unwindExceptionClass = B->CreateLoad(
-      B->getInt64Ty(), B->CreateStructGEP(unwindType, unwindException, 0));
-  unwindException = B->CreateExtractValue(caughtResult, 0);
+  llvm::Value *unwindException = nullptr;
+  if (win) {
+    auto *cs =
+        B->CreateCatchSwitch(llvm::ConstantTokenNone::get(*context), nullptr, 1);
+    auto *catchBlock = llvm::BasicBlock::Create(*context, "catch", wrap);
+    auto *caught = llvm::BasicBlock::Create(*context, "caught", wrap);
+    cs->addHandler(catchBlock);
+    B->SetInsertPoint(catchBlock);
+    auto *cp = B->CreateCatchPad(cs, {makeWinEHFilter().getCallee()});
+    llvm::OperandBundleDef bundle("funclet", llvm::ArrayRef<llvm::Value *>(cp));
+    auto current = M->getOrInsertFunction("seq_exc_current", B->getPtrTy());
+    B->CreateStore(B->CreateCall(current, {}, {bundle}), exceptionStorage);
+    B->CreateCatchRet(cp, caught);
+    B->SetInsertPoint(caught);
+    unwindException = B->CreateLoad(B->getPtrTy(), exceptionStorage);
+  } else {
+    auto *caughtResult = B->CreateLandingPad(getPadType(), 1);
+    caughtResult->setCleanup(true);
+    caughtResult->addClause(getTypeIdxVar(nullptr));
+    unwindException = B->CreateExtractValue(caughtResult, 0);
+  }
   auto *excVal = B->CreateConstGEP1_64(B->getInt8Ty(), unwindException,
                                        (uint64_t)seq_exc_offset());
   auto *loadedExc = B->CreateLoad(B->getPtrTy(), excVal);
@@ -816,6 +845,10 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
   auto *pyTypeType = new llvm::GlobalVariable(*M, ptr, /*isConstant=*/false,
                                               llvm::GlobalValue::ExternalLinkage,
                                               /*Initializer=*/nullptr, "PyType_Type");
+  const bool importPythonData =
+      llvm::Triple(M->getTargetTriple()).isWindowsMSVCEnvironment();
+  if (importPythonData)
+    pyTypeType->setDLLStorageClass(llvm::GlobalValue::DLLImportStorageClass);
 
   auto allocUncollectable = llvm::cast<llvm::Function>(
       makeAllocFunc(/*atomic=*/false, /*uncollectable=*/true).getCallee());
@@ -1116,7 +1149,8 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
     std::vector<llvm::Constant *> typeSlots = {
         llvm::ConstantStruct::get(
             pyVarObjectType,
-            llvm::ConstantStruct::get(pyObjectType, B->getInt64(1), pyTypeType),
+            llvm::ConstantStruct::get(pyObjectType, B->getInt64(1),
+                                     importPythonData ? null : pyTypeType),
             zero64),                              // PyObject_VAR_HEAD
         pyString(pymod.name + "." + pytype.name), // tp_name
         B->getInt64(pySize),                      // tp_basicsize
@@ -1216,6 +1250,13 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
   if (auto *main = M->getFunction("main")) {
     main->setName(MAIN_UNCLASH);
     B->CreateCall({main->getFunctionType(), main}, {zero32, null});
+  }
+
+  // Imported DLL data addresses cannot be resolved in static initializers.
+  if (importPythonData) {
+    for (auto &entry : typeVars)
+      B->CreateStore(pyTypeType,
+                     B->CreateStructGEP(pyObjectType, entry.second, 1));
   }
 
   // Set base types

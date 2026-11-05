@@ -3,6 +3,12 @@ import sys, sysconfig, os, distutils.sysconfig as du_sysconfig, itertools
 def get_python_library(python_version):
     """Get path to the python library associated with the current python
     interpreter. Adapted from https://github.com/scikit-build/scikit-build/blob/master/skbuild/cmaker.py#L272"""
+    if os.name == 'nt':
+        library = os.path.join(sys.base_prefix, f'python{sys.version_info.major}{sys.version_info.minor}.dll')
+        if not os.path.isfile(library):
+            raise FileNotFoundError(library)
+        return library
+
     # determine direct path to libpython
     python_library = sysconfig.get_config_var('LIBRARY')
 

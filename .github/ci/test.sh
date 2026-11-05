@@ -14,38 +14,77 @@ fi
 
 echo "Workspace: ${WORKSPACE}; arch: ${ARCH}; shard: ${SHARD_INDEX}/${SHARD_COUNT}"
 cd "$WORKSPACE"
+BUILD_DIR=${CODON_BUILD_DIR:-build-${ARCH}}
+export CODON_DIR=${CODON_DIR:-$(pwd)/codon-deploy-${ARCH}}
+WINDOWS=0
+case "$(uname -s)" in
+  MINGW*|MSYS*) WINDOWS=1 ;;
+esac
 
-if [ "$(uname -s)" = "Linux" ]; then
+if [ "$WINDOWS" -eq 1 ]; then
+  export CODON_DIR=$(cygpath -am "$CODON_DIR")
+  export PYTHONPATH=$(cygpath -am "$WORKSPACE/test/python")
+  export PATH="$(cygpath -u "$CODON_DIR")/bin:$(cygpath -u "$CODON_DIR")/lib/codon:$PWD/$BUILD_DIR:$PATH"
+elif [ "$(uname -s)" = "Linux" ]; then
   ~/.pyenv/bin/pyenv global 3.11
   export PATH="/root/.pyenv/shims:${PATH}"
   export CODON_OS_TEST_REQUIRE_RAW_PATHS=1
 
   # needed for dylib test
-  ln -s -f $(pwd)/build-${ARCH}/libcodonrt.so .
+  ln -s -f "$PWD/$BUILD_DIR/libcodonrt.so" .
 else
   # needed for dylib test
-  ln -s -f $(pwd)/build-${ARCH}/libcodonrt.dylib .
+  ln -s -f "$PWD/$BUILD_DIR/libcodonrt.dylib" .
 fi
-export CODON_PYTHON=$(python ${WORKSPACE}/test/python/find-python-library.py)
-export PYTHONPATH=${WORKSPACE}/test/python
-export CODON_DIR=$(pwd)/codon-deploy-${ARCH}
+CODON_PYTHON=$(python "$WORKSPACE/test/python/find-python-library.py")
+export CODON_PYTHON
+if [ "$WINDOWS" -eq 0 ]; then
+  export PYTHONPATH=${WORKSPACE}/test/python
+fi
 
 echo "=> Unit tests..."
 mkdir -p build  # needed for some tests that write into this directory
 RESULTS_DIR="${WORKSPACE}/test-results/${ARCH}"
 mkdir -p "$RESULTS_DIR"
-GTEST_TOTAL_SHARDS="$SHARD_COUNT" GTEST_SHARD_INDEX="$SHARD_INDEX" \
-  build-${ARCH}/codon_test --gtest_output="xml:${RESULTS_DIR}/unit-${SHARD_INDEX}.xml"
+if [ "$WINDOWS" -eq 1 ]; then
+  workers=${CODON_TEST_WORKERS:-2}
+  case "$workers" in
+    ''|*[!0-9]*) echo "Invalid test worker count: $workers" >&2; exit 1 ;;
+  esac
+  [ "$workers" -gt 0 ] || exit 1
+  pids=""
+  worker=0
+  while [ "$worker" -lt "$workers" ]; do
+    index=$((SHARD_INDEX * workers + worker))
+    GTEST_TOTAL_SHARDS=$((SHARD_COUNT * workers)) GTEST_SHARD_INDEX="$index" \
+      "$BUILD_DIR/codon_test.exe" \
+      --gtest_output="xml:$(cygpath -am "$RESULTS_DIR/unit-$index.xml")" \
+      > "$RESULTS_DIR/unit-$index.log" 2>&1 &
+    pids="$pids $!"
+    worker=$((worker + 1))
+  done
+  failed=0
+  for pid in $pids; do
+    wait "$pid" || failed=1
+  done
+  cat "$RESULTS_DIR"/unit-*.log
+  [ "$failed" -eq 0 ]
+else
+  GTEST_TOTAL_SHARDS="$SHARD_COUNT" GTEST_SHARD_INDEX="$SHARD_INDEX" \
+    "$BUILD_DIR/codon_test" --gtest_output="xml:${RESULTS_DIR}/unit-${SHARD_INDEX}.xml"
+fi
 
 if [ "$SHARD_INDEX" -ne 0 ]; then
   exit 0
 fi
 
-echo "=> OS differential tests..."
-python test/stdlib/os_differential.py --codon "${CODON_DIR}/bin/codon"
+if [ "$WINDOWS" -eq 0 ]; then
+  echo "=> POSIX OS differential tests..."
+  python test/stdlib/os_differential.py --codon "${CODON_DIR}/bin/codon"
+fi
 
 echo "=> Standalone test..."
-CODON_PATH=${CODON_DIR}/lib/codon/stdlib test/app/test.sh build-${ARCH}
+CODON_PATH=${CODON_DIR}/lib/codon/stdlib bash test/app/test.sh "$BUILD_DIR"
 
 echo "=> Cython test..."
 CODON_PATH=${CODON_DIR}/lib/codon/stdlib python test/python/cython_jit.py

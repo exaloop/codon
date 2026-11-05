@@ -14,7 +14,15 @@ import astunparse
 import numpy as np
 from pathlib import Path
 
-sys.setdlopenflags(sys.getdlopenflags() | ctypes.RTLD_GLOBAL)
+if sys.platform == "win32":
+    # Keep the directory handles alive while the extension uses these DLLs.
+    _dll_directories = []
+    if os.environ.get("CODON_DIR"):
+        for _subdir in ("bin", "lib/codon"):
+            _dll_directories.append(os.add_dll_directory(
+                str(Path(os.environ["CODON_DIR"]) / _subdir)))
+else:
+    sys.setdlopenflags(sys.getdlopenflags() | ctypes.RTLD_GLOBAL)
 
 from .codon_jit import JITWrapper, JITError, codon_library
 

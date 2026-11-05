@@ -82,6 +82,7 @@ find_package(LLVM REQUIRED)
 
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
+
 if(WIN32)
   # Use the LLVM distribution's GC-patched OpenMP runtime. Give this target a
   # Codon-specific name so an `omp` target exported by LLVM cannot shadow it.
@@ -133,9 +134,8 @@ set(CODONRT_FILES codon/runtime/lib.h
                   codon/runtime/numpy/zmath.cpp)
 add_library(codonrt SHARED ${CODONRT_FILES})
 if(WIN32)
-  # compiler-rt is shipped with the LLVM toolchain; only the Windows TLS
-  # emulation helper remains a Codon runtime source.
   target_sources(codonrt PRIVATE codon/runtime/emutls.cpp)
+  include(cmake/windows-builtins.cmake)
   set_target_properties(codonrt PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
   add_dependencies(codonrt zlibstatic gc bz2 liblzma re2 hwy hwy_contrib openblas)
 else()
@@ -299,7 +299,8 @@ elseif(WIN32)
             # WINDOWS_EXPORT_ALL_SYMBOLS does not re-export, so expose it here and
             # keep everything on codonrt's single GC instance.
             -Wl,/INCLUDE:GC_gcollect -Wl,/EXPORT:GC_gcollect
-            -Wl,/EXPORT:GC_get_total_bytes)
+            -Wl,/EXPORT:GC_get_total_bytes
+            )
 else()
   add_dependencies(codonrt openblas_64)
 
@@ -710,6 +711,11 @@ add_executable(codon codon/app/main.cpp)
 target_link_libraries(codon PUBLIC fmt codonc codon_jupyter Threads::Threads)
 if(WIN32)
   target_link_libraries(codon PUBLIC ${LLVM_LIBS})
+  configure_file(cmake/codon-utf8.manifest codon-utf8.manifest COPYONLY)
+  target_link_options(codon PRIVATE
+    "-Wl,/manifest:embed"
+    "-Wl,/manifestinput:${CMAKE_CURRENT_BINARY_DIR}/codon-utf8.manifest")
+  install(FILES cmake/codon-utf8.manifest DESTINATION lib/codon)
 endif()
 if(CODON_USE_MIMALLOC)
   target_link_libraries(codon PRIVATE mimalloc-obj)
