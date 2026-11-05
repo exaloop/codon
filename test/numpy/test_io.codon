@@ -1752,9 +1752,22 @@ test_load_empty_array_v1()
 def test_load_incorrect_filename_v1():
     # Save using filename contains special character or too long
     array = np.array([1, 2, 3])
-    filename = test_dir + "/binary_incorrect_filename-@!$%^&*()_+=~`{}[].np_v1.npy"
+    filename = test_dir + "/binary_incorrect_filename-@!$%^&()_+=~`{}[].np_v1.npy"
     np.save(filename, array)
-    np.load(filename)
+    assert np.array_equal(np.load(filename, dtype=int), array)
+    # These are valid POSIX filenames and reserved Windows characters. Exercise
+    # each native behavior instead of requiring Windows to create an illegal name.
+    for character in '<>:"|?*':
+        filename = test_dir + "/reserved-" + character + ".npy"
+        if __windows__:
+            try:
+                np.save(filename, array)
+                assert False, "reserved Windows filename was accepted"
+            except OSError:
+                pass
+        else:
+            np.save(filename, array)
+            assert np.array_equal(np.load(filename, dtype=int), array)
 
 test_load_incorrect_filename_v1()
 
