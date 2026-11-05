@@ -330,6 +330,9 @@ private:
   llvm::Value *getDummyValue(llvm::Type *type);
   llvm::DISubprogram *getDISubprogramForFunc(const Func *x);
   std::string getLLVMNameForFunction(const Func *function);
+  bool needsWinExportWrapper(const Func *function);
+  void makeWinExportWrapper(llvm::StringRef name, llvm::Function *body);
+  void prepareWinExports();
   void clearLLVMData();
 
 public:

@@ -91,6 +91,8 @@ std::string LLVMVisitor::getNameForVar(const Var *x) {
 }
 
 std::string LLVMVisitor::getLLVMNameForFunction(const Func *function) {
+  if (options->jit && needsWinExportWrapper(function))
+    return getNameForFunction(function) + ".codon";
   if (options->jit || isA<ExternalFunc>(function) || util::isExport(function) ||
       util::isGPUKernel(function))
     return getNameForFunction(function);
@@ -267,7 +269,7 @@ llvm::Function *LLVMVisitor::getFunc(const Func *func) {
     if (it != funcs.end()) {
       if (!it->second) { // if value is null, it's from another module
         // see if it's in the module already
-        const std::string name = getNameForFunction(func);
+        const std::string name = getLLVMNameForFunction(func);
         if (auto *g = M->getFunction(name))
           return g;
 
@@ -406,6 +408,7 @@ LLVMVisitor::takeModule(Module *module, const SrcInfo *src) {
 
   if (module && options->jit)
     prepareRuntimeTypeInfo(module);
+  prepareWinExports();
   db.builder->finalize();
   auto currentContext = std::move(context);
   auto currentModule = std::move(M);
@@ -435,6 +438,7 @@ void LLVMVisitor::process(const Node *x) {
 void LLVMVisitor::dump(const std::string &filename) { writeToLLFile(filename, false); }
 
 void LLVMVisitor::runLLVMPipeline() {
+  prepareWinExports();
   db.builder->finalize();
   optimize(M.get(), options, plugins);
 }
@@ -1539,16 +1543,189 @@ static bool isWinMSVC(llvm::Module *M) {
   return llvm::Triple(M->getTargetTriple()).isWindowsMSVCEnvironment();
 }
 
-/// True if a value of this LLVM type is passed/returned indirectly (by hidden
-/// pointer) under the Win64 calling convention: aggregates larger than 8 bytes.
-/// Codon's IR otherwise lowers small structs (e.g. seq_str_t, 16 bytes) into
-/// multiple registers (Itanium/SysV style), which mismatches the MSVC-compiled
-/// runtime DLL across the @C boundary.
-static bool win64IsIndirect(llvm::Module *M, llvm::Type *t) {
-  if (!t->isAggregateType())
-    return false;
-  uint64_t size = M->getDataLayout().getTypeAllocSize(t);
-  return size > 8;
+// Win64 passes POD aggregates of 1, 2, 4 or 8 bytes in one integer register.
+// Other nonempty aggregates use caller-owned, 16-byte-aligned memory. Keep the
+// classification shared by declarations, direct/indirect calls and exports.
+enum class WinABIKind { Direct, Empty, Integer, Bitcast, Indirect };
+
+static WinABIKind winABIKind(llvm::Module *module, llvm::Type *type,
+                                 bool result = false) {
+  if (type->isVoidTy())
+    return WinABIKind::Empty;
+  if (type->isIntegerTy() && type->getIntegerBitWidth() > 64) {
+    if (result && type->isIntegerTy(128))
+      return WinABIKind::Bitcast; // Clang/GCC return __int128 in XMM0.
+    return WinABIKind::Indirect;
+  }
+  if (!type->isAggregateType())
+    return WinABIKind::Direct;
+  auto size = module->getDataLayout().getTypeAllocSize(type).getFixedValue();
+  if (size == 0)
+    return WinABIKind::Empty;
+  if (size == 1 || size == 2 || size == 4 || size == 8)
+    return WinABIKind::Integer;
+  return WinABIKind::Indirect;
+}
+
+static llvm::Type *winABIType(llvm::Module *module, llvm::Type *type,
+                                bool result = false) {
+  switch (winABIKind(module, type, result)) {
+  case WinABIKind::Empty:
+    return llvm::Type::getVoidTy(module->getContext());
+  case WinABIKind::Integer:
+    return llvm::IntegerType::get(
+        module->getContext(), module->getDataLayout().getTypeAllocSize(type).getFixedValue() * 8);
+  case WinABIKind::Bitcast:
+    return llvm::FixedVectorType::get(llvm::Type::getInt64Ty(module->getContext()), 2);
+  case WinABIKind::Indirect:
+    return llvm::PointerType::getUnqual(module->getContext());
+  default:
+    return type;
+  }
+}
+
+static llvm::AllocaInst *winABISlot(llvm::IRBuilder<> &builder, llvm::Type *type) {
+  auto *slot = builder.CreateAlloca(type);
+  slot->setAlignment(llvm::Align(16));
+  return slot;
+}
+
+static llvm::Value *winABIEncode(llvm::Module *module, llvm::IRBuilder<> &builder,
+                                 llvm::Value *value, bool result = false) {
+  auto *type = value->getType();
+  switch (winABIKind(module, type, result)) {
+  case WinABIKind::Empty:
+    return nullptr;
+  case WinABIKind::Bitcast:
+    return builder.CreateBitCast(value, winABIType(module, type, result));
+  case WinABIKind::Integer: {
+    auto *slot = winABISlot(builder, type);
+    builder.CreateStore(value, slot);
+    return builder.CreateLoad(winABIType(module, type), slot);
+  }
+  case WinABIKind::Indirect: {
+    auto *slot = winABISlot(builder, type);
+    builder.CreateStore(value, slot);
+    return slot;
+  }
+  default:
+    return value;
+  }
+}
+
+static llvm::Value *winABIDecode(llvm::Module *module, llvm::IRBuilder<> &builder,
+                                 llvm::Type *type, llvm::Value *value,
+                                 bool result = false) {
+  switch (winABIKind(module, type, result)) {
+  case WinABIKind::Empty:
+    return type->isVoidTy() ? nullptr : llvm::Constant::getNullValue(type);
+  case WinABIKind::Bitcast:
+    return builder.CreateBitCast(value, type);
+  case WinABIKind::Integer: {
+    auto *slot = winABISlot(builder, type);
+    builder.CreateStore(value, slot);
+    return builder.CreateLoad(type, slot);
+  }
+  case WinABIKind::Indirect:
+    return builder.CreateLoad(type, value);
+  default:
+    return value;
+  }
+}
+
+static llvm::FunctionType *winABISignature(llvm::Module *module,
+                                          llvm::FunctionType *signature) {
+  auto *result = signature->getReturnType();
+  bool indirect = winABIKind(module, result, true) == WinABIKind::Indirect;
+  std::vector<llvm::Type *> arguments;
+  if (indirect)
+    arguments.push_back(llvm::PointerType::getUnqual(module->getContext()));
+  for (auto *type : signature->params())
+    if (winABIKind(module, type) != WinABIKind::Empty)
+      arguments.push_back(winABIType(module, type));
+  return llvm::FunctionType::get(
+      indirect ? llvm::Type::getVoidTy(module->getContext()) : winABIType(module, result, true),
+      arguments, signature->isVarArg());
+}
+
+static llvm::Value *winABICall(
+    llvm::Module *module, llvm::IRBuilder<> &builder, llvm::Value *callee,
+    llvm::FunctionType *signature, llvm::ArrayRef<llvm::Value *> arguments,
+    llvm::function_ref<llvm::Value *(llvm::FunctionType *, llvm::Value *,
+                                    llvm::ArrayRef<llvm::Value *>)> emit) {
+  auto *resultType = signature->getReturnType();
+  bool indirect = winABIKind(module, resultType, true) == WinABIKind::Indirect;
+  std::vector<llvm::Value *> values;
+  llvm::Value *returnSlot = nullptr;
+  if (indirect) {
+    returnSlot = winABISlot(builder, resultType);
+    values.push_back(returnSlot);
+  }
+  for (auto *argument : arguments)
+    if (auto *value = winABIEncode(module, builder, argument))
+      values.push_back(value);
+  auto *result = emit(winABISignature(module, signature), callee, values);
+  if (indirect)
+    llvm::cast<llvm::CallBase>(result)->addParamAttr(
+        0, llvm::Attribute::get(module->getContext(), llvm::Attribute::StructRet,
+                                resultType));
+  return winABIDecode(module, builder, resultType, indirect ? returnSlot : result, true);
+}
+
+bool LLVMVisitor::needsWinExportWrapper(const Func *function) {
+  return M && isWinMSVC(M.get()) && util::isExport(function) &&
+         !isA<ExternalFunc>(function) && !util::isGPUKernel(function);
+}
+
+void LLVMVisitor::makeWinExportWrapper(llvm::StringRef name, llvm::Function *body) {
+  auto *signature = body->getFunctionType();
+  auto *wrapper = llvm::cast<llvm::Function>(M->getOrInsertFunction(
+      name, winABISignature(M.get(), signature)).getCallee());
+  if (!wrapper->empty())
+    return;
+  wrapper->addFnAttr("codon-abi-body", body->getName());
+  auto *entry = llvm::BasicBlock::Create(*context, "entry", wrapper);
+  llvm::IRBuilder<> builder(entry);
+  auto *resultType = signature->getReturnType();
+  bool indirect = winABIKind(M.get(), resultType, true) == WinABIKind::Indirect;
+  auto argument = wrapper->arg_begin();
+  llvm::Value *returnSlot = indirect ? &*argument++ : nullptr;
+  if (indirect)
+    wrapper->addParamAttr(0, llvm::Attribute::get(
+                                *context, llvm::Attribute::StructRet, resultType));
+  std::vector<llvm::Value *> values;
+  for (auto *type : signature->params()) {
+    auto *native = winABIKind(M.get(), type) == WinABIKind::Empty
+                       ? nullptr : &*argument++;
+    values.push_back(winABIDecode(M.get(), builder, type, native));
+  }
+  auto *result = builder.CreateCall(body, values);
+  if (indirect) {
+    builder.CreateStore(result, returnSlot);
+    builder.CreateRetVoid();
+  } else if (winABIKind(M.get(), resultType, true) == WinABIKind::Empty) {
+    builder.CreateRetVoid();
+  } else {
+    builder.CreateRet(winABIEncode(M.get(), builder, result, true));
+  }
+}
+
+void LLVMVisitor::prepareWinExports() {
+  if (!isWinMSVC(M.get()))
+    return;
+  std::vector<std::pair<llvm::Function *, std::string>> exports;
+  for (auto &function : *M)
+    if (function.hasFnAttribute("codon-c-export") && !function.isDeclaration())
+      exports.emplace_back(&function, function.getFnAttribute("codon-c-export")
+                                          .getValueAsString().str());
+  for (auto &[body, name] : exports) {
+    body->removeFnAttr("codon-c-export");
+    body->setName(name + ".codon");
+    body->setLinkage(options->jit ? llvm::GlobalValue::ExternalLinkage
+                                  : llvm::GlobalValue::PrivateLinkage);
+    body->setDLLStorageClass(llvm::GlobalValue::DefaultStorageClass);
+    makeWinExportWrapper(name, body);
+  }
 }
 
 llvm::FunctionCallee LLVMVisitor::makePersonalityFunc() {
@@ -1971,6 +2148,8 @@ llvm::Function *LLVMVisitor::makeLLVMFunction(const Func *x) {
     process(llvmFunc);
     setDebugInfoForNode(nullptr);
     auto *newFunc = func;
+    if (needsWinExportWrapper(x))
+      newFunc->addFnAttr("codon-c-export", getNameForFunction(x));
     func = oldFunc;
     return newFunc;
   }
@@ -1984,45 +2163,16 @@ llvm::Function *LLVMVisitor::makeLLVMFunction(const Func *x) {
 
   const std::string functionName = getLLVMNameForFunction(x);
   const bool isExternal = bool(cast<ExternalFunc>(x));
-  const bool winABI = isExternal && isWinMSVC(M.get()) && !funcType->isVariadic();
-
-  llvm::FunctionType *llvmFuncType = nullptr;
-  std::vector<std::pair<unsigned, llvm::Type *>> byvalArgs;
-  llvm::Type *sretType = nullptr;
-  if (winABI) {
-    // Marshal Codon's multi-register small-struct lowering into the Win64 ABI the
-    // MSVC-compiled runtime DLL expects: >8-byte aggregates pass/return indirectly.
-    std::vector<llvm::Type *> abiArgs;
-    llvm::Type *abiRet = returnType;
-    if (win64IsIndirect(M.get(), returnType)) {
-      sretType = returnType;
-      abiRet = B->getVoidTy();
-      abiArgs.push_back(returnType->getPointerTo());
-    }
-    for (auto *at : argTypes) {
-      if (win64IsIndirect(M.get(), at)) {
-        byvalArgs.emplace_back((unsigned)abiArgs.size(), at);
-        abiArgs.push_back(at->getPointerTo());
-      } else {
-        abiArgs.push_back(at);
-      }
-    }
-    llvmFuncType = llvm::FunctionType::get(abiRet, abiArgs, /*isVarArg=*/false);
-  } else {
-    llvmFuncType =
-        llvm::FunctionType::get(returnType, argTypes, funcType->isVariadic());
-  }
-
+  const bool winABI = isExternal && isWinMSVC(M.get());
+  auto *signature = llvm::FunctionType::get(returnType, argTypes, funcType->isVariadic());
+  auto *llvmFuncType = winABI ? winABISignature(M.get(), signature) : signature;
   auto *f = llvm::cast<llvm::Function>(
       M->getOrInsertFunction(functionName, llvmFuncType).getCallee());
-  if (winABI) {
-    if (sretType)
-      f->addParamAttr(
-          0, llvm::Attribute::get(*context, llvm::Attribute::StructRet, sretType));
-    for (auto &bv : byvalArgs)
-      f->addParamAttr(
-          bv.first, llvm::Attribute::get(*context, llvm::Attribute::ByVal, bv.second));
-  }
+  if (winABI && winABIKind(M.get(), returnType, true) == WinABIKind::Indirect)
+    f->addParamAttr(0, llvm::Attribute::get(*context, llvm::Attribute::StructRet,
+                                          returnType));
+  if (needsWinExportWrapper(x))
+    f->addFnAttr("codon-c-export", getNameForFunction(x));
   if (!isExternal) {
     f->setSubprogram(getDISubprogramForFunc(x));
   }
@@ -2157,51 +2307,22 @@ void LLVMVisitor::visit(const LLVMFunc *x) {
     builder.SetCurrentDebugLocation(llvm::DILocation::get(
         *context, src->line, src->col, func->getSubprogram()));
 
-    auto *returnType = signature->getReturnType();
-    const bool sret = win64IsIndirect(M.get(), returnType);
-    // Codon's NoneType is an empty aggregate; C functions return void.
-    const bool emptyReturn = returnType->isAggregateType() &&
-                             M->getDataLayout().getTypeAllocSize(returnType) == 0;
-    llvm::Value *returnSlot = nullptr;
-    std::vector<llvm::Type *> abiTypes;
-    std::vector<llvm::Value *> abiArgs;
-    std::vector<std::pair<unsigned, llvm::Type *>> byval;
-    if (sret) {
-      returnSlot = builder.CreateAlloca(returnType);
-      abiTypes.push_back(builder.getPtrTy());
-      abiArgs.push_back(returnSlot);
-    }
-    auto *args = func->getArg(1);
-    auto *tupleType = llvm::cast<llvm::StructType>(args->getType());
+    std::vector<llvm::Value *> arguments;
+    auto *tuple = func->getArg(1);
+    auto *tupleType = llvm::cast<llvm::StructType>(tuple->getType());
+    std::vector<llvm::Type *> argumentTypes;
     for (unsigned i = 0; i < tupleType->getNumElements(); ++i) {
-      auto *arg = builder.CreateExtractValue(args, i);
-      if (win64IsIndirect(M.get(), arg->getType())) {
-        auto *slot = builder.CreateAlloca(arg->getType());
-        slot->setAlignment(llvm::Align(16));
-        builder.CreateStore(arg, slot);
-        byval.emplace_back(abiArgs.size(), arg->getType());
-        abiTypes.push_back(builder.getPtrTy());
-        abiArgs.push_back(slot);
-      } else {
-        abiTypes.push_back(arg->getType());
-        abiArgs.push_back(arg);
-      }
+      arguments.push_back(builder.CreateExtractValue(tuple, i));
+      argumentTypes.push_back(tupleType->getElementType(i));
     }
-    auto *abiType = llvm::FunctionType::get(
-        sret || emptyReturn ? builder.getVoidTy() : returnType, abiTypes, false);
-    auto *result = builder.CreateCall(abiType, func->getArg(0), abiArgs);
-    if (sret)
-      result->addParamAttr(
-          0, llvm::Attribute::get(*context, llvm::Attribute::StructRet, returnType));
-    for (auto [index, type] : byval)
-      result->addParamAttr(
-          index, llvm::Attribute::get(*context, llvm::Attribute::ByVal, type));
-    if (sret)
-      builder.CreateRet(builder.CreateLoad(returnType, returnSlot));
-    else if (returnType->isVoidTy())
+    auto *nativeSignature = llvm::FunctionType::get(signature->getReturnType(),
+                                                    argumentTypes, false);
+    auto *result = winABICall(M.get(), builder, func->getArg(0), nativeSignature,
+                              arguments, [&](auto *type, auto *callee, auto args) {
+                                return builder.CreateCall(type, callee, args);
+                              });
+    if (signature->getReturnType()->isVoidTy())
       builder.CreateRetVoid();
-    else if (emptyReturn)
-      builder.CreateRet(llvm::Constant::getNullValue(returnType));
     else
       builder.CreateRet(result);
     return;
@@ -3990,61 +4111,17 @@ void LLVMVisitor::visit(const CallInstr *x) {
   }
 
   auto *callee = util::getFunc(x->getCallee());
-  const bool winABI = callee && isA<ExternalFunc>(callee) && isWinMSVC(M.get()) &&
-                      !funcType->isVarArg();
+  const bool winABI = callee && isA<ExternalFunc>(callee) && isWinMSVC(M.get());
   if (winABI) {
-    // Symmetric to makeLLVMFunction: marshal >8-byte aggregates to sret/byval
-    // slots so the call matches the Win64-ABI external declaration.
     B->SetInsertPoint(block);
-    llvm::Type *retType = funcType->getReturnType();
-    bool sret = win64IsIndirect(M.get(), retType);
-
-    std::vector<llvm::Type *> abiArgs;
-    std::vector<llvm::Value *> abiVals;
-    std::vector<std::pair<unsigned, llvm::Type *>> byvalIdx;
-
-    llvm::Value *sretSlot = nullptr;
-    if (sret) {
-      sretSlot = B->CreateAlloca(retType);
-      abiArgs.push_back(retType->getPointerTo());
-      abiVals.push_back(sretSlot);
-    }
-    for (auto *a : args) {
-      llvm::Type *at = a->getType();
-      if (win64IsIndirect(M.get(), at)) {
-        auto *slot = B->CreateAlloca(at);
-        B->CreateStore(a, slot);
-        byvalIdx.emplace_back((unsigned)abiArgs.size(), at);
-        abiArgs.push_back(at->getPointerTo());
-        abiVals.push_back(slot);
-      } else {
-        abiArgs.push_back(at);
-        abiVals.push_back(a);
-      }
-    }
-
-    auto *abiFuncType = llvm::FunctionType::get(sret ? B->getVoidTy() : retType,
-                                                abiArgs, /*isVarArg=*/false);
-    auto *result = call({abiFuncType, f}, abiVals);
-    if (auto *ci = llvm::dyn_cast<llvm::CallBase>(result)) {
-      if (sret)
-        ci->addParamAttr(
-            0, llvm::Attribute::get(*context, llvm::Attribute::StructRet, retType));
-      for (auto &bv : byvalIdx)
-        ci->addParamAttr(
-            bv.first, llvm::Attribute::get(*context, llvm::Attribute::ByVal, bv.second));
-    }
-    B->SetInsertPoint(block);
-    auto *winResultType = getLLVMType(x->getType());
-    if (!isStorableType(winResultType)) {
-      value = getDummyValue(winResultType);
-      return;
-    }
-    value = sret ? (llvm::Value *)B->CreateLoad(retType, sretSlot) : result;
+    auto *result = winABICall(M.get(), *B, f, funcType, args,
+                              [&](auto *type, auto *target, auto values) {
+                                return call({type, target}, values);
+                              });
+    auto *resultType = getLLVMType(x->getType());
+    value = isStorableType(resultType) ? result : getDummyValue(resultType);
     return;
   }
-
-  auto *callResult = call({funcType, f}, args);
 
   auto *resultType = getLLVMType(x->getType());
   if (!isStorableType(resultType)) {

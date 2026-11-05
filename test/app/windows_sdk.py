@@ -47,4 +47,6 @@ with tempfile.TemporaryDirectory(prefix='codon sdk ', dir=Path(sys.argv[1]).reso
         assert (root / 'runtime stream.txt').read_text().strip() == 'shared CRT'
         imports = run([shutil.which('llvm-readobj'), '--coff-imports', str(output)], env, root)
         assert 'Symbol: fflush' in imports, imports
+        from windows_abi import check
+        check(compiler, root, mode, env, runtime_env)
 print('Windows SDK path-with-spaces checks passed')
