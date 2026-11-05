@@ -89,6 +89,20 @@ std::string LLVMVisitor::getNameForVar(const Var *x) {
   }
 }
 
+std::string LLVMVisitor::getLLVMNameForFunction(const Func *function) {
+  if (options->jit || isA<ExternalFunc>(function) || util::isExport(function) ||
+      util::isGPUKernel(function))
+    return getNameForFunction(function);
+  auto existing = functionNames.find(function->getId());
+  if (existing != functionNames.end())
+    return existing->second;
+
+  const auto &base = function->getName();
+  auto name = base + "." + std::to_string(functionNameCounts[base]++);
+  functionNames.emplace(function->getId(), name);
+  return name;
+}
+
 LLVMVisitor::LLVMVisitor(Options *options)
     : util::ConstVisitor(), options(options),
       context(std::make_unique<llvm::LLVMContext>()), M(),
@@ -329,6 +343,8 @@ void LLVMVisitor::clearLLVMData() {
   fieldOffsetResolvers.clear();
   virtualLookupTypes.clear();
   virtualTargets.clear();
+  functionNames.clear();
+  functionNameCounts.clear();
 
   for (auto it = funcs.begin(); it != funcs.end();) {
     if (it->second && it->second->hasPrivateLinkage()) {
@@ -710,7 +726,7 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
   // for default-PIE GCC to avoid R_X86_64_32 relocations against .bss.
   if (!library)
     command.push_back(pie ? "-pie" : "-no-pie");
-#endif 
+#endif
 
   executeCommand(command);
 
@@ -858,7 +874,7 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
   auto pyFuncWrap = [&](Func *func, bool wrap) -> llvm::Constant * {
     if (!func)
       return null;
-    auto llvmName = getNameForFunction(func);
+    auto llvmName = getLLVMNameForFunction(func);
     auto *llvmFunc = M->getFunction(llvmName);
     seqassertn(llvmFunc, "function {} not found in LLVM module", llvmName);
     if (wrap)
@@ -1929,7 +1945,7 @@ llvm::DISubprogram *LLVMVisitor::getDISubprogramForFunc(const Func *x) {
   if (auto *parent = x->getParentType())
     baseName = parent->getName() + "." + baseName;
   auto *subprogram = db.builder->createFunction(
-      file, baseName, getNameForFunction(x), file, srcInfo->line, subroutineType,
+      file, baseName, getLLVMNameForFunction(x), file, srcInfo->line, subroutineType,
       /*ScopeLine=*/0, llvm::DINode::FlagZero,
       llvm::DISubprogram::toSPFlags(/*IsLocalToUnit=*/true,
                                     /*IsDefinition=*/true,
@@ -1955,7 +1971,7 @@ llvm::Function *LLVMVisitor::makeLLVMFunction(const Func *x) {
     argTypes.push_back(getLLVMType(argType));
   }
 
-  const std::string functionName = getNameForFunction(x);
+  const std::string functionName = getLLVMNameForFunction(x);
   const bool isExternal = bool(cast<ExternalFunc>(x));
   const bool winABI = isExternal && isWinMSVC(M.get()) && !funcType->isVariadic();
 
@@ -2022,7 +2038,7 @@ void LLVMVisitor::makeYield(llvm::Value *value, bool finalYield) {
 }
 
 void LLVMVisitor::visit(const ExternalFunc *x) {
-  func = M->getFunction(getNameForFunction(x));
+  func = M->getFunction(getLLVMNameForFunction(x));
   if (!func) {
     func = makeLLVMFunction(x);
     insertFunc(x, func);
@@ -2047,7 +2063,7 @@ void LLVMVisitor::visit(const InternalFunc *x) {
              x->getIntrinsicName());
   if (x->isTypeQuery())
     return;
-  func = M->getFunction(getNameForFunction(x));
+  func = M->getFunction(getLLVMNameForFunction(x));
   coro = {};
   seqassertn(func, "{} not inserted", *x);
   setDebugInfoForNode(x);
@@ -2077,7 +2093,7 @@ std::string LLVMVisitor::buildLLVMCodeString(const LLVMFunc *x) {
   // build function signature
   buf << "define ";
   getLLVMType(funcType->getReturnType())->print(buf);
-  buf << " @\"" << getNameForFunction(x) << "\"(";
+  buf << " @\"" << getLLVMNameForFunction(x) << "\"(";
   const int numArgs = std::distance(x->arg_begin(), x->arg_end());
   int argIndex = 0;
   for (auto it = x->arg_begin(); it != x->arg_end(); ++it) {
@@ -2110,7 +2126,7 @@ std::string LLVMVisitor::buildLLVMCodeString(const LLVMFunc *x) {
 }
 
 void LLVMVisitor::visit(const LLVMFunc *x) {
-  func = M->getFunction(getNameForFunction(x));
+  func = M->getFunction(getLLVMNameForFunction(x));
   coro = {};
   if (func)
     return;
@@ -2218,7 +2234,7 @@ void LLVMVisitor::visit(const LLVMFunc *x) {
   llvm::Linker L(*M);
   const bool fail = L.linkInModule(std::move(sub));
   seqassertn(!fail, "linking failed");
-  func = M->getFunction(getNameForFunction(x));
+  func = M->getFunction(getLLVMNameForFunction(x));
   seqassertn(func, "function not linked in");
   func->setLinkage(llvm::GlobalValue::PrivateLinkage);
   func->addFnAttr(llvm::Attribute::AttrKind::AlwaysInline);
@@ -2238,7 +2254,7 @@ void LLVMVisitor::visit(const LLVMFunc *x) {
 }
 
 void LLVMVisitor::visit(const BodiedFunc *x) {
-  func = M->getFunction(getNameForFunction(x));
+  func = M->getFunction(getLLVMNameForFunction(x));
   coro = {};
   seqassertn(func, "{} not inserted", *x);
   setDebugInfoForNode(x);

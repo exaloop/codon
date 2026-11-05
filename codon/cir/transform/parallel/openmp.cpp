@@ -690,7 +690,8 @@ struct ParallelLoopTemplateReplacer : public LoopTemplateReplacer {
     auto *tupleType = getReductionTuple()->getType();
     auto *argType = M->getPointerType(tupleType);
     auto *funcType = M->getFuncType(M->getNoneType(), {argType, argType});
-    auto *reducer = M->Nr<BodiedFunc>("__omp_reducer");
+    auto *reducer =
+        M->Nr<BodiedFunc>(util::getDerivedFuncName("__omp_reducer", parent));
     reducer->realize(funcType, {"lhs", "rhs"});
 
     auto *lhsVar = reducer->arg_front();
@@ -1065,7 +1066,8 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
     auto *M = parent->getModule();
     auto *argType = M->getPointerType(reduction->getType());
     auto *funcType = M->getFuncType(M->getNoneType(), {argType, argType});
-    auto *initializer = M->Nr<BodiedFunc>("__red_init");
+    auto *initializer = M->Nr<BodiedFunc>(
+        util::getDerivedFuncName("__red_init", parent, reduction->shared));
     initializer->realize(funcType, {"lhs", "rhs"});
 
     auto *lhsVar = initializer->arg_front();
@@ -1080,7 +1082,8 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
     auto *M = parent->getModule();
     auto *argType = M->getPointerType(reduction->getType());
     auto *funcType = M->getFuncType(M->getNoneType(), {argType, argType});
-    auto *reducer = M->Nr<BodiedFunc>("__red_comb");
+    auto *reducer = M->Nr<BodiedFunc>(
+        util::getDerivedFuncName("__red_comb", parent, reduction->shared));
     reducer->realize(funcType, {"lhs", "rhs"});
 
     auto *lhsVar = reducer->arg_front();
@@ -1142,6 +1145,7 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
 
       util::CloneVisitor cv(M);
       auto *newRoutine = cv.forceClone(func);
+      newRoutine->setName(util::getDerivedFuncName(func->getName(), parent));
       TaskLoopBodyStubReplacer rep(replacement, reduceArgs);
       newRoutine->accept(rep);
       v->setVar(newRoutine);
@@ -1570,7 +1574,8 @@ void OpenMPPass::handle(ForFlow *v) {
     }
     argNames.push_back("gtid");
 
-    auto *newOutlinedFunc = M->Nr<BodiedFunc>("__outlined_new");
+    auto *newOutlinedFunc =
+        M->Nr<BodiedFunc>(util::getDerivedFuncName("__outlined_new", outline.func));
     newOutlinedFunc->realize(M->getFuncType(retType, argTypes), argNames);
 
     std::vector<Var *> newArgVars(newOutlinedFunc->arg_begin(),
@@ -1605,6 +1610,8 @@ void OpenMPPass::handle(ForFlow *v) {
   seqassertn(templateFunc, "task loop outline template not found");
 
   templateFunc = cv.forceClone(templateFunc);
+  templateFunc->setName(
+      util::getDerivedFuncName(templateFunc->getName(), outline.func));
   TaskLoopRoutineStubReplacer rep(cast<BodiedFunc>(templateFunc), outline.call, loopVar,
                                   &reds, privates, shareds, sharedRedux);
   templateFunc->accept(rep);
@@ -1728,6 +1735,8 @@ void OpenMPPass::handle(ImperativeForFlow *v) {
 
     util::CloneVisitor cv(M);
     templateFunc = cast<Func>(cv.forceClone(templateFunc));
+    templateFunc->setName(
+        util::getDerivedFuncName(templateFunc->getName(), outline.func));
     ImperativeLoopTemplateReplacer rep(cast<BodiedFunc>(templateFunc), outline.call,
                                        loopVar, &reds, sched, v->getStep());
     templateFunc->accept(rep);

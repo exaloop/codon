@@ -705,7 +705,8 @@ Var *NumPyExpr::codegenFusedEval(CodegenContext &C, Var *destination) {
   scalarFuncArgTypes.push_back(extraTuple->getType());
   auto *scalarFuncType =
       M->getFuncType(isReduction() ? baseType : M->getNoneType(), scalarFuncArgTypes);
-  auto *scalarFunc = M->Nr<BodiedFunc>("__numpy_fusion_scalar_fn");
+  auto *scalarFunc = M->N<BodiedFunc>(
+      val, util::getDerivedFuncName("__numpy_fusion_scalar_fn", func, val));
   scalarFunc->realize(scalarFuncType, scalarFuncArgNames);
   std::vector<Var *> scalarFuncArgVars(scalarFunc->arg_begin(), scalarFunc->arg_end());
 
@@ -733,7 +734,7 @@ Var *NumPyExpr::codegenFusedEval(CodegenContext &C, Var *destination) {
   Value *scalarCallback = M->Nr<VarValue>(scalarFunc);
   if (isReduction()) {
     auto *wrapper = M->getOrRealizeFunc("_reduction_function", {scalarFunc->getType()},
-                                        {int64_t(scalarFunc->getId())}, FUSION_MODULE);
+                                        {scalarFunc->getName()}, FUSION_MODULE);
     seqassertn(wrapper, "reduction callback wrapper not found");
     scalarCallback = util::call(wrapper, {scalarCallback});
   }
@@ -1073,7 +1074,8 @@ Var *NumPyExpr::codegenSequentialEval(CodegenContext &C) {
     scalarFuncArgNames.push_back("extra");
     scalarFuncArgTypes.push_back(extraTuple->getType());
     auto *scalarFuncType = M->getFuncType(M->getNoneType(), scalarFuncArgTypes);
-    auto *scalarFunc = M->Nr<BodiedFunc>("__numpy_fusion_scalar_fn");
+    auto *scalarFunc = M->N<BodiedFunc>(
+        val, util::getDerivedFuncName("__numpy_fusion_scalar_fn", func, val));
     scalarFunc->realize(scalarFuncType, scalarFuncArgNames);
     std::vector<Var *> scalarFuncArgVars(scalarFunc->arg_begin(),
                                          scalarFunc->arg_end());

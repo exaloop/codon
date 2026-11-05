@@ -319,7 +319,8 @@ struct Outliner : public Operator {
       return {};
     auto *funcType = M->getFuncType(
         callIndicatesControl ? M->getIntType() : M->getNoneType(), argTypes);
-    auto *outlinedFunc = M->Nr<BodiedFunc>("__outlined");
+    auto *outlinedFunc =
+        M->N<BodiedFunc>(*begin, getDerivedFuncName("__outlined", parent, *begin));
     outlinedFunc->realize(funcType, argNames);
 
     // Insert function arguments in variable remappings.
