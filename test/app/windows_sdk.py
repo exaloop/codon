@@ -28,6 +28,13 @@ with tempfile.TemporaryDirectory(prefix='codon sdk ', dir=Path(sys.argv[1]).reso
     env = os.environ.copy()
     env.pop('CODON_PATH', None)
     env['CODON_DIR'] = str(relocated)
+    # The CLI must load from its installed bin directory, without help from the
+    # build tree or the original SDK's DLL directories.
+    clang_dir = Path(shutil.which('clang')).parent
+    system_root = Path(os.environ['SystemRoot'])
+    env['PATH'] = os.pathsep.join(map(str, (clang_dir, system_root / 'System32', system_root)))
+    runtime_env = env.copy()
+    runtime_env['PATH'] = str(relocated / 'bin') + os.pathsep + env['PATH']
     compiler = relocated / 'bin' / 'codon.exe'
     source = root / 'input with spaces.codon'
     source.write_text('print("SDK with spaces", flush=True)\n'
@@ -36,7 +43,7 @@ with tempfile.TemporaryDirectory(prefix='codon sdk ', dir=Path(sys.argv[1]).reso
     for mode in ('-debug', '-release'):
         output = root / f'my app {mode}.exe'
         run([str(compiler), 'build', mode, '-o', str(output), str(source)], env, root)
-        assert run([str(output)], env, root).strip() == 'SDK with spaces'
+        assert run([str(output)], runtime_env, root).strip() == 'SDK with spaces'
         assert (root / 'runtime stream.txt').read_text().strip() == 'shared CRT'
         imports = run([shutil.which('llvm-readobj'), '--coff-imports', str(output)], env, root)
         assert 'Symbol: fflush' in imports, imports

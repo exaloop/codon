@@ -844,6 +844,13 @@ endif()
 
 install(TARGETS codonrt codonc codon_jupyter DESTINATION lib/codon)
 if(WIN32)
+  # Windows resolves a CLI's dependent DLLs beside the executable before PATH.
+  # Keep lib/codon copies for embedders and import libraries, and install a
+  # complete runnable bin directory even without the release ZIP workflow.
+  install(FILES "$<TARGET_FILE:codonrt>" "$<TARGET_FILE:codonc>"
+                "$<TARGET_FILE:codon_jupyter>"
+                "${LLVM_TOOLS_BINARY_DIR}/libomp.dll" "$<TARGET_FILE:openblas>"
+          DESTINATION bin)
   # libomp.dll for runtime (JIT + AOT exes), libomp.lib so AOT `codon build` of @par
   # programs can link the __kmpc_* import lib via -L../lib/codon.
   install(FILES "${LLVM_TOOLS_BINARY_DIR}/libomp.dll" DESTINATION lib/codon)

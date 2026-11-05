@@ -317,7 +317,6 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          Copy-Item codon-deploy/lib/codon/*.dll codon-deploy/bin/
           Compress-Archive -Path codon-deploy -DestinationPath codon-${{ matrix.arch }}.zip -Force
 
       - name: Upload Artifacts
