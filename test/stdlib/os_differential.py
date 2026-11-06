@@ -128,7 +128,9 @@ def main():
     parser.add_argument("--seed", type=int, default=1729)
     parser.add_argument("--graphs", type=int, default=12)
     args = parser.parse_args()
-    with tempfile.TemporaryDirectory(prefix="codon-os-differential-") as temporary:
+    # relpath cannot cross Windows drives (CI checks out on D: but TEMP is on C:).
+    # Keep the corpus on the working-directory drive so all relative cases run.
+    with tempfile.TemporaryDirectory(prefix="codon-os-differential-", dir=Path.cwd()) as temporary:
         root = Path(temporary)
         source = root / "probe.codon"
         binary = root / ("probe.exe" if os.name == "nt" else "probe")
