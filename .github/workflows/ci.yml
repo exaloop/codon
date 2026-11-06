@@ -235,13 +235,13 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: website/package-lock.json
+          cache-dependency-path: docs/package-lock.json
 
       - name: Install documentation dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r website/requirements.txt
-          npm ci --prefix website
+          python -m pip install -r docs/requirements.txt
+          npm ci --prefix docs
 
       - name: Download Artifact
         uses: actions/download-artifact@v8
@@ -257,13 +257,13 @@ jobs:
           python scripts/docgen.py docs.json docs/libraries/api "$PWD/codon-deploy-linux-x86_64/lib/codon/stdlib"
 
       - name: Build and validate Docusaurus site
-        run: npm run build --prefix website
+        run: npm run build --prefix docs
 
       - name: Upload documentation site
         uses: actions/upload-artifact@v7
         with:
           name: codon-docs
-          path: website/build/
+          path: docs/build/
           if-no-files-found: error
           retention-days: 7
 
@@ -272,6 +272,6 @@ jobs:
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./website/build
+          publish_dir: ./docs/build
           force_orphan: true
           cname: docs.exaloop.io

@@ -3,11 +3,11 @@ import {fileURLToPath} from 'node:url';
 import {load} from 'cheerio';
 import {icons} from 'lucide';
 
-const docs = fileURLToPath(new URL('../../docs/', import.meta.url));
+const docs = fileURLToPath(new URL('../', import.meta.url));
 const output = fileURLToPath(new URL('../static/', import.meta.url));
 const index = `${docs}/libraries/api/api-search-index.json`;
 if (!existsSync(index)) {
-  throw new Error('Generate the API reference first. See website/README.md.');
+  throw new Error('Generate the API reference first. See docs/README.md.');
 }
 mkdirSync(`${output}/libraries/api`, {recursive: true});
 cpSync(`${docs}/img`, `${output}/img`, {recursive: true});

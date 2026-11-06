@@ -26,6 +26,7 @@ module.exports = async function config() {
     presets: [['classic', {
       docs: {
         path: '../docs',
+        include: ['index.md', '{start,language,libraries,integrations,parallel,labs,developers}/**/*.{md,mdx}'],
         exclude: [],
         routeBasePath: '/',
         sidebarPath: require.resolve('./sidebars.js'),
