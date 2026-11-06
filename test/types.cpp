@@ -6,6 +6,7 @@
 #include <iostream>
 #include <limits>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -954,6 +955,7 @@ dispatch_old(bad)
 
 TEST(JITRTTITest, MatchesBaseExceptionAcrossCells) {
   for (bool debug : {false, true}) {
+    SCOPED_TRACE(debug ? "debug" : "release");
     auto options = codon::Options::getDefault("build/codon_test");
     options->jit = true;
     options->debug = debug;
@@ -992,15 +994,60 @@ TEST(JITRTTITest, MatchesBaseExceptionAcrossCells) {
         "print('second')\n");
     ASSERT_TRUE(bool(second)) << llvm::toString(second.takeError());
     EXPECT_EQ(*second, "second\n");
-    auto unhandled = instance.execute("raise future\n");
+    auto unhandled = instance.execute("finally_ran = []\n"
+                                      "try:\n"
+                                      "    raise future\n"
+                                      "finally:\n"
+                                      "    finally_ran.append(1)\n");
     ASSERT_FALSE(bool(unhandled));
     auto message = llvm::toString(unhandled.takeError());
     EXPECT_NE(message.find("FutureError"), std::string::npos);
     EXPECT_NE(message.find("shifted exception"), std::string::npos);
     auto recovered = instance.execute(
+        "assert finally_ran == [1]\n"
         "assert catch_future(future) == 'shifted exception'\n"
         "assert future.padding == (17, 19, 23) and future.payload == 29\n"
         "print('recovered')\n");
+    ASSERT_TRUE(bool(recovered)) << llvm::toString(recovered.takeError());
+    EXPECT_EQ(*recovered, "recovered\n");
+  }
+}
+
+TEST(JITRTTITest, PropagatesNativeExceptionsAcrossEntryBoundary) {
+  for (bool debug : {false, true}) {
+    SCOPED_TRACE(debug ? "debug" : "release");
+    auto options = codon::Options::getDefault("build/codon_test");
+    options->jit = true;
+    options->debug = debug;
+    options->capture = true;
+    codon::jit::JIT instance(*options);
+    auto error = instance.init();
+    ASSERT_FALSE(bool(error)) << llvm::toString(std::move(error));
+    auto &dylib = instance.getEngine()->getMainJITDylib();
+    llvm::orc::MangleAndInterner mangle(dylib.getExecutionSession(),
+                                       instance.getEngine()->getDataLayout());
+    llvm::orc::SymbolMap symbols;
+    symbols[mangle("codon_test_throw_native")] = {
+        llvm::orc::ExecutorAddr::fromPtr(+[]() {
+          throw std::runtime_error("native exception through JIT");
+        }),
+        llvm::JITSymbolFlags::Exported};
+    error = dylib.define(llvm::orc::absoluteSymbols(std::move(symbols)));
+    ASSERT_FALSE(bool(error)) << llvm::toString(std::move(error));
+    EXPECT_THROW(
+        {
+          // Unlike an ordinary C import (nounwind), this call may unwind.
+          auto result = instance.execute("@llvm\n"
+                                          "def throw_native() -> None:\n"
+                                          "    declare void @codon_test_throw_native()\n"
+                                          "    call void @codon_test_throw_native()\n"
+                                          "    ret {} {}\n"
+                                          "throw_native()\n");
+          if (!result)
+            llvm::consumeError(result.takeError());
+        },
+        std::runtime_error);
+    auto recovered = instance.execute("print('recovered')\n");
     ASSERT_TRUE(bool(recovered)) << llvm::toString(recovered.takeError());
     EXPECT_EQ(*recovered, "recovered\n");
   }

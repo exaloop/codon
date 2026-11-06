@@ -67,6 +67,10 @@ private:
   std::unique_ptr<PythonData> pydata;
   std::string mode;
   bool forgetful = false;
+#ifndef _WIN32
+  void (*inputInvoker)(void (*)()) = nullptr;
+  void *(*pythonInvoker)(void *(*)(void *), void *) = nullptr;
+#endif
 
 public:
   explicit JIT(const Options &options, const std::string &mode = "",

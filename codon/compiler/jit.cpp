@@ -38,6 +38,7 @@ static char *strndup(const char *s, size_t n) {
 #include "codon/parser/visitors/scoping/scoping.h"
 #include "codon/parser/visitors/translate/translate.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
+#include "codon/runtime/rtti.h"
 
 namespace {
 llvm::Expected<std::unordered_map<std::string, std::string>>
@@ -62,6 +63,73 @@ namespace {
 typedef int MainFunc(int, char **);
 typedef void InputFunc();
 typedef void *PyWrapperFunc(void *);
+
+#ifndef _WIN32
+// C++ handlers cannot translate Codon's foreign Itanium exception. Invoke JIT
+// entries through a Codon personality frame, as proxy_main does for AOT code.
+static void createJITInvoker(llvm::Module &module, llvm::StringRef name,
+                             llvm::FunctionType *calleeType) {
+  auto &context = module.getContext();
+  llvm::IRBuilder<> builder(context);
+  std::vector<llvm::Type *> parameters{builder.getPtrTy()};
+  for (auto *type : calleeType->params())
+    parameters.push_back(type);
+  auto *invokerType =
+      llvm::FunctionType::get(calleeType->getReturnType(), parameters, false);
+  auto *invoker = llvm::Function::Create(
+      invokerType, llvm::GlobalValue::ExternalLinkage, name, module);
+  invoker->setPersonalityFn(llvm::cast<llvm::Constant>(
+      module
+          .getOrInsertFunction("seq_personality", builder.getInt32Ty(),
+                               builder.getInt32Ty(), builder.getInt32Ty(),
+                               builder.getInt64Ty(), builder.getPtrTy(),
+                               builder.getPtrTy())
+          .getCallee()));
+  auto *start = llvm::BasicBlock::Create(context, "entry", invoker);
+  auto *normal = llvm::BasicBlock::Create(context, "normal", invoker);
+  auto *unwind = llvm::BasicBlock::Create(context, "unwind", invoker);
+  builder.SetInsertPoint(start);
+  auto arg = invoker->arg_begin();
+  auto *callee = &*arg++;
+  std::vector<llvm::Value *> args;
+  for (; arg != invoker->arg_end(); ++arg)
+    args.push_back(&*arg);
+  auto *result = builder.CreateInvoke(calleeType, callee, normal, unwind, args);
+  builder.SetInsertPoint(normal);
+  if (invoker->getReturnType()->isVoidTy())
+    builder.CreateRetVoid();
+  else
+    builder.CreateRet(result);
+  builder.SetInsertPoint(unwind);
+  auto *pad = builder.CreateLandingPad(
+      llvm::StructType::get(builder.getPtrTy(), builder.getInt32Ty()), 1);
+  pad->setCleanup(true);
+  // seq_personality expects a Codon selector record, not a C++ null catch-all.
+  auto *selectorType = llvm::StructType::get(builder.getInt32Ty());
+  auto *selector = new llvm::GlobalVariable(
+      module, selectorType, true, llvm::GlobalValue::PrivateLinkage,
+      llvm::ConstantStruct::get(selectorType,
+                                builder.getInt32(runtime::CATCH_ALL_SELECTOR)),
+      "codon.jit.catch_all");
+  pad->addClause(selector);
+  auto *exception = builder.CreateExtractValue(pad, 0);
+  auto *caught = llvm::BasicBlock::Create(context, "caught", invoker);
+  auto *foreign = llvm::BasicBlock::Create(context, "foreign", invoker);
+  // The personality also enters landing pads during foreign-exception cleanup.
+  // Never interpret a native C++ exception as a Codon exception object.
+  auto *exceptionClass = builder.CreateLoad(builder.getInt64Ty(), exception);
+  builder.CreateCondBr(
+      builder.CreateICmpEQ(exceptionClass, builder.getInt64(SEQ_EXCEPTION_CLASS)),
+      caught, foreign);
+  builder.SetInsertPoint(foreign);
+  builder.CreateResume(pad);
+  builder.SetInsertPoint(caught);
+  builder.CreateCall(module.getOrInsertFunction("seq_terminate", builder.getVoidTy(),
+                                                builder.getPtrTy()),
+                     exception);
+  builder.CreateUnreachable();
+}
+#endif
 
 #ifdef _WIN32
 // Codon raises SEH exceptions on Windows. Keep the SEH boundary free of C++
@@ -141,9 +209,32 @@ llvm::Error JIT::init(bool forgetful) {
   pm->run(module);
   module->accept(*llvisitor);
   auto pair = llvisitor->takeModule(module);
+#ifndef _WIN32
+  if (!compiler->getOptions()->noexc) {
+    llvm::IRBuilder<> builder(*pair.second);
+    createJITInvoker(*pair.first, "codon.jit.invoke_input",
+                     llvm::FunctionType::get(builder.getVoidTy(), false));
+    createJITInvoker(
+        *pair.first, "codon.jit.invoke_python",
+        llvm::FunctionType::get(builder.getPtrTy(), {builder.getPtrTy()}, false));
+  }
+#endif
 
   if (auto err = engine->addModule({std::move(pair.first), std::move(pair.second)}))
     return err;
+
+#ifndef _WIN32
+  if (!compiler->getOptions()->noexc) {
+    auto input = engine->lookup("codon.jit.invoke_input");
+    if (!input)
+      return input.takeError();
+    inputInvoker = input->toPtr<decltype(inputInvoker)>();
+    auto python = engine->lookup("codon.jit.invoke_python");
+    if (!python)
+      return python.takeError();
+    pythonInvoker = python->toPtr<decltype(pythonInvoker)>();
+  }
+#endif
 
   auto initialize = engine->lookup(llvisitor->getRuntimeInitializerName());
   if (!initialize)
@@ -307,7 +398,10 @@ llvm::Expected<std::string> JIT::run(const ir::Func *input,
     if (exception)
       seq_terminate(exception);
 #else
-    (*repl)();
+    if (inputInvoker)
+      inputInvoker(repl);
+    else
+      (*repl)();
 #endif
   } catch (const runtime::JITError &e) {
     return handleJITError(e);
@@ -459,7 +553,7 @@ JIT::JITResult JIT::executePython(const std::string &name,
     if (exception)
       seq_terminate(exception);
 #else
-    auto *ans = (*wrap)(arg);
+    auto *ans = pythonInvoker ? pythonInvoker(wrap, arg) : (*wrap)(arg);
 #endif
     return JITResult::success(ans);
   } catch (const runtime::JITError &e) {
