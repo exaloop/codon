@@ -1,3 +1,7 @@
+---
+title: Frequently asked questions
+---
+
 ## Technical
 
 ### What is Codon?

@@ -1,8 +1,12 @@
+---
+title: Compilation flow
+---
+
 This page describes the internal compilation flow from source code to native code.
 It is intended for Codon developers and contributors seeking to understand or extend
 the compiler.
 
-![Codon compilation pipeline](../img/codon-pipeline.svg){ width="100%" }
+![Codon compilation pipeline](../img/codon-pipeline.svg)
 
 ## Overview
 
@@ -521,7 +525,10 @@ Coroutines are heavily optimized by LLVM. The code above, after optimizations ar
   call void @print(i64 2)
 ```
 
-!!! info
+:::info
+
+
+:::
 
    Codon's LLVM fork implements coroutine elision analysis through escape analysis of the coroutine
    handle, as opposed to the standard analysis that relies on examining `@llvm.coro.destroy` calls.

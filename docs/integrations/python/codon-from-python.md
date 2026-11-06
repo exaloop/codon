@@ -1,3 +1,7 @@
+---
+title: Call Codon from Python
+---
+
 Codon can be used within larger Python projects or codebases
 through its just-in-time (JIT) compilation mode. To use Codon's
 Python JIT compiler, install the `codon-jit` Python package:
@@ -55,22 +59,28 @@ outputs:
 [codon]  8392 | took 0.998633861541748 seconds
 ```
 
-!!! info
-
-    `@par` (to parallelize `for`-loops) can be used in annotated functions
-    via a leading underscore: `_@par`.
+:::info
 
 
-!!! warning
+`@par` (to parallelize `for`-loops) can be used in annotated functions
+via a leading underscore: `_@par`.
 
-    In general, changes made to objects in a JIT'd function will not be
-    reflected in the host Python application, since objects passed to Codon
-    are *converted* to Codon-native types. If objects need to be modified,
-    consider returning any necessary values and performing modifications
-    in Python. The one notable exception to this rule is NumPy arrays, which
-    are not copied but instead have their data pointer passed directly to
-    Codon, meaning array modifications *are* visible in the host Python
-    application.
+
+:::
+
+:::warning
+
+
+In general, changes made to objects in a JIT'd function will not be
+reflected in the host Python application, since objects passed to Codon
+are *converted* to Codon-native types. If objects need to be modified,
+consider returning any necessary values and performing modifications
+in Python. The one notable exception to this rule is NumPy arrays, which
+are not copied but instead have their data pointer passed directly to
+Codon, meaning array modifications *are* visible in the host Python
+application.
+
+:::
 
 ## Type conversions
 
@@ -143,9 +153,12 @@ This also allows imported Python modules to be accessed by Codon. All `pyvars`
 are passed as Python objects. Note that JIT'd functions can call each other
 by default.
 
-!!! info
+:::info
 
-    `pyvars` takes in variable names as strings, not the variables themselves.
+
+`pyvars` takes in variable names as strings, not the variables themselves.
+
+:::
 
 ## Debugging
 

@@ -1,3 +1,7 @@
+---
+title: Inline LLVM IR
+---
+
 Codon supports inline [LLVM IR](https://llvm.org/docs/LangRef.html) via
 the `@llvm` annotation:
 

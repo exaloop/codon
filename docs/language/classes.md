@@ -1,3 +1,7 @@
+---
+title: Classes
+---
+
 Codon supports Python classes as you would expect. For example:
 
 ``` python
@@ -144,10 +148,13 @@ return an existing instance. Constructor arguments are evaluated once and passed
 to both the custom `__new__` and `__init__`. If `__new__` returns an unrelated type,
 `__init__` is skipped.
 
-!!! note
+:::note
 
-    Non-method functions can also be overloaded in Codon by adding the `@overload`
-    decorator, which prevents latter definitions from shadowing previous ones.
+
+Non-method functions can also be overloaded in Codon by adding the `@overload`
+decorator, which prevents latter definitions from shadowing previous ones.
+
+:::
 
 ## Tuple classes
 
@@ -276,10 +283,13 @@ for shape in shapes:
     print(shape.describe(), f'(area={shape.area()})')
 ```
 
-!!! warning
+:::warning
 
-    Tuple classes cannot be subclassed using standard inheritance. However, they can
-    be subclassed via static inheritance, as described below.
+
+Tuple classes cannot be subclassed using standard inheritance. However, they can
+be subclassed via static inheritance, as described below.
+
+:::
 
 In the code above, the methods `area()` and `describe()` are overriden by the subclasses
 of `Square`. Codon follows Python's semantics and method resolution order.

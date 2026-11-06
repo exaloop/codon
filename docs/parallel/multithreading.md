@@ -1,3 +1,7 @@
+---
+title: Multithreading
+---
+
 Codon supports parallelism and multithreading via OpenMP out of the box.
 Here's an example:
 
@@ -44,11 +48,14 @@ for i in range(N):
 
 will automatically generate a reduction for variable `a`.
 
-!!! warning
+:::warning
 
-    Modifying shared objects like lists or dictionaries within a parallel
-    section needs to be done with a lock or critical section. See below
-    for more details.
+
+Modifying shared objects like lists or dictionaries within a parallel
+section needs to be done with a lock or critical section. See below
+for more details.
+
+:::
 
 Here is an example that finds the number of primes up to a
 user-defined limit, using a parallel loop on 16 threads with a dynamic

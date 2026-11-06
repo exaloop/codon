@@ -1,7 +1,14 @@
-!!! tip
+---
+title: Build from source
+---
 
-    Unless you really need to build Codon from source, it is strongly
-    recommended to use pre-built binaries if possible.
+:::tip
+
+
+Unless you really need to build Codon from source, it is strongly
+recommended to use pre-built binaries if possible.
+
+:::
 
 ## Dependencies
 
@@ -82,11 +89,14 @@ Additionally, a number of shared libraries are produced in `install/lib/codon`:
 - `libcodonrt`: The runtime library used during execution.
 - `libomp`: OpenMP runtime used to execute parallel code.
 
-!!! warning
+:::warning
 
-    Make sure the `llvm-config` being used corresponds to Codon's LLVM. You can also use
-    `-DLLVM_DIR=llvm-project/install/lib/cmake/llvm` on the first `cmake` command if you
-    followed the instructions above for compiling LLVM.
+
+Make sure the `llvm-config` being used corresponds to Codon's LLVM. You can also use
+`-DLLVM_DIR=llvm-project/install/lib/cmake/llvm` on the first `cmake` command if you
+followed the instructions above for compiling LLVM.
+
+:::
 
 ## Jupyter support
 

@@ -1,3 +1,7 @@
+---
+title: Usage
+---
+
 The `codon` command includes several subcommands for compiling
 and executing code.
 
@@ -112,22 +116,28 @@ codon build -o hello.so -release program.py
 The `-linker-flags` flag described above also applies when compiling to
 a shared library.
 
-!!! info
+:::info
 
-    When compiling to a shared library, the program's main code will be
-    included and executed when the library is loaded as a *global constructor*.
-    This allows you to include any necessary initialization code in the
-    main program. This behavior can be controlled via the `-global-ctor=<yes|no|auto>`
-    flag, which enables e.g. global constructor creation when compiling to other
-    output types like object files.
 
-!!! info
+When compiling to a shared library, the program's main code will be
+included and executed when the library is loaded as a *global constructor*.
+This allows you to include any necessary initialization code in the
+main program. This behavior can be controlled via the `-global-ctor=<yes|no|auto>`
+flag, which enables e.g. global constructor creation when compiling to other
+output types like object files.
 
-    If you intend to call a Codon-generated shared library from C or C++,
-    be sure to mark relevant functions with `@export` to ensure they are
-    made visible by the linker. Exported functions can be called as regular
-    C functions (i.e. they follow the C ABI).
-    [Learn more &#x2192;](../integrations/cpp/codon-from-cpp.md)
+:::
+
+:::info
+
+
+If you intend to call a Codon-generated shared library from C or C++,
+be sure to mark relevant functions with `@export` to ensure they are
+made visible by the linker. Exported functions can be called as regular
+C functions (i.e. they follow the C ABI).
+[Learn more &#x2192;](../integrations/cpp/codon-from-cpp.md)
+
+:::
 
 ### Compile to object file
 
@@ -205,10 +215,13 @@ codon build -pyext -o hello.o -release program.py
 codon build -pyext -o hello.o -release -module mymodule program.py
 ```
 
-!!! info
+:::info
 
-    When using `-pyext`, you will also often want to use the `--relocation-model=pic`
-    flag to generate position-independent code.
+
+When using `-pyext`, you will also often want to use the `--relocation-model=pic`
+flag to generate position-independent code.
+
+:::
 
 ## `codon jit`
 
@@ -218,10 +231,13 @@ Codon's [Python JIT decorator](../integrations/python/codon-from-python.md) and
 [Jupyter kernel](../integrations/jupyter.md).
 However, it is intended to be used as a debugging utility rather than as a general usage mode.
 
-!!! warning
+:::warning
 
-    `codon jit` is intended to be used as a debugging utility for Codon's JIT compilation
-    capabilities. The interface may change between Codon versions.
+
+`codon jit` is intended to be used as a debugging utility for Codon's JIT compilation
+capabilities. The interface may change between Codon versions.
+
+:::
 
 `codon jit` can be passed a file name to read from, or `-` to read from standard input.
 For example:

@@ -1,3 +1,7 @@
+---
+title: Standard library
+---
+
 Codon implements much of Python's standard library natively.
 Some built-in modules and some methods of certain modules are
 not yet available natively in Codon; these

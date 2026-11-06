@@ -1,12 +1,19 @@
+---
+title: GPU programming
+---
+
 Codon supports GPU programming through a native GPU backend.
 Currently, only Nvidia devices are supported.
 
-!!! info
+:::info
 
-    [CUDA](https://developer.nvidia.com/cuda-toolkit) is required for GPU programming.
-    Codon automatically loads the CUDA shared library `libcuda.so` (or `libcuda.dylib`).
-    If this library is not in a standard location, its path can be specified via the
-    `CODON_CUDA` environment variable.
+
+[CUDA](https://developer.nvidia.com/cuda-toolkit) is required for GPU programming.
+Codon automatically loads the CUDA shared library `libcuda.so` (or `libcuda.dylib`).
+If this library is not in a standard location, its path can be specified via the
+`CODON_CUDA` environment variable.
+
+:::
 
 Here is a simple example:
 

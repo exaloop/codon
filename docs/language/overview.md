@@ -1,3 +1,7 @@
+---
+title: Language overview
+---
+
 Codon strives to be as close to Python (specifically, CPython) as possible,
 outside of a few differences that stem from performance considerations or
 incompatibilities with Codon's static compilation paradigm.
@@ -10,11 +14,14 @@ other features. These elements are described in this section.
 
 ## Differences with Python
 
-!!! tip
+:::tip
 
-    Found something that works differently in Codon than Python which
-    isn't mentioned below? Let us know
-    [on GitHub](https://github.com/exaloop/codon/issues/new).
+
+Found something that works differently in Codon than Python which
+isn't mentioned below? Let us know
+[on GitHub](https://github.com/exaloop/codon/issues/new).
+
+:::
 
 While Codon's syntax and semantics are nearly identical
 to Python's, there are some notable differences that are

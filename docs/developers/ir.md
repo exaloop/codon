@@ -1,3 +1,7 @@
+---
+title: Intermediate representation
+---
+
 After type checking but before native code generation, the Codon compiler
 makes use of a new [intermediate representation](https://en.wikipedia.org/wiki/Intermediate_representation)
 called CIR, where a number of higher-level optimizations, transformations and analyses take place.
@@ -349,12 +353,15 @@ subclass with methods for building the corresponding LLVM IR type. There is also
 new constants and converting them to LLVM IR, as well as a `CFBuilder` for new instructions and creating
 control-flow graphs out of them.
 
-!!! tip
+:::tip
 
-    When subclassing nodes other than types (e.g. instructions, flows, etc.), be sure to use the `AcceptorExtend`
-    [CRTP](https://en.wikipedia.org/wiki/Curiously_recurring_template_pattern) class, as in
-    `class MyNewInstr : public AcceptorExtend<MyNewInstr, dsl::CustomInstr>`.
 
+When subclassing nodes other than types (e.g. instructions, flows, etc.), be sure to use the `AcceptorExtend`
+[CRTP](https://en.wikipedia.org/wiki/Curiously_recurring_template_pattern) class, as in
+`class MyNewInstr : public AcceptorExtend<MyNewInstr, dsl::CustomInstr>`.
+
+
+:::
 
 ## Utilities
 

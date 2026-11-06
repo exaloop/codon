@@ -1,3 +1,7 @@
+---
+title: Low-level programming
+---
+
 Codon provides various low-level programming features that can
 be used in performance-sensitive settings or when interfacing
 with external APIs.
@@ -82,10 +86,13 @@ parameterized by the type of the object being pointed to (i.e.
 `Ptr[int]` is an `int` pointer, `Ptr[float]` is a `float` pointer,
 and so on).
 
-!!! danger
+:::danger
 
-    Pointer operations are not bounds-checked, meaning dereferencing
-    an invalid pointer can cause a segmentation fault.
+
+Pointer operations are not bounds-checked, meaning dereferencing
+an invalid pointer can cause a segmentation fault.
+
+:::
 
 Buffers of a specific type can be dynamically allocated by constructing
 a `Ptr` type with an integer argument, representing the number of elements
@@ -213,10 +220,13 @@ p.__prefetch_w3__()  # prefetch for write, high temporal locality
 Refer to [LLVM's prefetch intrinsic](https://llvm.org/docs/LangRef.html#llvm-prefetch-intrinsic)
 for additional information.
 
-!!! warning
+:::warning
 
-    Not all targets support software prefetching. Consult the relevant documentation
-    for your instruction set architecture for more information.
+
+Not all targets support software prefetching. Consult the relevant documentation
+for your instruction set architecture for more information.
+
+:::
 
 ## Static arrays
 

@@ -230,17 +230,18 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Install documentation dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install properdocs \
-                                mkdocs-autorefs \
-                                mkdocs-macros-plugin \
-                                mkdocs-material \
-                                mkdocs-material-extensions \
-                                mkdocs-redirects
-          sudo apt-get update
-          sudo apt-get install -y pngquant
+          python -m pip install -r website/requirements.txt
+          npm ci --prefix website
 
       - name: Download Artifact
         uses: actions/download-artifact@v8
@@ -255,14 +256,22 @@ jobs:
           codon-deploy-linux-x86_64/bin/codon doc codon-deploy-linux-x86_64/lib/codon/stdlib > docs.json
           python scripts/docgen.py docs.json docs/libraries/api "$PWD/codon-deploy-linux-x86_64/lib/codon/stdlib"
 
-      - name: Build MkDocs site
-        run: properdocs build --strict
+      - name: Build and validate Docusaurus site
+        run: npm run build --prefix website
+
+      - name: Upload documentation site
+        uses: actions/upload-artifact@v7
+        with:
+          name: codon-docs
+          path: website/build/
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Deploy to GitHub Pages
-        if: github.ref == 'refs/heads/master'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./site
+          publish_dir: ./website/build
           force_orphan: true
           cname: docs.exaloop.io

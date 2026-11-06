@@ -1,3 +1,7 @@
+---
+title: Embed Codon JIT
+---
+
 Codon has a JIT that can be embedded in and called from C++ applications.
 The Codon distribution contains all the necessary headers and shared
 libraries for compiling and linking against the Codon compiler library,

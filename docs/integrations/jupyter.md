@@ -1,3 +1,7 @@
+---
+title: Jupyter
+---
+
 Codon ships with a kernel that can be used by Jupyter, invoked
 with the `codon jupyter ...` subcommand.
 

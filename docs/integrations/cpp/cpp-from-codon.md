@@ -1,3 +1,7 @@
+---
+title: Call C/C++ from Codon
+---
+
 C/C++ functions can be called from Codon via the `from C import`
 import statement. Unlike standard imports, `from C import` must
 specify the imported function's argument and return types. For
@@ -31,10 +35,13 @@ def sqrt(x: float) -> float:
 print(sqrt(2.0))  # 1.41421
 ```
 
-!!! warning
+:::warning
 
-    If you're using C++, remember to declare any functions you want to call from
-    Codon with `extern "C"` to enable C linkage, which Codon expects.
+
+If you're using C++, remember to declare any functions you want to call from
+Codon with `extern "C"` to enable C linkage, which Codon expects.
+
+:::
 
 ## Type conversions
 
@@ -64,11 +71,14 @@ the character width and the low 63 bytes indicate the length. Specifically:
     - `2`: UCS-2 (2-byte encoding)
     - `3`: UCS-4 (4-byte encoding)
 
-!!! warning
+:::warning
 
-    Use caution when returning structures from C-imported functions, as C compilers
-    might use an ABI that differs from Codon's ABI. It is recommended to instead
-    pass a pointer as an argument that the callee can populate with the return value.
+
+Use caution when returning structures from C-imported functions, as C compilers
+might use an ABI that differs from Codon's ABI. It is recommended to instead
+pass a pointer as an argument that the callee can populate with the return value.
+
+:::
 
 ### Optionals
 

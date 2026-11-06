@@ -1,3 +1,7 @@
+---
+title: Compiler options
+---
+
 ## `-debug`
 
 Turns off compiler optimizations and enables backtraces.

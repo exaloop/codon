@@ -1,3 +1,7 @@
+---
+title: SIMD programming
+---
+
 Codon's `simd` module provides explicit vector operations through the `Vec[T, N]`
 type. Using [SIMD](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data)
 (single instruction, multiple data), a vector operation applies the same

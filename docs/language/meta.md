@@ -1,3 +1,7 @@
+---
+title: Metaprogramming
+---
+
 ## Literals
 
 Codon supports compile-time metaprogramming through the

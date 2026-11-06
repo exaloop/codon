@@ -1,3 +1,7 @@
+---
+title: NumPy
+---
+
 Codon ships with a feature-complete, fully-compiled native NumPy implementation.
 It uses the same API as NumPy, but re-implements everything in Codon itself,
 allowing for a range of optimizations and performance improvements. Codon-NumPy
@@ -37,9 +41,12 @@ In Codon-NumPy, any Codon type can be used as the array type. The `numpy`
 module has the same aliases that regular NumPy has, like `np.int64`,
 `np.float32` etc., but these simply refer to the regular Codon types.
 
-!!! warning
+:::warning
 
-    Using a string (e.g. `"i4"` or `"f8"`) for the dtype is not yet supported.
+
+Using a string (e.g. `"i4"` or `"f8"`) for the dtype is not yet supported.
+
+:::
 
 ## Codon array type
 The Codon array type is parameterized by the array data type ("`dtype`")
@@ -315,12 +322,15 @@ print(t1 - t0, 'seconds')  # Python - 53s
                            # Codon  -  6s
 ```
 
-!!! tip
+:::tip
 
-    When using Codon's outer-loop parallelism, make sure to set the environment
-    variable `OPENBLAS_NUM_THREADS` to 1 (i.e. `export OPENBLAS_NUM_THREADS=1`)
-    to avoid conflicts with OpenBLAS multithreading.
 
+When using Codon's outer-loop parallelism, make sure to set the environment
+variable `OPENBLAS_NUM_THREADS` to 1 (i.e. `export OPENBLAS_NUM_THREADS=1`)
+to avoid conflicts with OpenBLAS multithreading.
+
+
+:::
 
 ## NumPy-specific compiler optimizations
 Codon includes compiler passes that optimize NumPy code through methods like

@@ -1,3 +1,7 @@
+---
+title: Call Codon from C/C++
+---
+
 Codon can be called from C/C++ code by compiling to a
 shared library that can be linked to a C/C++ application.
 
