@@ -89,7 +89,7 @@ public:
 };
 
 struct ExactTypeAttribute : public Attribute {
-  static const int AttributeID;
+  static CODON_API const int AttributeID;
   RefType *type;
 
   explicit ExactTypeAttribute(RefType *type) : type(type) {}
@@ -101,7 +101,7 @@ private:
 
 /// Attribute containing SrcInfo
 struct SrcInfoAttribute : public Attribute {
-  static const int AttributeID;
+  static CODON_API const int AttributeID;
 
   /// source info
   codon::SrcInfo info;
@@ -121,7 +121,7 @@ private:
 
 /// Attribute containing docstring from source
 struct StringValueAttribute : public Attribute {
-  static const int AttributeID;
+  static CODON_API const int AttributeID;
 
   std::string value;
 
@@ -139,7 +139,7 @@ private:
 
 /// Attribute containing docstring from source
 struct DocstringAttribute : public Attribute {
-  static const int AttributeID;
+  static CODON_API const int AttributeID;
 
   /// the docstring
   std::string docstring;
@@ -159,7 +159,7 @@ private:
 
 /// Attribute containing function information
 struct KeyValueAttribute : public Attribute {
-  static const int AttributeID;
+  static CODON_API const int AttributeID;
 
   /// attributes map
   std::unordered_map<std::string, std::string> attributes;
@@ -189,7 +189,7 @@ private:
 
 /// Attribute containing function information
 struct StringListAttribute : public Attribute {
-  static const int AttributeID;
+  static CODON_API const int AttributeID;
 
   /// attributes map
   std::vector<std::string> values;
@@ -210,7 +210,7 @@ private:
 
 /// Attribute containing type member information
 struct MemberAttribute : public Attribute {
-  static const int AttributeID;
+  static CODON_API const int AttributeID;
 
   /// member source info map
   std::map<std::string, SrcInfo> memberSrcInfo;
@@ -231,7 +231,7 @@ private:
 
 /// Attribute used to mark Python wrappers of Codon functions
 struct PythonWrapperAttribute : public Attribute {
-  static const int AttributeID;
+  static CODON_API const int AttributeID;
 
   /// the function being wrapped
   Func *original;
@@ -255,7 +255,7 @@ private:
 
 /// Attribute attached to IR structures corresponding to tuple literals
 struct TupleLiteralAttribute : public Attribute {
-  static const int AttributeID;
+  static CODON_API const int AttributeID;
 
   /// values contained in tuple literal
   std::vector<Value *> elements;
@@ -284,7 +284,7 @@ struct LiteralElement {
 
 /// Attribute attached to IR structures corresponding to list literals
 struct ListLiteralAttribute : public Attribute {
-  static const int AttributeID;
+  static CODON_API const int AttributeID;
 
   /// elements contained in list literal
   std::vector<LiteralElement> elements;
@@ -305,7 +305,7 @@ private:
 
 /// Attribute attached to IR structures corresponding to set literals
 struct SetLiteralAttribute : public Attribute {
-  static const int AttributeID;
+  static CODON_API const int AttributeID;
 
   /// elements contained in set literal
   std::vector<LiteralElement> elements;
@@ -333,7 +333,7 @@ struct DictLiteralAttribute : public Attribute {
     Value *value;
   };
 
-  static const int AttributeID;
+  static CODON_API const int AttributeID;
 
   /// keys and values contained in dict literal
   std::vector<KeyValuePair> elements;
@@ -354,7 +354,7 @@ private:
 
 /// Attribute attached to IR structures corresponding to partial functions
 struct PartialFunctionAttribute : public Attribute {
-  static const int AttributeID;
+  static CODON_API const int AttributeID;
 
   /// base name of the function being used in the partial
   std::string name;
@@ -378,7 +378,7 @@ private:
 };
 
 struct IntValueAttribute : public Attribute {
-  static const int AttributeID;
+  static CODON_API const int AttributeID;
 
   int64_t value;
 

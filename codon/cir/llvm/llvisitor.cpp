@@ -7,9 +7,23 @@
 #include <cstdint>
 #include <cstdlib>
 #include <fmt/args.h>
-#include <sys/wait.h>
-#include <unistd.h>
 #include <utility>
+#include <llvm/Support/Program.h>
+#include <llvm/Support/StringSaver.h>
+
+#ifdef _WIN32
+#include <process.h>
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
+#include <unistd.h>
+#include <sys/wait.h>
+#endif
 
 #include "codon/cir/dsl/codegen.h"
 #include "codon/cir/llvm/optimize.h"
@@ -31,6 +45,8 @@ const std::string LLVM_NO_CAPTURE_ATTR =
     ast::getMangledFunc("std.internal.attributes", "llvm_nocapture");
 const std::string LLVM_NO_FREE_ATTR =
     ast::getMangledFunc("std.internal.attributes", "llvm_nofree");
+const std::string LLVM_C_CALL_ATTR =
+    ast::getMangledFunc("std.internal.attributes", "llvm_c_call");
 
 const std::string MAIN_UNCLASH = ".main.unclash";
 const std::string MAIN_CTOR = ".main.ctor";
@@ -76,6 +92,8 @@ std::string LLVMVisitor::getNameForVar(const Var *x) {
 }
 
 std::string LLVMVisitor::getLLVMNameForFunction(const Func *function) {
+  if (options->jit && needsWinExportWrapper(function))
+    return getNameForFunction(function) + ".codon";
   if (options->jit || isA<ExternalFunc>(function) || util::isExport(function) ||
       util::isGPUKernel(function))
     return getNameForFunction(function);
@@ -170,9 +188,14 @@ void LLVMVisitor::registerGlobal(const Var *var) {
           storage->setDSOLocal(true);
         } else {
           storage->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Local);
+          if (options->pyext &&
+              llvm::Triple(M->getTargetTriple()).isWindowsMSVCEnvironment())
+            storage->setDLLStorageClass(llvm::GlobalValue::DLLImportStorageClass);
         }
-      } else {
+      } else if (!(tls && llvm::Triple(M->getTargetTriple()).isOSWindows())) {
         // debug info
+        // CodeView cannot describe LLVM's emulated TLS storage. Referring to the
+        // original TLS symbol leaves an undefined assembler label on COFF.
         auto *srcInfo = getSrcInfo(var);
         auto *file = db.getFile(srcInfo->file);
         auto *scope = db.unit;
@@ -247,22 +270,14 @@ llvm::Function *LLVMVisitor::getFunc(const Func *func) {
     if (it != funcs.end()) {
       if (!it->second) { // if value is null, it's from another module
         // see if it's in the module already
-        const std::string name = getNameForFunction(func);
+        const std::string name = getLLVMNameForFunction(func);
         if (auto *g = M->getFunction(name))
           return g;
 
-        auto *funcType = cast<FuncType>(func->getType());
-        auto *returnType = getLLVMType(funcType->getReturnType());
-        std::vector<llvm::Type *> argTypes;
-        for (const auto &argType : *funcType) {
-          argTypes.push_back(getLLVMType(argType));
-        }
-
-        auto *llvmFuncType =
-            llvm::FunctionType::get(returnType, argTypes, funcType->isVariadic());
-        auto *g = llvm::Function::Create(llvmFuncType, llvm::Function::ExternalLinkage,
-                                         name, M.get());
-        insertFunc(func, g);
+        // Reuse native import signatures, without re-emitting earlier LLVM
+        // bodies or attaching their definition's debug metadata to a declaration.
+        auto *g = makeLLVMFunction(func, /*declarationOnly=*/true);
+        funcs[func->getId()] = g;
         return g;
       }
     } else {
@@ -306,6 +321,12 @@ std::unique_ptr<llvm::Module> LLVMVisitor::makeModule(llvm::LLVMContext &context
   if (llvm::Triple(M->getTargetTriple()).isOSDarwin()) {
     M->addModuleFlag(llvm::Module::Warning, "Dwarf Version", 2);
   }
+  // Windows debuggers/PDBs use CodeView, not DWARF. Emitting CodeView lets the AOT
+  // link step produce a PDB that the dbghelp-based runtime backtrace can read for
+  // symbolized C-level frames (see writeToExecutable + runtime/exc.cpp).
+  if (llvm::Triple(M->getTargetTriple()).isOSWindows()) {
+    M->addModuleFlag(llvm::Module::Warning, "CodeView", 1);
+  }
 
   return M;
 }
@@ -320,6 +341,7 @@ void LLVMVisitor::clearLLVMData() {
   virtualTargets.clear();
   functionNames.clear();
   functionNameCounts.clear();
+  winCallbacks.clear();
 
   for (auto it = funcs.begin(); it != funcs.end();) {
     if (it->second && it->second->hasPrivateLinkage()) {
@@ -380,6 +402,7 @@ LLVMVisitor::takeModule(Module *module, const SrcInfo *src) {
 
   if (module && options->jit)
     prepareRuntimeTypeInfo(module);
+  prepareWinExports();
   db.builder->finalize();
   auto currentContext = std::move(context);
   auto currentModule = std::move(M);
@@ -409,6 +432,7 @@ void LLVMVisitor::process(const Node *x) {
 void LLVMVisitor::dump(const std::string &filename) { writeToLLFile(filename, false); }
 
 void LLVMVisitor::runLLVMPipeline() {
+  prepareWinExports();
   db.builder->finalize();
   optimize(M.get(), options, plugins);
 }
@@ -475,6 +499,24 @@ void executeCommand(const std::vector<std::string> &args) {
   LOG_USER("Executing '{}'", fmt::join(cArgs, " "));
   cArgs.push_back(nullptr);
 
+#ifdef _WIN32
+  // LLVM quotes each Windows argument before CreateProcessW. _spawnvp joins
+  // raw arguments, which loses spaces and embedded quotes in paths and flags.
+  auto program = llvm::sys::findProgramByName(args.front());
+  if (!program)
+    compilationError("process for '" + args.front() + "' could not be found: " +
+                     program.getError().message());
+  std::vector<llvm::StringRef> arguments(args.begin(), args.end());
+  std::string message;
+  int status = llvm::sys::ExecuteAndWait(*program, arguments, std::nullopt, {},
+                                        0, 0, &message);
+  if (status < 0)
+    compilationError("process for '" + args.front() + "' failed: " + message);
+  if (status != 0) {
+    compilationError("process for '" + args[0] + "' exited with status " +
+                     std::to_string(status));
+  }
+#else
   if (fork() == 0) {
     int status = execvp(cArgs[0], (char *const *)&cArgs[0]);
     exit(status);
@@ -489,6 +531,7 @@ void executeCommand(const std::vector<std::string> &args) {
                        std::to_string(WEXITSTATUS(status)));
     }
   }
+#endif
 }
 } // namespace
 
@@ -536,7 +579,16 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
                                     const std::vector<std::string> &libs,
                                     const std::string &lflags) {
   llvm::SmallVector<llvm::StringRef> userFlags(16);
+#ifdef _WIN32
+  llvm::BumpPtrAllocator flagAllocator;
+  llvm::StringSaver flagSaver(flagAllocator);
+  llvm::SmallVector<const char *> flagTokens;
+  llvm::cl::TokenizeWindowsCommandLine(lflags, flagSaver, flagTokens);
+  for (auto *flag : flagTokens)
+    userFlags.push_back(flag);
+#else
   llvm::StringRef(lflags).split(userFlags, " ", /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+#endif
   bool pie = false;
   for (auto &flag : userFlags) {
     if (flag == "--pie")
@@ -555,7 +607,7 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
   const std::string objFile = filename + ".o";
   writeToObjectFile(objFile, /*pic=*/library || pie);
 
-  const std::string base = ast::Filesystem::executable_path(argv0.c_str());
+  const std::string base = ast::Filesystem::executable_path(argv0.c_str()).string();
   auto path = llvm::SmallString<128>(llvm::sys::path::parent_path(base));
 
   std::vector<std::string> relatives = {"../lib", "../lib/codon"};
@@ -573,7 +625,28 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
     rpaths.push_back(std::string(path));
   }
 
+#ifdef _WIN32
+  // codonrt uses /MD. Generated callers must share its CRT for FILE*, locale
+  // state and memory ownership across the DLL boundary.
+  // Clang's runtime flag affects frontend directives, but this input is an
+  // LLVM-generated object. Override the link driver's libcmt default as well.
+  std::vector<std::string> command = {
+      "clang", "-fuse-ld=lld", "-fms-runtime-lib=dll",
+      "-Wl,/nodefaultlib:libcmt", "-lmsvcrt", "-lvcruntime", "-lucrt"};
+  if (!library) {
+    for (const auto &rpath : rpaths) {
+      llvm::SmallString<128> manifest(rpath);
+      llvm::sys::path::append(manifest, "codon-utf8.manifest");
+      if (llvm::sys::fs::exists(manifest)) {
+        command.push_back("-Wl,/manifest:embed");
+        command.push_back("-Wl,/manifestinput:" + std::string(manifest));
+        break;
+      }
+    }
+  }
+#else
   std::vector<std::string> command = {"g++"};
+#endif
   // Avoid "argument unused during compilation" warning
   command.push_back("-Wno-unused-command-line-argument");
   // MUST go before -llib to compile on Linux
@@ -585,7 +658,9 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
   for (const auto &rpath : rpaths) {
     if (!rpath.empty()) {
       command.push_back("-L" + rpath);
+#ifndef _WIN32
       command.push_back("-Wl,-rpath," + rpath);
+#endif
     }
   }
 
@@ -600,7 +675,9 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
       llvm::StringRef rpath = rpath0.str();
       if (!rpath.empty()) {
         command.push_back("-L" + rpath.str());
+#ifndef _WIN32
         command.push_back("-Wl,-rpath," + rpath.str());
+#endif
       }
     }
   }
@@ -616,11 +693,18 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
         if (dylibPath.empty())
           continue;
 
+#ifdef _WIN32
+        // MSVC links the DLL's import library, not the DLL itself.
+        llvm::SmallString<128> importLibrary(dylibPath);
+        llvm::sys::path::replace_extension(importLibrary, "lib");
+        command.push_back(std::string(importLibrary));
+#else
         auto stem = llvm::sys::path::stem(dylibPath);
         if (stem.starts_with("lib"))
           stem = stem.substr(3);
 
         command.push_back("-l" + stem.str());
+#endif
       } else {
         for (auto &l : plugin->info.linkArgs)
           command.push_back(l);
@@ -628,8 +712,16 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
     }
   }
 
+#ifdef _WIN32
+  // -llibomp -> libomp.lib (clang maps -l<name> to <name>.lib on MSVC), resolved via
+  // the -L../lib/codon search path; needed for @par programs' __kmpc_* calls.
+  // -llibopenblas -> libopenblas.lib for numpy.linalg (cblas_*/LAPACK).
+  std::vector<std::string> extraArgs = {"-lcodonrt", "-llibomp", "-llibopenblas",
+                                        "-o", filename};
+#else
   std::vector<std::string> extraArgs = {
       "-lcodonrt", "-lomp", "-lpthread", "-ldl", "-lz", "-lm", "-lc", "-o", filename};
+#endif
 
   for (const auto &arg : extraArgs) {
     command.push_back(arg);
@@ -640,10 +732,23 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
       command.push_back(uflag.str());
   }
 
+#ifdef _WIN32
+  // With -g, have lld emit a PDB so the runtime's dbghelp backtrace can symbolize
+  // C-level frames (function names + file:line). The object file carries CodeView
+  // debug info because of the "CodeView" module flag set in makeModule().
+  if (options->debug && !library) {
+    command.push_back("-g");
+    command.push_back("-Wl,/debug");
+    llvm::SmallString<128> pdbFile(filename);
+    llvm::sys::path::replace_extension(pdbFile, "pdb");
+    command.push_back("-Wl,/pdb:" + std::string(pdbFile));
+  }
+#else
   // PIE links require the PIC object generated above. Otherwise retain -no-pie
   // for default-PIE GCC to avoid R_X86_64_32 relocations against .bss.
   if (!library)
     command.push_back(pie ? "-pie" : "-no-pie");
+#endif
 
   executeCommand(command);
 
@@ -683,6 +788,8 @@ llvm::Function *LLVMVisitor::createPyTryCatchWrapper(llvm::Function *func) {
   auto *unwind = llvm::BasicBlock::Create(*context, "unwind", wrap);
 
   B->SetInsertPoint(entry);
+  const bool win = llvm::Triple(M->getTargetTriple()).isWindowsMSVCEnvironment();
+  auto *exceptionStorage = win ? B->CreateAlloca(B->getPtrTy()) : nullptr;
   std::vector<llvm::Value *> args;
   for (auto &arg : wrap->args()) {
     args.push_back(&arg);
@@ -693,14 +800,27 @@ llvm::Function *LLVMVisitor::createPyTryCatchWrapper(llvm::Function *func) {
   B->CreateRet(result);
 
   B->SetInsertPoint(unwind);
-  auto *caughtResult = B->CreateLandingPad(getPadType(), 1);
-  caughtResult->setCleanup(true);
-  caughtResult->addClause(getTypeIdxVar(nullptr));
-  auto *unwindType = llvm::StructType::get(B->getInt64Ty()); // header only
-  auto *unwindException = B->CreateExtractValue(caughtResult, 0);
-  auto *unwindExceptionClass = B->CreateLoad(
-      B->getInt64Ty(), B->CreateStructGEP(unwindType, unwindException, 0));
-  unwindException = B->CreateExtractValue(caughtResult, 0);
+  llvm::Value *unwindException = nullptr;
+  if (win) {
+    auto *cs =
+        B->CreateCatchSwitch(llvm::ConstantTokenNone::get(*context), nullptr, 1);
+    auto *catchBlock = llvm::BasicBlock::Create(*context, "catch", wrap);
+    auto *caught = llvm::BasicBlock::Create(*context, "caught", wrap);
+    cs->addHandler(catchBlock);
+    B->SetInsertPoint(catchBlock);
+    auto *cp = B->CreateCatchPad(cs, {makeWinEHFilter().getCallee()});
+    llvm::OperandBundleDef bundle("funclet", llvm::ArrayRef<llvm::Value *>(cp));
+    auto current = M->getOrInsertFunction("seq_exc_current", B->getPtrTy());
+    B->CreateStore(B->CreateCall(current, {}, {bundle}), exceptionStorage);
+    B->CreateCatchRet(cp, caught);
+    B->SetInsertPoint(caught);
+    unwindException = B->CreateLoad(B->getPtrTy(), exceptionStorage);
+  } else {
+    auto *caughtResult = B->CreateLandingPad(getPadType(), 1);
+    caughtResult->setCleanup(true);
+    caughtResult->addClause(getTypeIdxVar(nullptr));
+    unwindException = B->CreateExtractValue(caughtResult, 0);
+  }
   auto *excVal = B->CreateConstGEP1_64(B->getInt8Ty(), unwindException,
                                        (uint64_t)seq_exc_offset());
   auto *loadedExc = B->CreateLoad(B->getPtrTy(), excVal);
@@ -763,6 +883,10 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
   auto *pyTypeType = new llvm::GlobalVariable(*M, ptr, /*isConstant=*/false,
                                               llvm::GlobalValue::ExternalLinkage,
                                               /*Initializer=*/nullptr, "PyType_Type");
+  const bool importPythonData =
+      llvm::Triple(M->getTargetTriple()).isWindowsMSVCEnvironment();
+  if (importPythonData)
+    pyTypeType->setDLLStorageClass(llvm::GlobalValue::DLLImportStorageClass);
 
   auto allocUncollectable = llvm::cast<llvm::Function>(
       makeAllocFunc(/*atomic=*/false, /*uncollectable=*/true).getCallee());
@@ -1063,7 +1187,8 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
     std::vector<llvm::Constant *> typeSlots = {
         llvm::ConstantStruct::get(
             pyVarObjectType,
-            llvm::ConstantStruct::get(pyObjectType, B->getInt64(1), pyTypeType),
+            llvm::ConstantStruct::get(pyObjectType, B->getInt64(1),
+                                     importPythonData ? null : pyTypeType),
             zero64),                              // PyObject_VAR_HEAD
         pyString(pymod.name + "." + pytype.name), // tp_name
         B->getInt64(pySize),                      // tp_basicsize
@@ -1165,6 +1290,13 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
     B->CreateCall({main->getFunctionType(), main}, {zero32, null});
   }
 
+  // Imported DLL data addresses cannot be resolved in static initializers.
+  if (importPythonData) {
+    for (auto &entry : typeVars)
+      B->CreateStore(pyTypeType,
+                     B->CreateStructGEP(pyObjectType, entry.second, 1));
+  }
+
   // Set base types
   for (auto &pytype : pymod.types) {
     if (pytype.base) {
@@ -1244,7 +1376,8 @@ void LLVMVisitor::compile(const std::string &filename, const std::string &argv0,
     writeToObjectFile(filename);
   } else if (f.ends_with(".s") || f.ends_with(".S") || f.ends_with(".asm")) {
     writeToObjectFile(filename, /*pic=*/false, /*assembly=*/true);
-  } else if (f.ends_with(".so") || f.ends_with(".dylib")) {
+  } else if (f.ends_with(".so") || f.ends_with(".dylib") ||
+             f.ends_with_insensitive(".dll")) {
     writeToExecutable(filename, argv0, /*library=*/true, libs, lflags);
   } else {
     writeToExecutable(filename, argv0, /*library=*/false, libs, lflags);
@@ -1279,19 +1412,62 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
           -> llvm::Expected<std::unique_ptr<llvm::orc::ObjectLayer>> {
         auto L = std::make_unique<llvm::orc::ObjectLinkingLayer>(
             es, llvm::cantFail(BoehmGCJITLinkMemoryManager::Create()));
+#ifdef _WIN32
+        addWin64SEHRegistration(*L);
+#endif
+#ifndef _WIN32
+        // The GDB JIT-debug registrar needs llvm_orc_registerJITLoaderGDBWrapper
+        // from the ORC runtime, which isn't available on Windows.
         L->addPlugin(std::make_unique<llvm::orc::DebugObjectManagerPlugin>(
             es, llvm::cantFail(llvm::orc::createJITLoaderGDBRegistrar(es))));
+#endif
         auto dbPlugin = std::make_unique<DebugPlugin>();
         dbp = dbPlugin.get();
         L->addPlugin(std::move(dbPlugin));
         return L;
       });
-  builder.setJITTargetMachineBuilder(llvm::orc::JITTargetMachineBuilder(triple));
+  auto jtmb = llvm::orc::JITTargetMachineBuilder(triple);
+#ifdef _WIN32
+  jtmb.setCodeModel(llvm::CodeModel::Large);
+#endif
+  builder.setJITTargetMachineBuilder(std::move(jtmb));
 
   auto jit = llvm::cantFail(builder.create());
+#ifdef _WIN32
+  // Same as engine.cpp: resolve CRT symbols against the UCRT before the process-wide
+  // search, which can otherwise pick the legacy msvcrt.dll.
+  jit->getMainJITDylib().addGenerator(
+      llvm::cantFail(llvm::orc::DynamicLibrarySearchGenerator::Load(
+          "ucrtbase.dll", jit->getDataLayout().getGlobalPrefix())));
+#endif
   jit->getMainJITDylib().addGenerator(
       llvm::cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
           jit->getDataLayout().getGlobalPrefix())));
+#ifdef _WIN32
+  {
+    uintptr_t handler = 0;
+    if (HMODULE crt = ::GetModuleHandleW(L"vcruntime140.dll"))
+      handler = reinterpret_cast<uintptr_t>(
+          ::GetProcAddress(crt, "__C_specific_handler"));
+    // 3.5GB below the handler — MUST match memory_manager.cpp + engine.cpp so the
+    // JIT slab and __C_specific_handler share a 4GB window (.xdata Pointer32NB fits).
+    uintptr_t imageBase = handler ? (handler - 0xE0000000ull)
+                                  : reinterpret_cast<uintptr_t>(
+                                        ::GetModuleHandleW(nullptr));
+    auto base = llvm::orc::ExecutorAddr(imageBase);
+    llvm::orc::SymbolMap winSymbols;
+    winSymbols[jit->getExecutionSession().intern("__ImageBase")] = {
+        base, llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Absolute};
+    // Match the handler used by the allocator and unwind registration plugin.
+    // UCRT's same-named export can lie outside this image base's 4GB window.
+    if (handler)
+      winSymbols[jit->getExecutionSession().intern("__C_specific_handler")] = {
+          llvm::orc::ExecutorAddr(handler),
+          llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Absolute};
+    llvm::cantFail(jit->getMainJITDylib().define(
+        llvm::orc::absoluteSymbols(std::move(winSymbols))));
+  }
+#endif
 
   llvm::cantFail(jit->addIRModule({std::move(M), std::move(context)}));
   clearLLVMData();
@@ -1370,10 +1546,291 @@ llvm::FunctionCallee LLVMVisitor::makeFreeFunc() {
 
 #undef ALLOC_FAMILY
 
+/// Returns true if the module targets the Windows MSVC (SEH) environment.
+static bool isWinMSVC(llvm::Module *M) {
+  return llvm::Triple(M->getTargetTriple()).isWindowsMSVCEnvironment();
+}
+
+// Win64 passes POD aggregates of 1, 2, 4 or 8 bytes in one integer register.
+// Other nonempty aggregates use caller-owned, 16-byte-aligned memory. Keep the
+// classification shared by declarations, direct/indirect calls and exports.
+enum class WinABIKind { Direct, Empty, Integer, Bitcast, Indirect };
+
+static WinABIKind winABIKind(llvm::Module *module, llvm::Type *type,
+                                 bool result = false) {
+  if (type->isVoidTy())
+    return WinABIKind::Empty;
+  if (type->isIntegerTy() && type->getIntegerBitWidth() > 64) {
+    if (result && type->isIntegerTy(128))
+      return WinABIKind::Bitcast; // Clang/GCC return __int128 in XMM0.
+    return WinABIKind::Indirect;
+  }
+  if (!type->isAggregateType())
+    return WinABIKind::Direct;
+  auto size = module->getDataLayout().getTypeAllocSize(type).getFixedValue();
+  if (size == 0)
+    return WinABIKind::Empty;
+  if (size == 1 || size == 2 || size == 4 || size == 8)
+    return WinABIKind::Integer;
+  return WinABIKind::Indirect;
+}
+
+static llvm::Type *winABIType(llvm::Module *module, llvm::Type *type,
+                                bool result = false) {
+  switch (winABIKind(module, type, result)) {
+  case WinABIKind::Empty:
+    return llvm::Type::getVoidTy(module->getContext());
+  case WinABIKind::Integer:
+    return llvm::IntegerType::get(
+        module->getContext(), module->getDataLayout().getTypeAllocSize(type).getFixedValue() * 8);
+  case WinABIKind::Bitcast:
+    return llvm::FixedVectorType::get(llvm::Type::getInt64Ty(module->getContext()), 2);
+  case WinABIKind::Indirect:
+    return llvm::PointerType::getUnqual(module->getContext());
+  default:
+    return type;
+  }
+}
+
+static llvm::AllocaInst *winABISlot(llvm::IRBuilder<> &builder, llvm::Type *type) {
+  // A call inside a loop must reuse a fixed frame slot, rather than subtracting
+  // from RSP on every iteration. Stores/loads remain at the call site.
+  auto *function = builder.GetInsertBlock()->getParent();
+  auto &entry = function->getEntryBlock();
+  llvm::IRBuilder<> allocation(&entry, entry.getFirstInsertionPt());
+  auto *slot = allocation.CreateAlloca(type);
+  auto alignment = function->getParent()->getDataLayout().getABITypeAlign(type);
+  slot->setAlignment(llvm::Align(std::max<uint64_t>(16, alignment.value())));
+  return slot;
+}
+
+static llvm::Value *winABIEncode(llvm::Module *module, llvm::IRBuilder<> &builder,
+                                 llvm::Value *value, bool result = false) {
+  auto *type = value->getType();
+  switch (winABIKind(module, type, result)) {
+  case WinABIKind::Empty:
+    return nullptr;
+  case WinABIKind::Bitcast:
+    return builder.CreateBitCast(value, winABIType(module, type, result));
+  case WinABIKind::Integer: {
+    auto *slot = winABISlot(builder, type);
+    builder.CreateStore(value, slot);
+    return builder.CreateLoad(winABIType(module, type), slot);
+  }
+  case WinABIKind::Indirect: {
+    auto *slot = winABISlot(builder, type);
+    builder.CreateStore(value, slot);
+    return slot;
+  }
+  default:
+    return value;
+  }
+}
+
+static llvm::Value *winABIDecode(llvm::Module *module, llvm::IRBuilder<> &builder,
+                                 llvm::Type *type, llvm::Value *value,
+                                 bool result = false) {
+  switch (winABIKind(module, type, result)) {
+  case WinABIKind::Empty:
+    return type->isVoidTy() ? nullptr : llvm::Constant::getNullValue(type);
+  case WinABIKind::Bitcast:
+    return builder.CreateBitCast(value, type);
+  case WinABIKind::Integer: {
+    auto *slot = winABISlot(builder, type);
+    builder.CreateStore(value, slot);
+    return builder.CreateLoad(type, slot);
+  }
+  case WinABIKind::Indirect:
+    return builder.CreateLoad(type, value);
+  default:
+    return value;
+  }
+}
+
+static llvm::FunctionType *winABISignature(llvm::Module *module,
+                                          llvm::FunctionType *signature) {
+  auto *result = signature->getReturnType();
+  bool indirect = winABIKind(module, result, true) == WinABIKind::Indirect;
+  std::vector<llvm::Type *> arguments;
+  if (indirect)
+    arguments.push_back(llvm::PointerType::getUnqual(module->getContext()));
+  for (auto *type : signature->params())
+    if (winABIKind(module, type) != WinABIKind::Empty)
+      arguments.push_back(winABIType(module, type));
+  return llvm::FunctionType::get(
+      indirect ? llvm::Type::getVoidTy(module->getContext()) : winABIType(module, result, true),
+      arguments, signature->isVarArg());
+}
+
+static llvm::Value *winABICall(
+    llvm::Module *module, llvm::IRBuilder<> &builder, llvm::Value *callee,
+    llvm::FunctionType *signature, llvm::ArrayRef<llvm::Value *> arguments,
+    llvm::function_ref<llvm::Value *(llvm::FunctionType *, llvm::Value *,
+                                    llvm::ArrayRef<llvm::Value *>)> emit) {
+  auto *resultType = signature->getReturnType();
+  bool indirect = winABIKind(module, resultType, true) == WinABIKind::Indirect;
+  std::vector<llvm::Value *> values;
+  llvm::Value *returnSlot = nullptr;
+  if (indirect) {
+    returnSlot = winABISlot(builder, resultType);
+    values.push_back(returnSlot);
+  }
+  for (auto *argument : arguments)
+    if (auto *value = winABIEncode(module, builder, argument))
+      values.push_back(value);
+  auto *result = emit(winABISignature(module, signature), callee, values);
+  if (indirect)
+    llvm::cast<llvm::CallBase>(result)->addParamAttr(
+        0, llvm::Attribute::get(module->getContext(), llvm::Attribute::StructRet,
+                                resultType));
+  return winABIDecode(module, builder, resultType, indirect ? returnSlot : result, true);
+}
+
+bool LLVMVisitor::needsWinExportWrapper(const Func *function) {
+  return M && isWinMSVC(M.get()) && util::isExport(function) &&
+         !isA<ExternalFunc>(function) && !util::isGPUKernel(function);
+}
+
+llvm::Function *LLVMVisitor::makeWinExportWrapper(llvm::StringRef name,
+                                                  llvm::Function *body,
+                                                  bool exported) {
+  auto *signature = body->getFunctionType();
+  auto *wrapper = llvm::cast<llvm::Function>(M->getOrInsertFunction(
+      name, winABISignature(M.get(), signature)).getCallee());
+  if (exported && !options->jit)
+    wrapper->setDLLStorageClass(llvm::GlobalValue::DLLExportStorageClass);
+  if (!wrapper->empty())
+    return wrapper;
+  wrapper->addFnAttr("codon-abi-body", body->getName());
+  auto *entry = llvm::BasicBlock::Create(*context, "entry", wrapper);
+  llvm::IRBuilder<> builder(entry);
+  auto *resultType = signature->getReturnType();
+  bool indirect = winABIKind(M.get(), resultType, true) == WinABIKind::Indirect;
+  auto argument = wrapper->arg_begin();
+  llvm::Value *returnSlot = indirect ? &*argument++ : nullptr;
+  if (indirect)
+    wrapper->addParamAttr(0, llvm::Attribute::get(
+                                *context, llvm::Attribute::StructRet, resultType));
+  std::vector<llvm::Value *> values;
+  for (auto *type : signature->params()) {
+    auto *native = winABIKind(M.get(), type) == WinABIKind::Empty
+                       ? nullptr : &*argument++;
+    values.push_back(winABIDecode(M.get(), builder, type, native));
+  }
+  auto *result = builder.CreateCall(body, values);
+  if (indirect) {
+    builder.CreateStore(result, returnSlot);
+    builder.CreateRetVoid();
+  } else if (winABIKind(M.get(), resultType, true) == WinABIKind::Empty) {
+    builder.CreateRetVoid();
+  } else {
+    builder.CreateRet(winABIEncode(M.get(), builder, result, true));
+  }
+  return wrapper;
+}
+
+llvm::Function *LLVMVisitor::getFunctionValue(const Func *function) {
+  auto *body = getFunc(function);
+  if (!body || !isWinMSVC(M.get()) || isA<ExternalFunc>(function) ||
+      util::isGPUKernel(function))
+    return body;
+  bool exported = needsWinExportWrapper(function);
+  if (!exported && winABISignature(M.get(), body->getFunctionType()) ==
+                       body->getFunctionType())
+    return body;
+  // An earlier JIT cell already emitted an exported function's native wrapper.
+  if (options->jit && exported && body->isDeclaration())
+    return llvm::cast<llvm::Function>(M->getOrInsertFunction(
+        getNameForFunction(function), winABISignature(M.get(), body->getFunctionType()))
+                                         .getCallee());
+  if (auto found = winCallbacks.find(body); found != winCallbacks.end())
+    return found->second;
+  auto *wrapper = makeWinExportWrapper((body->getName() + ".c_callback").str(),
+                                       body, false);
+  // JIT cells can take the same function's address repeatedly. Weak definitions
+  // give it one stable native entry point without changing internal body calls.
+  wrapper->setLinkage(options->jit ? llvm::GlobalValue::WeakODRLinkage
+                                    : llvm::GlobalValue::PrivateLinkage);
+  winCallbacks.emplace(body, wrapper);
+  return wrapper;
+}
+
+void LLVMVisitor::prepareWinExports() {
+  if (!isWinMSVC(M.get()))
+    return;
+  std::vector<std::pair<llvm::Function *, std::string>> exports;
+  for (auto &function : *M)
+    if (function.hasFnAttribute("codon-c-export") && !function.isDeclaration())
+      exports.emplace_back(&function, function.getFnAttribute("codon-c-export")
+                                          .getValueAsString().str());
+  for (auto &[body, name] : exports) {
+    body->removeFnAttr("codon-c-export");
+    body->setName(name + ".codon");
+    body->setLinkage(options->jit ? llvm::GlobalValue::ExternalLinkage
+                                  : llvm::GlobalValue::PrivateLinkage);
+    body->setDLLStorageClass(llvm::GlobalValue::DefaultStorageClass);
+    if (auto callback = winCallbacks.find(body); callback != winCallbacks.end()) {
+      auto *wrapper = callback->second;
+      wrapper->setName(name);
+      wrapper->setLinkage(llvm::GlobalValue::ExternalLinkage);
+      wrapper->addFnAttr("codon-abi-body", body->getName());
+      if (!options->jit)
+        wrapper->setDLLStorageClass(llvm::GlobalValue::DLLExportStorageClass);
+    } else {
+      makeWinExportWrapper(name, body);
+    }
+  }
+}
+
 llvm::FunctionCallee LLVMVisitor::makePersonalityFunc() {
+  if (isWinMSVC(&*M)) {
+    return M->getOrInsertFunction(
+        "__C_specific_handler",
+        llvm::FunctionType::get(B->getInt32Ty(), /*isVarArg=*/true));
+  }
   return M->getOrInsertFunction("seq_personality", B->getInt32Ty(), B->getInt32Ty(),
                                 B->getInt32Ty(), B->getInt64Ty(), B->getPtrTy(),
                                 B->getPtrTy());
+}
+
+llvm::FunctionCallee LLVMVisitor::makeWinEHFilter() {
+  auto *filterTy =
+      llvm::FunctionType::get(B->getInt32Ty(), {B->getPtrTy(), B->getPtrTy()}, false);
+  // Real filter, resolved against codonrt (JIT: a far-loaded DLL; AOT: import thunk).
+  auto realFilter = M->getOrInsertFunction("seq_exc_filter", filterTy);
+  if (!isWinMSVC(&*M))
+    return realFilter;
+
+  static const char *thunkName = "seq_exc_filter.thunk";
+  if (auto *existing = M->getFunction(thunkName))
+    return llvm::FunctionCallee(filterTy, existing);
+
+  // The catchpad scope table emits the filter as an `.xdata` image-relative
+  // (Pointer32NB) reloc = filter - __ImageBase(anchor). codonrt's `seq_exc_filter`
+  // can be >4GB from the anchor under ASLR → that 32-bit value overflows and JIT
+  // materialization aborts. Reference an in-module thunk instead (compiled into the
+  // JIT slab, which `allocateNearImage` keeps within the 4GB window, so its IMGREL
+  // fits) and reach the real filter through a 64-bit pointer (a Pointer64 reloc,
+  // which has no 4GB range limit). On AOT the pointer resolves to the in-image
+  // import thunk, so the same code is correct there too.
+  auto *ptrGlobal = new llvm::GlobalVariable(
+      *M, B->getPtrTy(), /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
+      llvm::cast<llvm::Constant>(realFilter.getCallee()), "seq_exc_filter.addr");
+
+  auto *thunk = llvm::cast<llvm::Function>(
+      M->getOrInsertFunction(thunkName, filterTy).getCallee());
+  thunk->setLinkage(llvm::GlobalValue::PrivateLinkage);
+  auto *saved = B->GetInsertBlock();
+  auto savedPt = saved ? B->GetInsertPoint() : llvm::BasicBlock::iterator();
+  auto *entry = llvm::BasicBlock::Create(*context, "entry", thunk);
+  B->SetInsertPoint(entry);
+  auto *fp = B->CreateLoad(B->getPtrTy(), ptrGlobal);
+  auto *call =
+      B->CreateCall(filterTy, fp, {thunk->getArg(0), thunk->getArg(1)});
+  B->CreateRet(call);
+  if (saved)
+    B->SetInsertPoint(saved, savedPt);
+  return llvm::FunctionCallee(filterTy, thunk);
 }
 
 llvm::FunctionCallee LLVMVisitor::makeExcAllocFunc() {
@@ -1437,6 +1894,27 @@ llvm::Value *LLVMVisitor::call(llvm::FunctionCallee callee,
                                llvm::ArrayRef<llvm::Value *> args) {
   B->SetInsertPoint(block);
   if ((trycatch.empty() && finally.empty()) || options->noexc) {
+    auto *target = llvm::dyn_cast<llvm::Function>(callee.getCallee());
+    if (!options->noexc && isWinMSVC(M.get()) &&
+        func->hasFnAttribute("codon.seh.scopes") && target &&
+        target->getName() == "seq_throw") {
+      // Give a rethrow outside all local handlers an explicit unwind-to-caller
+      // edge, so SEH scope ranges cannot absorb it into an earlier try region.
+      auto *normal = llvm::BasicBlock::Create(*context, "throw.unreachable", func);
+      auto *unwind = llvm::BasicBlock::Create(*context, "throw.unwind", func);
+      auto *result = B->CreateInvoke(callee, normal, unwind, args);
+      B->SetInsertPoint(unwind);
+      auto *cleanup = B->CreateCleanupPad(llvm::ConstantTokenNone::get(*context));
+      // Keep this boundary through optimization: erasing an empty cleanup can
+      // make SEH range coalescing protect the rethrow with an earlier handler.
+      llvm::OperandBundleDef bundle("funclet", llvm::ArrayRef<llvm::Value *>(cleanup));
+      B->CreateCall(llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::sideeffect),
+                    {}, {bundle});
+      B->CreateCleanupRet(cleanup, nullptr);
+      block = normal;
+      B->SetInsertPoint(block);
+      return result;
+    }
     return B->CreateCall(callee, args);
   } else {
     auto *normalBlock = llvm::BasicBlock::Create(*context, "invoke.normal", func);
@@ -1452,6 +1930,7 @@ llvm::Value *LLVMVisitor::call(llvm::FunctionCallee callee,
                           : finally.back().finallyExceptionBlock));
     auto *result = B->CreateInvoke(callee, normalBlock, unwindBlock, args);
     block = normalBlock;
+    B->SetInsertPoint(block);
     return result;
   }
 }
@@ -1469,6 +1948,11 @@ void LLVMVisitor::exitLoop() {
 }
 
 void LLVMVisitor::enterTry(TryCatchData data) {
+  // Only functions with local SEH scopes need an explicit rethrow boundary.
+  // Direct raises must inline into the caller's invoke edge without an extra
+  // cleanup, so values live into the caller's catch are spilled on that edge.
+  if (isWinMSVC(M.get()))
+    func->addFnAttr("codon.seh.scopes");
   trycatch.push_back(std::move(data));
   trycatch.back().sequenceNumber = nextSequenceNumber++;
 }
@@ -1641,12 +2125,31 @@ void LLVMVisitor::visit(const Module *x) {
     B->CreateInvoke(realMain, normal, unwind);
 
     B->SetInsertPoint(unwind);
-    auto *caughtResult = B->CreateLandingPad(getPadType(), 1);
-    caughtResult->setCleanup(true);
-    caughtResult->addClause(getTypeIdxVar(nullptr));
-    auto *unwindException = B->CreateExtractValue(caughtResult, 0);
-    B->CreateCall(makeTerminateFunc(), unwindException);
-    B->CreateUnreachable();
+    if (isWinMSVC(&*M)) {
+      // Win64 funclet form of the proxy-main catch-all: catchswitch -> catchpad
+      // [seq_exc_filter]; recover the TLS-stashed Codon exception via
+      // seq_exc_current() (carrying the required funclet operand bundle) and
+      // terminate.
+      auto *cs =
+          B->CreateCatchSwitch(llvm::ConstantTokenNone::get(*context), nullptr, 1);
+      auto *catchBlock = llvm::BasicBlock::Create(*context, "catch", proxyMain);
+      cs->addHandler(catchBlock);
+      B->SetInsertPoint(catchBlock);
+      auto *filter = makeWinEHFilter().getCallee();
+      auto *cp = B->CreateCatchPad(cs, {filter});
+      llvm::OperandBundleDef bundle("funclet", llvm::ArrayRef<llvm::Value *>(cp));
+      auto excCurrent = M->getOrInsertFunction("seq_exc_current", B->getPtrTy());
+      auto *unwindException = B->CreateCall(excCurrent, {}, {bundle});
+      B->CreateCall(makeTerminateFunc(), {unwindException}, {bundle});
+      B->CreateUnreachable();
+    } else {
+      auto *caughtResult = B->CreateLandingPad(getPadType(), 1);
+      caughtResult->setCleanup(true);
+      caughtResult->addClause(getTypeIdxVar(nullptr));
+      auto *unwindException = B->CreateExtractValue(caughtResult, 0);
+      B->CreateCall(makeTerminateFunc(), unwindException);
+      B->CreateUnreachable();
+    }
 
     B->SetInsertPoint(normal);
     B->CreateRetVoid();
@@ -1693,13 +2196,15 @@ llvm::DISubprogram *LLVMVisitor::getDISubprogramForFunc(const Func *x) {
   return subprogram;
 }
 
-llvm::Function *LLVMVisitor::makeLLVMFunction(const Func *x) {
+llvm::Function *LLVMVisitor::makeLLVMFunction(const Func *x, bool declarationOnly) {
   // process LLVM functions in full immediately
-  if (auto *llvmFunc = cast<LLVMFunc>(x)) {
+  if (auto *llvmFunc = cast<LLVMFunc>(x); llvmFunc && !declarationOnly) {
     auto *oldFunc = func;
     process(llvmFunc);
     setDebugInfoForNode(nullptr);
     auto *newFunc = func;
+    if (needsWinExportWrapper(x))
+      newFunc->addFnAttr("codon-c-export", getNameForFunction(x));
     func = oldFunc;
     return newFunc;
   }
@@ -1711,12 +2216,19 @@ llvm::Function *LLVMVisitor::makeLLVMFunction(const Func *x) {
     argTypes.push_back(getLLVMType(argType));
   }
 
-  auto *llvmFuncType =
-      llvm::FunctionType::get(returnType, argTypes, funcType->isVariadic());
   const std::string functionName = getLLVMNameForFunction(x);
+  const bool isExternal = bool(cast<ExternalFunc>(x));
+  const bool winABI = isExternal && isWinMSVC(M.get());
+  auto *signature = llvm::FunctionType::get(returnType, argTypes, funcType->isVariadic());
+  auto *llvmFuncType = winABI ? winABISignature(M.get(), signature) : signature;
   auto *f = llvm::cast<llvm::Function>(
       M->getOrInsertFunction(functionName, llvmFuncType).getCallee());
-  if (!cast<ExternalFunc>(x)) {
+  if (winABI && winABIKind(M.get(), returnType, true) == WinABIKind::Indirect)
+    f->addParamAttr(0, llvm::Attribute::get(*context, llvm::Attribute::StructRet,
+                                          returnType));
+  if (needsWinExportWrapper(x))
+    f->addFnAttr("codon-c-export", getNameForFunction(x));
+  if (!isExternal && !declarationOnly) {
     f->setSubprogram(getDISubprogramForFunc(x));
   }
   return f;
@@ -1834,6 +2346,42 @@ void LLVMVisitor::visit(const LLVMFunc *x) {
   coro = {};
   if (func)
     return;
+
+  if (isWinMSVC(M.get()) && util::hasAttribute(x, LLVM_C_CALL_ATTR)) {
+    // Function values and dlsym pointers use C-compatible entry points. Keep the
+    // generated adapter's logical signature and marshal its indirect call just
+    // like a direct ExternalFunc call.
+    auto *signature = getLLVMFuncType(x->getType());
+    func = llvm::Function::Create(signature, llvm::GlobalValue::PrivateLinkage,
+                                  getLLVMNameForFunction(x), M.get());
+    func->addFnAttr(llvm::Attribute::AlwaysInline);
+    func->setSubprogram(getDISubprogramForFunc(x));
+    auto *entry = llvm::BasicBlock::Create(*context, "entry", func);
+    llvm::IRBuilder<> builder(entry);
+    auto *src = getSrcInfo(x);
+    builder.SetCurrentDebugLocation(llvm::DILocation::get(
+        *context, src->line, src->col, func->getSubprogram()));
+
+    std::vector<llvm::Value *> arguments;
+    auto *tuple = func->getArg(1);
+    auto *tupleType = llvm::cast<llvm::StructType>(tuple->getType());
+    std::vector<llvm::Type *> argumentTypes;
+    for (unsigned i = 0; i < tupleType->getNumElements(); ++i) {
+      arguments.push_back(builder.CreateExtractValue(tuple, i));
+      argumentTypes.push_back(tupleType->getElementType(i));
+    }
+    auto *nativeSignature = llvm::FunctionType::get(signature->getReturnType(),
+                                                    argumentTypes, false);
+    auto *result = winABICall(M.get(), builder, func->getArg(0), nativeSignature,
+                              arguments, [&](auto *type, auto *callee, auto args) {
+                                return builder.CreateCall(type, callee, args);
+                              });
+    if (signature->getReturnType()->isVoidTy())
+      builder.CreateRetVoid();
+    else
+      builder.CreateRet(result);
+    return;
+  }
 
   // build code
   std::string code = buildLLVMCodeString(x);
@@ -2086,7 +2634,7 @@ void LLVMVisitor::visit(const Var *x) { seqassertn(0, "cannot visit var"); }
 
 void LLVMVisitor::visit(const VarValue *x) {
   if (auto *f = cast<Func>(x->getVar())) {
-    value = getFunc(f);
+    value = getFunctionValue(f);
     seqassertn(value, "{} value not found", *x);
   } else {
     auto *llvmType = getLLVMType(x->getType());
@@ -2921,14 +3469,44 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
   // handle exceptions that must route through 'finally'
   B->SetInsertPoint(tc.finallyExceptionBlock);
   if (!options->noexc) {
-    auto *finallyCaughtResult = B->CreateLandingPad(padType, 1);
-    finallyCaughtResult->setCleanup(true);
-    finallyCaughtResult->addClause(getTypeIdxVar(nullptr));
-
-    B->CreateStore(finallyCaughtResult, tc.catchStore);
-    B->CreateStore(excStateRethrow, tc.excFlag);
-    B->CreateStore(B->getInt64(0), tc.delegateDepth);
-    B->CreateBr(tc.finallyBlock);
+    if (isWinMSVC(&*M)) {
+      // Win64 funclet form of the finally-routing pad (mirrors the main catch pad
+      // above): every invoke unwind target must be an EH pad under WinEH, so this
+      // cleanup-routing block is a catchpad too. Recover the exc, mark rethrow, and
+      // catchret into the (normal-code) finally block.
+      auto *cs =
+          B->CreateCatchSwitch(llvm::ConstantTokenNone::get(*context), nullptr, 1);
+      auto *catchBlock =
+          llvm::BasicBlock::Create(*context, "trycatch.finally.catchpad", func);
+      cs->addHandler(catchBlock);
+      B->SetInsertPoint(catchBlock);
+      auto *filter = makeWinEHFilter().getCallee();
+      auto *cp = B->CreateCatchPad(cs, {filter});
+      llvm::OperandBundleDef bundle("funclet", llvm::ArrayRef<llvm::Value *>(cp));
+      auto excCurrent = M->getOrInsertFunction("seq_exc_current", B->getPtrTy());
+      auto *exc = B->CreateCall(excCurrent, {}, {bundle});
+      llvm::Value *padVal = llvm::UndefValue::get(padType);
+      padVal = B->CreateInsertValue(padVal, exc, 0);
+      padVal = B->CreateInsertValue(padVal, B->getInt32(0), 1);
+      B->CreateStore(padVal, tc.catchStore);
+      B->CreateStore(excStateRethrow, tc.excFlag);
+      // The cleanup pad has no type selector. Rethrow after finally so the
+      // enclosing catch pad selects a handler for this exception.
+      B->CreateStore(B->getInt64(0), tc.delegateDepth);
+      auto *cont =
+          llvm::BasicBlock::Create(*context, "trycatch.finally.catchret", func);
+      B->CreateCatchRet(llvm::cast<llvm::CatchPadInst>(cp), cont);
+      B->SetInsertPoint(cont);
+      B->CreateBr(tc.finallyBlock);
+    } else {
+      auto *finallyCaughtResult = B->CreateLandingPad(padType, 1);
+      finallyCaughtResult->setCleanup(true);
+      finallyCaughtResult->addClause(getTypeIdxVar(nullptr));
+      B->CreateStore(finallyCaughtResult, tc.catchStore);
+      B->CreateStore(excStateRethrow, tc.excFlag);
+      B->CreateStore(B->getInt64(0), tc.delegateDepth);
+      B->CreateBr(tc.finallyBlock);
+    }
   } else {
     B->CreateUnreachable();
   }
@@ -3052,6 +3630,31 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
     B->CreateUnreachable();
   } else if (!isRoot) {
     B->CreateBr(rethrowBlock);
+  } else if (isWinMSVC(&*M)) {
+    // `resume` is invalid under WinEH. This tc was already popped off the *try* stack
+    // (exitTry, above), so re-raise the stored unwind exception via seq_throw; call()
+    // routes it to the enclosing try-catch's catchswitch (or the proxy-main catch-all
+    // at root). NOTE: this tc's *finally* entry is still on the finally-stack here
+    // (exitFinally runs later, after the catch handlers), and call() also considers the
+    // finally-stack when picking the unwind target. If we leave it, the re-raise unwinds
+    // back into THIS tc's own finally-routing pad and the finally body runs a second time
+    // (only on WinEH — the Itanium path below uses `resume`, which ignores these stacks).
+    // Temporarily drop our finally entry so the re-raise propagates to the *enclosing*
+    // handler/caller, matching rethrowBlock (which is emitted after exitFinally).
+    block = unwindResumeBlock;
+    llvm::Value *exc =
+        B->CreateExtractValue(B->CreateLoad(padType, tc.catchStore), 0);
+    const bool popFinally = haveFinally && !finally.empty();
+    TryCatchData savedFinally;
+    if (popFinally) {
+      savedFinally = finally.back();
+      finally.pop_back();
+    }
+    call(makeThrowFunc(), {exc});
+    if (popFinally)
+      finally.push_back(savedFinally);
+    B->SetInsertPoint(block);
+    B->CreateUnreachable();
   } else {
     B->CreateResume(B->CreateLoad(padType, tc.catchStore));
   }
@@ -3094,27 +3697,80 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
 
   // exception handling
   B->SetInsertPoint(tc.exceptionBlock);
-  llvm::LandingPadInst *caughtResult = nullptr;
-  if (!options->noexc) {
-    caughtResult = B->CreateLandingPad(padType, catches.size());
-    caughtResult->setCleanup(true);
-  }
-  std::vector<llvm::Value *> typeIndices;
+  llvm::Value *unwindException = nullptr;
+  if (isWinMSVC(&*M) && !options->noexc) {
+    // Win64 SEH/funclet form: the try-body invokes here to a catchswitch. A single
+    // catchpad with the Codon SEH filter (seq_exc_filter) recovers the TLS-stashed
+    // exception via seq_exc_current() (carrying the required funclet bundle), stores
+    // it into catchStore mirroring the Itanium { i8* exc, i32 0 } layout, then
+    // catchrets into normal code where Codon's own type-id dispatch / finally /
+    // nesting runs as ordinary (non-funclet) code.
+    auto *cs =
+        B->CreateCatchSwitch(llvm::ConstantTokenNone::get(*context), nullptr, 1);
+    auto *catchBlock = llvm::BasicBlock::Create(*context, "trycatch.catchpad", func);
+    cs->addHandler(catchBlock);
+    B->SetInsertPoint(catchBlock);
+    auto *filter = makeWinEHFilter().getCallee();
+    auto *cp = B->CreateCatchPad(cs, {filter});
+    llvm::OperandBundleDef bundle("funclet", llvm::ArrayRef<llvm::Value *>(cp));
+    auto excCurrent = M->getOrInsertFunction("seq_exc_current", B->getPtrTy());
+    auto *exc = B->CreateCall(excCurrent, {}, {bundle});
+    llvm::Value *padVal = llvm::UndefValue::get(padType);
+    padVal = B->CreateInsertValue(padVal, exc, 0);
+    padVal = B->CreateInsertValue(padVal, B->getInt32(0), 1);
+    B->CreateStore(padVal, tc.catchStore);
+    auto *routeContinue =
+        llvm::BasicBlock::Create(*context, "trycatch.catchret", func);
+    B->CreateCatchRet(llvm::cast<llvm::CatchPadInst>(cp), routeContinue);
+    B->SetInsertPoint(routeContinue);
+    // funclet-local SSA can't escape the funclet; reload from catchStore.
+    unwindException = B->CreateExtractValue(B->CreateLoad(padType, tc.catchStore), 0);
+    // Compute the type selector the Itanium personality would set: the type-id of
+    // the first catch clause the thrown exception is-an-instance-of. Stored into
+    // catchStore's index-1 field so the type-id dispatch switch below matches.
+    std::vector<llvm::Constant *> idConsts;
+    for (auto *ct : catchTypesFull)
+      if (ct)
+        idConsts.push_back(B->getInt32((uint64_t)getTypeIdx(ct)));
+    llvm::Value *selector = B->getInt32(0);
+    if (!idConsts.empty()) {
+      auto *arrTy = llvm::ArrayType::get(B->getInt32Ty(), idConsts.size());
+      auto *gv = new llvm::GlobalVariable(*M, arrTy, /*isConstant=*/true,
+                                          llvm::GlobalValue::PrivateLinkage,
+                                          llvm::ConstantArray::get(arrTy, idConsts),
+                                          "codon.win.catchids");
+      auto matchFn = M->getOrInsertFunction("seq_exc_match", B->getInt32Ty(),
+                                            B->getPtrTy(), B->getPtrTy(),
+                                            B->getInt32Ty());
+      selector = B->CreateCall(
+          matchFn, {unwindException, gv, B->getInt32((uint64_t)idConsts.size())});
+    }
+    llvm::Value *pad2 = B->CreateLoad(padType, tc.catchStore);
+    pad2 = B->CreateInsertValue(pad2, selector, 1);
+    B->CreateStore(pad2, tc.catchStore);
+  } else {
+    llvm::LandingPadInst *caughtResult = nullptr;
+    if (!options->noexc) {
+      caughtResult = B->CreateLandingPad(padType, catches.size());
+      caughtResult->setCleanup(true);
+    }
+    std::vector<llvm::Value *> typeIndices;
 
-  for (auto *catchType : catchTypesFull) {
-    seqassertn(!catchType || cast<RefType>(catchType), "invalid catch type");
-    const std::string typeVarName =
-        "codon.typeidx." + (catchType ? catchType->getName() : "<all>");
-    auto *tidx = getTypeIdxVar(catchType);
-    typeIndices.push_back(tidx);
-    if (caughtResult)
-      caughtResult->addClause(tidx);
-  }
+    for (auto *catchType : catchTypesFull) {
+      seqassertn(!catchType || cast<RefType>(catchType), "invalid catch type");
+      const std::string typeVarName =
+          "codon.typeidx." + (catchType ? catchType->getName() : "<all>");
+      auto *tidx = getTypeIdxVar(catchType);
+      typeIndices.push_back(tidx);
+      if (caughtResult)
+        caughtResult->addClause(tidx);
+    }
 
-  auto *caughtResultOrUndef = caughtResult ? llvm::cast<llvm::Value>(caughtResult)
-                                           : llvm::UndefValue::get(padType);
-  auto *unwindException = B->CreateExtractValue(caughtResultOrUndef, 0);
-  B->CreateStore(caughtResultOrUndef, tc.catchStore);
+    auto *caughtResultOrUndef = caughtResult ? llvm::cast<llvm::Value>(caughtResult)
+                                             : llvm::UndefValue::get(padType);
+    unwindException = B->CreateExtractValue(caughtResultOrUndef, 0);
+    B->CreateStore(caughtResultOrUndef, tc.catchStore);
+  }
   B->CreateStore(excStateThrown, tc.excFlag);
   B->CreateStore(B->getInt64(0), tc.delegateDepth);
 
@@ -3376,8 +4032,17 @@ void LLVMVisitor::visit(const CallInstr *x) {
       return;
     }
   }
-  process(x->getCallee());
-  auto *f = value;
+  // Function values use native entry points on Win64. A direct Codon call keeps
+  // the logical signature, so do not lower its callee as a first-class value.
+  auto *direct = util::getFunc(x->getCallee());
+  llvm::Value *f;
+  if (direct) {
+    f = getFunc(direct);
+  } else {
+    process(x->getCallee());
+    f = value;
+  }
+  bool nativeIndirect = !direct;
   auto *funcType = getLLVMFuncType(x->getCallee()->getType());
   std::vector<std::pair<int64_t, llvm::Function *>> targets;
   llvm::Value *dynamicId = nullptr;
@@ -3444,6 +4109,7 @@ void LLVMVisitor::visit(const CallInstr *x) {
           if (singleton) {
             // Different concrete classes can share one implementation.
             f = targets.front().second;
+            nativeIndirect = false;
             targets.clear();
           } else {
             // For make_obj().method(side_effect()), the callee flow has already
@@ -3508,8 +4174,23 @@ void LLVMVisitor::visit(const CallInstr *x) {
     }
     return;
   }
-  auto *callResult = call({funcType, f}, args);
 
+  auto *callee = util::getFunc(x->getCallee());
+  const bool winABI = isWinMSVC(M.get()) &&
+                      (nativeIndirect || (callee && isA<ExternalFunc>(callee)));
+  if (winABI) {
+    B->SetInsertPoint(block);
+    auto *result = winABICall(M.get(), *B, f, funcType, args,
+                              [&](auto *type, auto *target, auto values) {
+                                return call({type, target}, values);
+                              });
+    auto *resultType = getLLVMType(x->getType());
+    value = isStorableType(resultType) ? result : getDummyValue(resultType);
+    return;
+  }
+
+  B->SetInsertPoint(block);
+  auto *callResult = call({funcType, f}, args);
   auto *resultType = getLLVMType(x->getType());
   if (!isStorableType(resultType)) {
     value = getDummyValue(resultType);
@@ -3925,7 +4606,9 @@ llvm::GlobalVariable *LLVMVisitor::getRuntimeTypeInfo(Type *type) {
                                         llvm::Constant::getNullValue(methodSlotType));
   std::vector<bool> occupied(methodCount);
   for (const auto &[id, target] : info->methods) {
-    auto *function = getFunc(target);
+    // These pointers can be called both by virtual CallInstrs and by Function
+    // values (the erased Any adapters). Keep one ABI for both lookup paths.
+    auto *function = getFunctionValue(target);
     seqassertn(function, "missing dispatch target {}", target->getName());
     seqassertn(id, "zero is reserved for empty method slots");
     auto position = runtime::methodHash(id) & (methodCount - 1);

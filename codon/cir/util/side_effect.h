@@ -4,6 +4,8 @@
 
 #include <string>
 
+#include "codon/compiler/error.h"
+
 namespace codon {
 namespace ir {
 namespace util {
@@ -23,12 +25,12 @@ enum SideEffectStatus {
   UNKNOWN,
 };
 
-extern const std::string NON_PURE_ATTR;
-extern const std::string PURE_ATTR;
-extern const std::string NO_SIDE_EFFECT_ATTR;
-extern const std::string NO_CAPTURE_ATTR;
-extern const std::string DERIVES_ATTR;
-extern const std::string SELF_CAPTURES_ATTR;
+extern CODON_API const std::string NON_PURE_ATTR;
+extern CODON_API const std::string PURE_ATTR;
+extern CODON_API const std::string NO_SIDE_EFFECT_ATTR;
+extern CODON_API const std::string NO_CAPTURE_ATTR;
+extern CODON_API const std::string DERIVES_ATTR;
+extern CODON_API const std::string SELF_CAPTURES_ATTR;
 
 } // namespace util
 } // namespace ir

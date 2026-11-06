@@ -105,7 +105,7 @@ assert datetime.time(hour=1).isoformat(timespec="minutes") == "01:00"
 assert re.compile("a").search(string="ba", pos=1).start() == 1
 assert pathlib.Path("a/b").relative_to("a", walk_up=True) == pathlib.Path("b")
 assert pathlib.Path("sample.py").match("*.PY", case_sensitive=False)
-assert os.path.realpath(".", strict=True) == os.getcwd()
+assert os.path.realpath(".", strict=True) == os.path.realpath(os.getcwd(), strict=True)
 assert "{value}".format_map({"value": 7}) == "7"
 print("module signatures ok")  #: module signatures ok
 

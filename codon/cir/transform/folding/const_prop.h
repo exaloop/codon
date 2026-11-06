@@ -18,7 +18,7 @@ private:
   std::string globalVarsKey;
 
 public:
-  static const std::string KEY;
+  static CODON_API const std::string KEY;
 
   /// Constructs a constant propagation pass.
   /// @param reachingDefKey the reaching definition analysis' key

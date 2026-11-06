@@ -14,7 +14,7 @@ class Any {};
 /// Any value.
 class AnyValue : public AcceptorExtend<AnyValue, Value>, public Any {
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
   using AcceptorExtend::AcceptorExtend;
 
 private:
@@ -24,21 +24,21 @@ private:
 /// Any flow.
 class AnyFlow : public AcceptorExtend<AnyFlow, Flow>, public Any {
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
   using AcceptorExtend::AcceptorExtend;
 };
 
 /// Any variable.
 class AnyVar : public AcceptorExtend<AnyVar, Var>, public Any {
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
   using AcceptorExtend::AcceptorExtend;
 };
 
 /// Any function.
 class AnyFunc : public AcceptorExtend<AnyFunc, Func>, public Any {
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
   using AcceptorExtend::AcceptorExtend;
 
   AnyFunc() : AcceptorExtend() { setUnmangledName("any"); }

@@ -1249,3 +1249,16 @@ assert static.function.can_call(bound, 's')
 assert not static.function.can_call(bound)
 assert bound(1) == 1 and bound('s') == 's'
 print('bound can_call ok')  #: bound can_call ok
+
+#%% finally_exception_to_caller
+import asyncio
+
+# Future.result raises inside a with/try-finally in a separate function. Its
+# cleanup must propagate the exception to this caller instead of catching itself.
+future = asyncio.Future[int]()
+future.cancel('cancelled result')
+try:
+    future.result()
+    assert False
+except asyncio.CancelledError as error:
+    assert error.message == 'cancelled result'

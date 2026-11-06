@@ -144,6 +144,8 @@ private:
   std::unordered_map<id_t, llvm::Value *> vars;
   /// LLVM functions corresponding to IR functions
   std::unordered_map<id_t, llvm::Function *> funcs;
+  /// Native entry points for first-class functions; direct Codon calls use funcs.
+  std::unordered_map<llvm::Function *, llvm::Function *> winCallbacks;
   /// Cached AOT LLVM function names keyed by CIR function ID
   std::unordered_map<id_t, std::string> functionNames;
   /// Next numeric suffix per full CIR function name, distinguishing clones
@@ -211,6 +213,12 @@ private:
   llvm::FunctionCallee makeFreeFunc();
   /// Personality function for exception handling
   llvm::FunctionCallee makePersonalityFunc();
+  /// Win64 SEH filter referenced by JIT'd catchpad scope tables. Returns an
+  /// in-module thunk (compiled into the JIT slab, hence within the __ImageBase
+  /// window) that forwards to the real `seq_exc_filter` in codonrt via a 64-bit
+  /// pointer — avoids an out-of-range `.xdata` IMGREL when codonrt is loaded far
+  /// from the anchor. AOT and non-Windows callers use `seq_exc_filter` directly.
+  llvm::FunctionCallee makeWinEHFilter();
   /// Exception allocation function
   llvm::FunctionCallee makeExcAllocFunc();
   /// Exception throw function
@@ -285,7 +293,7 @@ private:
 
   // General function helpers
   llvm::Value *call(llvm::FunctionCallee callee, llvm::ArrayRef<llvm::Value *> args);
-  llvm::Function *makeLLVMFunction(const Func *);
+  llvm::Function *makeLLVMFunction(const Func *, bool declarationOnly = false);
   void makeYield(llvm::Value *value = nullptr, bool finalYield = false);
   std::string buildLLVMCodeString(const LLVMFunc *);
   void callStage(const PipelineFlow::Stage *stage);
@@ -324,6 +332,11 @@ private:
   llvm::Value *getDummyValue(llvm::Type *type);
   llvm::DISubprogram *getDISubprogramForFunc(const Func *x);
   std::string getLLVMNameForFunction(const Func *function);
+  bool needsWinExportWrapper(const Func *function);
+  llvm::Function *makeWinExportWrapper(llvm::StringRef name, llvm::Function *body,
+                                        bool exported = true);
+  llvm::Function *getFunctionValue(const Func *function);
+  void prepareWinExports();
   void clearLLVMData();
 
 public:

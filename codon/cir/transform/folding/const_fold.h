@@ -21,7 +21,7 @@ public:
   /// Constructs a folding pass.
   FoldingPass() : OperatorPass(/*childrenFirst=*/true) {}
 
-  static const std::string KEY;
+  static CODON_API const std::string KEY;
   std::string getKey() const override { return KEY; }
 
   void run(Module *m) override;

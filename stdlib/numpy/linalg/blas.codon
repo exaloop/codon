@@ -2,7 +2,9 @@
 
 import internal.static as static
 
-fint = i64
+# The Windows OpenBLAS release uses LP64; Accelerate and our Unix OpenBLAS
+# builds use ILP64. This also determines pivot, INFO and workspace array widths.
+fint = Int[32 if __windows__ else 64]
 fintp = Ptr[fint]
 
 if static.platform() == "darwin":

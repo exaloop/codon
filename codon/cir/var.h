@@ -32,7 +32,7 @@ private:
   bool tls;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a variable.
   /// @param type the variable's type
@@ -120,7 +120,7 @@ private:
   Var *val;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a variable value.
   /// @param val the referenced value
@@ -152,7 +152,7 @@ private:
   std::vector<std::string> fields;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a pointer value.
   /// @param val the referenced value

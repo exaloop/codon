@@ -18,6 +18,11 @@ private:
   DebugPlugin *debug;
   Options *options;
 
+#ifdef _WIN32
+  // Define __ImageBase as an absolute JIT symbol (anchor for Win64 SEH .xdata).
+  void defineImageBase();
+#endif
+
 public:
   explicit Engine(Options *options);
 
