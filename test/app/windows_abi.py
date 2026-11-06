@@ -44,6 +44,10 @@ def check(compiler, root, mode, env, runtime_env):
                     f'assert indirect_{name}(value_{name}) == {tup([v + 1 for v in values])}',
                     '@export', f'def echo_{name}(value: {ty}) -> {ty}:', '    return value']
         exported.append(f'echo_{name}')
+        program += ['@export', f'def try_bump_{name}(x: {ty}) -> {ty}:',
+                    '    try:', f'        return bump_{name}(x)',
+                    '    except ValueError:', '        return x',
+                    f'assert try_bump_{name}(value_{name}) == {tup([v + 1 for v in values])}']
         client += ['{', f'{ctype} value = {{0}};',
                    *(f'value.{field} = {v!r};' for field, v in zip(fields, values)),
                    f'{ctype} (*call)({ctype}) = ({ctype} (*)({ctype}))GetProcAddress(module, "echo_{name}");',
@@ -51,6 +55,10 @@ def check(compiler, root, mode, env, runtime_env):
                    *(f'if (result.{field} != value.{field}) return 3;' for field in fields), '}']
     client += ['return 0;', '}']
     program += ['from C import seq_locale_decimal_point() -> str',
+                '@export', 'def try_decimal_point() -> int:',
+                '    try:', '        return len(seq_locale_decimal_point())',
+                '    except ValueError:', '        return -1',
+                'assert try_decimal_point() == len(seq_locale_decimal_point())',
                 'expected_point = seq_locale_decimal_point()',
                 'for iteration in range(300000):',
                 '    assert seq_locale_decimal_point() == expected_point']

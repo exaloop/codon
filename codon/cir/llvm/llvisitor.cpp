@@ -1899,6 +1899,7 @@ llvm::Value *LLVMVisitor::call(llvm::FunctionCallee callee,
                           : finally.back().finallyExceptionBlock));
     auto *result = B->CreateInvoke(callee, normalBlock, unwindBlock, args);
     block = normalBlock;
+    B->SetInsertPoint(block);
     return result;
   }
 }
