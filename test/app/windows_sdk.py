@@ -66,6 +66,7 @@ with tempfile.TemporaryDirectory(prefix='codon sdk ', dir=Path(sys.argv[1]).reso
                      '    return value + 1\nprint(sdk_probe(len(argv)))\n', encoding='utf-8')
     assert run([str(compiler), 'run', '-release', '-plugin', str(plugin), str(probe)],
                env, root).strip() == '73'
+    print('Installed SDK AST/CIR globals and plugin checks passed', flush=True)
     source = root / 'input with spaces.codon'
     source.write_text('print("SDK with spaces", flush=True)\n'
                       'with open("runtime stream.txt", "w") as stream:\n'
