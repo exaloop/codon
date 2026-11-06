@@ -2,15 +2,35 @@
 title: Language overview
 ---
 
-Codon strives to be as close to Python (specifically, CPython) as possible,
-outside of a few differences that stem from performance considerations or
-incompatibilities with Codon's static compilation paradigm.
+Codon uses Python's syntax and familiar programming constructs, including
+functions, classes, comprehensions, generators and exceptions. The main
+difference is how a program runs: Codon determines native types before execution
+and compiles operations on those types to machine code, rather than evaluating
+them through the CPython interpreter.
 
-As a result, if you know Python, you already know 99% of Codon!
+Type annotations are often optional because the compiler can infer types from
+assignments and function calls. For example, the same unannotated function can
+be compiled for integer and floating-point inputs:
 
-Codon also introduces several new elements to Python to facilitate low-level
-programming, parallel programming and compile-time metaprogramming, among
-other features. These elements are described in this section.
+``` python
+def squared_total(values):
+  return sum(value * value for value in values)
+
+print(squared_total([1, 2, 3]))        # 14
+print(squared_total([1.0, 2.0, 3.0]))  # 14.0
+```
+
+Both calls use the same source definition, but operate on different native
+element types. The [generics guide](generics.md) explains this specialization
+model in more detail, including how to describe types explicitly when an API
+needs a particular representation.
+
+The rest of this section covers [functions and generators](functions.md),
+[classes](classes.md), [exceptions and resources](errors.md),
+[compile-time metaprogramming](meta.md) and [low-level facilities](lowlevel.md).
+Python libraries can also be used through
+[Python interoperability](../integrations/python/python-from-codon.md), which
+is particularly useful when a dependency relies on dynamic Python behavior.
 
 ## Differences with Python
 
@@ -23,36 +43,23 @@ isn't mentioned below? Let us know
 
 :::
 
-While Codon's syntax and semantics are nearly identical
-to Python's, there are some notable differences that are
-worth considering. Most of these design decisions were made
-with the trade-off between performance and Python compatibility
-in mind.
-
-Please see our [roadmap](../developers/roadmap.md) for more information
-about how we plan to close some of these gaps in the future.
+Python source often needs little adaptation, but its data representations and
+runtime assumptions still matter. The differences below are useful to consider
+when moving an existing program to Codon, especially at file formats, numerical
+boundaries and calls into other libraries.
 
 ### Data types
 
-- **Integers:** Codon's `int` is a 64-bit signed integer,
-  whereas Python's (after version 3) can be arbitrarily large.
-  However Codon does support larger integers via `Int[N]` where
-  `N` is the bit width.
+- **Integers:** Codon's `int` is a 64-bit signed integer, whereas Python's
+  integers can grow to arbitrary precision. `Int[N]` and `UInt[N]` provide
+  other fixed widths; choosing a larger `N` changes the available range,
+  but does not make an integer grow automatically. See
+  [low-level types](lowlevel.md) for their use and C equivalents.
 
-- <strike>**Strings:** Codon currently uses ASCII strings unlike
-  Python's unicode strings. Unicode strings are planned for
-  Codon 1.0.</strike> Codon now supports unicode strings for 1-to-1
-  compatibility with Python.
-
-- <strike>**Dictionaries:** Codon's dictionary type does not preserve
-  insertion order, unlike Python's as of 3.6.</strike> Codon now uses
-  ordered dictionaries by default. The original unordered
-  implementation is still available via the `-unordered-dict`
-  compiler flag, and generally performs better.
-
-- **Tuples**: Since tuples compile down to structs, tuple lengths
-  must be known at compile time, meaning you can't convert an
-  arbitrarily-sized list to a tuple, for instance.
+- **Tuples:** Ordinary tuples have a fixed number of fields whose types are
+  known at compile time. Python-style `tuple(iterable)` conversion is not
+  generally supported; a list is a more suitable representation when a
+  sequence's length is determined at runtime.
 
 - **Arrays**: Codon includes a native NumPy implementation with
   a corresponding `ndarray` type. Codon's `ndarray` is parameterized
@@ -64,25 +71,37 @@ about how we plan to close some of these gaps in the future.
 
 ### Type checking
 
-Since Codon performs static type checking ahead of time, a
-few of Python's dynamic features are disallowed. For example,
-monkey patching classes at runtime (although Codon supports a
-form of this at compile time) or adding objects of different
-types to a collection.
+Codon needs to determine the type of each expression before execution. A
+function can be generic, as in the example above, but each compiled
+specialization still has known argument and return types. An annotation can
+help express an interface or resolve an otherwise ambiguous empty collection:
 
-These few restrictions are ultimately what allow Codon to
-compile to native code without any runtime performance overhead.
-Future versions of Codon will lift some of these restrictions
-by the introduction of e.g. implicit union types.
+``` python
+counts: dict[str, int] = {}
+for name in ["oak", "pine", "oak"]:
+  counts[name] = counts.get(name, 0) + 1
+
+print(counts["oak"])  # 2
+```
+
+Runtime changes to a class's fields or methods do not fit this compilation
+model. When an application requires that kind of dynamism, the affected code
+can remain in Python and be called through the interoperability layer. For
+native code, [generic types](generics.md) and compile-time specialization offer
+ways to share implementations without changing their layout at runtime.
 
 ### Numerics
 
-For performance reasons, some numeric operations use C semantics
-rather than Python semantics. This includes, for example, raising
-an exception when dividing by zero, or other checks done by `math`
-functions. Strict adherence to Python semantics can be enforced by
-using the `-numerics=py` flag of the `codon` CLI. Note that this
-does *not* change `int`s from 64-bit.
+Python-style numerical semantics are the default. For example, integer floor
+division rounds down, and division by zero raises an exception. Programs that
+can work with C-style behavior may opt into `-numerics=c`, which changes
+operations such as signed division and some numerical error checks in exchange
+for additional optimization opportunities.
+
+This choice is independent of `-debug` and `-release`; enabling optimization
+does not by itself select C-style numerics. Neither numerical mode changes the
+fixed width of `int`. The [usage guide](../start/usage.md#numerical-semantics)
+shows examples of the differences.
 
 ### Modules
 

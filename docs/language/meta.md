@@ -143,7 +143,7 @@ print(u)  # (1, 2, 5, 10, 17)
 ## Static evaluation
 
 Literal expressions can be used as conditions in `if` statements, which
-enables the compiler to eliminate branches that it knows wil not be
+enables the compiler to eliminate branches that it knows will not be
 entered at runtime. This can be used to avoid type checking errors, for
 example:
 
@@ -185,5 +185,13 @@ is an `int`, it would not be iterable and hence would produce an error on
 `isinstance(x, list)` at compile time and avoiding type checking the block
 containing the loop when `x` is not a list.
 
-Static evaluation works with literal expressions, `isinstance()`, `hasattr()`
-and type comparisons like `type1 is type2`.
+Static evaluation works with literal expressions and with checks such as
+`isinstance()`, `hasattr()` and type comparisons when their results are known
+during compilation. In the examples above, each function specialization has a
+concrete input type, so only the applicable branch needs to be compiled.
+
+An `isinstance()` check is not necessarily a compile-time operation: a
+[union value](generics.md#values-with-several-possible-types) or a
+[base-typed object](classes.md#inheritance) can require a runtime check to
+determine which alternative is present. The syntax is the same, but the
+available type information determines when the decision can be made.

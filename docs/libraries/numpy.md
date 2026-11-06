@@ -2,13 +2,16 @@
 title: NumPy
 ---
 
-Codon ships with a feature-complete, fully-compiled native NumPy implementation.
-It uses the same API as NumPy, but re-implements everything in Codon itself,
-allowing for a range of optimizations and performance improvements. Codon-NumPy
-works with Codon's Python interoperability (you can transfer arrays to and from
-regular Python seamlessly), parallel backend (you can do array operations in
-parallel), and GPU backend (you can transfer arrays to and from the GPU seamlessly,
-and operate on them on the GPU).
+Codon ships with a native implementation of NumPy's array API, allowing array
+operations to be compiled and optimized together with the surrounding program.
+Familiar operations such as indexing, broadcasting, reductions and linear
+algebra work with Codon's native array type, which also supports Python
+interoperability, multithreading and the CUDA backend.
+
+The main differences concern types that must be known during compilation and
+APIs that are not implemented natively. This guide explains those boundaries
+alongside examples of ordinary array processing; the
+[API reference](api/index.md) provides individual function signatures.
 
 ## Getting started
 Importing `numpy` in Codon will use Codon-NumPy (as opposed to
@@ -64,7 +67,22 @@ arr = np.arange(10)
 print(arr.__class__.__name__)  # ndarray[int,1]
 ```
 
-The array dimension must also be known at compile-time. This allows the
+The number of dimensions, or *rank*, must be known at compile time; the size
+of each axis can still be determined at runtime:
+
+``` python
+import numpy as np
+
+def make_grid(rows: int, columns: int):
+  return np.zeros((rows, columns))
+
+grid = make_grid(2, 3)
+print(grid.shape)  # (2, 3)
+print(grid.ndim)   # 2
+```
+
+Changing `rows` or `columns` changes the shape without changing the rank of the
+result. Knowing the rank allows the
 compiler to perform a wider range of optimizations on array operations.
 Usually, this has no impact on the code as the NumPy functions can
 determine input and output dimensions automatically. However, the dimension
@@ -82,16 +100,50 @@ removes axes of length 1; since the number of axes of length 1 is not
 determinable at compile-time, this function requires an extra argument that
 indicates which axes to remove.
 
+``` python
+import numpy as np
+
+batch = np.zeros((1, 3, 1))
+row = np.squeeze(batch, axis=(0, 2))
+print(row.shape)  # (3,)
+```
+
+## Views and copies
+
+Basic slicing can produce a view that shares the original array's storage.
+This is useful for working on part of an array without copying its data,
+but it also means that writes through the view affect the original:
+
+``` python
+import numpy as np
+
+values = np.arange(6).reshape(2, 3)
+column = values[:, 1]
+column[0] = -1
+assert values[0, 1] == -1
+
+independent = column.copy()
+independent[0] = 99
+assert values[0, 1] == -1
+```
+
+An explicit `copy()` gives the result independent storage. A slice or
+transpose may also be noncontiguous, so an operation that accesses the raw
+data pointer needs to account for strides or first obtain a contiguous array.
+The [array-layout guidance](#array-layouts) discusses that distinction.
+
 ## Python interoperability
 Codon's `ndarray` type supports Codon's standard Python interoperability API
 (i.e. `__to_py__` and `__from_py__` methods), so arrays can be transferred to
 and from Python seamlessly.
 
 ### PyTorch integration
-Because PyTorch tensors and NumPy arrays are interchangeable without copying
-data, it is easy to use Codon to efficiently manipulate or operate on PyTorch
-tensors. This can be achieved either via Codon's just-in-time (JIT) compilation
-mode or via its Python extension mode.
+For a compatible CPU tensor, PyTorch's `tensor.numpy()` can expose storage
+without copying it. Codon can then operate on the NumPy array through JIT
+compilation or a Python extension. The tensor needs a supported dtype and
+layout, and a tensor that requires gradients must be detached before using
+this conversion. Moving a CUDA tensor to the CPU is a separate transfer and
+does not provide this zero-copy path.
 
 #### Using Codon JIT
 Here is an example showing initializing a $128 \times 128 \times 128$ tensor
@@ -123,10 +175,9 @@ print(tensor)
 print(t1 - t0, 'seconds')
 ```
 
-Timings on an M1 MacBook Pro:
-
-- Without `@codon.jit`: 0.1645 seconds
-- With `@codon.jit`: 0.001485 seconds (*110x speedup*)
+The initial call separates compilation from the timed call. Actual timings
+depend on the machine, tensor layout and installed versions; the important
+point here is that the native loop updates the tensor's shared CPU storage.
 
 For more information, see the [Codon JIT docs](../integrations/python/codon-from-python.md).
 
@@ -151,8 +202,10 @@ Note that extension module functions need to specify argument types. In this cas
 the argument is a 3-dimensional array of type `float32`, which is expressed as
 `np.ndarray[np.float32, 3]` in Codon.
 
-Now we can use a setup script `setup.py` to create the extension module as described
-in the [Codon Python extension docs](../integrations/python/extensions.md):
+The [Python extension guide](../integrations/python/extensions.md#building-with-setuptools)
+provides a setup script. For this example, its extension entry should be
+`CodonExtension('codon_initialize', 'init.py')`, with the package name adjusted
+accordingly. The resulting module can be built with:
 
 ``` bash
 python3 setup.py build_ext --inplace  # setup.py from docs linked above
@@ -169,9 +222,9 @@ initialize(tensor.numpy())
 print(tensor)
 ```
 
-Note that there is no compilation happening at runtime with this approach. Instead,
-everything is compiled ahead of time when creating the extension. The timing is the same
-as the first approach.
+With this approach, compilation happens while building the extension rather
+than on its first call. The native loop is similar to the JIT version, but the
+overall timing still includes the extension-call and conversion costs.
 
 You can also use any Codon compilation flags with this approach by adding them to the
 `spawn` call in the setup script. For example, you can use the `-disable-exceptions`
@@ -187,7 +240,7 @@ import numpy as np
 import numpy.random as rnd
 import time
 
-N = 100000000
+N = 1000000
 n = 10
 
 rng = rnd.default_rng(seed=0)
@@ -204,9 +257,12 @@ t1 = time.time()
 
 print(y)
 print(t1 - t0, 'seconds')
-# no par - 1.4s
-# w/ par - 0.4s
 ```
+
+Each iteration writes to a separate element of `y`. The example allocates
+about 80 MB for `x`; increasing the dimensions also increases memory use, so
+larger workloads are best introduced gradually. Parallel execution is useful
+when the per-iteration work outweighs scheduling and synchronization costs.
 
 ## GPU processing
 Codon-NumPy supports seamless GPU processing: arrays can be passed to and
@@ -304,8 +360,8 @@ import numpy as np
 import numpy.random as rnd
 import time
 
-N = 5000
-n = 10
+N = 512
+n = 4
 rng = rnd.default_rng(seed=0)
 a = rng.normal(size=(n, N, N))
 b = rng.normal(size=(n, N, N))
@@ -318,16 +374,18 @@ for i in range(n):
 
 t1 = time.time()
 print(y.sum())
-print(t1 - t0, 'seconds')  # Python - 53s
-                           # Codon  -  6s
+print(t1 - t0, 'seconds')
 ```
 
 :::tip
 
 
-When using Codon's outer-loop parallelism, make sure to set the environment
-variable `OPENBLAS_NUM_THREADS` to 1 (i.e. `export OPENBLAS_NUM_THREADS=1`)
-to avoid conflicts with OpenBLAS multithreading.
+If the linked BLAS library also uses multiple threads, combining its internal
+parallelism with an outer parallel loop can create more workers than the
+machine can use effectively. For OpenBLAS, `export OPENBLAS_NUM_THREADS=1`
+limits the inner work to one thread; other BLAS implementations have their
+own controls. Comparing outer-loop and BLAS-managed parallelism helps choose
+the more suitable arrangement for a particular matrix size.
 
 
 :::
@@ -340,8 +398,8 @@ memory (since intermediate arrays no longer need to be allocated).
 
 To showcase this, here's a simple NumPy program that approximates $\pi$.
 The code below generates two random vectors $x$ and $y$ with entries in the
-range $[0, 1)$ and computes the fraction of pairs of points that lie in the
-circle of radius $0.5$ centered at $(0.5, 0.5)$, which is approximately
+range $[0, 1)$ and computes the fraction of points that lie inside the
+quarter of the unit circle in that square, which is approximately
 $\pi \over 4$.
 
 ``` python
@@ -349,66 +407,28 @@ import time
 import numpy as np
 
 rng = np.random.default_rng(seed=0)
-x = rng.random(500_000_000)
-y = rng.random(500_000_000)
+x = rng.random(2_000_000)
+y = rng.random(2_000_000)
 
 t0 = time.time()
 # pi ~= 4 x (fraction of points in circle)
-pi = ((x-1)**2 + (y-1)**2 < 1).sum() * (4 / len(x))
+pi = (x*x + y*y < 1.0).sum() * (4 / len(x))
 t1 = time.time()
 
 print(pi)
 print(t1 - t0, 'seconds')
 ```
 
-The expression `(x-1)**2 + (y-1)**2 < 1` gets fused by Codon so that it is
-executed in just a single pass over the `x` and `y` arrays, rather than in
-multiple passes for each sub-expression `x-1`, `y-1` etc. as is the case with
-standard NumPy.
+The expression combines multiplication, addition, comparison and a reduction.
+Fusion can avoid temporary arrays and combine work into fewer passes over the
+input data. This example times the calculation separately from random-data
+generation; a comparison with Python should use the same input size and dtype,
+with Codon running in release mode.
 
-Here are the resulting timings on an M1 MacBook Pro:
-
-- Python / standard NumPy: 2.4 seconds
-- Codon: 0.42 seconds (*6x speedup*)
-
-You can display information about fused expressions by using the `-npfuse-verbose`
-flag of `codon`, as in `codon run -release -npfuse-verbose pi.py`. Here's the
-output for the program above:
-
-```
-Optimizing expression at pi.py:10:7
-lt <array[bool, 1]> [cost=6]
-  add <array[f64, 1]> [cost=5]
-    pow <array[f64, 1]> [cost=2]
-      sub <array[f64, 1]> [cost=1]
-        a0 <array[f64, 1]>
-        a1 <i64>
-      a2 <i64>
-    pow <array[f64, 1]> [cost=2]
-      sub <array[f64, 1]> [cost=1]
-        a3 <array[f64, 1]>
-        a4 <i64>
-      a5 <i64>
-  a6 <i64>
-
--> static fuse:
-lt <array[bool, 1]> [cost=6]
-  add <array[f64, 1]> [cost=5]
-    pow <array[f64, 1]> [cost=2]
-      sub <array[f64, 1]> [cost=1]
-        a0 <array[f64, 1]>
-        a1 <i64>
-      a2 <i64>
-    pow <array[f64, 1]> [cost=2]
-      sub <array[f64, 1]> [cost=1]
-        a3 <array[f64, 1]>
-        a4 <i64>
-      a5 <i64>
-  a6 <i64>
-```
-
-As shown, the optimization pass employs a cost model to decide how to best handle
-a given expression, be it by fusing or evaluating sequentially. You can adjust the
+The `-npfuse-verbose` flag reports fusion decisions, for example with
+`codon run -release -npfuse-verbose pi.py`. The exact diagnostics depend on the
+compiler version and expression. The optimization pass employs a cost model
+when choosing between fusion and intermediate evaluation. You can adjust the
 fusion cost thresholds via the following flags:
 
 - `-npfuse-always <cost1>`: Expression cost below which to always fuse a given
@@ -465,14 +485,18 @@ You can pass an `ndarray`'s underlying data pointer to a C/C++ function by using
 the `data` attribute of the array. For example:
 
 ``` python
-from C import foo(p: Ptr[float], n: int)
+import numpy as np
+from C import foo(p: Ptr[float], n: int) -> None
 
-arr = np.ndarray([1.0, 2.0, 3.0])
+arr = np.ascontiguousarray(np.array([1.0, 2.0, 3.0]))
 foo(arr.data, arr.size)
 ```
 
-Of course, it's the caller's responsibility to make sure the array is contiguous
-as needed and/or pass additional shape or stride information. See the
+Here, `foo` stands for a C function with signature
+`void foo(double *data, int64_t length)`. Making the array contiguous is useful
+for an API that expects a flat buffer; an API that accepts strides can instead
+work with the original layout. The array's storage also needs to remain alive
+for as long as the C code uses its pointer. See the
 [C interoperability](../integrations/cpp/cpp-from-codon.md) docs for more information.
 
 ### Array ABI
@@ -540,7 +564,7 @@ makes assumptions regarding `inf` and `nan` values. For more information, consul
 documentation on [fast-math flags](https://llvm.org/docs/LangRef.html#fast-math-flags).
 
 ## Not-yet-supported
-The following features of NumPy are not yet supported, but are planned for the future:
+The following features are not part of the native implementation:
 - String operations
 - Masked arrays
 - Polynomials

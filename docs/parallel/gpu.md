@@ -2,13 +2,15 @@
 title: GPU programming
 ---
 
-Codon supports GPU programming through a native GPU backend.
-Currently, only Nvidia devices are supported.
+Codon's native GPU backend targets NVIDIA devices through CUDA. This is
+separate from CPU multithreading and does not provide execution on Apple,
+AMD or Intel GPUs.
 
 :::info
 
 
-[CUDA](https://developer.nvidia.com/cuda-toolkit) is required for GPU programming.
+[CUDA](https://developer.nvidia.com/cuda-toolkit) and a compatible NVIDIA driver
+are required to build and execute GPU programs.
 Codon automatically loads the CUDA shared library `libcuda.so` (or `libcuda.dylib`).
 If this library is not in a standard location, its path can be specified via the
 `CODON_CUDA` environment variable.
@@ -96,18 +98,20 @@ plt.imshow(pixels)
 plt.show()
 ```
 
-The GPU version of the Mandelbrot code is about 450 times faster
-than an equivalent CPU version.
+The independent pixel calculations give the GPU substantial parallel work.
+The benefit depends on the device, image size, iteration count and data-transfer
+costs; timing the complete operation is useful when deciding whether GPU
+execution suits a particular workload.
 
 GPU kernels are marked with the `@gpu.kernel` annotation, and
-compiled specially in Codon's backend. Kernel functions can
-use the vast majority of features supported in Codon, with a
-few notable exceptions:
+compiled for the device. Native arithmetic, control flow and supported
+container operations are available, but host-only functionality does not
+automatically become a device operation:
 
-- Exception handling is not supported inside the kernel, meaning
-  kernel code should not throw or catch exceptions. `raise`
-  statements inside the kernel are marked as unreachable and
-  optimized out.
+- Exception handling is not supported inside the kernel. Conditions that
+  would raise on the CPU need to be validated before launch or handled
+  explicitly in device code; a Python-style exception is not a recovery
+  mechanism for a failed kernel operation.
 
 - Functionality related to I/O is not supported (e.g. you can't
   open a file in the kernel).
@@ -125,6 +129,13 @@ of (`X` x `Y` x `Z`) *blocks* where each block contains (`x` x `y` x `z`)
 executing threads. Device-specific restrictions on grid and block sizes
 apply.
 
+The launch dimensions and the data dimensions are related but not identical.
+When the grid is rounded up to cover an input size that is not a multiple of
+the block size, the final block contains extra threads. An explicit kernel
+needs a bounds check before those threads access an array. The examples above
+use exactly matching dimensions, which is why they do not need that extra
+guard.
+
 The `grid` and `block` parameters can be one of:
 
 - Single integer `x`, giving dimensions `(x, 1, 1)`
@@ -138,7 +149,7 @@ Codon's GPU module provides many of the same intrinsics that CUDA does:
 
 | Codon             | Description                             | CUDA equivalent |
 |-------------------|-----------------------------------------|-----------------|
-| `gpu.thread.x`    | x-coordinate of current thread in block | `threadId.x`    |
+| `gpu.thread.x`    | x-coordinate of current thread in block | `threadIdx.x`    |
 | `gpu.block.x`     | x-coordinate of current block in grid   | `blockIdx.x`    |
 | `gpu.block.dim.x` | x-dimension of block                    | `blockDim.x`    |
 | `gpu.grid.dim.x`  | x-dimension of grid                     | `gridDim.x`     |

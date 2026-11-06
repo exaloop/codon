@@ -29,13 +29,19 @@ The Codon standard library provides shorthands for the common variants:
 - `i32`/`u32`: signed/unsigned 32-bit integer
 - `i64`/`u64`: signed/unsigned 64-bit integer
 
-You can cast between different integer types freely:
+Constructors convert between integer widths:
 
 ``` python
 a = 42
 b = i16(a)
 c = u32(b)
 ```
+
+A narrower destination may discard high bits rather than report an overflow.
+For example, `u8(256)` is `0`. When a value comes from external input and must
+fit a particular format, checking its range before conversion makes that
+requirement explicit. The compiler's numerical-semantics flag does not turn
+fixed-width integers into arbitrary-precision values.
 
 Similarly, you can perform arithmetic operations on integers of the
 same types:
@@ -60,9 +66,10 @@ types:
 - `float32`: 32-bit floating-point value (IEEE 754 `binary32`)
 - `float16`: 16-bit floating-point value (IEEE 754 `binary16`)
 - `float128`: 128-bit floating-point value (IEEE 754 `binary128`)
-- `bfloat16`: 16-bit "brain" floating-point value (7-bit significand).
-  Provides the same number of exponent bits as float, so that it matches
-  its dynamic range, but with greatly reduced precision.
+- `bfloat16`: a 16-bit floating-point value with 7 explicit fraction bits
+    and 8 exponent bits. Its exponent range is comparable to `float32`, not
+    the standard 64-bit `float`, and its reduced precision suits workloads
+    where range matters more than fine-grained numerical accuracy.
 
 Each of these float types can be constructed from a standard `float`:
 
@@ -99,8 +106,14 @@ a `Ptr` type with an integer argument, representing the number of elements
 of the given type to allocate:
 
 ``` python
-buffer = Ptr[int](10)  # equivalent to 'malloc(10 * sizeof(int64_t))' in C
+buffer = Ptr[int](10)
 ```
+
+This allocates storage for ten integers through Codon's garbage collector.
+Although the result behaves like a C pointer, it is not a `malloc()` allocation
+that the caller should pass to `free()`. Elements should be assigned before
+they are read. A pointer obtained from an external C library instead follows
+that library's allocation and release rules.
 
 Pointers can be dereferenced and indexed:
 
@@ -166,6 +179,12 @@ mantissa = frexp(x, __ptr__(exponent))  # equivalent to 'frexp(x, &exponent)' in
 print(mantissa, exponent)  # 0.5125 5
 ```
 
+The pointer in this example is borrowed only for the duration of `frexp()`.
+A pointer to a local variable does not extend that variable's lifetime, so it
+should not be returned or retained by a C API that will use it after the
+function exits. An allocated buffer with an appropriate owner is needed for
+longer-lived storage.
+
 Refer to [C/C++ integration](../integrations/cpp/cpp-from-codon.md) for more information about
 calling C/C++ functions from Codon.
 
@@ -180,13 +199,14 @@ class Point:
     y: int
 
 r = Point(3, 4)
-p = __ptr__(r.y)  # 'p' is a 'Ptr[int]'; equivalent to '&r.x' in C
+p = __ptr__(r.y)  # 'p' is a 'Ptr[int]'; equivalent to '&r.y' in C
 p[0] = 99
 print(r.x, r.y)  # 3 99
 ```
 
-Recall that tuple class instances are immutable and passed by value, so
-assignments create new instances:
+This is an unsafe, low-level operation that bypasses the normal restriction
+on assigning tuple fields. Tuple classes are passed by value, so modifying
+the storage of one local value does not modify a previously copied value:
 
 ``` python
 @tuple
@@ -237,7 +257,17 @@ def f():
     arr = __array__[int](10)  # array of 10 integers; equivalent to 'int64_t arr[10]' in C
     arr[0] = 42
     print(arr[0])  # 42
+
+f()
 ```
 
-Arrays created with `__array__` have two fields: `ptr` (pointer to array data) and `len`
-(length of array). The argument of `__array__` must be a [literal](meta.md#literals) integer.
+`__array__[T](N)` returns a `Ptr[T]` pointing to storage for `N` elements.
+The size must be a [literal](meta.md#literals) integer and is not stored in the
+pointer, so code that needs the length can keep it separately. The returned
+pointer can be indexed directly, as above, or passed to a function accepting
+`Ptr[T]`.
+
+The storage belongs to the current function invocation. As with a pointer to
+a local variable, `arr` must not escape to code that could use it after
+the function returns; a garbage-collected buffer is a better choice when the
+storage needs to outlive that call.

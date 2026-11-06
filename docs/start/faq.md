@@ -6,12 +6,16 @@ title: Frequently asked questions
 
 ### What is Codon?
 
-Codon is a high-performance Python compiler that compiles Python code to native machine code
-without any runtime overhead. Typical speedups over Python are on the order of 10-100x or more,
-on a single thread. Codon's performance is typically on par with that of C/C++. Unlike Python,
-Codon supports native multithreading, which can lead to speedups many times higher still.
-Codon is extensible via a plugin infrastructure, which lets you incorporate new libraries,
-compiler optimizations and even keywords.
+Codon compiles Python-like programs to native machine code, with type inference
+and specialization replacing much of the work normally performed by an
+interpreter. This can substantially accelerate computation written in Python,
+while native multithreading provides another way to use the available hardware.
+The benefit depends on the workload: a loop implemented in Python and a call
+to an already optimized external library offer different opportunities.
+
+Codon still uses runtime services, including memory management and exception
+handling. It is also extensible through plugins that add libraries, compiler
+optimizations and language features.
 
 ### What isn't Codon?
 
@@ -34,33 +38,36 @@ orders of magnitude slower than its C/C++/Rust counterpart.
 
 Codon bridges the gap between Python's simplicity and ease-of-use, and the performance of low-level
 languages like C++ or Rust, by using [novel compiler and type checking techniques](https://dl.acm.org/doi/abs/10.1145/3578360.3580275)
-to statically compile code ahead-of-time, avoiding all of vanilla Python's runtime overhead and
-performance drawbacks.
+to specialize and compile code ahead of time. This makes it possible to retain
+a familiar programming style while reducing interpreter overhead in native
+portions of a program.
 
 ### How does Codon compare to...
 
 - **CPython?** Codon tries to follow CPython's syntax, semantics and APIs as
   closely as possible, aside from a few cases where Codon differs from CPython for
   performance reasons (one example being Codon's 64-bit `int` vs. CPython's arbitrary-
-  width `int`). Performance-wise, speedups over CPython are usually on the order of 10-100x.
+  width `int`). Performance gains depend on how much work is performed in native
+  Codon code rather than in I/O or external libraries.
 
 - **Numba?** While Codon does offer a JIT decorator similar to Numba's, Codon is in
   general an ahead-of-time compiler that compiles end-to-end programs to native code.
   It also supports compilation of a much broader set of Python constructs and libraries.
 
 - **PyPy?** PyPy strives to effectively be a drop-in replacement for CPython, whereas
-  Codon differs in a few places in order to eliminate any dynamic runtime or virtual
-  machine, and thereby attain much better performance.
+  Codon makes different compatibility trade-offs to compile native types ahead
+  of time. The more suitable choice depends on the application's dynamic
+  features, dependencies and performance characteristics.
 
 - **Cython?** Like Cython, Codon has a [Python-extension build mode](../integrations/python/extensions.md) that
   compiles to Python extension modules, allowing Codon-compiled code to be imported and called
   from plain Python.
 
-- **C++?** Codon often generates the same code as an equivalent C or C++ program. Codon
-  can sometimes generate *better* code than C/C++ compilers for a variety of reasons, such
-  as better container implementations, the fact that Codon does not use object files and
-  inlines all library code, or Codon-specific compiler optimizations that are not performed
-  with C or C++.
+- **C++?** Codon and C++ can produce similar native code for equivalent
+  operations. Codon can optimize across application code and native library
+  implementations, including Python-specific container and array operations.
+  Differences in algorithms, data layout and external libraries still matter
+  when comparing complete applications.
 
 - **Julia?** Codon's compilation process is actually much closer to C++ than to Julia. Julia
   is a dynamically-typed language that performs type inference as an optimization, whereas
@@ -74,7 +81,7 @@ performance drawbacks.
   and language features with respect to Python.
 
 You can see results from [Codon's benchmark suite](https://github.com/exaloop/codon/tree/develop/bench)
-suite at [exaloop.io/#benchmarks](https://exaloop.io/#benchmarks).
+at [exaloop.io/#benchmarks](https://exaloop.io/#benchmarks).
 More benchmarks can be found in the [2019 paper](https://dl.acm.org/doi/10.1145/3360551)
 on bioinformatics-specific use cases (note that the name used in that paper is that of Codon's predecessor,
 "Seq").
@@ -97,14 +104,19 @@ libraries that exist. Codon supports full interoperability with Python and C/C++
 
 ### Does Codon use garbage collection?
 
-Yes, Codon uses the [Boehm garbage collector](https://github.com/ivmai/bdwgc).
+Yes, Codon uses the [Boehm garbage collector](https://github.com/ivmai/bdwgc)
+for native managed allocations. Files and other external resources still need
+their normal cleanup; a [context manager](../language/errors.md#working-with-files)
+keeps that cleanup tied to the code using the resource. Memory borrowed from a
+C library follows the library's own ownership rules.
 
 ### Codon doesn't support Python module X or function Y.
 
 While Codon covers a sizeable subset of Python's standard library, it does not yet cover
-every function from every module. Note that missing functions can still be called through
-Python via `from python import`. Many of the functions that lack Codon-native implementations
-(e.g. I/O or OS related functions) will generally also not see substantial speedups from Codon.
+every function from every module. The [standard-library guide](../libraries/stdlib.md)
+and API reference describe native coverage. Missing functionality can often be
+called through Python via `from python import`, without moving the rest of the
+application back to Python.
 
 ### Codon is no faster than Python for my application.
 
@@ -114,8 +126,12 @@ network-bound will have the same bottlenecks in Codon.
 
 ### Codon is slower than Python for my application.
 
-Please report any cases where Codon is noticeably slower than Python as bugs on our
-[issue tracker](https://github.com/exaloop/codon/issues).
+It is worth first checking that the measurement uses release mode, excludes
+compilation when appropriate, and includes comparable inputs and results.
+The [performance guidance](usage.md#measuring-performance) discusses common
+measurement boundaries. If a representative workload remains unexpectedly
+slower, a small reproducer, version information and timings on the
+[issue tracker](https://github.com/exaloop/codon/issues) help us investigate.
 
 ## Usage
 

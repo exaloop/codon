@@ -10,17 +10,20 @@ example:
 ``` python
 # import the C standard library 'sqrt' function
 from C import sqrt(float) -> float
-print(sqrt(2.0))  # 1.41421
+print(sqrt(2.0))  # 1.4142135623730951
 ```
 
 You can also rename C-imported functions:
 
 ``` python
 # cobj is a C pointer (void*, char*, etc.)
-# None can be used to represent C's void
-from C import puts(cobj) -> None as print_line
+from C import puts(cobj) -> i32 as print_line
 print_line("hello".c_str())  # prints "hello"; c_str() converts Codon str to C string
 ```
+
+The declaration needs to match the C signature, even when the return value is
+unused: `puts()` returns a C `int`, represented by `i32`, whereas Codon's
+ordinary `int` is 64-bit. A function returning C `void` uses `-> None`.
 
 You can also add [annotations](../../language/llvm.md#annotations) such as
 `@pure` to C-imported functions by instead declaring them with the `@C`
@@ -29,11 +32,16 @@ attribute:
 ``` python
 @C
 @pure
-def sqrt(x: float) -> float:
+def abs(value: i32) -> i32:
     pass
 
-print(sqrt(2.0))  # 1.41421
+print(abs(i32(-42)))  # 42
 ```
+
+These annotations are optimizer contracts rather than runtime checks. They
+are appropriate only when the imported implementation satisfies their
+requirements; an incorrect annotation can change the behavior of optimized
+code.
 
 :::warning
 
@@ -50,18 +58,25 @@ The following table shows the conversions between Codon and C/C++ types:
 | Codon         | C/C++                                |
 | ------------- | ------------------------------------ |
 | `int`         | `int64_t`                            |
+| `i32`         | `int32_t` (also C `int` on supported platforms) |
+| `float32`     | `float`                              |
 | `float`       | `double`                             |
 | `bool`        | `bool`                               |
 | `complex`     | `{double, double}` (real and imag.)  |
 | `str`         | `{char*, int64_t}` (data and meta)   |
 | `bytes`       | `{char*, int64_t}` (data and length) |
 | `tuple`       | Struct of fields                     |
-| `class`       | Pointer to corresponding tuple       |
+| `class`       | Pointer to instance storage; layout depends on the class hierarchy |
 | `Ptr[T]`      | `T*`                                 |
 
-Note that `str`'s "meta" field encodes both length and character width
-(strings use a dynamic fixed-width encoding) where the high byte indicates
-the character width and the low 63 bytes indicate the length. Specifically:
+These are native representations, not a mapping from a Codon class to an
+arbitrary C++ class. For a stable external interface, scalar arguments and
+pointers to explicitly described buffers are usually easier to share than
+compiler-managed object layouts.
+
+`str`'s metadata encodes its character count in the low 56 bits and its
+character-storage kind in bits 56 and 57. The data is not necessarily UTF-8
+or NUL-terminated. Specifically:
 
 - `meta & ((1 << 56) - 1)` gives the string length
 - `(meta & (3 << 56)) >> 56` gives the string kind:
@@ -106,6 +121,26 @@ struct ndarray {
 ```
 
 Refer to the [NumPy documentation](../../libraries/numpy.md#array-abi) for an explanation of these fields.
+
+## Ownership and lifetime
+
+An imported function's type describes how arguments cross the ABI, but does
+not establish who owns pointed-to memory. A pointer borrowed from a Codon
+array or buffer remains valid only while its storage remains alive; if a C
+library retains the pointer after the call, the owning allocation needs a
+correspondingly long lifetime in the Codon program.
+
+Conversely, memory allocated by a C library follows that library's ownership
+contract, including any required release function. Codon's garbage-collected
+allocations should not be passed to C's `free()` merely because they are
+represented by pointers. The [pointer guide](../../language/lowlevel.md#pointers)
+distinguishes allocated buffers from pointers to local variables.
+
+For text APIs, `str.c_str()` provides a NUL-terminated UTF-8 buffer rather than
+exposing the native string layout. The pointer still needs to remain valid
+for the duration of its use, and an embedded NUL terminates a C string early.
+An API accepting a byte pointer and explicit length is more suitable for
+binary data or text that may contain NUL characters.
 
 ## Dynamic loading
 

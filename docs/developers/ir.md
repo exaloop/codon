@@ -146,7 +146,7 @@ We're regularly adding new standard passes, so this list is always growing.
 Let's look at a real example. Imagine we want to write a pass that transforms expressions
 of the form `<int const> + <int const>` into a single `<int const>` denoting the result.
 In other words, a simple form of constant folding that only looks at addition on integers.
-The resulting pass would like this:
+The resulting pass looks like this:
 
 ``` cpp
 #include "codon/cir/transform/pass.h"

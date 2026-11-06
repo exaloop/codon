@@ -25,7 +25,7 @@ Use this command to install the `codon` Python package, which can be used to
 compile functions in an existing Python codebase:
 
 ```bash
-pip install codon-jit
+python3 -m pip install codon-jit
 ```
 
 With this package installed, you can use the `@codon.jit` decorator.
@@ -83,7 +83,8 @@ the program with optimizations enabled like this:
 codon run -release fib.py
 ```
 
-Let's see what happens when we run this program using Python and Codon without optimizations[^1]:
+The following measurements illustrate the difference between Python, Codon
+debug mode and Codon release mode on an M1 MacBook Pro[^1]:
 
 | Command | Time taken (sec.) | Speedup |
 | --- | ---: | ---: |
@@ -91,6 +92,18 @@ Let's see what happens when we run this program using Python and Codon without o
 | `codon run fib.py` | 0.43 | 33$\times$ |
 | `codon run -release fib.py` | 0.31 | 46$\times$ |
 
-That's a 46$\times$ speedup from using Codon with the `-release` flag!
+These are elapsed times reported by the program around `fib(40)`, not the
+total time spent compiling and launching it. The example illustrates native
+execution and the release flag, rather than an efficient Fibonacci algorithm;
+an iterative or memoized implementation would be more suitable when the goal
+is simply to calculate the result. Performance on other workloads and machines
+will differ.
+
+The [usage guide](usage.md#measuring-performance) explains how to separate
+compilation from execution when measuring an application. From here,
+[functions and generators](../language/functions.md) provide a practical
+introduction to writing native code, while
+[Python interoperability](../integrations/python/codon-from-python.md) shows
+how to use Codon within an existing Python project.
 
 [^1]: Times were measured on an M1 MacBook Pro.

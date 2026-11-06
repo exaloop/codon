@@ -69,14 +69,14 @@ In practice, numerous translation steps are applied to the AST as well. For exam
 functions without explicit type annotations are specialized when called for the given argument types,
 a technique known as [*monomorphization*](https://en.wikipedia.org/wiki/Monomorphization).
 
-Internally, Coodn's type checker uses a modified
+Internally, Codon's type checker uses a modified
 [Hindley-Milner](https://en.wikipedia.org/wiki/Hindley–Milner_type_system) type system, adapted to handle
 various special cases relevant to Python code and semantics.
 
 Relevant code can be found in
 [`codon/parser/visitors/typecheck/`](https://github.com/exaloop/codon/tree/develop/codon/parser/visitors/typecheck).
 See also the [*CC 2023* Codon paper](https://dl.acm.org/doi/abs/10.1145/3578360.3580275) for a
-detailed overview of Coodn's type checker.
+detailed overview of Codon's type checker.
 
 
 ## Codon IR generation
@@ -131,9 +131,11 @@ class C:
     c: bool
 ```
 
-When creating an instance `C()`, under the hood a dynamic memory allocation occurs to store
-the contents of the same `{i64, double, i8}`, and return a pointer to that memory as
-the result of instantiation (after calling `C.__init__()`).
+An instance stores these fields in dynamically allocated memory and is
+represented by a pointer to that storage. This illustrates a non-polymorphic
+class's field layout; an inheritance hierarchy may require additional runtime
+type information. Object construction also initializes the fields, as
+described in the [class guide](../language/classes.md#field-initialization).
 
 There are several other LLVM types that Codon exposes, like `Ptr[T]` to
 represent a pointer to an object of type `T`. Other Python types, however,
@@ -188,16 +190,16 @@ as maintained by the LLVM lowering pass, and is where all new instructions are i
 
 2. Generate a branch to $B_\mathrm{cond}$.
 
-2. Set $B \gets B_\mathrm{cond}$ and generate code $C$ for `condition`, then generate
+3. Set $B \gets B_\mathrm{cond}$ and generate code $C$ for `condition`, then generate
    a conditional branch to $B_\mathrm{true}$ and $B_\mathrm{false}$ based on $C$.
 
-3. Set $B \gets B_\mathrm{true}$ and generate code for `true_branch`, then add a
+4. Set $B \gets B_\mathrm{true}$ and generate code for `true_branch`, then add a
    branch to $B_\mathrm{exit}$.
 
-4. Set $B \gets B_\mathrm{false}$ and generate code for `false_branch`, then add a
+5. Set $B \gets B_\mathrm{false}$ and generate code for `false_branch`, then add a
    branch to $B_\mathrm{exit}$.
 
-5. Set $B \gets B_\mathrm{exit}$.
+6. Set $B \gets B_\mathrm{exit}$.
 
 As a diagram...
 
@@ -253,7 +255,7 @@ in fact can be constructed using just `if`-`else` and `while`.
 ### `try`-`except`-`finally`
 
 `try`-`except`-`finally` is much more complex than other control flow constructs in terms
-or how it maps to LLVM IR. Exception handling itself is implemented in Codon using the
+of how it maps to LLVM IR. Exception handling itself is implemented in Codon using the
 [Itanium C++ ABI](https://itanium-cxx-abi.github.io/cxx-abi/abi-eh.html)
 for zero-cost exceptions, along with LLVM's exception handling instructions:
 (`landingpad`, `resume`, `invoke`) and specialized
@@ -293,7 +295,7 @@ def bar():
 
 When `i == 5`, we'll reach the `break` statement, *but
 the `break` needs to actually branch to the `finally` block*, otherwise the `finally`
-block would we skipped over. Now, the `finally` itself has a `continue`, which overrides
+block would be skipped over. Now, the `finally` itself has a `continue`, which overrides
 the previous `break` and resumes the loop. So, in the end, all the integers `0`...`9`
 are printed.
 

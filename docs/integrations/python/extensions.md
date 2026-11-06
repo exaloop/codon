@@ -10,6 +10,11 @@ Codon includes a build mode called `pyext` for generating
 codon build -pyext extension.codon  # add -release to enable optimizations
 ```
 
+This command produces an object file containing the extension wrappers. A
+link step is still needed to create the module that Python imports; the
+[setuptools example](#building-with-setuptools) below performs both steps and
+chooses Python's platform-specific extension filename.
+
 `codon build -pyext` accepts the following options:
 
 - `-o <output object>`: Writes the compilation result to the specified file.
@@ -187,7 +192,6 @@ class BuildCodonExt(build_ext):
             libraries=['codonrt'],
             library_dirs=ext.runtime_library_dirs,
             runtime_library_dirs=ext.runtime_library_dirs,
-            extra_preargs=['-Wl,-rpath,@loader_path'],
             debug=self.debug,
             build_temp=self.build_temp,
         )
@@ -196,7 +200,6 @@ class BuildCodonExt(build_ext):
 setup(
     name='mymodule',
     version='0.1',
-    packages=['mymodule'],
     ext_modules=[
         CodonExtension('mymodule', 'mymodule.codon'),
     ],
@@ -206,10 +209,21 @@ setup(
 
 </details>
 
-Then, we can build with:
+Place this setup script beside `mymodule.codon`, containing the Codon functions
+and types to export. This is a single extension module, so no separate
+`mymodule/` Python package directory is required. With `setuptools` installed
+in the target Python environment, build it using that interpreter:
 
 ``` bash
 python3 setup.py build_ext --inplace
 ```
 
-Finally, we can `import mymodule` in Python and use the module.
+The resulting module can be imported as `mymodule` from that directory. Its
+name should agree with the `CodonExtension` entry and generated `-module`
+argument; changing only the output filename does not rename Python's module
+initialization function.
+
+The example links against the local Codon runtime and records that runtime's
+library directory. It is a local build workflow, not a self-contained wheel:
+distributing the extension also requires arranging for compatible runtime
+libraries and Python/platform versions on the destination machine.

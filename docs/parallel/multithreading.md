@@ -31,8 +31,8 @@ for i in range(10):
 -   `schedule` (str): either *static*, *dynamic*, *guided*, *auto* or
     *runtime*
 -   `chunk_size` (int): chunk size when partitioning loop iterations
--   `ordered` (bool): whether the loop iterations should be executed in
-    the same order
+-   `ordered` (bool): enables ordered regions within the loop; code wrapped
+    with `@omp.ordered` follows iteration order, while other work can remain parallel
 -   `collapse` (int): number of loop nests to collapse into a single
     iteration space
 
@@ -40,41 +40,69 @@ Other OpenMP parameters like `private`, `shared` or `reduction`, are
 inferred automatically by the compiler. For example, the following loop
 
 ``` python
-a = 0
-@par
-for i in range(N):
-    a += foo(i)
+total = 0
+@par(num_threads=2)
+for value in range(1000):
+    total += value
+
+print(total)  # 499500
 ```
 
-will automatically generate a reduction for variable `a`.
+generates a reduction for `total`: workers accumulate partial results that
+are combined after the loop. Floating-point reductions may combine values in
+a different order from a serial loop, so their last few bits can differ even
+when the calculation is otherwise equivalent.
 
 :::warning
 
 
-Modifying shared objects like lists or dictionaries within a parallel
-section needs to be done with a lock or critical section. See below
-for more details.
+Operations that change a shared container's structure, such as appending to a
+list or inserting into a dictionary, need synchronization. Updates to the same
+element from several iterations can also race. A lock or critical section can
+protect such operations; the compiler does not automatically make arbitrary
+shared mutations thread-safe.
 
 :::
 
-Here is an example that finds the number of primes up to a
-user-defined limit, using a parallel loop on 16 threads with a dynamic
+When each iteration produces an independent result, preallocating the output
+often avoids the need for a shared append operation:
+
+``` python
+values = [3, 5, 7, 9]
+squared = [0] * len(values)
+
+@par(num_threads=2)
+for index in range(len(values)):
+    squared[index] = values[index] * values[index]
+
+print(squared)  # [9, 25, 49, 81]
+```
+
+Each iteration writes a different slot, and neither list changes size during
+the loop. The result therefore retains input order even though the iterations
+may execute in a different order.
+
+Here is an example that finds the number of primes below a
+user-defined limit, using a parallel loop on four threads with a dynamic
 schedule and chunk size of 100:
 
 ``` python
 from sys import argv
 
-def is_prime(n):
-    factors = 0
-    for i in range(2, n):
-        if n % i == 0:
-            factors += 1
-    return factors == 0
+def is_prime(number: int) -> bool:
+    if number < 2:
+        return False
+    divisor = 2
+    while divisor <= number // divisor:
+        if number % divisor == 0:
+            return False
+        divisor += 1
+    return True
 
-limit = int(argv[1])
+limit = int(argv[1]) if len(argv) > 1 else 100_000
 total = 0
 
-@par(schedule='dynamic', chunk_size=100, num_threads=16)
+@par(schedule='dynamic', chunk_size=100, num_threads=4)
 for i in range(2, limit):
     if is_prime(i):
         total += 1
@@ -82,17 +110,18 @@ for i in range(2, limit):
 print(total)
 ```
 
-Static schedules work best when each loop iteration takes roughly the
-same amount of time, whereas dynamic schedules are superior when each
-iteration varies in duration. Since counting the factors of an integer
-takes more time for larger integers, we use a dynamic schedule here.
+With the default limit, this prints `9592`. A static schedule is often a good
+starting point when iterations take similar amounts of time, while dynamic
+or guided schedules can help distribute uneven work. Here, composite numbers
+may return early while primes require more trial divisions. The best chunk
+size balances that variation against scheduling overhead.
 
 `@par` also supports C/C++ OpenMP pragma strings. For example, the
 `@par` line in the above example can also be written as:
 
 ``` python
-# same as: @par(schedule='dynamic', chunk_size=100, num_threads=16)
-@par('schedule(dynamic, 100) num_threads(16)')
+# same as: @par(schedule='dynamic', chunk_size=100, num_threads=4)
+@par('schedule(dynamic, 100) num_threads(4)')
 ```
 
 ## Loop types
@@ -206,17 +235,19 @@ or writes of the variable are local to each thread. For example:
 
 ``` python
 import threading as thr
+import openmp as omp
 
-x: thr.ThreadLocal[int] = 0
+local_value: thr.ThreadLocal[int] = 0
 lock = thr.Lock()
 
-@par
-for i in range(4):
-    x = i  # each thread writes its own thread-local 'x'
-
-@par
-for i in range(4):
+@par(num_threads=4, schedule='static')
+for value in range(4):
+    local_value = value
     with lock:
-        # Will print "Thread i: x = i" for i in 0..3
-        print(f'Thread {thr.get_native_id()}: x = {x}')
+        print(f'Worker {omp.get_thread_num()}: value = {local_value}')
 ```
+
+Each line reports the current worker and the value it stored, but the lines
+can appear in any order. Reading and writing within the same parallel region
+avoids relying on how later regions assign iterations to workers. An OpenMP
+worker number is also distinct from an operating-system thread identifier.

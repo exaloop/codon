@@ -30,6 +30,10 @@ print(llvm_add(3, 4))          # 7
 print(llvm_add(i8(5), i8(6)))  # 11
 ```
 
+The substitution chooses a type, not an instruction. This example uses the
+integer `add` instruction, so a floating-point implementation would need
+`fadd` instead.
+
 LLVM intrinsics can be accessed with `declare`:
 
 ``` python
@@ -41,6 +45,27 @@ def popcnt(n: int) -> int:
 
 print(popcnt(42))  # 3
 ```
+
+## Returning `None`
+
+An inline LLVM function returning Codon's `None` uses an empty structure as
+its LLVM return value, rather than `ret void`. For example, a helper that
+writes through a pointer can be defined as follows:
+
+``` python
+@llvm
+def store_value(pointer: Ptr[int], value: int) -> None:
+  store i64 %value, ptr %pointer, align 1
+  ret {} zeroinitializer
+
+buffer = Ptr[int](1)
+store_value(buffer, 42)
+print(buffer[0])  # 42
+```
+
+The pointer still needs to refer to writable storage for an integer; inline
+LLVM does not add bounds or lifetime checks. This function intentionally has
+no purity annotation because its store changes memory visible to the caller.
 
 ## Annotations
 
@@ -70,4 +95,9 @@ value of the function captures its arguments:
 
 - `@derives`: Return value of the function captures its arguments.
 
-These annotations are optional and do not affect program semantics.
+These annotations describe contracts that the optimizer may rely on; they do
+not add runtime checks. Correct annotations preserve the function's intended
+behavior while enabling optimizations, but an incorrect contract can cause
+operations to be removed or reordered. When a function's effects are not
+clear, leaving an annotation out is preferable to making an unsupported
+promise.

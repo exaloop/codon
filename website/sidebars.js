@@ -6,7 +6,7 @@ module.exports = {
   docs: [
     withIcon({type: 'doc', id: 'index', label: 'Overview'}, 'house'),
     withIcon(category('Get started', ['start/install', 'start/usage', 'start/options', {type: 'doc', id: 'start/faq', label: 'FAQ'}]), 'rocket'),
-    withIcon(category('Language', ['language/overview', 'language/classes', 'language/generics', 'language/meta', 'language/lowlevel', 'language/llvm']), 'code-xml'),
+    withIcon(category('Language', ['language/overview', 'language/functions', 'language/classes', 'language/generics', 'language/errors', 'language/meta', 'language/lowlevel', 'language/llvm']), 'code-xml'),
     withIcon(category('Libraries', ['libraries/stdlib', 'libraries/numpy', {type: 'doc', id: 'libraries/api/index', label: 'API reference'}]), 'library'),
     withIcon(category('Integrations', [
       category('Python', ['integrations/python/python-from-codon', 'integrations/python/codon-from-python', 'integrations/python/extensions']),

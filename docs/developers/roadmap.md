@@ -2,25 +2,28 @@
 title: Roadmap
 ---
 
-Codon's goal is to be as close to CPython as possible while still
-being fully statically compilable. While Codon already supports
-much of Python, there is still much to be done to fully realize
-its potential. Here is a high-level roadmap of the features we
-want to implement or explore.
+Codon's development balances Python compatibility with native compilation and
+the opportunities it creates for optimization and parallel execution. This
+page outlines areas for further work, rather than a release schedule or a
+commitment to a particular implementation.
+
+Several capabilities from earlier roadmaps are now available, including
+Unicode strings, native NumPy, `async`/`await`, and native `os`, `sys`,
+`pathlib` and `unittest` modules. The [language overview](../language/overview.md)
+and [standard-library guide](../libraries/stdlib.md) describe current behavior;
+the [release notes](../start/changelog.md) record changes between versions.
 
 ## Core features
 
 - Parallelism
 
-    - `async`/`await` support
     - `multiprocessing` support
     - Automatic locking in parallel code (e.g. if mutating a
     data structure shared between threads)
     - Race detection
 
-- Compatibility with Python 3.10+:
-    - Argument separators (`/` and `*`)
-    - Constructor object matching in the `match` statement
+- Broader Python syntax and object-model compatibility:
+    - Extend pattern-matching coverage
     - Support accessing various object properties (`__dict__`, `__slots__`
       etc.) as much as possible in Codon's static context
 
@@ -53,35 +56,29 @@ want to implement or explore.
 
 ## Libraries
 
-Currently, missing Python functionality can be easily accessed via a
-[`from python import` statement](../integrations/python/python-from-codon.md),
-which is sufficient in most cases as many libraries are just thin wrappers
-around a C library and/or not performance-sensitive.
-
-However, we would like to support the following modules natively:
+Python interoperability provides access to libraries that are not implemented
+natively, while native implementations can participate more directly in
+Codon's optimizations and parallel execution. Further library work includes:
 
 - Python's standard library
     - Complete builtins support
     - 1-to-1 compatibility with existing Python functions and modules
-    - File modules: `os`, `sys`, `struct`, `pathlib` and so on
-    - Pretty much everything else on an as-needed basis
+        - Remaining modules such as `struct`, and missing APIs within existing modules
+        - Additional coverage driven by application requirements
 
-- Native NumPy, Pandas, etc.: Having Codon-native versions of the most
-  popular 3rd-party libraries would allow them to work with Codon's
-  other features like multithreading and GPU. We're currently prioritizing
-  NumPy and Pandas but aim to later target other popular libraries as well.
-    - **As of Codon 0.18, NumPy is natively supported!**
+- Further NumPy compatibility and optimization, building on the existing
+    native implementation
 
-- Unicode support
-    - **As of Codon 0.20, unicode is fully supported!**
+- Native implementations of additional third-party libraries, including
+    dataframe-oriented functionality
 
-- Python's testing infrastructure
+- Broader compatibility with Python's testing infrastructure
 
 ## Infrastructure & Tools
 
 - Windows support
 
-- A sane package manager similar to Rust's
+- A package-management workflow similar to Rust's
   [Cargo](https://github.com/rust-lang/cargo)
 
 - Auto-detection of installed Python libraries
@@ -98,7 +95,7 @@ However, we would like to support the following modules natively:
     - Auto-completion and code inspection
     - Jupyter magic command support
 
-- Plugins for Visual Studio Code, Vim, Emacs and so on
+- Improved editor integration, including diagnostics and code navigation
 
 ## Nice to have
 

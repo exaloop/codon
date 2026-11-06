@@ -94,7 +94,7 @@ hide_table_of_contents: true
 <div class="doc-discover">
   <section class="doc-start" aria-labelledby="goals">
     <div>
-      <p class="doc-eyebrow">YOUR NEXT STEP</p>
+      <p class="doc-eyebrow">GET STARTED</p>
       <h2 id="goals">Build your first native program.</h2>
       <p class="doc-section-intro">Keep the Python syntax you know. Compile to native machine code, run across cores, and connect to the Python ecosystem.</p>
     </div>

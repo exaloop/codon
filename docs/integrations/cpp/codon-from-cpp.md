@@ -21,7 +21,7 @@ can create a shared library containing `foo` (assuming source file
 `foo.codon`):
 
 ``` bash
-codon build --relocation-model=pic --lib -o libfoo.so foo.codon
+codon build -release --relocation-model=pic --lib -o libfoo.so foo.codon
 ```
 
 Now we can call `foo` from a C program (if you're using C++, mark the
@@ -36,24 +36,27 @@ int64_t foo(int64_t);
 // extern "C" int64_t foo(int64_t);
 
 int main() {
-  printf("%llu\n", foo(10));
+  printf("%lld\n", (long long)foo(10));
+  return 0;
 }
 ```
 
 Compile:
 
 ``` bash
-gcc -o foo -L. -lfoo foo.c  # or g++ if using C++
+cc foo.c -L. -lfoo -Wl,-rpath,"$PWD" -o foo
 ```
 
-Now running `./foo` will invoke `foo()` as defined in Codon, with an
-argument of `10`.
+Running `./foo` invokes the Codon function with an argument of `10`, printing
+the squares from `0` through `81` and then its return value, `100`. A C++
+caller can use `c++` with the `extern "C"` declaration shown above.
 
-Note that if the generated shared library is in a non-standard path, you
-can either:
-
-- Add the `rpath` to the `gcc` command: `-Wl,-rpath=/path/to/lib/dir`
-- Add the library path to `LD_LIBRARY_PATH` (or `DYLD_LIBRARY_PATH` if
-  using macOS): `export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/path/to/lib/dir`.
+The link command places the caller before `-lfoo`, which matters on linkers
+that resolve libraries in command-line order. Its rpath points to the current
+directory so the example can locate `libfoo.so` when run. A deployed
+application should instead use its intended library location and include the
+Codon runtime dependencies required by the generated library. Library search
+paths can also be configured with `LD_LIBRARY_PATH` on Linux or
+`DYLD_LIBRARY_PATH` on macOS.
 
 Type conversions between Codon and C/C++ are detailed [here](cpp-from-codon.md#type-conversions).
