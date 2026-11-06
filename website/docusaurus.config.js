@@ -6,7 +6,7 @@ module.exports = async function config() {
   const {default: rehypeKatex} = await import('rehype-katex');
   return {
     title: 'Codon',
-    tagline: 'High-performance Python, compiled to native code.',
+    tagline: 'Python simplicity, native performance.',
     url: 'https://docs.exaloop.io',
     baseUrl: '/',
     trailingSlash: true,
@@ -63,10 +63,11 @@ module.exports = async function config() {
         ],
       },
       footer: {
+        logo: {alt: 'Codon', src: 'img/codon.svg', srcDark: 'img/codon-white.svg', href: '/', width: 180, height: 43},
         links: [
-          {title: 'Codon', items: [{label: 'Installation', to: '/start/install/'}, {label: 'Language guide', to: '/language/overview/'}, {label: 'API reference', to: '/libraries/api/'}]},
-          {title: 'Resources', items: [{label: 'Labs', to: '/labs/'}, {label: 'Releases', to: '/start/changelog/'}, {label: 'Exaloop Platform', href: 'https://platform.exaloop.io'}]},
-          {title: 'Community', items: [{label: 'GitHub', href: 'https://github.com/exaloop/codon'}, {label: 'Discord', href: 'https://discord.gg/HeWRhagCmP'}, {label: 'Blog', href: 'https://exaloop.io/blog'}]},
+          {title: 'Learn', items: [{label: 'Installation', to: '/start/install/'}, {label: 'Language guide', to: '/language/overview/'}, {label: 'API reference', to: '/libraries/api/'}]},
+          {title: 'Explore', items: [{label: 'Labs', to: '/labs/'}, {label: 'Releases', to: '/start/changelog/'}, {label: 'Blog', href: 'https://exaloop.io/blog'}]},
+          {title: 'Project', items: [{label: 'Source code', href: 'https://github.com/exaloop/codon'}, {label: 'Contributing', to: '/developers/contribute/'}, {label: 'Exaloop Platform', href: 'https://platform.exaloop.io'}]},
         ],
         copyright: 'Copyright &copy; 2026 Exaloop, Inc.',
       },

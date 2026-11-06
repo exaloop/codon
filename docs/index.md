@@ -7,7 +7,7 @@ hide_table_of_contents: true
 ---
 
 <header class="doc-intro">
-  <p class="doc-kicker">PYTHON, COMPILED</p>
+  <p class="doc-kicker">Python simplicity, native performance.</p>
   <h1 class="codon-logo-heading" aria-label="Codon"><img class="codon-wordmark-light" src="/img/codon.svg" width="498" height="119" alt="" loading="eager" /><img class="codon-wordmark-dark" src="/img/codon-white.svg" width="498" height="119" alt="" loading="eager" /></h1>
   <p>A high-performance Python implementation that compiles to native machine code, with native multithreading and seamless Python interoperability.</p>
 </header>

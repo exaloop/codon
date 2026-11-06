@@ -22,6 +22,7 @@
     "@docusaurus/theme-mermaid": "3.10.2",
     "@easyops-cn/docusaurus-search-local": "0.55.3",
     "@exaloop/theme": "file:vendor/exaloop-theme-0.1.0.tgz",
+    "@fortawesome/free-brands-svg-icons": "7.1.0",
     "@mermaid-js/layout-elk": "0.1.9",
     "katex": "0.16.22",
     "lucide": "1.54.0",
