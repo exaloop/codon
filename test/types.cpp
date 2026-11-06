@@ -1053,6 +1053,58 @@ TEST(JITRTTITest, PropagatesNativeExceptionsAcrossEntryBoundary) {
   }
 }
 
+TEST(JITRTTITest, PreservesFunctionValuesAcrossCells) {
+  for (bool debug : {false, true}) {
+    SCOPED_TRACE(debug ? "debug" : "release");
+    auto options = codon::Options::getDefault("build/codon_test");
+    options->jit = true;
+    options->debug = debug;
+    options->capture = true;
+    codon::jit::JIT instance(*options);
+    auto error = instance.init();
+    ASSERT_FALSE(bool(error)) << llvm::toString(std::move(error));
+    auto first = instance.execute(R"(
+@noinline
+def local_pair(value: Tuple[i32, i32]) -> Tuple[i32, i32]:
+    return (value[1], value[0])
+@export
+def exported_pair(value: Tuple[i32, i32]) -> Tuple[i32, i32]:
+    return (value[0] + i32(1), value[1] + i32(1))
+@export
+@llvm
+def exported_llvm(value: int) -> int:
+    ret i64 %value
+@noinline
+def apply_pair(fn: Function[[Tuple[i32, i32]], Tuple[i32, i32]],
+               value: Tuple[i32, i32]) -> Tuple[i32, i32]:
+    return fn(value)
+saved: Function[[Tuple[i32, i32]], Tuple[i32, i32]] = local_pair
+saved_export: Function[[Tuple[i32, i32]], Tuple[i32, i32]] = exported_pair
+saved_llvm: Function[[int], int] = exported_llvm
+pair = (i32(12), i32(34))
+assert apply_pair(saved, pair) == (i32(34), i32(12))
+assert apply_pair(saved_export, pair) == (i32(13), i32(35))
+assert saved_llvm(42) == 42
+print('first')
+)");
+    ASSERT_TRUE(bool(first)) << llvm::toString(first.takeError());
+    EXPECT_EQ(*first, "first\n");
+    auto second = instance.execute(R"(
+again: Function[[Tuple[i32, i32]], Tuple[i32, i32]] = local_pair
+again_export: Function[[Tuple[i32, i32]], Tuple[i32, i32]] = exported_pair
+again_llvm: Function[[int], int] = exported_llvm
+assert apply_pair(again, pair) == local_pair(pair)
+assert apply_pair(again_export, pair) == exported_pair(pair)
+assert apply_pair(saved, pair) == (i32(34), i32(12))
+assert apply_pair(saved_export, pair) == (i32(13), i32(35))
+assert again_llvm(73) == 73 and saved_llvm(42) == 42
+print('second')
+)");
+    ASSERT_TRUE(bool(second)) << llvm::toString(second.takeError());
+    EXPECT_EQ(*second, "second\n");
+  }
+}
+
 TEST(JITRTTITest, RefreshesAnyValueCallbacksAcrossCells) {
   for (bool debug : {false, true}) {
     auto options = codon::Options::getDefault("build/codon_test");

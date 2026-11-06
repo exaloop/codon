@@ -274,18 +274,10 @@ llvm::Function *LLVMVisitor::getFunc(const Func *func) {
         if (auto *g = M->getFunction(name))
           return g;
 
-        auto *funcType = cast<FuncType>(func->getType());
-        auto *returnType = getLLVMType(funcType->getReturnType());
-        std::vector<llvm::Type *> argTypes;
-        for (const auto &argType : *funcType) {
-          argTypes.push_back(getLLVMType(argType));
-        }
-
-        auto *llvmFuncType =
-            llvm::FunctionType::get(returnType, argTypes, funcType->isVariadic());
-        auto *g = llvm::Function::Create(llvmFuncType, llvm::Function::ExternalLinkage,
-                                         name, M.get());
-        insertFunc(func, g);
+        // Reuse native import signatures, without re-emitting earlier LLVM
+        // bodies or attaching their definition's debug metadata to a declaration.
+        auto *g = makeLLVMFunction(func, /*declarationOnly=*/true);
+        funcs[func->getId()] = g;
         return g;
       }
     } else {
@@ -349,6 +341,7 @@ void LLVMVisitor::clearLLVMData() {
   virtualTargets.clear();
   functionNames.clear();
   functionNameCounts.clear();
+  winCallbacks.clear();
 
   for (auto it = funcs.begin(); it != funcs.end();) {
     if (it->second && it->second->hasPrivateLinkage()) {
@@ -1698,14 +1691,16 @@ bool LLVMVisitor::needsWinExportWrapper(const Func *function) {
          !isA<ExternalFunc>(function) && !util::isGPUKernel(function);
 }
 
-void LLVMVisitor::makeWinExportWrapper(llvm::StringRef name, llvm::Function *body) {
+llvm::Function *LLVMVisitor::makeWinExportWrapper(llvm::StringRef name,
+                                                  llvm::Function *body,
+                                                  bool exported) {
   auto *signature = body->getFunctionType();
   auto *wrapper = llvm::cast<llvm::Function>(M->getOrInsertFunction(
       name, winABISignature(M.get(), signature)).getCallee());
-  if (!options->jit)
+  if (exported && !options->jit)
     wrapper->setDLLStorageClass(llvm::GlobalValue::DLLExportStorageClass);
   if (!wrapper->empty())
-    return;
+    return wrapper;
   wrapper->addFnAttr("codon-abi-body", body->getName());
   auto *entry = llvm::BasicBlock::Create(*context, "entry", wrapper);
   llvm::IRBuilder<> builder(entry);
@@ -1731,6 +1726,33 @@ void LLVMVisitor::makeWinExportWrapper(llvm::StringRef name, llvm::Function *bod
   } else {
     builder.CreateRet(winABIEncode(M.get(), builder, result, true));
   }
+  return wrapper;
+}
+
+llvm::Function *LLVMVisitor::getFunctionValue(const Func *function) {
+  auto *body = getFunc(function);
+  if (!body || !isWinMSVC(M.get()) || isA<ExternalFunc>(function) ||
+      util::isGPUKernel(function))
+    return body;
+  bool exported = needsWinExportWrapper(function);
+  if (!exported && winABISignature(M.get(), body->getFunctionType()) ==
+                       body->getFunctionType())
+    return body;
+  // An earlier JIT cell already emitted an exported function's native wrapper.
+  if (options->jit && exported && body->isDeclaration())
+    return llvm::cast<llvm::Function>(M->getOrInsertFunction(
+        getNameForFunction(function), winABISignature(M.get(), body->getFunctionType()))
+                                         .getCallee());
+  if (auto found = winCallbacks.find(body); found != winCallbacks.end())
+    return found->second;
+  auto *wrapper = makeWinExportWrapper((body->getName() + ".c_callback").str(),
+                                       body, false);
+  // JIT cells can take the same function's address repeatedly. Weak definitions
+  // give it one stable native entry point without changing internal body calls.
+  wrapper->setLinkage(options->jit ? llvm::GlobalValue::WeakODRLinkage
+                                    : llvm::GlobalValue::PrivateLinkage);
+  winCallbacks.emplace(body, wrapper);
+  return wrapper;
 }
 
 void LLVMVisitor::prepareWinExports() {
@@ -1747,7 +1769,16 @@ void LLVMVisitor::prepareWinExports() {
     body->setLinkage(options->jit ? llvm::GlobalValue::ExternalLinkage
                                   : llvm::GlobalValue::PrivateLinkage);
     body->setDLLStorageClass(llvm::GlobalValue::DefaultStorageClass);
-    makeWinExportWrapper(name, body);
+    if (auto callback = winCallbacks.find(body); callback != winCallbacks.end()) {
+      auto *wrapper = callback->second;
+      wrapper->setName(name);
+      wrapper->setLinkage(llvm::GlobalValue::ExternalLinkage);
+      wrapper->addFnAttr("codon-abi-body", body->getName());
+      if (!options->jit)
+        wrapper->setDLLStorageClass(llvm::GlobalValue::DLLExportStorageClass);
+    } else {
+      makeWinExportWrapper(name, body);
+    }
   }
 }
 
@@ -2165,9 +2196,9 @@ llvm::DISubprogram *LLVMVisitor::getDISubprogramForFunc(const Func *x) {
   return subprogram;
 }
 
-llvm::Function *LLVMVisitor::makeLLVMFunction(const Func *x) {
+llvm::Function *LLVMVisitor::makeLLVMFunction(const Func *x, bool declarationOnly) {
   // process LLVM functions in full immediately
-  if (auto *llvmFunc = cast<LLVMFunc>(x)) {
+  if (auto *llvmFunc = cast<LLVMFunc>(x); llvmFunc && !declarationOnly) {
     auto *oldFunc = func;
     process(llvmFunc);
     setDebugInfoForNode(nullptr);
@@ -2197,7 +2228,7 @@ llvm::Function *LLVMVisitor::makeLLVMFunction(const Func *x) {
                                           returnType));
   if (needsWinExportWrapper(x))
     f->addFnAttr("codon-c-export", getNameForFunction(x));
-  if (!isExternal) {
+  if (!isExternal && !declarationOnly) {
     f->setSubprogram(getDISubprogramForFunc(x));
   }
   return f;
@@ -2317,9 +2348,9 @@ void LLVMVisitor::visit(const LLVMFunc *x) {
     return;
 
   if (isWinMSVC(M.get()) && util::hasAttribute(x, LLVM_C_CALL_ATTR)) {
-    // dlsym yields a C pointer, while Function normally uses Codon's aggregate
-    // ABI. Keep the adapter's public signature native and marshal its indirect
-    // call just like a direct ExternalFunc call.
+    // Function values and dlsym pointers use C-compatible entry points. Keep the
+    // generated adapter's logical signature and marshal its indirect call just
+    // like a direct ExternalFunc call.
     auto *signature = getLLVMFuncType(x->getType());
     func = llvm::Function::Create(signature, llvm::GlobalValue::PrivateLinkage,
                                   getLLVMNameForFunction(x), M.get());
@@ -2603,7 +2634,7 @@ void LLVMVisitor::visit(const Var *x) { seqassertn(0, "cannot visit var"); }
 
 void LLVMVisitor::visit(const VarValue *x) {
   if (auto *f = cast<Func>(x->getVar())) {
-    value = getFunc(f);
+    value = getFunctionValue(f);
     seqassertn(value, "{} value not found", *x);
   } else {
     auto *llvmType = getLLVMType(x->getType());
@@ -4001,8 +4032,17 @@ void LLVMVisitor::visit(const CallInstr *x) {
       return;
     }
   }
-  process(x->getCallee());
-  auto *f = value;
+  // Function values use native entry points on Win64. A direct Codon call keeps
+  // the logical signature, so do not lower its callee as a first-class value.
+  auto *direct = util::getFunc(x->getCallee());
+  llvm::Value *f;
+  if (direct) {
+    f = getFunc(direct);
+  } else {
+    process(x->getCallee());
+    f = value;
+  }
+  bool nativeIndirect = !direct;
   auto *funcType = getLLVMFuncType(x->getCallee()->getType());
   std::vector<std::pair<int64_t, llvm::Function *>> targets;
   llvm::Value *dynamicId = nullptr;
@@ -4069,6 +4109,7 @@ void LLVMVisitor::visit(const CallInstr *x) {
           if (singleton) {
             // Different concrete classes can share one implementation.
             f = targets.front().second;
+            nativeIndirect = false;
             targets.clear();
           } else {
             // For make_obj().method(side_effect()), the callee flow has already
@@ -4135,7 +4176,8 @@ void LLVMVisitor::visit(const CallInstr *x) {
   }
 
   auto *callee = util::getFunc(x->getCallee());
-  const bool winABI = callee && isA<ExternalFunc>(callee) && isWinMSVC(M.get());
+  const bool winABI = isWinMSVC(M.get()) &&
+                      (nativeIndirect || (callee && isA<ExternalFunc>(callee)));
   if (winABI) {
     B->SetInsertPoint(block);
     auto *result = winABICall(M.get(), *B, f, funcType, args,
@@ -4564,7 +4606,9 @@ llvm::GlobalVariable *LLVMVisitor::getRuntimeTypeInfo(Type *type) {
                                         llvm::Constant::getNullValue(methodSlotType));
   std::vector<bool> occupied(methodCount);
   for (const auto &[id, target] : info->methods) {
-    auto *function = getFunc(target);
+    // These pointers can be called both by virtual CallInstrs and by Function
+    // values (the erased Any adapters). Keep one ABI for both lookup paths.
+    auto *function = getFunctionValue(target);
     seqassertn(function, "missing dispatch target {}", target->getName());
     seqassertn(id, "zero is reserved for empty method slots");
     auto position = runtime::methodHash(id) & (methodCount - 1);

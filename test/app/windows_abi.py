@@ -34,7 +34,11 @@ def check(compiler, root, mode, env, runtime_env):
         if name == 'i8':
             terms = ['((int64_t)x.a)', '1000 * ((int64_t)x.b)']
         declarations.append(f'__declspec(dllexport) {result_type} score_{name}({ctype} x) {{ return ' + ' + '.join(terms) + '; }')
+        declarations.append(f'__declspec(dllexport) {result_type} score_callback_{name}({result_type} (*fn)({ctype}), {ctype} x) {{ return fn(x); }}')
         declarations.append(f'__declspec(dllexport) {ctype} bump_{name}({ctype} x) {{ ' + ''.join(f'x.{field} += 1;' for field in fields) + ' return x; }')
+        declarations.append(f'__declspec(dllexport) {ctype} callback_{name}({ctype} (*fn)({ctype}), {ctype} x) {{ return fn(x); }}')
+        declarations.append(f'typedef {ctype} (*Fn_{name})({ctype});')
+        declarations.append(f'__declspec(dllexport) Fn_{name} get_bump_{name}(void) {{ return bump_{name}; }}')
         program += [f'from C import score_{name}({ty}) -> {"float" if floating else "int"}',
                     f'from C import bump_{name}({ty}) -> {ty}',
                     f'value_{name} = {tup(values)}',
@@ -44,15 +48,56 @@ def check(compiler, root, mode, env, runtime_env):
                     f'assert indirect_{name}(value_{name}) == {tup([v + 1 for v in values])}',
                     '@export', f'def echo_{name}(value: {ty}) -> {ty}:', '    return value']
         exported.append(f'echo_{name}')
-        program += ['@export', f'def try_bump_{name}(x: {ty}) -> {ty}:',
-                    '    try:', f'        return bump_{name}(x)',
-                    '    except ValueError:', '        return x',
-                    f'assert try_bump_{name}(value_{name}) == {tup([v + 1 for v in values])}']
+        score_type = 'float' if floating else 'int'
+        expected_score = 34012 if name == 'i8' else sum(values)
+        score_terms = [f'{score_type}(x[{i}])' for i in range(len(types))]
+        if name == 'i8':
+            score_terms[1] = '1000 * ' + score_terms[1]
+        program += [
+            f'from C import score_callback_{name}(Function[[{ty}], {score_type}], {ty}) -> {score_type}',
+            '@noinline',
+            f'def apply_score_{name}(fn: Function[[{ty}], {score_type}], x: {ty}) -> {score_type}:',
+            '    return fn(x)',
+            f'native_score_{name}: Function[[{ty}], {score_type}] = score_{name}',
+            f'assert apply_score_{name}(native_score_{name}, value_{name}) == {expected_score!r}',
+            '@export', f'def exported_score_{name}(x: {ty}) -> {score_type}:',
+            '    return ' + ' + '.join(score_terms),
+            f'assert score_callback_{name}(exported_score_{name}, value_{name}) == {expected_score!r}',
+            f'from C import callback_{name}(Function[[{ty}], {ty}], {ty}) -> {ty}',
+            f'from C import get_bump_{name}() -> Function[[{ty}], {ty}]',
+            '@noinline',
+            f'def apply_{name}(fn: Function[[{ty}], {ty}], x: {ty}) -> {ty}:',
+            '    return fn(x)',
+            '@noinline', f'def local_echo_{name}(x: {ty}) -> {ty}:', '    return x',
+            f'native_{name}: Function[[{ty}], {ty}] = bump_{name}',
+            f'assert apply_{name}(native_{name}, value_{name}) == {tup([v + 1 for v in values])}',
+            f'assert apply_{name}(get_bump_{name}(), value_{name}) == {tup([v + 1 for v in values])}',
+            f'assert callback_{name}(native_{name}, value_{name}) == {tup([v + 1 for v in values])}',
+            f'assert apply_{name}(echo_{name}, value_{name}) == value_{name}',
+            f'assert apply_{name}(local_echo_{name}, value_{name}) == value_{name}',
+            f'assert callback_{name}(echo_{name}, value_{name}) == value_{name}',
+            f'assert callback_{name}(local_echo_{name}, value_{name}) == value_{name}',
+            '@noinline',
+            f'def choose_{name}(exported: bool) -> Function[[{ty}], {ty}]:',
+            f'    public: Function[[{ty}], {ty}] = echo_{name}',
+            f'    local: Function[[{ty}], {ty}] = local_echo_{name}',
+            '    return public if exported else local',
+            'for exported_callback in (False, True):',
+            f'    selected_{name} = choose_{name}(exported_callback)',
+            f'    assert apply_{name}(selected_{name}, value_{name}) == value_{name}',
+            f'    assert callback_{name}(selected_{name}, value_{name}) == value_{name}',
+            '@export', f'def try_bump_{name}(x: {ty}) -> {ty}:',
+            '    try:', f'        return bump_{name}(x)',
+            '    except ValueError:', '        return x',
+            f'assert try_bump_{name}(value_{name}) == {tup([v + 1 for v in values])}',
+        ]
         client += ['{', f'{ctype} value = {{0}};',
                    *(f'value.{field} = {v!r};' for field, v in zip(fields, values)),
                    f'{ctype} (*call)({ctype}) = ({ctype} (*)({ctype}))GetProcAddress(module, "echo_{name}");',
                    f'if (!call) return 2; {ctype} result = call(value);',
-                   *(f'if (result.{field} != value.{field}) return 3;' for field in fields), '}']
+                   *(f'if (result.{field} != value.{field}) return 3;' for field in fields),
+                   f'{result_type} (*score)({ctype}) = ({result_type} (*)({ctype}))GetProcAddress(module, "exported_score_{name}");',
+                   f'if (!score || score(value) != {expected_score!r}) return 4;', '}']
     client += ['return 0;', '}']
     program += ['from C import seq_locale_decimal_point() -> str',
                 '@export', 'def try_decimal_point() -> int:',
