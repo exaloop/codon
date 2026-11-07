@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "codon/cir/llvm/llvm.h"
 #include "codon/cir/util/format.h"
 #include "codon/compiler/compiler.h"
 #include "codon/compiler/error.h"
@@ -19,8 +20,6 @@
 #include "codon/parser/common.h"
 #include "codon/util/common.h"
 #include "codon/util/jupyter.h"
-#include "llvm/Support/CommandLine.h"
-#include "llvm/Support/FileSystem.h"
 
 namespace {
 void versMsg(llvm::raw_ostream &out) {
@@ -318,6 +317,9 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
       "l", llvm::cl::desc("Link the specified library (only for executables)"));
   llvm::cl::opt<std::string> lflags("linker-flags",
                                     llvm::cl::desc("Pass given flags to linker"));
+  llvm::cl::opt<bool> pie("pie",
+                          llvm::cl::desc("Generate a position-independent executable"),
+                          llvm::cl::init(false));
   llvm::cl::opt<BuildKind> buildKind(
       llvm::cl::desc("output type"),
       llvm::cl::values(
@@ -346,6 +348,11 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
   if (!compiler)
     return EXIT_FAILURE;
   std::vector<std::string> libsVec(libs);
+  if (pie) {
+    if (buildKind != BuildKind::Detect && buildKind != BuildKind::Executable)
+      codon::compilationError("--pie requires executable output");
+    buildKind = BuildKind::Executable;
+  }
 
   if (output.empty() && compiler->getInput() == "-")
     codon::compilationError("output file must be specified when reading from stdin");
@@ -395,7 +402,8 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
     break;
   case BuildKind::Executable:
     compiler->getLLVMVisitor()->writeToExecutable(filename, argv0, false, libsVec,
-                                                  lflags);
+                                                  pie ? lflags.getValue() + " -pie"
+                                                      : lflags.getValue());
     break;
   case BuildKind::Library:
     compiler->getLLVMVisitor()->writeToExecutable(filename, argv0, true, libsVec,

@@ -297,16 +297,12 @@ void CloneVisitor::visit(const CallInstr *v) {
   std::vector<Value *> args;
   for (const auto *a : *v)
     args.push_back(clone(a));
-  result = module->N<CallInstr>(v, clone(v->getCallee()), std::move(args), v->getName(),
-                                v->getThunkID());
+  result =
+      module->N<CallInstr>(v, clone(v->getCallee()), std::move(args), v->getName());
 }
 
 void CloneVisitor::visit(const StackAllocInstr *v) {
   result = Nt(v, v->getPtrType(), v->getCount());
-}
-
-void CloneVisitor::visit(const TypePropertyInstr *v) {
-  result = Nt(v, v->getInspectType(), v->getProperty());
 }
 
 void CloneVisitor::visit(const YieldInInstr *v) {

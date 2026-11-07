@@ -74,8 +74,29 @@ void TypecheckVisitor::visit(IfExpr *expr) {
                                  ->getStatic()
                                  ->getNonStaticType()
                                  ->shared_from_this());
-  wrapExpr(&expr->elsexpr, expr->getIf()->getType(), nullptr, /*allowUnwrap*/ false);
-  wrapExpr(&expr->ifexpr, expr->getElse()->getType(), nullptr, /*allowUnwrap*/ false);
+  // Select the same nullable target as explicit returns, then coerce each branch once.
+  auto nullable =
+      joinNullableTypes(expr->getIf()->getType(), expr->getElse()->getType());
+  wrapExpr(&expr->elsexpr, nullable ? nullable.get() : expr->getIf()->getType(),
+           nullptr,
+           /*allowUnwrap*/ false);
+  wrapExpr(&expr->ifexpr, nullable ? nullable.get() : expr->getElse()->getType(),
+           nullptr,
+           /*allowUnwrap*/ false);
+
+  // Types not compatible! Check if an union can be made
+  if (expr->getIf()->getType()->unify(expr->getElse()->getType(), nullptr) < 0 &&
+      expr->getExpectedType() && expr->getExpectedType()->is(StdlibTypes::Union)) {
+    if (!expr->getIf()->getType()->canRealize() ||
+        !expr->getElse()->getType()->canRealize())
+      return;
+    auto T = N<InstantiateExpr>(
+        N<IdExpr>(StdlibTypes::Union),
+        std::vector<Expr *>{N<IdExpr>(expr->getIf()->getType()->realizedName()),
+                            N<IdExpr>(expr->getElse()->getType()->realizedName())});
+    expr->ifexpr = transform(N<CallExpr>(T, expr->getIf()));
+    expr->elsexpr = transform(N<CallExpr>(clone(T), expr->getElse()));
+  }
 
   // Types not compatible! Check if an union can be made
   if (expr->getIf()->getType()->unify(expr->getElse()->getType(), nullptr) < 0 &&
@@ -324,10 +345,17 @@ Stmt *TypecheckVisitor::transformPattern(Expr *var, Expr *pattern, Stmt *suite) 
         const auto &arg = (*call)[it];
         if (arg.getName().empty())
           E(Error::CUSTOM, arg.getExpr(), "expected a keyword class pattern");
+        auto attribute = getTemporaryVar("match_attr");
         suite = N<IfStmt>(
             N<CallExpr>(N<IdExpr>("hasattr"), clone(var), N<StringExpr>(arg.getName())),
-            transformPattern(N<DotExpr>(clone(var), arg.getName()), arg.getExpr(),
-                             suite));
+            N<TryStmt>(N<AssignStmt>(N<IdExpr>(attribute),
+                                     N<DotExpr>(clone(var), arg.getName())),
+                       std::vector<ExceptStmt *>{N<ExceptStmt>(
+                           "",
+                           N<IdExpr>(getMangledClass("std.internal.types.error",
+                                                     "AttributeError")),
+                           N<SuiteStmt>())},
+                       transformPattern(N<IdExpr>(attribute), arg.getExpr(), suite)));
       }
       // Param.type and other AST fields are optional.
       // Unwrap only a non-None optional and keep Any subjects on their RTTI path.

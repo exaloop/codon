@@ -166,6 +166,7 @@ template <typename T> std::remove_const_t<T> *clean_clone(T *t) {
 template <typename T>
 std::vector<std::remove_const_t<T>> clone(const std::vector<T> &t, bool clean = false) {
   std::vector<std::remove_const_t<T>> v;
+  v.reserve(t.size());
   for (auto &i : t)
     v.push_back(clone(i, clean));
   return v;

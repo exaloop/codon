@@ -4,9 +4,7 @@
 
 #include <sstream>
 
-#include "llvm/Support/JSON.h"
-#include "llvm/TargetParser/Host.h"
-
+#include "codon/cir/llvm/llvm.h"
 #include "codon/parser/common.h"
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/doc/doc.h"

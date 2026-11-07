@@ -4,3 +4,35 @@
 @no_arg_reorder
 def partial():  # internal
     pass
+
+@tuple
+class _CmpKey:
+    obj: T
+    cmp: F
+    T: type
+    F: type
+
+    def __hash__(self) -> int:
+        compile_error("unhashable type: '_CmpKey'")
+
+    def __lt__(self, other):
+        return self.cmp(self.obj, other.obj) < 0
+
+    def __le__(self, other):
+        return self.cmp(self.obj, other.obj) <= 0
+
+    def __eq__(self, other):
+        return self.cmp(self.obj, other.obj) == 0
+
+    def __ne__(self, other):
+        return self.cmp(self.obj, other.obj) != 0
+
+    def __gt__(self, other):
+        return self.cmp(self.obj, other.obj) > 0
+
+    def __ge__(self, other):
+        return self.cmp(self.obj, other.obj) >= 0
+
+
+def cmp_to_key(mycmp):
+    return lambda obj: _CmpKey(obj, mycmp)

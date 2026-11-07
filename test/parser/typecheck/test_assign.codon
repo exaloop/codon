@@ -8,6 +8,36 @@ b: float = 6.16
 c: Optional[str] = None
 print(a, b, c)  #: 5 6.16 None
 
+#%% annotated_uninitialized_reads
+# An annotation does not initialize a binding; reads use the same NameError guard
+# as assignments that may be skipped by conditional control flow.
+values: list[int]
+try:
+    print(values)
+except NameError:
+    print('uninitialized global')  #: uninitialized global
+values = [1]
+assert values == [1]
+
+def initialized_later(flag: bool):
+    items: list[int]
+    if flag:
+        items = [2]
+    try:
+        return items
+    except NameError:
+        return [3]
+
+assert initialized_later(True) == [2]
+assert initialized_later(False) == [3]
+
+def initialized_directly():
+    items: list[int]
+    items = [4]
+    return items
+
+assert initialized_directly() == [4]
+
 #%% walrus,barebones
 def foo(x):
     return x * x
@@ -143,12 +173,143 @@ a, *b, c, *d = 1,2,3,4,5 #! multiple starred expressions in assignment
 #%% assign_err_4,barebones
 *x = range(5) #! cannot assign to given expression
 
-#%% assign_err_5_NOPY,barebones
-# TODO in Python, this is a ValueError
+#%% assign_err_5,barebones
 try:
     (sa, sb), sc = 'XYZ'
-except IndexError:
+except ValueError:
     print("assign failed") #: assign failed
+
+#%% nested_iterable_unpacking
+def triples():
+    yield 1, 2, 3
+[[first, second, third]] = triples()
+assert (first, second, third) == (1, 2, 3)
+[[first, second, third]] = list(triples())
+assert (first, second, third) == (1, 2, 3)
+[[number, text]] = [(42, 'answer')]
+assert number == 42 and text == 'answer'
+
+# Named tuple records retain heterogeneous field types during unpacking.
+@tuple
+class UnpackedRecord:
+    number: int
+    text: str
+
+    def __len__(self):
+        return 0
+
+    def __getitem__(self, index: Literal[int]):
+        if index == 0 or index == -2:
+            return self.number
+        elif index == 1 or index == -1:
+            return self.text
+        else:
+            compile_error('record index out of range')
+
+number, text = UnpackedRecord(42, 'answer')
+assert type(number) is int and type(text) is str
+assert number == 42 and text == 'answer'
+
+@tuple
+class LongLengthRecord:
+    first: int
+    second: int
+    def __len__(self):
+        return 100
+
+record = LongLengthRecord(1, 2)
+assert len(record) == 100
+first, second = record
+assert (first, second) == (1, 2)
+
+first, *middle, last = (value for value in range(5))
+assert first == 0 and middle == [1, 2, 3] and last == 4
+first, *middle, last = (value for value in range(2))
+assert first == 0 and middle == [] and last == 1
+*middle, last = iter(range(3))
+assert middle == [0, 1] and last == 2
+first, *middle = iter(range(3))
+assert first == 0 and middle == [1, 2]
+
+def bounded(events):
+    for value in range(4):
+        events.append(value)
+        yield value
+events: list[int] = []
+first = 99
+try:
+    first, second = bounded(events)
+    assert False
+except ValueError:
+    pass
+assert events == [0, 1, 2] and first == 99
+try:
+    first, second = iter([1])
+    assert False
+except ValueError:
+    pass
+print('iterable unpacking ok')  #: iterable unpacking ok
+
+#%% loop_unpacking_arity
+for first, second in [(1, 2, 3)]:  #! too many values to unpack
+    pass
+#! during the realization of _unpack
+
+#%% unpack_tuple_too_many
+first, second, third = (1, 2, 3, 4)  #! too many values to unpack
+#! during the realization of _unpack
+
+#%% unpack_tuple_too_few
+first, second, third = (1, 2)  #! not enough values to unpack
+#! during the realization of _unpack
+
+#%% unpack_typed_tuple_arity
+def pair():
+    return 1, 2
+first, second, third = pair()  #! not enough values to unpack
+#! during the realization of _unpack
+
+#%% unpack_starred_tuple_arity
+first, *middle, last = (1,)  #! not enough values to unpack
+#! during the realization of _unpack
+
+#%% unpack_list_snapshot
+source = [1, 2]
+source[1], observed = source
+assert source == [1, 1] and observed == 2
+source = [1, 2, 3]
+source[2], *middle, last = source
+assert source == [1, 2, 1] and middle == [2] and last == 3
+for values in [[1], [1, 2, 3]]:
+    first = 99
+    try:
+        first, second = values
+        assert False
+    except ValueError:
+        pass
+    assert first == 99
+
+#%% unpack_mutable_tuple_storage
+# Tuple-backed containers must be consumed before overlapping target writes.
+@tuple
+class MutableTupleSequence:
+    values: list[int]
+
+    def __len__(self):
+        return len(self.values)
+
+    def __iter__(self):
+        yield from self.values
+
+    def __getitem__(self, index: int):
+        return self.values[index]
+
+    def __setitem__(self, index: int, value: int):
+        self.values[index] = value
+
+source = MutableTupleSequence([1, 2])
+source[1], observed = source
+assert source.values == [1, 1] and observed == 2
 
 #%% assign_comprehension
 g = ((b, a, c) for a, *b, c in ['ABC','DEEEEF','FHGIJ'])

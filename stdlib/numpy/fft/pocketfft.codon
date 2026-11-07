@@ -1106,6 +1106,8 @@ class cfftp:
             self.factorize()
             self.mem = arr[T](self.twsize())
             self.comp_twiddle()
+        else:
+            self.mem = arr[T](Ptr[T](), 0)
 
     def dealloc(self):
         self.mem.dealloc()
@@ -1938,6 +1940,8 @@ class rfftp:
             self.factorize()
             self.mem = arr[T0](self.twsize())
             self.comp_twiddle()
+        else:
+            self.mem = arr[T0](Ptr[T0](), 0)
 
     def dealloc(self):
         self.mem.dealloc()

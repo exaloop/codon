@@ -4,6 +4,7 @@
 #include <cerrno>
 #include <chrono>
 #include <climits>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -669,6 +670,30 @@ SEQ_FUNC bool seq_lock_acquire(void *lock, bool block, double timeout) {
 SEQ_FUNC void seq_lock_release(void *lock) {
   auto *m = (std::timed_mutex *)lock;
   m->unlock();
+}
+
+SEQ_FUNC void *seq_cond_new() {
+  auto *condition = new (seq_alloc_atomic(sizeof(std::condition_variable_any)))
+      std::condition_variable_any();
+  seq_register_finalizer(condition, [](void *object, void *) {
+    static_cast<std::condition_variable_any *>(object)->~condition_variable_any();
+  });
+  return condition;
+}
+
+SEQ_FUNC void seq_cond_wait(void *condition, void *lock, double timeout) {
+  auto *variable = static_cast<std::condition_variable_any *>(condition);
+  std::unique_lock<std::timed_mutex> guard(*static_cast<std::timed_mutex *>(lock),
+                                           std::adopt_lock);
+  if (timeout < 0.0)
+    variable->wait(guard);
+  else
+    variable->wait_for(guard, std::chrono::duration<double>(timeout));
+  guard.release();
+}
+
+SEQ_FUNC void seq_cond_notify(void *condition) {
+  static_cast<std::condition_variable_any *>(condition)->notify_one();
 }
 
 SEQ_FUNC void *seq_rlock_new() {

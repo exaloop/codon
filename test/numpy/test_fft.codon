@@ -2,6 +2,18 @@ import numpy as np
 import numpy.fft as fft
 import numpy.random as rnd
 
+@test
+def test_trivial_plan_storage(complex_dtype: type, real_dtype: type):
+    from numpy.fft.pocketfft import cfftp, rfftp
+    complex_plan = cfftp[complex_dtype, real_dtype](1)
+    real_plan = rfftp[complex_dtype, real_dtype](1)
+    assert complex_plan.mem.size() == 0
+    assert complex_plan.mem.data() == Ptr[complex_dtype]()
+    assert real_plan.mem.size() == 0
+    assert real_plan.mem.data() == Ptr[real_dtype]()
+    complex_plan.dealloc()
+    real_plan.dealloc()
+
 def fft1(x):
     L = len(x)
     phase = np.pi * (np.arange(L) / L) * -2j
@@ -558,6 +570,8 @@ def test_fft_with_integer_or_bool_input(data, fft):
     assert np.array_equal(result, expected)
 
 
+test_trivial_plan_storage(complex, float)
+test_trivial_plan_storage(complex64, float32)
 test_fft_n()
 test_fft1d_identity()
 test_fft1d_identity_long_short(np.float32)

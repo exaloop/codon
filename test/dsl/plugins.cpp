@@ -1,11 +1,6 @@
 #include "codon/dsl/plugins.h"
+#include "codon/cir/llvm/llvm.h"
 #include "codon/compiler/jit.h"
-#include "llvm/ADT/SmallString.h"
-#include "llvm/Support/FileSystem.h"
-#include "llvm/Support/MemoryBuffer.h"
-#include "llvm/Support/Path.h"
-#include "llvm/Support/Program.h"
-#include "llvm/Support/raw_ostream.h"
 #include "gtest/gtest.h"
 
 namespace codon {
@@ -60,13 +55,15 @@ protected:
 
   void TearDown() override { llvm::sys::fs::remove_directories(directory); }
 
-  void manifest(const std::string &libraries) {
+  void manifest(const std::string &libraries,
+                const std::string &supported = "supported = \">=0.0.0\"\n") {
     llvm::SmallString<128> filename(directory);
     llvm::sys::path::append(filename, "plugin.toml");
     std::error_code error;
     llvm::raw_fd_ostream output(filename, error);
     ASSERT_FALSE(error) << error.message();
-    output << "[about]\nname = \"test\"\nsupported = \">=0.0.0\"\n[library]\n"
+    output << "[about]\nname = \"test\"\n"
+           << supported << "[library]\n"
            << libraries << '\n';
   }
 
@@ -240,6 +237,36 @@ TEST_F(PluginLibrariesTest, RejectsNonStringLibraryPaths) {
   ASSERT_FALSE(bool(result));
   EXPECT_NE(llvm::toString(result.takeError()).find("library.runtime must be a string"),
             std::string::npos);
+}
+
+TEST_F(PluginLibrariesTest, AcceptsSupportedVersionRanges) {
+  for (const std::string &supported :
+       {"", "supported = \"\"\n", "supported = \"*\"\n",
+        "supported = \">=999.0.0 || >=0.0.0\"\n",
+        "supported = \"^999.0.0 || ~999.0.0 || >=0.0.0\"\n"}) {
+    manifest("runtime = \"missing-runtime\"", supported);
+    auto result = manager.load(std::string(directory.str()));
+    EXPECT_TRUE(bool(result)) << supported << llvm::toString(result.takeError());
+  }
+}
+
+TEST_F(PluginLibrariesTest, RejectsUnsupportedVersionRanges) {
+  manifest("runtime = \"missing-runtime\"", "supported = \">=999.0.0\"\n");
+  auto result = manager.load(std::string(directory.str()));
+  ASSERT_FALSE(bool(result));
+  EXPECT_NE(llvm::toString(result.takeError()).find("unsupported version"),
+            std::string::npos);
+}
+
+TEST_F(PluginLibrariesTest, RejectsInvalidVersionRanges) {
+  for (const std::string &supported : {">=0.0.0 @", ">=0.0.0 ||", " "}) {
+    manifest("runtime = \"missing-runtime\"", "supported = \"" + supported + "\"\n");
+    auto result = manager.load(std::string(directory.str()));
+    ASSERT_FALSE(bool(result)) << supported;
+    EXPECT_NE(llvm::toString(result.takeError()).find("invalid range"),
+              std::string::npos)
+        << supported;
+  }
 }
 
 TEST_F(PluginLibrariesTest, ExecutesWithSeparateCompilerAndRuntimeLibraries) {

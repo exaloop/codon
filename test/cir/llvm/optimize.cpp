@@ -1,10 +1,15 @@
 #include "test.h"
 
+#include "codon/cir/analyze/dataflow/cfg.h"
+#include "codon/cir/analyze/dataflow/reaching.h"
 #include "codon/cir/llvm/llvisitor.h"
+#include "codon/cir/llvm/llvm.h"
 #include "codon/cir/llvm/native/native.h"
 #include "codon/cir/llvm/optimize.h"
+#include "codon/cir/transform/cleanup/devirtualize.h"
 #include "codon/cir/transform/manager.h"
 #include "codon/cir/transform/numpy/numpy.h"
+#include "codon/cir/util/cloning.h"
 #include "codon/cir/util/irtools.h"
 #include "codon/compiler/compiler.h"
 #include "codon/compiler/jit.h"
@@ -12,12 +17,6 @@
 #include "codon/runtime/rtti.h"
 
 #include <cstdlib>
-
-#include <llvm/AsmParser/Parser.h>
-#include <llvm/IR/Verifier.h>
-#include <llvm/Support/CommandLine.h>
-#include <llvm/Support/FileUtilities.h>
-#include <llvm/Support/SourceMgr.h>
 
 using namespace codon;
 
@@ -206,6 +205,739 @@ protected:
 };
 } // namespace
 
+TEST(LLVMOptimizationTest, InlineAttributes) {
+  ASSERT_EXIT(
+      {
+        for (bool debug : {false, true}) {
+          auto options = Options::getDefault("build/codon_test");
+          options->debug = debug;
+          options->standalone = true;
+          Compiler compiler(*options);
+          llvm::cantFail(
+              compiler.parseCode("inline_attributes.codon",
+                                 "@export\n"
+                                 "def inline_plain(value: int): return value\n"
+                                 "@export\n@inline\n"
+                                 "def inline_enabled(value: int): return value\n"
+                                 "@export\n@noinline\n"
+                                 "def inline_disabled(value: int): return value\n"));
+          llvm::cantFail(compiler.compile());
+          size_t checked = 0;
+          for (auto *variable : *compiler.getModule()) {
+            auto *function = ir::cast<ir::Func>(variable);
+            if (!function)
+              continue;
+            const auto &name = function->getUnmangledName();
+            if (name != "inline_plain" && name != "inline_enabled" &&
+                name != "inline_disabled")
+              continue;
+            EXPECT_EQ(ir::util::isInline(function), name == "inline_enabled");
+            EXPECT_EQ(ir::util::isNoInline(function), name == "inline_disabled");
+            ++checked;
+          }
+          EXPECT_EQ(checked, 3u);
+          auto *module = compiler.getLLVMVisitor()->getModule();
+          EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+          for (const auto *name :
+               {"inline_plain", "inline_enabled", "inline_disabled"}) {
+            auto *function = module->getFunction(name);
+            ASSERT_NE(function, nullptr);
+            EXPECT_EQ(function->hasFnAttribute(llvm::Attribute::AlwaysInline),
+                      std::string(name) == "inline_enabled");
+            EXPECT_EQ(function->hasFnAttribute(llvm::Attribute::NoInline),
+                      std::string(name) == "inline_disabled");
+          }
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(IntrinsicCodegenTest, TypeQueriesAreConstantsBeforeOptimization) {
+  ASSERT_EXIT(
+      {
+        for (auto architecture : {"", "x86"}) {
+          for (bool debug : {false, true}) {
+            auto options = Options::getDefault("build/codon_test");
+            options->debug = debug;
+            options->standalone = true;
+            options->march = architecture;
+            options->mcpu = "generic";
+            Compiler compiler(*options);
+            llvm::cantFail(compiler.parseCode(
+                "intrinsic_queries.codon",
+                "class Payload:\n    left: int\n    right: int\n"
+                "@export\ndef query_size(): return Payload.__elemsize__\n"
+                "@export\ndef query_atomic(): return int.__atomic__\n"
+                "@export\ndef query_contents(): return Payload.__contents_atomic__\n"));
+            llvm::cantFail(compiler.compile());
+            auto *module = compiler.getLLVMVisitor()->getModule();
+            EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+            if (std::string(architecture) == "x86")
+              EXPECT_EQ(module->getDataLayout().getPointerSize(), 4u);
+            for (auto &function : *module) {
+              EXPECT_FALSE(function.getName().contains("intrinsic.sizeof"));
+              EXPECT_FALSE(function.getName().contains("intrinsic.is_atomic"));
+              EXPECT_FALSE(function.getName().contains("intrinsic.is_content_atomic"));
+            }
+            for (auto name : {"query_size", "query_atomic", "query_contents"}) {
+              auto *function = module->getFunction(name);
+              EXPECT_NE(function, nullptr);
+              if (!function)
+                continue;
+              bool found = false;
+              uint64_t expected = std::string(name) == "query_size"
+                                      ? module->getDataLayout().getPointerSize()
+                                      : 1;
+              for (auto &block : *function) {
+                for (auto &instruction : block) {
+                  EXPECT_FALSE(llvm::isa<llvm::CallBase>(instruction));
+                  if (auto *ret = llvm::dyn_cast<llvm::ReturnInst>(&instruction)) {
+                    auto *constant =
+                        llvm::dyn_cast<llvm::ConstantInt>(ret->getReturnValue());
+                    found |= constant && constant->getZExtValue() == expected;
+                  }
+                }
+              }
+              EXPECT_TRUE(found) << name;
+            }
+          }
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(SIMDCodegenTest, PreservesUnalignedVectorMemoryAccess) {
+  ASSERT_EXIT(
+      {
+        for (auto architecture : {"", "x86"}) {
+          auto options = Options::getDefault("build/codon_test");
+          options->debug = false;
+          options->standalone = true;
+          options->march = architecture;
+          options->mcpu = "generic";
+          Compiler compiler(*options);
+          llvm::cantFail(compiler.parseCode("simd_alignment.codon", R"(
+from simd import Vec
+
+@export
+def simd_load(data: Ptr[u8]) -> Vec[u8, 16]:
+    return Vec[u8, 16](data + 1)
+
+@export
+def simd_pointer_load(data: Ptr[u8]) -> Vec[u8, 16]:
+    return Ptr[Vec[u8, 16]](data + 1)[0]
+
+@export
+def simd_store(data: Ptr[u8], value: Vec[u8, 16]):
+    Ptr[Vec[u8, 16]](data + 1)[0] = value
+
+@export
+def simd_list_load(data: List[int], offset: int) -> Vec[int, 4]:
+    return Vec[int, 4](data, offset)
+
+@export
+def scalar_pointer_load(data: Ptr[int]) -> int:
+    return data[0]
+
+@export
+def scalar_pointer_store(data: Ptr[int], value: int):
+    data[0] = value
+
+@llvm
+def scalar_load_control(data: Ptr[int]) -> int:
+  %result = load i64, ptr %data
+  ret i64 %result
+
+@export
+def scalar_alignment_control(data: Ptr[int]) -> int:
+  return scalar_load_control(data)
+)"));
+          llvm::cantFail(compiler.compile());
+          auto *module = compiler.getLLVMVisitor()->getModule();
+          ir::optimize(module, options.get());
+          EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+          llvm::Align scalarAlignment(1);
+          auto *control = module->getFunction("scalar_alignment_control");
+          EXPECT_NE(control, nullptr);
+          if (control)
+            for (auto &block : *control)
+              for (auto &instruction : block)
+                if (auto *load = llvm::dyn_cast<llvm::LoadInst>(&instruction))
+                  scalarAlignment = load->getAlign();
+          EXPECT_GT(scalarAlignment.value(), 1u);
+          for (auto name :
+               {"simd_load", "simd_pointer_load", "simd_list_load", "simd_store",
+                "scalar_pointer_load", "scalar_pointer_store"}) {
+            auto *function = module->getFunction(name);
+            EXPECT_NE(function, nullptr);
+            if (!function)
+              continue;
+            const bool vectorAccess = llvm::StringRef(name).starts_with("simd_");
+            unsigned accesses = 0;
+            for (auto &block : *function) {
+              for (auto &instruction : block) {
+                if (auto *load = llvm::dyn_cast<llvm::LoadInst>(&instruction)) {
+                  if (load->getType()->isVectorTy() != vectorAccess)
+                    continue;
+                  auto expected = vectorAccess ? llvm::Align(1) : scalarAlignment;
+                  EXPECT_EQ(load->getAlign(), expected) << name;
+                  if (load->getAlign() != expected)
+                    llvm::errs()
+                        << name << " load alignment " << load->getAlign().value()
+                        << ", expected " << expected.value() << '\n';
+                  ++accesses;
+                } else if (auto *store =
+                               llvm::dyn_cast<llvm::StoreInst>(&instruction)) {
+                  auto *type = store->getValueOperand()->getType();
+                  if (type->isVectorTy() != vectorAccess)
+                    continue;
+                  auto expected = vectorAccess ? llvm::Align(1) : scalarAlignment;
+                  EXPECT_EQ(store->getAlign(), expected) << name;
+                  if (store->getAlign() != expected)
+                    llvm::errs()
+                        << name << " store alignment " << store->getAlign().value()
+                        << ", expected " << expected.value() << '\n';
+                  ++accesses;
+                }
+              }
+            }
+            EXPECT_EQ(accesses, 1u) << name;
+            if (accesses != 1)
+              llvm::errs() << name << " memory access count " << accesses << '\n';
+          }
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(SIMDCodegenTest, LowersExtendedAPIsToVectorInstructions) {
+  ASSERT_EXIT(
+      {
+        auto compiler = compileAndOptimize(R"(
+from simd import Vec
+
+@export
+def api_fma(left: Vec[float32, 4], right: Vec[float32, 4], addend: Vec[float32, 4]):
+    return left.fma(right, addend)
+@export
+def api_product(value: Vec[int, 4]):
+    return value.prod()
+@export
+def api_shuffle(value: Vec[int, 4]):
+    return value.shuffle((3, 0, 2, 1))
+@export
+def api_load(data: Ptr[int], mask: Vec[u1, 4]):
+    return Vec[int, 4].load(data, mask=mask)
+@export
+def api_store(data: Ptr[int], value: Vec[int, 4], mask: Vec[u1, 4]):
+    value.store(data, mask=mask)
+@export
+def api_gather(data: Ptr[int], indices: Vec[int, 4], mask: Vec[u1, 4]):
+    return Vec[int, 4].gather(data, indices, mask=mask)
+@export
+def api_scatter(data: Ptr[int], indices: Vec[int, 4], value: Vec[int, 4], mask: Vec[u1, 4]):
+    value.scatter(data, indices, mask=mask)
+@export
+def api_aligned_load(data: Ptr[int]):
+    return Vec[int, 4].load(data, alignment=16)
+@export
+def api_aligned_store(data: Ptr[int], value: Vec[int, 4]):
+    value.store(data, alignment=16)
+)");
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        auto checkIntrinsic = [&](llvm::StringRef name, llvm::StringRef prefix) {
+          auto *function = module->getFunction(name);
+          EXPECT_NE(function, nullptr);
+          bool found = false;
+          if (function)
+            for (auto &block : *function)
+              for (auto &instruction : block)
+                if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction))
+                  if (auto *callee = call->getCalledFunction())
+                    found |= callee->getName().starts_with(prefix);
+          EXPECT_TRUE(found) << name.str();
+          if (!found)
+            llvm::errs() << name << " missing intrinsic " << prefix << '\n';
+        };
+        checkIntrinsic("api_fma", "llvm.fma.");
+        checkIntrinsic("api_product", "llvm.vector.reduce.mul.");
+        checkIntrinsic("api_load", "llvm.masked.load.");
+        checkIntrinsic("api_store", "llvm.masked.store.");
+        checkIntrinsic("api_gather", "llvm.masked.gather.");
+        checkIntrinsic("api_scatter", "llvm.masked.scatter.");
+        for (auto name : {"api_shuffle", "api_aligned_load", "api_aligned_store"}) {
+          auto *function = module->getFunction(name);
+          EXPECT_NE(function, nullptr);
+          bool found = false;
+          if (function)
+            for (auto &block : *function)
+              for (auto &instruction : block) {
+                EXPECT_FALSE(llvm::isa<llvm::CallBase>(instruction));
+                if (auto *load = llvm::dyn_cast<llvm::LoadInst>(&instruction)) {
+                  EXPECT_EQ(load->getAlign().value(), 16u);
+                  found = load->getType()->isVectorTy();
+                } else if (auto *store =
+                               llvm::dyn_cast<llvm::StoreInst>(&instruction)) {
+                  EXPECT_EQ(store->getAlign().value(), 16u);
+                  found = store->getValueOperand()->getType()->isVectorTy();
+                } else if (llvm::isa<llvm::ShuffleVectorInst>(&instruction)) {
+                  found = true;
+                }
+              }
+          EXPECT_TRUE(found) << name;
+          if (!found)
+            llvm::errs() << name << " missing vector instruction\n";
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(SIMDCodegenTest, EmitsSingleLaneShufflesWithAVX512) {
+  ASSERT_EXIT(
+      {
+        for (bool debug : {false, true}) {
+          for (auto cpu : {"skylake-avx512", "znver4"}) {
+            auto options = Options::getDefault("build/codon_test");
+            options->debug = debug;
+            options->native = false;
+            options->standalone = true;
+            options->march = "x86-64";
+            options->mcpu = cpu;
+            options->mattrs.clear();
+            Compiler compiler(*options);
+            llvm::cantFail(compiler.parseCode("simd_avx512_shuffle.codon", R"(
+from simd import Vec
+
+@export
+def shuffle_single(value: Vec[int, 4], indices: Vec[int, 1]):
+    return value.shuffle(indices)
+
+@export
+def shuffle_pair(left: Vec[int, 4], right: Vec[int, 4], indices: Vec[int, 1]):
+    return left.shuffle(indices, right)
+
+@export
+def shuffle_tuple(value: Vec[int, 4]):
+    return value.shuffle((2,))
+
+@export
+def shuffle_pair_tuple(left: Vec[int, 4], right: Vec[int, 4]):
+    return left.shuffle((7,), right)
+)"));
+            llvm::cantFail(compiler.compile());
+            llvm::SmallString<128> objectPath;
+            auto error = llvm::sys::fs::createTemporaryFile("codon-simd-avx512", "o",
+                                                            objectPath);
+            if (error) {
+              llvm::errs() << error.message() << '\n';
+              std::_Exit(EXIT_FAILURE);
+            }
+            llvm::FileRemover objectRemover(objectPath);
+            compiler.getLLVMVisitor()->writeToObjectFile(objectPath.str().str());
+            uint64_t size = 0;
+            error = llvm::sys::fs::file_size(objectPath, size);
+            if (error || size == 0) {
+              llvm::errs() << cpu << " debug=" << debug
+                           << " did not produce an object file: " << error.message()
+                           << '\n';
+              std::_Exit(EXIT_FAILURE);
+            }
+          }
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(SIMDCodegenTest, ElidesOptedOutRuntimeChecks) {
+  ASSERT_EXIT(
+      {
+        auto compiler = compileAndOptimize(R"(
+from simd import Vec
+
+@export
+def unchecked_load(data: List[int], offset: int):
+    return Vec[int, 4](data, offset, check=False)
+@export
+def unchecked_bytes(data: bytes, offset: int):
+    return Vec[u8, 16](data, offset, check=False)
+@export
+def unchecked_extract(value: Vec[int, 4], index: int):
+    return value.extract(index, check=False)
+@export
+def unchecked_insert(value: Vec[int, 4], index: int, replacement: int):
+    return value.insert(index, replacement, check=False)
+@export
+def unchecked_shuffle(value: Vec[int, 4], indices: Vec[int, 4]):
+    return value.shuffle(indices, check=False)
+@export
+def unchecked_lshift(value: Vec[u32, 4], counts: Vec[u32, 4]):
+    return value.lshift(counts, check=False)
+@export
+def unchecked_rshift(value: Vec[u32, 4], count: int):
+    return value.rshift(count, check=False)
+@export
+def unchecked_floordiv(value: Vec[u32, 4], divisors: Vec[u32, 4]):
+    return value.floordiv(divisors, check=False)
+@export
+def unchecked_mod(value: Vec[u32, 4], divisors: Vec[u32, 4]):
+    return value.mod(divisors, check=False)
+@export
+def checked_load(data: List[int], offset: int):
+    return Vec[int, 4](data, offset)
+@export
+def checked_extract(value: Vec[int, 4], index: int):
+    return value.extract(index)
+)");
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        for (auto name : {"unchecked_load", "unchecked_bytes", "unchecked_extract",
+                          "unchecked_insert", "unchecked_shuffle", "unchecked_lshift",
+                          "unchecked_rshift", "unchecked_floordiv", "unchecked_mod"}) {
+          auto *function = module->getFunction(name);
+          EXPECT_NE(function, nullptr);
+          if (!function)
+            continue;
+          for (auto &block : *function)
+            for (auto &instruction : block) {
+              const bool runtimeCheck = llvm::isa<llvm::CallBase>(instruction) ||
+                                        llvm::isa<llvm::BranchInst>(instruction);
+              EXPECT_FALSE(runtimeCheck) << name;
+              if (runtimeCheck)
+                llvm::errs() << name << " retained " << instruction << '\n';
+            }
+        }
+        for (auto name : {"checked_load", "checked_extract"}) {
+          auto *function = module->getFunction(name);
+          EXPECT_NE(function, nullptr);
+          bool checked = false;
+          if (function)
+            for (auto &block : *function)
+              for (auto &instruction : block)
+                if (auto *branch = llvm::dyn_cast<llvm::BranchInst>(&instruction))
+                  checked |= branch->isConditional();
+          EXPECT_TRUE(checked) << name;
+          if (!checked)
+            llvm::errs() << name << " lost its default runtime check\n";
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(IntrinsicCodegenTest, MaterializesSharedAddressTakenQuery) {
+  ASSERT_EXIT(
+      {
+        for (bool debug : {false, true}) {
+          auto options = Options::getDefault("build/codon_test");
+          options->debug = debug;
+          options->standalone = true;
+          Compiler compiler(*options);
+          llvm::cantFail(compiler.parseCode("intrinsic_address.codon",
+                                            "@export\ndef indirect_query(): return 0\n"
+                                            "@export\ndef second_query(): return 0\n"));
+          auto *module = compiler.getModule();
+          compiler.getPassManager()->run(module);
+          auto *query =
+              module->getIntrinsic(ir::InternalFunc::Intrinsic::SIZEOF,
+                                   module->unsafeGetPointerType(module->getIntType()));
+          for (auto *variable : *module) {
+            auto *function = ir::cast<ir::BodiedFunc>(variable);
+            if (!function || (function->getUnmangledName() != "indirect_query" &&
+                              function->getUnmangledName() != "second_query"))
+              continue;
+            auto *holder = module->Nr<ir::Var>(query->getType());
+            function->push_back(holder);
+            auto *prefix = module->Nr<ir::SeriesFlow>();
+            prefix->push_back(
+                module->Nr<ir::AssignInstr>(holder, module->Nr<ir::VarValue>(query)));
+            auto *callee =
+                module->Nr<ir::FlowInstr>(prefix, module->Nr<ir::VarValue>(holder));
+            auto *body = module->Nr<ir::SeriesFlow>();
+            body->push_back(
+                module->Nr<ir::ReturnInstr>(module->Nr<ir::CallInstr>(callee)));
+            function->setBody(body);
+          }
+          compiler.getLLVMVisitor()->visit(module);
+          auto *llvmModule = compiler.getLLVMVisitor()->getModule();
+          EXPECT_FALSE(llvm::verifyModule(*llvmModule, &llvm::errs()));
+          size_t wrappers = 0;
+          for (auto &function : *llvmModule) {
+            if (!function.getName().contains("intrinsic.sizeof"))
+              continue;
+            ++wrappers;
+            EXPECT_TRUE(function.hasPrivateLinkage());
+            auto *returned = llvm::dyn_cast<llvm::ReturnInst>(
+                function.getEntryBlock().getTerminator());
+            ASSERT_NE(returned, nullptr);
+            auto *constant =
+                llvm::dyn_cast<llvm::ConstantInt>(returned->getReturnValue());
+            ASSERT_NE(constant, nullptr);
+            EXPECT_EQ(constant->getZExtValue(),
+                      llvmModule->getDataLayout().getPointerSize());
+          }
+          EXPECT_EQ(wrappers, 1u);
+          for (auto name : {"indirect_query", "second_query"}) {
+            auto *function = llvmModule->getFunction(name);
+            ASSERT_NE(function, nullptr);
+            size_t indirect = 0;
+            for (auto &block : *function)
+              for (auto &instruction : block)
+                if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction))
+                  indirect += !call->getCalledFunction();
+            EXPECT_EQ(indirect, 1u);
+          }
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(IntrinsicCodegenTest, RepresentationCastsShareIdentityLowering) {
+  ASSERT_EXIT(
+      {
+        auto options = Options::getDefault("build/codon_test");
+        options->debug = false;
+        options->standalone = true;
+        Compiler compiler(*options);
+        llvm::cantFail(compiler.parseCode(
+            "representation_cast.codon",
+            "class RepresentationBase(object):\n"
+            "    value: int\n"
+            "class RepresentationChild(RepresentationBase):\n"
+            "    extra: int\n"
+            "@tuple\n"
+            "class RepresentationPair:\n"
+            "    first: int\n"
+            "    second: int\n"
+            "@export\n"
+            "def representation_pointer(value: RepresentationBase):\n"
+            "    return type._force_cast(type._ref_raw(value), RepresentationBase)\n"
+            "@export\n"
+            "def representation_optional(value: Optional[RepresentationBase]):\n"
+            "    return type._force_cast(value, Optional[RepresentationBase])\n"
+            "@export\n"
+            "def representation_raw(value: Ptr[u8]):\n"
+            "    return type._force_cast(value, Ptr[u8])\n"
+            "@export\n"
+            "def representation_generator(value: Generator[int]):\n"
+            "    return type._force_cast(value, Generator[int])\n"
+            "@export\n"
+            "def representation_function(value: Function[[int], int]):\n"
+            "    return type._force_cast(value, Function[[int], int])\n"
+            "@export\n"
+            "def representation_record(value: tuple[int, int]):\n"
+            "    return type._force_value_cast(value, RepresentationPair)\n"
+            "@export\n"
+            "def representation_scalar(value: int):\n"
+            "    return type._force_value_cast(value, int)\n"
+            "print(representation_pointer(RepresentationChild(value=7, "
+            "extra=9)).value)\n"));
+        llvm::cantFail(compiler.compile());
+        bool pointer = false;
+        bool raw = false;
+        bool record = false;
+        for (auto *variable : *compiler.getModule()) {
+          auto *function = ir::cast<ir::InternalFunc>(variable);
+          if (!function)
+            continue;
+          const auto &name = function->getName();
+          bool pointerHelper = name.find("._force_cast") != std::string::npos;
+          bool rawHelper = name.find("._ref_raw") != std::string::npos;
+          bool recordHelper = name.find("._force_value_cast") != std::string::npos;
+          if (!pointerHelper && !rawHelper && !recordHelper)
+            continue;
+          EXPECT_EQ(function->getIntrinsic(),
+                    ir::InternalFunc::Intrinsic::REPRESENTATION_CAST);
+          EXPECT_TRUE(function->hasValidIntrinsicSignature());
+          pointer |= pointerHelper;
+          raw |= rawHelper;
+          record |= recordHelper;
+        }
+        EXPECT_TRUE(pointer);
+        EXPECT_TRUE(raw);
+        EXPECT_TRUE(record);
+        auto *module = compiler.getLLVMVisitor()->getModule();
+        ir::optimize(module, options.get());
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        for (const auto *name :
+             {"representation_pointer", "representation_optional", "representation_raw",
+              "representation_generator", "representation_function",
+              "representation_record", "representation_scalar"}) {
+          auto *function = module->getFunction(name);
+          ASSERT_NE(function, nullptr);
+          ASSERT_EQ(function->arg_size(), 1u);
+          ASSERT_EQ(function->size(), 1u);
+          auto *returned =
+              llvm::dyn_cast<llvm::ReturnInst>(function->front().getTerminator());
+          ASSERT_NE(returned, nullptr);
+          EXPECT_EQ(returned->getReturnValue(), function->getArg(0)) << name;
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(IntrinsicCodegenTest, PointerCastHelpersRejectNonPointerTypes) {
+  ASSERT_EXIT(
+      {
+        for (bool debug : {false, true}) {
+          for (const auto *source :
+               {"print(type._force_cast(1, int))\n", "print(type._ref_raw(1))\n",
+                "print(type._force_cast(1, Ptr[u8]))\n",
+                "print(type._force_cast(Ptr[u8](1), int))\n",
+                "@export\ndef invalid(value: Optional[Ptr[u8]]):\n"
+                "    return type._force_cast(value, Optional[Ptr[u8]])\n",
+                "@export\ndef invalid(value: Optional[Generator[int]]):\n"
+                "    return type._force_cast(value, Optional[Generator[int]])\n",
+                "@export\ndef invalid(value: Optional[Function[[int], int]]):\n"
+                "    return type._force_cast(value, Optional[Function[[int], "
+                "int]])\n"}) {
+            auto options = Options::getDefault("build/codon_test");
+            options->debug = debug;
+            options->standalone = true;
+            Compiler compiler(*options);
+            auto error = compiler.parseCode("invalid_pointer_cast.codon", source);
+            EXPECT_TRUE(bool(error)) << source;
+            if (error)
+              EXPECT_NE(llvm::toString(std::move(error))
+                            .find("pointer cast requires pointer-like source and "
+                                  "destination types"),
+                        std::string::npos)
+                  << source;
+          }
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(IntrinsicCodegenTest, RepresentationCastRejectsDifferentLLVMTypes) {
+  for (bool debug : {false, true}) {
+    ASSERT_EXIT(
+        {
+          auto options = Options::getDefault("build/codon_test");
+          options->debug = debug;
+          options->standalone = true;
+          Compiler compiler(*options);
+          llvm::cantFail(
+              compiler.parseCode("invalid_representation_cast.codon",
+                                 "@export\ndef incompatible_cast(value: int):\n"
+                                 "    return type._force_value_cast(value, float)\n"));
+          llvm::cantFail(compiler.compile());
+          std::_Exit(EXIT_SUCCESS);
+        },
+        testing::ExitedWithCode(EXIT_FAILURE),
+        "invalid representation-preserving cast");
+  }
+}
+
+TEST(RTTICodegenTest, UsesUnconditionalBaseExceptionSelector) {
+  ASSERT_EXIT(
+      {
+        auto options = Options::getDefault("build/codon_test");
+        options->debug = false;
+        options->standalone = true;
+        Compiler compiler(*options);
+        llvm::cantFail(compiler.parseCode("exception_selector.codon",
+                                          "@export\n"
+                                          "def catch_root(error: BaseException):\n"
+                                          "    try:\n"
+                                          "        raise error\n"
+                                          "    except ValueError:\n"
+                                          "        return 1\n"
+                                          "    except BaseException:\n"
+                                          "        return 2\n"
+                                          "@export\n"
+                                          "def catch_all(error: BaseException):\n"
+                                          "    try:\n"
+                                          "        raise error\n"
+                                          "    except:\n"
+                                          "        return 3\n"));
+        llvm::cantFail(compiler.compile());
+        auto *module = compiler.getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        bool foundRoot = false;
+        bool foundTyped = false;
+        bool foundAll = false;
+        for (auto &global : module->globals()) {
+          auto name = global.getName();
+          if (!name.starts_with("codon.typeidx."))
+            continue;
+          auto selector = llvm::cast<llvm::ConstantInt>(
+                              global.getInitializer()->getAggregateElement(0u))
+                              ->getSExtValue();
+          if (name.contains("BaseException")) {
+            foundRoot = true;
+            EXPECT_EQ(selector, runtime::BASE_EXCEPTION_SELECTOR);
+          } else if (name.contains("ValueError")) {
+            foundTyped = true;
+            EXPECT_GT(selector, runtime::CATCH_ALL_SELECTOR);
+          } else if (name.contains("<all>")) {
+            foundAll = true;
+            EXPECT_EQ(selector, runtime::CATCH_ALL_SELECTOR);
+          }
+        }
+        EXPECT_TRUE(foundRoot && foundTyped && foundAll);
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(RTTICodegenTest, KeepsBaseFieldsAtStableOffsets) {
+  ASSERT_EXIT(
+      {
+        auto compiler = compileAndOptimize(
+            "class PrefixBase(object):\n"
+            "    tag: u8\n"
+            "    value: int\n"
+            "class PrefixChild(PrefixBase):\n"
+            "    extra: int\n"
+            "class PrefixGrandchild(PrefixChild):\n"
+            "    padding: tuple[int, int, int]\n"
+            "@export\n"
+            "def prefix_update(value: PrefixBase, delta: int):\n"
+            "    value.value += delta\n"
+            "    return value.value\n"
+            "@export\n"
+            "def prefix_child_update(value: PrefixChild, delta: int):\n"
+            "    value.extra += delta\n"
+            "    return value.extra\n"
+            "@export\n"
+            "def prefix_base(): return PrefixBase(tag=u8(1), value=11)\n"
+            "@export\n"
+            "def prefix_child(): return PrefixChild(tag=u8(2), value=13, extra=17)\n"
+            "@export\n"
+            "def prefix_grandchild():\n"
+            "    return PrefixGrandchild(tag=u8(3), value=19, extra=23, "
+            "padding=(29, 31, 37))\n");
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        for (const auto *name : {"prefix_update", "prefix_child_update"}) {
+          auto *function = module->getFunction(name);
+          ASSERT_NE(function, nullptr);
+          size_t loads = 0;
+          for (auto &block : *function) {
+            for (auto &instruction : block) {
+              if (auto *load = llvm::dyn_cast<llvm::LoadInst>(&instruction)) {
+                ++loads;
+                EXPECT_FALSE(load->getType()->isPointerTy()) << name;
+              }
+              EXPECT_FALSE(llvm::isa<llvm::CallBase>(instruction)) << name;
+            }
+          }
+          EXPECT_EQ(loads, 1u) << name;
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
 TEST(RTTICodegenTest, FoldsUniformFieldsAndSpecializesCalls) {
   ASSERT_EXIT(
       {
@@ -257,6 +989,1018 @@ TEST(RTTICodegenTest, FoldsUniformFieldsAndSpecializesCalls) {
       testing::ExitedWithCode(EXIT_SUCCESS), "");
 }
 
+TEST(RTTICodegenTest, DevirtualizesKnownExceptionFields) {
+  ASSERT_EXIT(
+      {
+        auto options = Options::getDefault("build/codon_test");
+        options->debug = false;
+        options->standalone = true;
+        Compiler compiler(*options);
+        llvm::cantFail(compiler.parseCode(
+            "devirtualize.codon",
+            "class ExceptionPadding(object):\n"
+            "    padding: int\n"
+            "class LargerIndexError(IndexError, ExceptionPadding):\n"
+            "    payload: str\n"
+            "    def __init__(self, message: str):\n"
+            "        super().__init__(message)\n"
+            "        self.padding = 17\n"
+            "        self.payload = message\n"
+            "@export\n"
+            "def known_exception(message: str, choose: bool):\n"
+            "    if choose:\n"
+            "        error = IndexError(message)\n"
+            "    else:\n"
+            "        error = IndexError(\"fallback\")\n"
+            "    error.message = message\n"
+            "    return error.message\n"
+            "@export\n"
+            "def unknown_exception(error: IndexError, message: str):\n"
+            "    error.message = message\n"
+            "    return error.message\n"
+            "print(LargerIndexError(\"child\").payload)\n"));
+        llvm::cantFail(compiler.compile());
+        auto *module = compiler.getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        auto check = [&](const std::string &name, bool dynamic) {
+          auto *kernel = module->getFunction(name);
+          ASSERT_NE(kernel, nullptr);
+          size_t lookups = 0;
+          size_t specializedConstructors = 0;
+          for (auto &block : *kernel) {
+            for (auto &instruction : block) {
+              auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+              auto *callee = call ? call->getCalledFunction() : nullptr;
+              if (callee && callee->getName().starts_with(".codon.field.offset"))
+                ++lookups;
+              if (!dynamic && call) {
+                EXPECT_NE(callee, nullptr) << name;
+                if (callee &&
+                    callee->getName().starts_with("std.internal.types.error.") &&
+                    callee->getName().contains(".__init__")) {
+                  EXPECT_TRUE(callee->getName().contains(".devirtualized")) << name;
+                  ++specializedConstructors;
+                }
+              }
+            }
+          }
+          EXPECT_EQ(lookups != 0, dynamic) << name;
+          if (!dynamic)
+            EXPECT_EQ(specializedConstructors, 2u);
+          if (testing::Test::HasFailure())
+            kernel->print(llvm::errs());
+        };
+        check("known_exception", false);
+        check("unknown_exception", true);
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(RTTICodegenTest, DevirtualizationRespectsControlFlow) {
+  ASSERT_EXIT(
+      {
+        auto options = Options::getDefault("build/codon_test");
+        options->debug = false;
+        options->standalone = true;
+        Compiler compiler(*options);
+        llvm::cantFail(compiler.parseCode("devirtualize_cfg.codon", R"(
+class FieldBase(object):
+  value: int
+
+class FieldPadding(object):
+  extra: int
+
+class FieldChild(FieldBase, FieldPadding):
+  pass
+
+class NoInlineRecord(object):
+  value: int
+
+  @noinline
+  def __init__(self, value: int):
+    self.value = value
+
+@export
+def annotated_constructor(number: int):
+  return NoInlineRecord(number).value
+
+@export
+def alias_field(number: int):
+  value = FieldBase(number)
+  alias = value
+  value = FieldBase(number + 1)
+  alias.value += 2
+  return alias.value
+
+@export
+def mixed_field(flag: bool):
+  if flag:
+    value: FieldBase = FieldBase(1)
+  else:
+    value: FieldBase = FieldChild(value=2, extra=3)
+  return value.value
+
+@export
+def parameter_field(value: FieldBase, flag: bool):
+  if flag:
+    value = FieldBase(4)
+  return value.value
+
+@export
+def loop_field(value: FieldBase, count: int):
+  total = 0
+  for index in range(count):
+    total += value.value
+    value = FieldBase(index)
+  return total
+
+@export
+def exact_loop_field(count: int):
+  value = FieldBase(0)
+  for index in range(count):
+    value = FieldBase(index)
+  return value.value
+
+@export
+def child_field(number: int):
+  value: FieldBase = FieldChild(value=number, extra=17)
+  value.value += 1
+  return value.value
+
+@export
+def escaped_variable(number: int, replacement: FieldBase):
+  value = FieldBase(number)
+  pointer = __ptr__(value)
+  pointer[0] = replacement
+  return value.value
+
+@export
+def caught_field(value: IndexError):
+  try:
+    raise value
+  except IndexError as error:
+    return error.message
+
+@export
+def constructor_named_function(value: FieldBase):
+  return value
+
+@export
+def unknown_factory_field(value: FieldBase):
+  return constructor_named_function(value).value
+)"));
+        llvm::cantFail(compiler.compile());
+        auto *module = compiler.getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        auto check = [&](const std::string &name, bool dynamic) {
+          auto *kernel = module->getFunction(name);
+          ASSERT_NE(kernel, nullptr);
+          size_t lookups = 0;
+          for (auto &block : *kernel) {
+            for (auto &instruction : block) {
+              auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+              auto *callee = call ? call->getCalledFunction() : nullptr;
+              lookups += callee && callee->getName().starts_with(".codon.field.offset");
+            }
+          }
+          EXPECT_EQ(lookups != 0, dynamic) << name;
+          if (testing::Test::HasFailure())
+            kernel->print(llvm::errs());
+        };
+        check("alias_field", false);
+        check("mixed_field", true);
+        check("parameter_field", true);
+        check("loop_field", true);
+        check("exact_loop_field", false);
+        check("child_field", false);
+        check("escaped_variable", true);
+        check("unknown_factory_field", true);
+        auto *annotated = module->getFunction("annotated_constructor");
+        ASSERT_NE(annotated, nullptr);
+        size_t constructors = 0;
+        for (auto &block : *annotated) {
+          for (auto &instruction : block) {
+            auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+            auto *callee = call ? call->getCalledFunction() : nullptr;
+            constructors += callee &&
+                            callee->getName().starts_with("NoInlineRecord.") &&
+                            callee->getName().contains(".__init__");
+          }
+        }
+        EXPECT_EQ(constructors, 1u);
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(RTTICodegenTest, DevirtualizationRejectsSharedEvaluationLocations) {
+  ASSERT_EXIT(
+      {
+        struct CollectFields : ir::util::Operator {
+          std::vector<ir::ExtractInstr *> fields;
+          void handle(ir::ExtractInstr *value) override {
+            if (value->getField() == "value")
+              fields.push_back(value);
+          }
+        };
+        struct ShareValues : ir::transform::Pass {
+          std::string getKey() const override { return "test-share-values"; }
+          void run(ir::Module *module) override {
+            size_t changed = 0;
+            for (auto *variable : *module) {
+              auto *function = ir::cast<ir::BodiedFunc>(variable);
+              if (!function || function->getUnmangledName().find("sharing_") != 0)
+                continue;
+              CollectFields collected;
+              collected.process(function->getBody());
+              ASSERT_EQ(collected.fields.size(), 2u);
+              auto *receiverType = collected.fields.front()->getVal()->getType();
+              ASSERT_EQ(receiverType, collected.fields.back()->getVal()->getType());
+              auto *local = module->N<ir::Var>(function, receiverType);
+              function->push_back(local);
+              auto *read = module->N<ir::VarValue>(function, local);
+              auto *flow = module->N<ir::FlowInstr>(
+                  function, module->N<ir::SeriesFlow>(function), read);
+              ir::util::CloneVisitor clone(module);
+              auto *assignment = module->N<ir::AssignInstr>(
+                  function, local, clone.clone(collected.fields.front()->getVal()));
+              auto *constant = module->getInt(42);
+              auto *reference = module->N<ir::VarValue>(function, function);
+              const auto &name = function->getUnmangledName();
+              for (auto *field : collected.fields) {
+                auto *setup = module->N<ir::SeriesFlow>(field);
+                setup->push_back(constant);
+                setup->push_back(reference);
+                setup->push_back(
+                    module->N<ir::AssignInstr>(field, local, field->getVal()));
+                ir::Value *receiver = module->N<ir::VarValue>(field, local);
+                if (name == "sharing_read")
+                  receiver = read;
+                else if (name == "sharing_flow")
+                  receiver = flow;
+                else if (name == "sharing_assignment")
+                  setup->push_back(assignment);
+                field->setVal(module->N<ir::FlowInstr>(field, setup, receiver));
+              }
+              ++changed;
+            }
+            EXPECT_EQ(changed, 4u);
+          }
+        };
+        auto options = Options::getDefault("build/codon_test");
+        options->debug = false;
+        options->standalone = true;
+        Compiler compiler(*options);
+        compiler.getPassManager()->registerPass(
+            std::make_unique<ShareValues>(),
+            ir::transform::cleanup::DevirtualizationPass::KEY, {},
+            {ir::analyze::dataflow::CFAnalysis::KEY,
+             ir::analyze::dataflow::RDAnalysis::KEY});
+        std::string source =
+            "class SharingBase(object):\n"
+            "    value: int\n"
+            "class SharingPadding(object):\n"
+            "    padding: int\n"
+            "class SharingChild(SharingBase, SharingPadding):\n"
+            "    pass\n"
+            "@noinline\n"
+            "def make_sharing_base(number: int) -> SharingBase:\n"
+            "    return SharingBase(value=number)\n"
+            "@noinline\n"
+            "def make_sharing_child(number: int) -> SharingBase:\n"
+            "    return SharingChild(value=number + 1, padding=1000)\n";
+        for (const auto *name : {"sharing_read", "sharing_flow", "sharing_assignment",
+                                 "sharing_distinct"}) {
+          source += "@export\n@noinline\ndef " + std::string(name) +
+                    "(number: int):\n"
+                    "    current: SharingBase = make_sharing_base(number)\n"
+                    "    first = current.value\n"
+                    "    current = make_sharing_child(number)\n"
+                    "    return first + current.value\n";
+        }
+        llvm::cantFail(compiler.parseCode("devirtualize_shared.codon", source));
+        llvm::cantFail(compiler.compile());
+        auto *module = compiler.getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        for (const auto *name : {"sharing_read", "sharing_flow", "sharing_assignment",
+                                 "sharing_distinct"}) {
+          auto *function = module->getFunction(name);
+          ASSERT_NE(function, nullptr);
+          size_t lookups = 0;
+          for (auto &block : *function)
+            for (auto &instruction : block)
+              if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction))
+                if (auto *callee = call->getCalledFunction())
+                  lookups += callee->getName().starts_with(".codon.field.offset");
+          EXPECT_EQ(lookups, std::string(name) == "sharing_distinct" ? 0u : 2u) << name;
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(RTTICodegenTest, SpecializesExactArgumentContextsWithoutInlining) {
+  ASSERT_EXIT(
+      {
+        auto options = Options::getDefault("build/codon_test");
+        options->debug = false;
+        options->standalone = true;
+        Compiler compiler(*options);
+        std::string source =
+            "class ContextBase(object):\n"
+            "    value: int\n"
+            "    def result(self):\n"
+            "        return self.value\n"
+            "class ContextPadding(object):\n"
+            "    extra: int\n"
+            "class ContextChild(ContextBase, ContextPadding):\n"
+            "    def result(self):\n"
+            "        return self.extra\n"
+            "@llvm\n"
+            "def context_opaque_identity(value: ContextBase) -> ContextBase:\n"
+            "    ret ptr %value\n"
+            "@export\n"
+            "def context_opaque(number: int):\n"
+            "    return context_opaque_identity(ContextBase(number)).value\n"
+            "@export\n"
+            "@noinline\n"
+            "def context_local(value: ContextBase):\n"
+            "    return ContextBase(4).result() + value.value\n"
+            "@noinline\n"
+            "def context_late(value: int):\n"
+            "    return value + 1\n"
+            R"(
+@export
+@noinline
+def context_read(value: ContextBase):
+    return value.value
+
+@export
+@noinline
+def context_pack(value: ContextBase):
+    return ((value,), 3)
+
+@export
+@noinline
+def context_alternate(value: ContextBase, other: ContextBase, count: int) -> int:
+    if count:
+        return context_alternate(other, value, count - 1)
+    return value.value
+
+@export
+def context_first(number: int):
+    return context_read(ContextBase(number))
+
+@export
+def context_second(number: int):
+    return context_read(ContextBase(number + 1))
+
+@export
+def context_nested(number: int):
+    return context_pack(ContextChild(value=number, extra=9))[0][0].value
+
+print(context_read(ContextBase(0)))
+print(context_alternate(ContextBase(7), ContextChild(value=11, extra=13), 3))
+print(context_local(ContextChild(value=5, extra=7)))
+)";
+        for (int index = 0; index < 12; ++index) {
+          auto name = "ContextVariant" + std::to_string(index);
+          source += "\nclass " + name + "(ContextBase):\n    extra: int\n";
+          source += "print(context_read(" + name + "(1, 2)))\n";
+        }
+        llvm::cantFail(compiler.parseCode("devirtualize_contexts.codon", source));
+        auto *cirModule = compiler.getModule();
+        auto *late =
+            cirModule->getOrRealizeFunc("context_late", {cirModule->getIntType()});
+        ASSERT_NE(late, nullptr);
+        auto lateId = late->getId();
+        auto lateReference = late->referenceString();
+        llvm::cantFail(compiler.compile());
+        auto *module = compiler.getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        auto hasLookup = [](llvm::Function *function) {
+          for (auto &block : *function)
+            for (auto &instruction : block)
+              if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction))
+                if (auto *callee = call->getCalledFunction())
+                  if (callee->getName().starts_with(".codon.field.offset"))
+                    return true;
+          return false;
+        };
+        auto readTarget = [&](const char *name) -> llvm::Function * {
+          auto *function = module->getFunction(name);
+          if (!function)
+            return nullptr;
+          for (auto &block : *function)
+            for (auto &instruction : block)
+              if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction))
+                if (auto *callee = call->getCalledFunction())
+                  if (callee->getName().starts_with("context_read"))
+                    return callee;
+          return nullptr;
+        };
+        auto *first = readTarget("context_first");
+        ASSERT_NE(first, nullptr);
+        EXPECT_TRUE(first->getName().contains(".devirtualized"));
+        EXPECT_EQ(first, readTarget("context_second"));
+        auto *original = module->getFunction("context_read");
+        ASSERT_NE(original, nullptr);
+        EXPECT_TRUE(original->hasExternalLinkage());
+        EXPECT_TRUE(hasLookup(original));
+        auto *nested = module->getFunction("context_nested");
+        ASSERT_NE(nested, nullptr);
+        EXPECT_FALSE(hasLookup(nested));
+        auto *opaque = module->getFunction("context_opaque");
+        ASSERT_NE(opaque, nullptr);
+        EXPECT_TRUE(hasLookup(opaque));
+        size_t readVariants = 0;
+        size_t recursiveVariants = 0;
+        size_t localVariants = 0;
+        for (auto &function : *module) {
+          if (!function.getName().contains(".devirtualized"))
+            continue;
+          bool read = function.getName().starts_with("context_read");
+          bool recursive = function.getName().starts_with("context_alternate");
+          bool local = function.getName().starts_with("context_local");
+          if (!read && !recursive && !local)
+            continue;
+          readVariants += read;
+          recursiveVariants += recursive;
+          localVariants += local;
+          EXPECT_TRUE(function.hasPrivateLinkage());
+          EXPECT_TRUE(function.hasFnAttribute(llvm::Attribute::NoInline));
+          EXPECT_FALSE(hasLookup(&function));
+          if (recursive) {
+            bool foundRecursion = false;
+            for (auto &block : function)
+              for (auto &instruction : block)
+                if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction))
+                  if (auto *callee = call->getCalledFunction())
+                    if (callee->getName().starts_with("context_alternate")) {
+                      foundRecursion = true;
+                      EXPECT_NE(callee, &function);
+                      EXPECT_TRUE(callee->getName().contains(".devirtualized"));
+                    }
+            EXPECT_TRUE(foundRecursion);
+          }
+        }
+        EXPECT_EQ(readVariants, 8u);
+        EXPECT_EQ(recursiveVariants, 2u);
+        EXPECT_EQ(localVariants, 1u);
+        auto emittedNames = [](llvm::Module *module) {
+          std::vector<std::string> names;
+          for (auto &function : *module)
+            if (function.getName().contains(".devirtualized") ||
+                function.getName().starts_with("context_late"))
+              names.push_back(function.getName().str());
+          std::sort(names.begin(), names.end());
+          return names;
+        };
+        auto emittedTargets = [](llvm::Module *module) {
+          std::vector<std::vector<std::string>> targets;
+          for (auto &function : *module) {
+            size_t callIndex = 0;
+            for (auto &block : function)
+              for (auto &instruction : block)
+                if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction))
+                  if (auto *callee = call->getCalledFunction())
+                    if (callee->getName().contains(".devirtualized"))
+                      targets.push_back({function.getName().str(),
+                                         std::to_string(callIndex++),
+                                         callee->getName().str()});
+          }
+          std::sort(targets.begin(), targets.end());
+          return targets;
+        };
+        auto names = emittedNames(module);
+        auto targets = emittedTargets(module);
+        EXPECT_FALSE(targets.empty());
+        EXPECT_TRUE(std::any_of(names.begin(), names.end(), [](const auto &name) {
+          return name.find("context_late") == 0;
+        }));
+        Compiler shiftedCompiler(*options);
+        llvm::cantFail(
+            shiftedCompiler.parseCode("devirtualize_contexts.codon", source));
+        auto *shiftedCIR = shiftedCompiler.getModule();
+        for (int index = 0; index < 97; ++index)
+          shiftedCIR->N<ir::Var>(SrcInfo(), shiftedCIR->getIntType());
+        auto *shiftedLate =
+            shiftedCIR->getOrRealizeFunc("context_late", {shiftedCIR->getIntType()});
+        ASSERT_NE(shiftedLate, nullptr);
+        EXPECT_NE(lateId, shiftedLate->getId());
+        EXPECT_NE(lateReference, shiftedLate->referenceString());
+        llvm::cantFail(shiftedCompiler.compile());
+        auto *shiftedModule = shiftedCompiler.getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*shiftedModule, &llvm::errs()));
+        EXPECT_EQ(names, emittedNames(shiftedModule));
+        EXPECT_EQ(targets, emittedTargets(shiftedModule));
+        llvm::Function *other = nullptr;
+        for (auto &function : *module)
+          if (&function != first && function.getName().starts_with("context_read") &&
+              function.getName().contains(".devirtualized")) {
+            other = &function;
+            break;
+          }
+        ASSERT_NE(other, nullptr);
+        auto firstName = first->getName().str();
+        auto otherName = other->getName().str();
+        first->setName(firstName + ".swap");
+        other->setName(firstName);
+        first->setName(otherName);
+        EXPECT_EQ(names, emittedNames(module));
+        EXPECT_NE(targets, emittedTargets(module));
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        if (testing::Test::HasFailure()) {
+          llvm::errs() << "read variants: " << readVariants
+                       << ", recursive variants: " << recursiveVariants << '\n';
+          first->print(llvm::errs());
+          nested->print(llvm::errs());
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(RTTICodegenTest, StabilizesSpecializationsAcrossRealizationOrder) {
+  ASSERT_EXIT(
+      {
+        auto options = Options::getDefault("build/codon_test");
+        options->debug = false;
+        options->standalone = true;
+        std::vector<std::string> originalTargets;
+        std::vector<std::string> originalQueries;
+        for (int reversed = 0; reversed < 2; ++reversed) {
+          Compiler compiler(*options);
+          llvm::cantFail(compiler.parseCode("pgo_order.codon", R"(
+class OrderBase(object):
+    value: int
+    @noinline
+    def result(self):
+        return self.value
+
+class OrderFirst(OrderBase):
+    extra: int
+    @noinline
+    def result(self):
+        return self.extra
+
+class OrderSecond(OrderBase):
+    extra: int
+    @noinline
+    def result(self):
+        return self.extra
+
+@noinline
+def order_read(value: OrderBase):
+    return value.result()
+
+def order_first(number: int):
+    return order_read(OrderFirst(number, number + 1))
+
+def order_second(number: int):
+    return order_read(OrderSecond(number, number + 2))
+)"));
+          auto *cirModule = compiler.getModule();
+          auto queryTypes = (std::vector<ir::Type *>{cirModule->getIntType(),
+                                                     cirModule->getBoolType()});
+          if (reversed)
+            std::reverse(queryTypes.begin(), queryTypes.end());
+          for (auto *type : queryTypes)
+            cirModule->getIntrinsic(ir::InternalFunc::Intrinsic::SIZEOF, type);
+          std::sort(queryTypes.begin(), queryTypes.end(), [](auto *left, auto *right) {
+            return left->getName() < right->getName();
+          });
+          std::vector<std::string> queries;
+          for (auto *type : queryTypes)
+            queries.push_back(
+                cirModule->getIntrinsic(ir::InternalFunc::Intrinsic::SIZEOF, type)
+                    ->getName());
+          EXPECT_NE(queries.front(), queries.back());
+          if (reversed)
+            EXPECT_EQ(originalQueries, queries);
+          else
+            originalQueries = queries;
+          auto entries = (std::vector<std::string>{"order_first", "order_second"});
+          if (reversed)
+            std::reverse(entries.begin(), entries.end());
+          for (const auto &entry : entries) {
+            auto *function =
+                cirModule->getOrRealizeFunc(entry, {cirModule->getIntType()});
+            ASSERT_NE(function, nullptr);
+            ir::util::setExport(function, true);
+          }
+          llvm::cantFail(compiler.compile());
+          auto *module = compiler.getLLVMVisitor()->getModule();
+          EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+          std::sort(entries.begin(), entries.end());
+          std::vector<std::string> targets;
+          for (const auto &entry : entries) {
+            auto *function = module->getFunction(entry);
+            ASSERT_NE(function, nullptr);
+            llvm::Function *target = nullptr;
+            for (auto &block : *function)
+              for (auto &instruction : block)
+                if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction))
+                  if (auto *callee = call->getCalledFunction())
+                    if (callee->getName().starts_with("order_read") &&
+                        callee->getName().contains(".devirtualized")) {
+                      EXPECT_EQ(target, nullptr);
+                      target = callee;
+                    }
+            ASSERT_NE(target, nullptr);
+            targets.push_back(target->getName().str());
+          }
+          ASSERT_EQ(targets.size(), 2u);
+          EXPECT_NE(targets.front(), targets.back());
+          if (reversed)
+            EXPECT_EQ(originalTargets, targets);
+          else
+            originalTargets = targets;
+          if (testing::Test::HasFailure())
+            for (const auto &target : targets)
+              llvm::errs() << "reversed=" << reversed << " target=" << target << '\n';
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(LLVMOptimizationTest, StabilizesGeneratedHelpersAcrossRealizationOrder) {
+  ASSERT_EXIT(
+      {
+        auto options = Options::getDefault("build/codon_test");
+        options->debug = false;
+        options->standalone = true;
+        options->disabled.push_back("core-pythonic-generator-loop-fusion");
+        std::vector<std::vector<std::string>> originalTargets;
+        for (int reversed = 0; reversed < 2; ++reversed) {
+          Compiler compiler(*options);
+          llvm::cantFail(compiler.parseCode("helper_order.codon", R"(
+import numpy as np
+
+def helper_values(count: int):
+    for index in range(count):
+        yield index + 1
+
+def helper_first(count: int):
+    total = 0
+    @par
+    for index in range(count):
+        total += index
+    @par
+    for value in helper_values(count):
+        total += value
+    values = np.arange(count, dtype=float)
+    return total + sum(helper_values(count)) + (values * values + 1.0).sum()
+
+def helper_second(count: int):
+    total = 0
+    @par
+    for index in range(count):
+        total += index * index
+    @par
+    for value in helper_values(count):
+        total += value * value
+    values = np.arange(count, dtype=float)
+    return total + sum(helper_values(count), 2) + (values * values + 2.0).sum()
+)"));
+          auto *cirModule = compiler.getModule();
+          auto entries = (std::vector<std::string>{"helper_first", "helper_second"});
+          if (reversed)
+            std::reverse(entries.begin(), entries.end());
+          for (const auto &entry : entries) {
+            auto *function =
+                cirModule->getOrRealizeFunc(entry, {cirModule->getIntType()});
+            ASSERT_NE(function, nullptr);
+            ir::util::setExport(function, true);
+          }
+          llvm::cantFail(compiler.compile());
+          auto *module = compiler.getLLVMVisitor()->getModule();
+          EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+          std::sort(entries.begin(), entries.end());
+          std::vector<std::vector<std::string>> targets;
+          for (const auto &entry : entries) {
+            auto *function = module->getFunction(entry);
+            ASSERT_NE(function, nullptr);
+            std::vector<llvm::Function *> pending{function};
+            std::set<llvm::Function *> seen;
+            std::vector<std::string> names;
+            bool foundOutline = false;
+            bool foundTaskReduction = false;
+            bool foundGenerator = false;
+            bool foundNumPy = false;
+            while (!pending.empty()) {
+              auto *current = pending.back();
+              pending.pop_back();
+              if (!seen.insert(current).second)
+                continue;
+              auto name = current->getName();
+              bool outline = name.starts_with("__outlined");
+              bool taskReduction = name.starts_with("__red_");
+              bool generator = name.starts_with("__sum_wrapper");
+              bool numpy = name.starts_with("__numpy_fusion_scalar_fn");
+              if (outline || taskReduction || generator || numpy ||
+                  name.starts_with("__omp_reducer") ||
+                  name.contains("_loop_outline_template"))
+                names.push_back(name.str());
+              foundOutline |= outline;
+              foundTaskReduction |= taskReduction;
+              foundGenerator |= generator;
+              foundNumPy |= numpy;
+              for (auto &block : *current)
+                for (auto &instruction : block)
+                  for (auto &operand : instruction.operands())
+                    if (auto *callee = llvm::dyn_cast<llvm::Function>(operand.get()))
+                      pending.push_back(callee);
+            }
+            EXPECT_TRUE(foundOutline) << entry;
+            EXPECT_TRUE(foundTaskReduction) << entry;
+            EXPECT_TRUE(foundGenerator) << entry;
+            EXPECT_TRUE(foundNumPy) << entry;
+            std::sort(names.begin(), names.end());
+            targets.push_back(std::move(names));
+          }
+          if (reversed)
+            EXPECT_EQ(originalTargets, targets);
+          else
+            originalTargets = targets;
+          if (testing::Test::HasFailure())
+            for (size_t index = 0; index < targets.size(); ++index)
+              for (const auto &name : targets[index])
+                llvm::errs() << "reversed=" << reversed << " " << entries[index]
+                             << " -> " << name << '\n';
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(RTTICodegenTest, StabilizesRealizationsAndClones) {
+  ASSERT_EXIT(
+      {
+        auto options = Options::getDefault("build/codon_test");
+        options->debug = false;
+        options->standalone = true;
+        std::vector<std::string> originalNames;
+        std::string originalReference;
+        for (int shifted = 0; shifted < 2; ++shifted) {
+          Compiler compiler(*options);
+          llvm::cantFail(compiler.parseCode("pgo_names.codon",
+                                            "@noinline\n"
+                                            "def naming_pair(value):\n"
+                                            "    return (value, value)\n"
+                                            "def naming_unrelated(value: int):\n"
+                                            "    return value + 3\n"));
+          auto *cirModule = compiler.getModule();
+          if (shifted)
+            for (int index = 0; index < 97; ++index)
+              cirModule->N<ir::Var>(SrcInfo(), cirModule->getIntType());
+          auto *integer =
+              cirModule->getOrRealizeFunc("naming_pair", {cirModule->getIntType()});
+          auto *floating =
+              cirModule->getOrRealizeFunc("naming_pair", {cirModule->getFloatType()});
+          ASSERT_NE(integer, nullptr);
+          ASSERT_NE(floating, nullptr);
+          EXPECT_NE(integer, floating);
+          EXPECT_EQ(integer, cirModule->getOrRealizeFunc("naming_pair",
+                                                         {cirModule->getIntType()}));
+          if (shifted)
+            EXPECT_NE(originalReference, integer->referenceString());
+          else
+            originalReference = integer->referenceString();
+          auto *unrelated = cirModule->getOrRealizeFunc("naming_unrelated",
+                                                        {cirModule->getIntType()});
+          ASSERT_NE(unrelated, nullptr);
+          ir::util::CloneVisitor firstCloner(cirModule);
+          if (shifted)
+            firstCloner.forceClone(unrelated);
+          auto *first = firstCloner.forceClone(integer);
+          EXPECT_NE(first, integer);
+          EXPECT_EQ(first, firstCloner.forceClone(integer));
+          ir::util::CloneVisitor secondCloner(cirModule);
+          auto *second = secondCloner.forceClone(integer);
+          EXPECT_NE(second, first);
+          EXPECT_NE(second->referenceString(), first->referenceString());
+          auto *integerType = ir::cast<ir::FuncType>(integer->getType());
+          auto *floatingType = ir::cast<ir::FuncType>(floating->getType());
+          ir::Func *integerConstructor = nullptr;
+          ir::Func *floatingConstructor = nullptr;
+          for (auto *variable : *cirModule) {
+            auto *function = ir::cast<ir::InternalFunc>(variable);
+            if (!function ||
+                function->getIntrinsic() != ir::InternalFunc::Intrinsic::RECORD_NEW)
+              continue;
+            auto *signature = ir::cast<ir::FuncType>(function->getType());
+            if (signature->getReturnType() == integerType->getReturnType())
+              integerConstructor = function;
+            if (signature->getReturnType() == floatingType->getReturnType())
+              floatingConstructor = function;
+          }
+          ASSERT_NE(integerConstructor, nullptr);
+          ASSERT_NE(floatingConstructor, nullptr);
+          EXPECT_NE(integerConstructor->getName(), floatingConstructor->getName());
+          EXPECT_EQ(integerConstructor->getName(),
+                    integerConstructor->getType()->getName());
+          EXPECT_EQ(floatingConstructor->getName(),
+                    floatingConstructor->getType()->getName());
+          EXPECT_NE(integerConstructor->getType(), floatingConstructor->getType());
+          llvm::cantFail(compiler.compile());
+          auto *module = compiler.getLLVMVisitor()->getModule();
+          EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+          const auto &functions = compiler.getLLVMVisitor()->getFuncs();
+          EXPECT_EQ(functions.at(integer->getId())->getName(),
+                    integer->getName() + ".0");
+          EXPECT_EQ(functions.at(first->getId())->getName(), integer->getName() + ".1");
+          EXPECT_EQ(functions.at(second->getId())->getName(),
+                    integer->getName() + ".2");
+          std::vector<std::string> names;
+          size_t integerFunctions = 0;
+          size_t floatingFunctions = 0;
+          size_t tupleConstructors = 0;
+          for (auto &function : *module) {
+            auto *tuple = llvm::dyn_cast<llvm::StructType>(function.getReturnType());
+            if (!tuple || tuple->getNumElements() != 2)
+              continue;
+            if (tuple->getElementType(0) != tuple->getElementType(1) ||
+                (!tuple->getElementType(0)->isIntegerTy(64) &&
+                 !tuple->getElementType(0)->isDoubleTy()))
+              continue;
+            if (function.getName().starts_with("naming_pair")) {
+              integerFunctions += tuple->getElementType(0)->isIntegerTy(64);
+              floatingFunctions += tuple->getElementType(0)->isDoubleTy();
+            } else if (function.getName().starts_with(integerConstructor->getName() +
+                                                      ".") ||
+                       function.getName().starts_with(floatingConstructor->getName() +
+                                                      ".")) {
+              ++tupleConstructors;
+            } else {
+              continue;
+            }
+            names.push_back(function.getName().str());
+          }
+          EXPECT_EQ(integerFunctions, 3u);
+          EXPECT_EQ(floatingFunctions, 1u);
+          EXPECT_EQ(tupleConstructors, 2u);
+          std::sort(names.begin(), names.end());
+          EXPECT_EQ(std::adjacent_find(names.begin(), names.end()), names.end());
+          std::vector<std::string> expectedNames;
+          expectedNames.push_back(integerConstructor->getName() + ".0");
+          expectedNames.push_back(floatingConstructor->getName() + ".0");
+          expectedNames.push_back(floating->getName() + ".0");
+          for (int index = 0; index < 3; ++index)
+            expectedNames.push_back(integer->getName() + "." + std::to_string(index));
+          std::sort(expectedNames.begin(), expectedNames.end());
+          EXPECT_EQ(expectedNames, names);
+          if (shifted)
+            EXPECT_EQ(originalNames, names);
+          else
+            originalNames = names;
+          if (testing::Test::HasFailure()) {
+            llvm::errs() << "shifted=" << shifted << " integer=" << integerFunctions
+                         << " floating=" << floatingFunctions
+                         << " constructors=" << tupleConstructors << '\n';
+            llvm::errs() << integerConstructor->getName() << " / "
+                         << floatingConstructor->getName() << '\n';
+            for (const auto &name : names)
+              llvm::errs() << name << '\n';
+          }
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(RTTICodegenTest, RemovesExceptionMachineryFromStringIndexing) {
+  ASSERT_EXIT(
+      {
+        auto compiler = compileAndOptimize(R"(
+@export
+def exception_kernel(message: str):
+    return IndexError(message).message
+
+@export
+def character_kernel(value: str, position: int):
+    return value[position]
+)");
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        auto *exception = module->getFunction("exception_kernel");
+        ASSERT_NE(exception, nullptr);
+        size_t instructions = 0;
+        for (auto &block : *exception)
+          instructions += block.size();
+        EXPECT_EQ(instructions, 1u);
+        auto *returned =
+            llvm::dyn_cast<llvm::ReturnInst>(exception->front().getTerminator());
+        ASSERT_NE(returned, nullptr);
+        EXPECT_EQ(returned->getReturnValue(), exception->getArg(0));
+
+        auto *character = module->getFunction("character_kernel");
+        ASSERT_NE(character, nullptr);
+        bool canThrow = false;
+        for (auto &block : *character) {
+          for (auto &instruction : block) {
+            auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+            if (!call)
+              continue;
+            auto *callee = call->getCalledFunction();
+            ASSERT_NE(callee, nullptr);
+            auto name = callee->getName();
+            EXPECT_FALSE(name.contains(".__init__"));
+            EXPECT_FALSE(name.contains(".__getitem__"));
+            EXPECT_FALSE(name.starts_with(".codon.field.offset"));
+            canThrow |= name == "seq_throw";
+          }
+        }
+        EXPECT_TRUE(canThrow);
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(RTTICodegenTest, BoundsDispatchByReceiverSelection) {
+  ASSERT_EXIT(
+      {
+        std::string source;
+        auto hierarchy = [&](const std::string &prefix, int receivers,
+                             int implementations, bool large) {
+          // An override marks fee virtual even when the selected subtree has
+          // only one implementation. Otherwise the frontend calls it directly.
+          if (implementations == 1)
+            source += "class " + prefix +
+                      "Root(object):\n    def fee(self, units: int): return units\n";
+          for (int index = 0; index < receivers; ++index) {
+            auto name = prefix + std::to_string(index);
+            auto parent = index ? prefix + "0"
+                                : (implementations == 1 ? prefix + "Root" : "object");
+            source += "class " + name + "(" + parent + "):\n";
+            if (index < implementations) {
+              source += "    def fee(self, units: int):\n";
+              if (large) {
+                for (int operation = 0; operation < 32; ++operation)
+                  source += "        units = (units * 17 + " +
+                            std::to_string(operation + 1) + ") & 1023\n";
+              }
+              source += "        return units * " + std::to_string(index + 17) + " + " +
+                        std::to_string(index + 3) + "\n";
+            } else {
+              source += "    pass\n";
+            }
+            source += "print(" + name + "().fee(7))\n";
+          }
+          source += "@export\ndef " + prefix + "_dispatch(value: " + prefix +
+                    "0, units: int):\n    return value.fee(units)\n";
+        };
+        hierarchy("Small", 4, 4, false);
+        hierarchy("SmallShared", 4, 2, false);
+        hierarchy("Boundary", 5, 5, false);
+        hierarchy("Expanded", 8, 8, false);
+        hierarchy("Shared", 64, 2, false);
+        hierarchy("Singleton", 64, 1, false);
+        hierarchy("SmallLarge", 3, 3, true);
+        hierarchy("Large", 6, 6, true);
+        hierarchy("General", 65, 65, false);
+        hierarchy("SingletonLimit", 65, 1, false);
+        auto compiler = compileAndOptimize(source);
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+        for (auto &function : *module)
+          EXPECT_FALSE(function.getName().starts_with(".codon.dispatch.target."));
+        auto check = [&](const std::string &name, bool indirect) {
+          auto *kernel = module->getFunction(name + "_dispatch");
+          ASSERT_NE(kernel, nullptr);
+          size_t indirectCalls = 0;
+          for (auto &block : *kernel) {
+            for (auto &instruction : block) {
+              auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+              if (!call)
+                continue;
+              auto *callee = call->getCalledFunction();
+              indirectCalls += !callee;
+            }
+          }
+          EXPECT_EQ(indirectCalls, indirect ? 1u : 0u) << name;
+          if (testing::Test::HasFailure())
+            kernel->print(llvm::errs());
+        };
+        // Sharing helps only when it removes selection altogether. Otherwise,
+        // receiver count bounds per-site code regardless of method body size.
+        check("Small", false);
+        check("SmallShared", false);
+        check("Boundary", true);
+        check("Expanded", true);
+        check("Shared", true);
+        check("Singleton", false);
+        check("SmallLarge", false);
+        check("Large", true);
+        check("General", true);
+        check("SingletonLimit", true);
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
 TEST(RTTICodegenTest, ReusesJITFieldOwnerOffsets) {
   ASSERT_EXIT(
       {
@@ -278,6 +2022,11 @@ TEST(RTTICodegenTest, ReusesJITFieldOwnerOffsets) {
             "def field_loop(value: FieldBase, rounds: int):\n"
             "    for index in range(rounds):\n"
             "        value.balance = (value.balance * 3 + index) & 65535\n"
+            "    return value.balance\n"
+            "@export\n"
+            "def exact_field(number: int):\n"
+            "    value = FieldBase(number, 0)\n"
+            "    value.balance += 2\n"
             "    return value.balance\n"));
         auto *compiler = instance.getCompiler();
         compiler->getPassManager()->run(compiler->getModule());
@@ -328,6 +2077,16 @@ TEST(RTTICodegenTest, ReusesJITFieldOwnerOffsets) {
           }
         }
         EXPECT_EQ(loopLookups, 1u);
+        auto *exact = module->getFunction("exact_field");
+        ASSERT_NE(exact, nullptr);
+        for (auto &block : *exact) {
+          for (auto &instruction : block) {
+            auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+            auto *callee = call ? call->getCalledFunction() : nullptr;
+            if (callee)
+              EXPECT_FALSE(callee->getName().starts_with(".codon.field.offset"));
+          }
+        }
         std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
       },
       testing::ExitedWithCode(EXIT_SUCCESS), "");
@@ -1633,6 +3392,96 @@ def replace_large(data: Ptr[float], count: int):
         },
         testing::ExitedWithCode(EXIT_SUCCESS), "");
   }
+}
+
+TEST(LLVMOptimizationTest, UnpackingDoesNotAllocateTemporaryContainers) {
+  ASSERT_EXIT(
+      {
+        auto compiler = compileAndOptimize(R"(
+@export
+def unpack_pair(values: Tuple[int, int]):
+    left, right = values
+    return left + right
+
+@export
+def unpack_list(values: list[int]):
+    if len(values) != 2:
+        return 0
+    left, right = values
+    return left + right
+
+def pair_values(left: int, right: int):
+    yield left
+    yield right
+
+@export
+def unpack_generator(left: int, right: int):
+    first, second = pair_values(left, right)
+    return first + second
+
+@export
+def unpack_star(values: list[int]):
+    if len(values) < 2:
+        return values
+    first, *middle, last = values
+    return middle
+
+@export
+def unpack_generated_star(first: int, second: int):
+  head, *middle, tail = (value for value in (first, second, first, second))
+  return middle
+
+@export
+def slice_middle(values: list[int]):
+    if len(values) < 2:
+        return values
+    return values[1:-1]
+)");
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        auto allocations = [&](const char *name) {
+          auto *function = module->getFunction(name);
+          EXPECT_NE(nullptr, function);
+          unsigned count = 0;
+          std::unordered_set<llvm::Function *> visited;
+          std::function<void(llvm::Function *)> inspect = [&](llvm::Function *callee) {
+            if (!callee || !visited.insert(callee).second)
+              return;
+            std::unordered_set<llvm::BasicBlock *> returning;
+            std::vector<llvm::BasicBlock *> pending;
+            for (auto &block : *callee)
+              if (llvm::isa<llvm::ReturnInst>(block.getTerminator()))
+                pending.push_back(&block);
+            while (!pending.empty()) {
+              auto *block = pending.back();
+              pending.pop_back();
+              if (returning.insert(block).second)
+                for (auto *predecessor : llvm::predecessors(block))
+                  pending.push_back(predecessor);
+            }
+            for (auto &block : *callee) {
+              if (!returning.count(&block))
+                continue;
+              for (auto &instruction : block)
+                if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction)) {
+                  auto *target = call->getCalledFunction();
+                  if (target && target->getName().starts_with("seq_alloc"))
+                    ++count;
+                  else
+                    inspect(target);
+                }
+            }
+          };
+          inspect(function);
+          return count;
+        };
+        EXPECT_EQ(0u, allocations("unpack_pair"));
+        EXPECT_EQ(0u, allocations("unpack_list"));
+        EXPECT_EQ(0u, allocations("unpack_generator"));
+        EXPECT_EQ(allocations("slice_middle"), allocations("unpack_star"));
+        EXPECT_EQ(allocations("slice_middle"), allocations("unpack_generated_star"));
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
 }
 
 TEST(LLVMOptimizationTest, PacksAndReleasesReversedDotOperands) {
@@ -3037,7 +4886,9 @@ def task_ids(data: Ptr[int], count: int):
         for (auto &function : *compiler->getLLVMVisitor()->getModule()) {
           if (function.isDeclaration())
             continue;
-          bool outlined = function.getName().contains("_loop_outline_template");
+          bool outlined = function.getName()
+                              .split(".context.")
+                              .first.contains("_loop_outline_template");
           outlines += outlined;
           for (auto &block : function) {
             for (auto &instruction : block) {
@@ -3081,7 +4932,9 @@ def sum_float(data: Ptr[float], count: int):
         unsigned outlines = 0;
         unsigned loopBlocks = 0;
         for (auto &function : *compiler->getLLVMVisitor()->getModule()) {
-          if (!function.getName().contains("_loop_outline_template"))
+          if (!function.getName()
+                   .split(".context.")
+                   .first.contains("_loop_outline_template"))
             continue;
           ++outlines;
           llvm::DominatorTree dominators(function);
@@ -3147,6 +5000,751 @@ define void @launch(ptr %result) {
     }
   }
   EXPECT_EQ(3, queries);
+}
+
+TEST(LLVMOptimizationTest, PreservesRequiredHeapAllocationAlignment) {
+  for (unsigned alignment : {8u, 32u}) {
+    SCOPED_TRACE(alignment);
+    auto optimized = compileAndOptimizeIR(
+        R"(
+declare noalias ptr @seq_alloc_atomic(i64)
+declare i64 @collect()
+declare void @llvm.memcpy.p0.p0.i64(ptr nocapture writeonly, ptr nocapture readonly, i64, i1 immarg)
+
+define void @test(ptr %source, ptr %output) {
+entry:
+  %allocation = call ptr @seq_alloc_atomic(i64 32)
+  call void @llvm.memcpy.p0.p0.i64(ptr align )" +
+        std::to_string(alignment) +
+        R"( %allocation, ptr align 1 %source, i64 32, i1 false)
+  %count = call i64 @collect()
+  call void @llvm.memcpy.p0.p0.i64(ptr align 1 %output, ptr align 1 %allocation, i64 %count, i1 false)
+  ret void
+}
+)");
+    ASSERT_NE(optimized.module, nullptr);
+    EXPECT_EQ(countFixedAllocations(optimized.module.get(), 32), alignment > 8 ? 1 : 0);
+  }
+}
+
+TEST(LLVMOptimizationTest, UsesAllocationAlignmentContracts) {
+  for (unsigned alignment : {1u, 2u, 4u, 8u, 16u, 32u, 64u}) {
+    SCOPED_TRACE(alignment);
+    auto optimized = compileAndOptimizeIR(
+        std::string("declare noalias ") +
+        (alignment > 16 ? "align " + std::to_string(alignment) + " " : "") +
+        R"(ptr @seq_alloc_atomic(i64)
+declare i64 @collect()
+declare void @llvm.memcpy.p0.p0.i64(ptr nocapture writeonly, ptr nocapture readonly, i64, i1 immarg)
+
+define void @test(ptr %source, ptr %output) {
+entry:
+  %allocation = call ptr @seq_alloc_atomic(i64 33)
+  call void @llvm.memcpy.p0.p0.i64(ptr align )" +
+        std::to_string(alignment) +
+        R"( %allocation, ptr align 1 %source, i64 33, i1 false)
+  %count = call i64 @collect()
+  call void @llvm.memcpy.p0.p0.i64(ptr align 1 %output, ptr align 1 %allocation, i64 %count, i1 false)
+  ret void
+}
+)");
+    ASSERT_NE(nullptr, optimized.module);
+    EXPECT_EQ(0, countFixedAllocations(optimized.module.get(), 33));
+    unsigned buffers = 0;
+    for (auto &block : *optimized.module->getFunction("test")) {
+      for (auto &instruction : block) {
+        if (auto *buffer = llvm::dyn_cast<llvm::AllocaInst>(&instruction)) {
+          ++buffers;
+          EXPECT_EQ(alignment, buffer->getAlign().value());
+        }
+      }
+    }
+    EXPECT_EQ(1u, buffers);
+  }
+}
+
+TEST(LLVMOptimizationTest, ChecksAlignmentThroughAllocationUses) {
+  struct Case {
+    const char *name;
+    const char *allocationAttributes;
+    const char *reallocAttributes;
+    const char *use;
+    unsigned heapAllocations;
+    const char *observedPointer = "%allocation";
+    const char *reallocParameterAttributes = "";
+    const char *allocationCallAttributes = "";
+    const char *afterCopy = "";
+  };
+  const Case cases[] = {
+      {"ordinary", "", "", "", 0},
+      {"allocator_return", "align 32", "", "", 0},
+      {"allocator_weak_return", "align 8", "", "", 0},
+      {"memset", "", "",
+       "call void @llvm.memset.p0.i64(ptr align 32 %allocation, i8 %byte, i64 %length, "
+       "i1 false)\n",
+       1},
+      {"memcpy_destination", "", "",
+       "call void @llvm.memcpy.p0.p0.i64(ptr align 32 %allocation, ptr %source, i64 "
+       "%length, i1 false)\n",
+       1},
+      {"memcpy_source", "", "",
+       "call void @llvm.memcpy.p0.p0.i64(ptr %output, ptr align 32 %allocation, i64 "
+       "%length, i1 false)\n",
+       1},
+      {"memmove_destination", "", "",
+       "call void @llvm.memmove.p0.p0.i64(ptr align 32 %allocation, ptr %source, i64 "
+       "%length, i1 false)\n",
+       1},
+      {"memmove_source", "", "",
+       "call void @llvm.memmove.p0.p0.i64(ptr %output, ptr align 32 %allocation, i64 "
+       "%length, i1 false)\n",
+       1},
+      {"aligned_load", "", "",
+       "%loaded = load i64, ptr %allocation, align 32\n"
+       "store i64 %loaded, ptr %output, align 1\n",
+       1},
+      {"aligned_store", "", "", "store i64 %length, ptr %allocation, align 32\n", 1},
+      {"constant_offset", "", "",
+       "%offset = getelementptr i8, ptr %allocation, i64 8\n"
+       "store i64 %length, ptr %offset, align 8\n",
+       0},
+      {"strong_constant_offset", "", "",
+       "%offset = getelementptr i8, ptr %allocation, i64 16\n"
+       "store i64 %length, ptr %offset, align 16\n",
+       0},
+      {"dynamic_offset", "", "",
+       "%offset = getelementptr i8, ptr %allocation, i64 %index\n"
+       "store i8 %byte, ptr %offset, align 1\n",
+       0},
+      {"dynamic_integer_offset", "", "",
+       "%offset = getelementptr i64, ptr %allocation, i64 %index\n"
+       "store i64 %length, ptr %offset, align 8\n",
+       0},
+      {"dynamic_scaled_byte_offset", "", "",
+       "%scaled = shl i64 %index, 3\n"
+       "%offset = getelementptr i8, ptr %allocation, i64 %scaled\n"
+       "store i64 %length, ptr %offset, align 8\n",
+       0},
+      {"dynamic_weak_scaled_byte_offset", "", "",
+       "%scaled = shl i64 %index, 1\n"
+       "%offset = getelementptr i8, ptr %allocation, i64 %scaled\n"
+       "store i64 %length, ptr %offset, align 8\n",
+       0},
+      {"dynamic_masked_byte_offset", "", "",
+       "%masked = and i64 %index, -8\n"
+       "%offset = getelementptr i8, ptr %allocation, i64 %masked\n"
+       "store i64 %length, ptr %offset, align 8\n",
+       0},
+      {"dynamic_strong_alignment", "", "",
+       "%offset = getelementptr i64, ptr %allocation, i64 %index\n"
+       "store i64 %length, ptr %offset, align 16\n",
+       0},
+      {"dynamic_byte_strong_alignment", "", "",
+       "%offset = getelementptr i8, ptr %allocation, i64 %index\n"
+       "store i64 %length, ptr %offset, align 8\n",
+       0},
+      {"dynamic_struct_field", "", "",
+       "%offset = getelementptr {i64, i32}, ptr %allocation, i64 %index, i32 1\n"
+       "store i8 %byte, ptr %offset, align 4\n",
+       0},
+      {"dynamic_misaligned_struct_field", "", "",
+       "%offset = getelementptr {i32, i32}, ptr %allocation, i64 %index, i32 1\n"
+       "store i8 %byte, ptr %offset, align 8\n",
+       0},
+      {"dynamic_memset", "", "",
+       "%offset = getelementptr i64, ptr %allocation, i64 %index\n"
+       "call void @llvm.memset.p0.i64(ptr align 8 %offset, i8 %byte, i64 %length, "
+       "i1 false)\n",
+       0},
+      {"dynamic_realloc", "", "",
+       "%offset = getelementptr i64, ptr %allocation, i64 %index\n"
+       "%grown = call ptr @seq_realloc(ptr %offset, i64 64, i64 32)\n",
+       1, "%grown"},
+      {"ordinary_realloc", "", "",
+       "%grown = call ptr @seq_realloc(ptr %allocation, i64 64, i64 32)\n", 0,
+       "%grown"},
+      {"realloc_drops_initial_alignment", "align 32", "",
+       "%grown = call ptr @seq_realloc(ptr %allocation, i64 64, i64 32)\n"
+       "%offset = getelementptr i8, ptr %grown, i64 16\n"
+       "%loaded = load i8, ptr %offset, align 32\n"
+       "store i8 %loaded, ptr %output, align 1\n",
+       1, "%grown"},
+      {"realloc_stronger_callsite_return", "", "",
+       "%grown = call align 64 ptr @seq_realloc(ptr %allocation, i64 64, i64 32)\n", 0,
+       "%grown"},
+      {"realloc_stronger_callee_return", "", "align 64",
+       "%grown = call align 8 ptr @seq_realloc(ptr %allocation, i64 64, i64 32)\n", 0,
+       "%grown"},
+      {"dynamic_realloc_use", "", "",
+       "%grown = call ptr @seq_realloc(ptr %allocation, i64 64, i64 32)\n"
+       "%offset = getelementptr i64, ptr %grown, i64 %index\n"
+       "store i64 %length, ptr %offset, align 8\n",
+       0, "%grown"},
+      {"chained_offset", "", "",
+       "%first = getelementptr i8, ptr %allocation, i64 1\n"
+       "%offset = getelementptr i8, ptr %first, i64 7\n"
+       "store i64 %length, ptr %offset, align 8\n",
+       0},
+      {"dynamic_chained_offset", "", "",
+       "%first = getelementptr i64, ptr %allocation, i64 %index\n"
+       "%offset = getelementptr i8, ptr %first, i64 4\n"
+       "store i8 %byte, ptr %offset, align 8\n",
+       0},
+      {"assume_alignment", "", "",
+       "call void @llvm.assume(i1 true) [\"align\"(ptr %allocation, i64 32)]\n", 1},
+      {"call_parameter", "", "", "", 1, "%allocation", "", "",
+       "call void @seq_free(ptr align 32 %allocation)\n"},
+      {"realloc_return", "", "align 32",
+       "%grown = call ptr @seq_realloc(ptr %allocation, i64 64, i64 32)\n"
+       "%loaded = load i8, ptr %grown, align 1\n"
+       "store i8 %loaded, ptr %output, align 1\n",
+       0, "%grown"},
+      {"realloc_use", "", "",
+       "%grown = call ptr @seq_realloc(ptr %allocation, i64 64, i64 32)\n"
+       "call void @llvm.memset.p0.i64(ptr align 32 %grown, i8 %byte, i64 %length, i1 "
+       "false)\n"
+       "%loaded = load i8, ptr %grown, align 1\n"
+       "store i8 %loaded, ptr %output, align 1\n",
+       1, "%grown"},
+      {"callsite_return", "", "", "", 0, "%allocation", "", "align 32"},
+      {"callee_stronger_return", "align 32", "", "", 0, "%allocation", "", "align 8"},
+      {"callee_parameter", "", "",
+       "%grown = call ptr @seq_realloc(ptr %allocation, i64 64, i64 32)\n", 1, "%grown",
+       "align 32"},
+      {"address_space_cast", "", "",
+       "%other = addrspacecast ptr %allocation to ptr addrspace(1)\n"
+       "store i8 %byte, ptr addrspace(1) %other, align 1\n",
+       1},
+  };
+  for (const auto &test : cases) {
+    SCOPED_TRACE(test.name);
+    auto optimized = compileAndOptimizeIR(
+        std::string("declare noalias ") + test.allocationAttributes +
+        " ptr @seq_alloc_atomic(i64)\ndeclare " + test.reallocAttributes +
+        " ptr @seq_realloc(ptr " + test.reallocParameterAttributes + R"(, i64, i64)
+declare void @seq_free(ptr)
+declare i64 @collect()
+declare void @llvm.assume(i1 noundef)
+declare void @llvm.memset.p0.i64(ptr nocapture writeonly, i8, i64, i1 immarg)
+declare void @llvm.memcpy.p0.p0.i64(ptr nocapture writeonly, ptr nocapture readonly, i64, i1 immarg)
+declare void @llvm.memmove.p0.p0.i64(ptr nocapture writeonly, ptr nocapture readonly, i64, i1 immarg)
+
+define void @test(ptr %source, ptr %output, i64 %length, i64 %index, i8 %byte) {
+entry:
+  %allocation = call )" +
+        test.allocationCallAttributes + R"( ptr @seq_alloc_atomic(i64 32)
+  call void @llvm.memcpy.p0.p0.i64(ptr align 1 %allocation, ptr align 1 %source, i64 32, i1 false)
+  %count = call i64 @collect()
+)" + test.use +
+        "call void @llvm.memcpy.p0.p0.i64(ptr align 1 %output, ptr align 1 " +
+        test.observedPointer + ", i64 %count, i1 false)\n" + test.afterCopy +
+        "ret void\n}\n");
+    ASSERT_NE(optimized.module, nullptr);
+    EXPECT_EQ(countFixedAllocations(optimized.module.get(), 32), test.heapAllocations);
+    if (!test.heapAllocations) {
+      for (auto &block : *optimized.module->getFunction("test")) {
+        for (auto &instruction : block) {
+          if (auto *buffer = llvm::dyn_cast<llvm::AllocaInst>(&instruction)) {
+            auto name = llvm::StringRef(test.name);
+            if (name.starts_with("realloc_stronger_"))
+              EXPECT_GE(buffer->getAlign().value(), 64u);
+            else if (name == "allocator_return" || name == "callsite_return" ||
+                     name == "callee_stronger_return" || name == "realloc_return")
+              EXPECT_GE(buffer->getAlign().value(), 32u);
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST(LLVMOptimizationTest, PromotesAllocationsPassedToSafeCalls) {
+  struct Case {
+    const char *name;
+    const char *declaration;
+    const char *call;
+    unsigned heapAllocations;
+  };
+  const Case cases[] = {
+      {"safe", "declare void @consume(ptr nocapture) nofree",
+       "call void @consume(ptr %allocation)", 0},
+      {"parameter_nofree", "declare void @consume(ptr nocapture nofree)",
+       "call void @consume(ptr %allocation)", 0},
+      {"callsite_attributes", "declare void @consume(ptr)",
+       "call void @consume(ptr nocapture nofree %allocation)", 0},
+      {"tail", "declare void @consume(ptr nocapture) nofree",
+       "tail call void @consume(ptr %allocation)", 0},
+      {"scalar_result", "declare i64 @consume(ptr nocapture) nofree",
+       "%result = call i64 @consume(ptr %allocation)\n"
+       "store i64 %result, ptr %output, align 1",
+       0},
+      {"capture", "declare void @consume(ptr) nofree",
+       "call void @consume(ptr %allocation)", 1},
+      {"free", "declare void @consume(ptr nocapture)",
+       "call void @consume(ptr %allocation)", 1},
+      {"readonly", "declare void @consume(ptr readonly)",
+       "call void @consume(ptr %allocation)", 1},
+      {"pointer_result", "declare ptr @consume(ptr nocapture) nofree",
+       "%result = call ptr @consume(ptr %allocation)\n"
+       "store ptr %result, ptr %output, align 1",
+       1},
+      {"strong_alignment", "declare void @consume(ptr nocapture align 32) nofree",
+       "call void @consume(ptr %allocation)", 1},
+      {"weak_callsite_alignment",
+       "declare void @consume(ptr nocapture align 32) nofree",
+       "call void @consume(ptr align 8 %allocation)", 1},
+      {"two_safe_arguments",
+       "declare void @consume(ptr nocapture, ptr nocapture) nofree",
+       "call void @consume(ptr %allocation, ptr %allocation)", 0},
+      {"dynamic_argument", "declare void @consume(ptr nocapture align 8) nofree",
+       "%offset = getelementptr i64, ptr %allocation, i64 %length\n"
+       "call void @consume(ptr %offset)",
+       0},
+      {"misaligned_argument", "declare void @consume(ptr nocapture align 8) nofree",
+       "%offset = getelementptr i8, ptr %allocation, i64 4\n"
+       "call void @consume(ptr %offset)",
+       0},
+      {"second_argument_captures", "declare void @consume(ptr nocapture, ptr) nofree",
+       "call void @consume(ptr %allocation, ptr %allocation)", 1},
+      {"second_argument_frees",
+       "declare void @consume(ptr nocapture nofree, ptr nocapture)",
+       "call void @consume(ptr %allocation, ptr %allocation)", 1},
+      {"operand_bundle", "declare void @consume(ptr nocapture) nofree",
+       "call void @consume(ptr %allocation) [\"unknown\"(ptr %allocation)]", 1},
+  };
+  for (const auto &test : cases) {
+    SCOPED_TRACE(test.name);
+    auto optimized = compileAndOptimizeIR(
+        std::string("declare noalias ptr @seq_alloc_atomic(i64)\n") + test.declaration +
+        R"(
+declare void @llvm.memcpy.p0.p0.i64(ptr nocapture writeonly, ptr nocapture readonly, i64, i1 immarg)
+
+define void @test(ptr %source, ptr %output, i64 %length) {
+entry:
+  %allocation = call ptr @seq_alloc_atomic(i64 32)
+  call void @llvm.memcpy.p0.p0.i64(ptr align 1 %allocation, ptr align 1 %source, i64 32, i1 false)
+)" + test.call +
+        R"(
+  call void @llvm.memcpy.p0.p0.i64(ptr align 1 %output, ptr align 1 %allocation, i64 %length, i1 false)
+  ret void
+}
+)");
+    ASSERT_NE(nullptr, optimized.module);
+    EXPECT_EQ(test.heapAllocations, countFixedAllocations(optimized.module.get(), 32));
+    if (!test.heapAllocations) {
+      unsigned calls = 0;
+      for (auto &block : *optimized.module->getFunction("test")) {
+        for (auto &instruction : block) {
+          auto *call = llvm::dyn_cast<llvm::CallInst>(&instruction);
+          if (call && call->getCalledFunction() &&
+              call->getCalledFunction()->getName() == "consume") {
+            ++calls;
+            EXPECT_FALSE(call->isTailCall());
+          }
+        }
+      }
+      EXPECT_EQ(1u, calls);
+    }
+  }
+
+  auto mandatoryTail = compileAndOptimizeIR(R"(
+declare noalias ptr @seq_alloc_atomic(i64)
+declare void @consume(ptr nocapture) nofree
+declare void @llvm.memcpy.p0.p0.i64(ptr nocapture writeonly, ptr nocapture readonly, i64, i1 immarg)
+
+define void @test(ptr %source) {
+entry:
+  %allocation = call ptr @seq_alloc_atomic(i64 32)
+  call void @llvm.memcpy.p0.p0.i64(ptr %allocation, ptr %source, i64 32, i1 false)
+  musttail call void @consume(ptr %allocation)
+  ret void
+}
+)");
+  ASSERT_NE(nullptr, mandatoryTail.module);
+  EXPECT_EQ(1, countFixedAllocations(mandatoryTail.module.get(), 32));
+}
+
+TEST(LLVMOptimizationTest, LowersExternalOwnershipAnnotations) {
+  auto compiler = compileAndOptimize(R"(
+@nocapture
+@llvm_nocapture
+@llvm_nofree
+@C
+def annotated_mutation(buffer: cobj, size: int) -> None:
+    pass
+
+@nocapture
+@C
+def codon_capture_contract(buffer: cobj) -> None:
+    pass
+
+@export
+def invoke_contracts(buffer: cobj, size: int):
+    annotated_mutation(buffer, size)
+    codon_capture_contract(buffer)
+)");
+  auto *module = compiler->getLLVMVisitor()->getModule();
+  auto *annotated = module->getFunction("annotated_mutation");
+  ASSERT_NE(nullptr, annotated);
+  EXPECT_TRUE(annotated->hasParamAttribute(0, llvm::Attribute::NoCapture));
+  EXPECT_FALSE(annotated->hasParamAttribute(1, llvm::Attribute::NoCapture));
+  EXPECT_TRUE(annotated->hasFnAttribute(llvm::Attribute::NoFree));
+  EXPECT_FALSE(annotated->onlyReadsMemory());
+  auto *codonOnly = module->getFunction("codon_capture_contract");
+  ASSERT_NE(nullptr, codonOnly);
+  EXPECT_FALSE(codonOnly->hasParamAttribute(0, llvm::Attribute::NoCapture));
+  EXPECT_FALSE(codonOnly->hasFnAttribute(llvm::Attribute::NoFree));
+}
+
+TEST(LLVMOptimizationTest, PromotesNativeSortBuffers) {
+  struct Case {
+    const char *suffix;
+    const char *type;
+    unsigned alignment;
+    bool nanLast;
+  };
+  const Case cases[] = {
+      {"int16", "i16", 2, false},
+      {"uint16", "u16", 2, false},
+      {"int32", "i32", 4, false},
+      {"uint32", "u32", 4, false},
+      {"int64", "i64", 8, false},
+      {"uint64", "u64", 8, false},
+      {"uint128", "u128", 16, false},
+      {"float32", "float32", 4, false},
+      {"float64", "float", 8, false},
+      {"float32_nan_last", "float32", 4, true},
+      {"float64_nan_last", "float", 8, true},
+  };
+  ASSERT_EXIT(
+      {
+        std::string code = "from internal.sort import _try_native_sort\n";
+        for (const auto &test : cases) {
+          std::string type = test.type;
+          code += std::string("@export\ndef sort_") + test.suffix +
+                  "(index: int):\n    values = Ptr[" + type + "](4)\n";
+          code += "    values[0] = " + type + "(3)\n";
+          code += "    values[1] = " + type + "(1)\n";
+          code += "    values[2] = " + type + "(4)\n";
+          code += "    values[3] = " + type + "(2)\n";
+          code += "    supported = _try_native_sort(values, 4, " +
+                  std::string(test.nanLast ? "True" : "False") + ")\n";
+          code += "    assert supported\n    return int(values[index & 3])\n";
+        }
+        code += "for index in range(4):\n";
+        for (const auto &test : cases)
+          code +=
+              std::string("    assert sort_") + test.suffix + "(index) == index + 1\n";
+        auto compiler = compileAndOptimize(code);
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        auto heapAlignment = 2 * module->getDataLayout().getPointerSize(0);
+        for (const auto &test : cases) {
+          SCOPED_TRACE(test.suffix);
+          auto *function = module->getFunction(std::string("sort_") + test.suffix);
+          auto *native = module->getFunction(std::string("cnp_sort_") + test.suffix);
+          ASSERT_NE(nullptr, function);
+          ASSERT_NE(nullptr, native);
+          EXPECT_TRUE(native->hasParamAttribute(0, llvm::Attribute::NoCapture));
+          EXPECT_TRUE(native->hasFnAttribute(llvm::Attribute::NoFree));
+          EXPECT_FALSE(native->onlyReadsMemory());
+          unsigned allocations = 0;
+          unsigned sorts = 0;
+          unsigned stackBuffers = 0;
+          for (auto &block : *function) {
+            for (auto &instruction : block) {
+              if (auto *buffer = llvm::dyn_cast<llvm::AllocaInst>(&instruction)) {
+                ++stackBuffers;
+                EXPECT_GE(buffer->getAlign().value(), test.alignment);
+                EXPECT_GE(buffer->getAlign().value(), heapAlignment);
+              }
+              auto *call = llvm::dyn_cast<llvm::CallInst>(&instruction);
+              auto *callee = call ? call->getCalledFunction() : nullptr;
+              if (!callee)
+                continue;
+              allocations += callee->getName().starts_with("seq_alloc");
+              if (callee == native) {
+                ++sorts;
+                EXPECT_FALSE(call->isTailCall());
+              }
+            }
+          }
+          EXPECT_EQ(1u, sorts);
+          EXPECT_EQ(0u, allocations);
+          EXPECT_GE(stackBuffers, 1u);
+        }
+        compiler->getLLVMVisitor()->run({"native_sort_stack_test.codon"});
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(LLVMOptimizationTest, PromotesFunctionLocalContainers) {
+  struct Case {
+    const char *name;
+    unsigned maxDataAllocations;
+    unsigned maxObjectAllocations = 0;
+  };
+  const Case cases[] = {
+      {"local_list_index", 0},         {"local_list_loop", 0},
+      {"local_list_append", 0},        {"local_list_grow", 4, 1},
+      {"local_list_copy", 0},          {"local_list_sort", 0},
+      {"local_list_comprehension", 2}, {"local_histogram", 0},
+      {"local_array_index", 0},        {"local_array_loop", 0},
+      {"local_array_view_index", 0},   {"local_array_view", 1},
+      {"local_array_expression", 1},   {"local_object", 0},
+      {"local_nested_object", 0},
+  };
+  ASSERT_EXIT(
+      {
+        auto compiler = compileAndOptimize(R"(
+import numpy as np
+
+@export
+def local_list_index(value: int, index: int):
+    values = [value, value + 1, value + 2, value + 3]
+    values[index & 3] += 7
+    return sum(values)
+
+@export
+def local_list_loop(value: int, limit: int):
+    values = [value, value + 1, value + 2, value + 3]
+    total = 0
+    for offset in range(limit):
+        slot = offset & 3
+        values[slot] += offset
+        total += values[slot]
+    return total + sum(values)
+
+@export
+def local_list_append(value: int, index: int):
+  values = [value]
+  values.append(value + 1)
+  values.append(value + 2)
+  values.append(value + 3)
+  values[index & 3] += 7
+  return sum(values)
+
+@export
+def local_list_grow(value: int):
+    values = [value]
+    values.append(value + 1)
+    values.extend([value + 2, value + 3])
+    last = values.pop()
+    return sum(values) + last
+
+@export
+def local_list_copy(value: int, index: int):
+    values = [value, value + 1, value + 2, value + 3]
+    copied = values[:]
+    copied.reverse()
+    copied[index & 3] += 7
+    return sum(values) + sum(copied)
+
+@export
+def local_list_sort(value: int, index: int):
+    values = [value + 3, value, value + 2, value + 1]
+    values.sort()
+    return values[index & 3]
+
+@export
+def local_list_comprehension(value: int, index: int):
+    values = [value + offset for offset in range(8)]
+    values[index & 7] += 7
+    return sum(values)
+
+@export
+def local_histogram(data: bytes):
+    counts = [0] * 32
+    for value in data:
+        counts[int(value) & 31] += 1
+    return sum(count * count for count in counts)
+
+@export
+def local_array_index(value: int, index: int):
+    values = np.zeros(8, dtype=np.int64)
+    values[index & 7] = value
+    return int(values.sum())
+
+@export
+def local_array_loop(value: int, limit: int):
+    values = np.zeros(8, dtype=np.int64)
+    for offset in range(limit):
+        values[offset & 7] += value + offset
+    return int(values.sum())
+
+@export
+def local_array_view_index(value: int, index: int):
+  values = np.zeros((2, 4), dtype=np.int64)
+  viewed = values.T
+  viewed[index & 3, 1] = value
+  total = 0
+  for column in range(4):
+    total += int(values[1, column])
+  return total + int(viewed[index & 3, 1])
+
+@export
+def local_array_view(value: int, index: int):
+    values = np.zeros((2, 4), dtype=np.int64)
+    viewed = values.T
+    viewed[index & 3, 1] = value
+    return int(values.sum()) + int(viewed.sum())
+
+@export
+def local_array_expression(value: int, index: int):
+    values = np.zeros(8, dtype=np.int64)
+    values[index & 7] = value
+    updated = values * 3 + 1
+    return int(updated.sum()) + int(values.sum())
+
+class LocalPair:
+    first: int
+    second: int
+
+    def update(self, value: int):
+        self.first += value
+        self.second -= value
+
+@export
+def local_object(value: int, limit: int):
+    pair = LocalPair(value, value + 1)
+    alias = pair
+    for offset in range(limit):
+        alias.update(offset)
+    return pair.first * 2 + alias.second
+
+class LocalBuffer:
+    values: list[int]
+
+@export
+def local_nested_object(value: int, index: int):
+    buffer = LocalBuffer([value, value + 1, value + 2, value + 3])
+    alias = buffer
+    alias.values[index & 3] += 7
+    return sum(buffer.values)
+
+for value in (-3, 0, 11):
+    for index in range(8):
+        assert local_list_index(value, index) == 4 * value + 13
+        assert local_list_append(value, index) == 4 * value + 13
+        assert local_list_copy(value, index) == 8 * value + 19
+        assert local_list_sort(value, index) == value + (index & 3)
+        assert local_list_comprehension(value, index) == 8 * value + 35
+        assert local_array_index(value, index) == value
+        assert local_array_view_index(value, index) == 2 * value
+        assert local_array_view(value, index) == 2 * value
+        assert local_array_expression(value, index) == 4 * value + 8
+        assert local_nested_object(value, index) == 4 * value + 13
+    assert local_list_grow(value) == 4 * value + 6
+    for limit in (0, 1, 19):
+        expected = [value, value + 1, value + 2, value + 3]
+        total = 0
+        for offset in range(limit):
+            slot = offset & 3
+            expected[slot] += offset
+            total += expected[slot]
+        assert local_list_loop(value, limit) == total + sum(expected)
+        assert local_array_loop(value, limit) == limit * value + limit * (limit - 1) // 2
+        assert local_object(value, limit) == 3 * value + 1 + limit * (limit - 1) // 2
+assert local_histogram(b"abracadabra") == 35
+assert local_histogram(b"") == 0
+)");
+        auto *module = compiler->getLLVMVisitor()->getModule();
+        for (const auto &test : cases) {
+          SCOPED_TRACE(test.name);
+          auto *function = module->getFunction(test.name);
+          ASSERT_NE(nullptr, function);
+          std::unordered_set<llvm::Function *> visited;
+          unsigned dataAllocations = 0;
+          unsigned objectAllocations = 0;
+          std::function<void(llvm::Function *)> inspect = [&](llvm::Function *current) {
+            if (!visited.insert(current).second)
+              return;
+            std::unordered_set<llvm::BasicBlock *> returning;
+            std::vector<llvm::BasicBlock *> pending;
+            for (auto &block : *current)
+              if (llvm::isa<llvm::ReturnInst>(block.getTerminator()))
+                pending.push_back(&block);
+            while (!pending.empty()) {
+              auto *block = pending.back();
+              pending.pop_back();
+              if (returning.insert(block).second)
+                for (auto *predecessor : llvm::predecessors(block))
+                  pending.push_back(predecessor);
+            }
+            for (auto &block : *current) {
+              if (!returning.count(&block))
+                continue;
+              for (auto &instruction : block) {
+                auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+                auto *callee = call ? call->getCalledFunction() : nullptr;
+                if (!callee)
+                  continue;
+                if (callee->getName() == "seq_alloc_atomic" ||
+                    callee->getName() == "seq_realloc") {
+                  ++dataAllocations;
+                } else if (callee->getName().starts_with("seq_alloc")) {
+                  ++objectAllocations;
+                } else {
+                  inspect(callee);
+                }
+              }
+            }
+          };
+          inspect(function);
+          if (objectAllocations > test.maxObjectAllocations ||
+              dataAllocations > test.maxDataAllocations)
+            llvm::errs() << test.name << ": objects=" << objectAllocations
+                         << ", data=" << dataAllocations << '\n'
+                         << *function;
+          EXPECT_LE(objectAllocations, test.maxObjectAllocations);
+          EXPECT_LE(dataAllocations, test.maxDataAllocations);
+        }
+        compiler->getLLVMVisitor()->run({"local_containers_test.codon"});
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST(LLVMOptimizationTest, AlignsDemotedAllocationsForGarbageCollection) {
+  for (auto allocator : {"seq_alloc", "seq_alloc_atomic", "seq_alloc_uncollectable",
+                         "seq_alloc_atomic_uncollectable"}) {
+    SCOPED_TRACE(allocator);
+    auto optimized = compileAndOptimizeIR(std::string("declare noalias ptr @") +
+                                          allocator + R"((i64)
+declare i64 @collect()
+declare void @llvm.memcpy.p0.p0.i64(ptr nocapture writeonly, ptr nocapture readonly, i64, i1 immarg)
+
+define i8 @test(ptr %source) {
+entry:
+  %allocation = call ptr @)" + allocator + R"((i64 17)
+  call void @llvm.memcpy.p0.p0.i64(ptr align 1 %allocation, ptr align 1 %source, i64 17, i1 false)
+  %index = call i64 @collect()
+  %selected = getelementptr i8, ptr %allocation, i64 %index
+  %result = load i8, ptr %selected, align 1
+  ret i8 %result
+}
+)");
+    ASSERT_NE(optimized.module, nullptr);
+    auto *function = optimized.module->getFunction("test");
+    ASSERT_NE(function, nullptr);
+    auto pointerAlignment = optimized.module->getDataLayout().getPointerABIAlignment(0);
+    bool atomic = llvm::StringRef(allocator).contains("atomic");
+    unsigned stackAllocations = 0;
+    for (auto &block : *function) {
+      for (auto &instruction : block) {
+        if (auto *allocation = llvm::dyn_cast<llvm::AllocaInst>(&instruction)) {
+          ++stackAllocations;
+          EXPECT_EQ(allocation->getAlign().value(),
+                    atomic ? 1u : pointerAlignment.value());
+        }
+        if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction)) {
+          auto *callee = call->getCalledFunction();
+          EXPECT_FALSE(callee && callee->getName() == allocator);
+        }
+      }
+    }
+    EXPECT_EQ(stackAllocations, 1u);
+  }
 }
 
 TEST(LLVMOptimizationTest, HoistsNonescapingPointerThroughAggregatePhi) {

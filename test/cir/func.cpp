@@ -2,9 +2,31 @@
 
 #include <algorithm>
 
+#include "codon/cir/util/irtools.h"
 #include "codon/cir/util/matching.h"
 
 using namespace codon::ir;
+
+TEST_F(CIRCoreTest, FunctionExportAttributes) {
+  auto *function = module->Nr<BodiedFunc>();
+  EXPECT_FALSE(util::isExport(function));
+  EXPECT_FALSE(util::isGPUKernel(function));
+  util::setExport(function, false);
+  EXPECT_FALSE(function->hasAttribute<KeyValueAttribute>());
+
+  util::setExport(function);
+  EXPECT_TRUE(util::isExport(function));
+  auto *attributes = function->getAttribute<KeyValueAttribute>();
+  ASSERT_NE(attributes, nullptr);
+  attributes->attributes["custom.attribute"] = "preserved";
+  util::setExport(function);
+  EXPECT_TRUE(util::isExport(function));
+  util::setExport(function, false);
+  util::setExport(function, false);
+  EXPECT_FALSE(util::isExport(function));
+  EXPECT_FALSE(util::isGPUKernel(function));
+  EXPECT_EQ(attributes->get("custom.attribute"), "preserved");
+}
 
 TEST_F(CIRCoreTest, FuncRealizationAndVarInsertionEraseAndIterators) {
   auto *fn = module->Nr<BodiedFunc>();
@@ -104,6 +126,57 @@ TEST_F(CIRCoreTest, InternalFuncParentTypeUnmangledNameAndCloning) {
   ASSERT_FALSE(util::match(fn, cloned));
   ASSERT_EQ(fn->replaceUsedType(module->getBoolType(), module->getIntType()), 1);
   ASSERT_EQ(fn->getIntrinsicType(), module->getIntType());
+}
+
+TEST_F(CIRCoreTest, TypeInfoMethodLookupContract) {
+  auto *descriptor = module->unsafeGetMemberedType("lookup.descriptor", true);
+  auto *pointer = module->unsafeGetPointerType(module->getIntType());
+  auto *lookup = module->Nr<InternalFunc>("lookup.method");
+  lookup->realize(module->unsafeGetFuncType("lookup.signature", pointer,
+                                            {descriptor, module->getIntType()}),
+                  {"info", "id"});
+  lookup->setIntrinsic(InternalFunc::Intrinsic::TYPEINFO_METHOD_LOOKUP);
+  ASSERT_TRUE(lookup->hasValidIntrinsicSignature());
+  ASSERT_STREQ(InternalFunc::getIntrinsicName(lookup->getIntrinsic()),
+               "typeinfo_method_lookup");
+  ASSERT_EQ(lookup->getIntrinsicSideEffectStatus(), util::UNKNOWN);
+  auto *cloned = cast<InternalFunc>(cv->forceClone(lookup));
+  ASSERT_TRUE(cloned->hasValidIntrinsicSignature());
+  ASSERT_TRUE(util::match(lookup, cloned));
+  lookup->realize(
+      module->unsafeGetFuncType("lookup.invalid", pointer,
+                                {module->getIntType(), module->getIntType()}),
+      {"info", "id"});
+  ASSERT_FALSE(lookup->hasValidIntrinsicSignature());
+}
+
+TEST_F(CIRCoreTest, RepresentationCastIntrinsicContracts) {
+  auto *source = module->unsafeGetMemberedType("cast.source", true);
+  auto *target = module->unsafeGetMemberedType("cast.target", true);
+  auto *function = module->Nr<InternalFunc>("cast.representation");
+  function->realize(module->unsafeGetFuncType("cast.valid", target, {source}),
+                    {"value"});
+  function->setIntrinsic(InternalFunc::Intrinsic::REPRESENTATION_CAST, target);
+  EXPECT_TRUE(function->hasValidIntrinsicSignature());
+  EXPECT_STREQ(InternalFunc::getIntrinsicName(function->getIntrinsic()),
+               "representation_cast");
+  EXPECT_EQ(function->getIntrinsicSideEffectStatus(), util::PURE);
+  EXPECT_TRUE(function->intrinsicDerivesFromArguments());
+  auto *cloned = cast<InternalFunc>(cv->forceClone(function));
+  EXPECT_TRUE(util::match(function, cloned));
+  function->realize(
+      module->unsafeGetFuncType("cast.structural", target, {module->getIntType()}),
+      {"value"});
+  EXPECT_TRUE(function->hasValidIntrinsicSignature());
+  EXPECT_TRUE(function->intrinsicDerivesFromArguments());
+  function->setIntrinsic(InternalFunc::Intrinsic::REPRESENTATION_CAST, source);
+  EXPECT_FALSE(function->hasValidIntrinsicSignature());
+  function->setIntrinsic(InternalFunc::Intrinsic::REPRESENTATION_CAST, target);
+  function->realize(module->unsafeGetFuncType("cast.empty", target, {}), {});
+  EXPECT_FALSE(function->hasValidIntrinsicSignature());
+  function->realize(module->unsafeGetFuncType("cast.extra", target, {source, source}),
+                    {"first", "second"});
+  EXPECT_FALSE(function->hasValidIntrinsicSignature());
 }
 
 TEST_F(CIRCoreTest, RuntimeMetadataDependencies) {

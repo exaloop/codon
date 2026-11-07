@@ -146,7 +146,8 @@ struct GeneratorAnyAllTransformer : public util::Operator {
 // There is no generator object at this call site: each yielded value contributes
 // directly to the result. An early producer return instead returns total, after
 // evaluating any return expression for its effects.
-Func *genToSum(BodiedFunc *gen, Type *startType, Type *outType) {
+Func *genToSum(BodiedFunc *gen, Type *startType, Type *outType, Func *parent,
+               CallInstr *site) {
   if (!gen || !gen->isGenerator())
     return nullptr;
 
@@ -155,7 +156,6 @@ Func *genToSum(BodiedFunc *gen, Type *startType, Type *outType) {
   if (!genType)
     return nullptr;
 
-  auto *fn = M->Nr<BodiedFunc>("__sum_wrapper");
   std::vector<Type *> argTypes(genType->begin(), genType->end());
   argTypes.push_back(startType);
 
@@ -166,6 +166,10 @@ Func *genToSum(BodiedFunc *gen, Type *startType, Type *outType) {
   names.push_back("start");
 
   auto *fnType = M->getFuncType(outType, argTypes);
+  auto *fn = M->N<BodiedFunc>(
+      site,
+      util::getDerivedFuncName(
+          "__sum_wrapper." + gen->getName() + "." + fnType->getName(), parent, site));
   fn->realize(fnType, names);
 
   std::unordered_map<id_t, Var *> argRemap;
@@ -220,12 +224,15 @@ Func *genToSum(BodiedFunc *gen, Type *startType, Type *outType) {
 //
 // Only the needed prefix of the producer runs; finding the answer skips the
 // remaining producer code rather than first collecting all yielded values.
-Func *genToAnyAll(BodiedFunc *gen, bool any) {
+Func *genToAnyAll(BodiedFunc *gen, bool any, Func *parent, CallInstr *site) {
   if (!gen || !gen->isGenerator())
     return nullptr;
 
   auto *M = gen->getModule();
-  auto *fn = M->Nr<BodiedFunc>(any ? "__any_wrapper" : "__all_wrapper");
+  auto *fn = M->N<BodiedFunc>(
+      site, util::getDerivedFuncName(
+                std::string(any ? "__any_wrapper." : "__all_wrapper.") + gen->getName(),
+                parent, site));
   auto *genType = cast<FuncType>(gen->getType());
 
   std::vector<Type *> argTypes(genType->begin(), genType->end());
@@ -433,7 +440,8 @@ const std::string GeneratorLoopFusion::KEY = "core-pythonic-generator-loop-fusio
 void GeneratorLoopFusion::handle(CallInstr *call) {
   auto *parent = cast<BodiedFunc>(getParentFunc());
   auto *function = cast<BodiedFunc>(util::getFunc(call->getCallee()));
-  if (!parent || !function || function->getName() != "__sum_wrapper")
+  if (!parent || !function ||
+      !llvm::StringRef(function->getName()).starts_with("__sum_wrapper."))
     return;
 
   FusionVerifier verifier;
@@ -569,8 +577,7 @@ void GeneratorLoopFusion::handle(ForFlow *loop) {
   if (!generator || !generator->isGenerator() || !generator->getBody() ||
       generator->isAsync() || parent == generator ||
       call->numArgs() != std::distance(generator->arg_begin(), generator->arg_end()) ||
-      util::hasAttribute(generator,
-                         ast::getMangledFunc("std.internal.attributes", "noinline")))
+      util::isNoInline(generator))
     return;
 
   FusionVerifier verifier;
@@ -635,7 +642,8 @@ void GeneratorArgumentOptimization::handle(CallInstr *v) {
     auto *gen = util::getFunc(call->getCallee());
     auto *start = v->back();
 
-    if (auto *fn = genToSum(cast<BodiedFunc>(gen), start->getType(), v->getType())) {
+    if (auto *fn = genToSum(cast<BodiedFunc>(gen), start->getType(), v->getType(),
+                            getParentFunc(), v)) {
       std::vector<Value *> args(call->begin(), call->end());
       args.push_back(start);
       v->replaceAll(util::call(fn, args));
@@ -651,7 +659,7 @@ void GeneratorArgumentOptimization::handle(CallInstr *v) {
 
     auto *gen = util::getFunc(call->getCallee());
 
-    if (auto *fn = genToAnyAll(cast<BodiedFunc>(gen), any)) {
+    if (auto *fn = genToAnyAll(cast<BodiedFunc>(gen), any, getParentFunc(), v)) {
       std::vector<Value *> args(call->begin(), call->end());
       v->replaceAll(util::call(fn, args));
     }

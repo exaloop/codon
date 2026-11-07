@@ -32,7 +32,7 @@ class Int:
         return Int[N](0)
 
     @overload
-    def __new__(what: Int[M], M: Literal[int]) -> Int[N]:
+    def __new__(what: Int[M], /, M: Literal[int]) -> Int[N]:
         Int._check_bitwidth(N)
         if N < M:
             return Int._trunc(what, M, N)
@@ -42,7 +42,7 @@ class Int:
             return Int._sext(what, M, N)
 
     @overload
-    def __new__(what: UInt[M], M: Literal[int]) -> Int[N]:
+    def __new__(what: UInt[M], /, M: Literal[int]) -> Int[N]:
         @pure
         @llvm
         def convert(what: UInt[N], N: Literal[int]) -> Int[N]:
@@ -57,12 +57,12 @@ class Int:
             return Int._zext(what, M, N)
 
     @overload
-    def __new__(what: str, base: int) -> Int[N]:
+    def __new__(what: str, /, base: int) -> Int[N]:
         Int._check_bitwidth(N)
         return Int[N]._from_str(what, base)
 
     @overload
-    def __new__(what) -> Int[N]:
+    def __new__(what, /) -> Int[N]:
         # do not overload! (needed to avoid pyobj conversion)
         if isinstance(what, str) or isinstance(what, Optional[str]):
             return Int[N](what, 10)
@@ -71,10 +71,10 @@ class Int:
         else:
             return Int[N](what.__int__())
 
-    def __int__(self) -> int:
+    def __int__(self, /) -> int:
         return int(self)
 
-    def __index__(self) -> int:
+    def __index__(self, /) -> int:
         return int(self)
 
     def __copy__(self) -> Int[N]:
@@ -83,40 +83,40 @@ class Int:
     def __deepcopy__(self) -> Int[N]:
         return self
 
-    def __hash__(self) -> int:
+    def __hash__(self, /) -> int:
         return int(self)
 
     @pure
     @llvm
-    def __float__(self) -> float:
+    def __float__(self, /) -> float:
         %0 = sitofp i{=N} %self to double
         ret double %0
 
     @pure
     @llvm
-    def __bool__(self) -> bool:
+    def __bool__(self, /) -> bool:
         %0 = icmp ne i{=N} %self, 0
         %1 = zext i1 %0 to i8
         ret i8 %1
 
-    def __pos__(self) -> Int[N]:
+    def __pos__(self, /) -> Int[N]:
         return self
 
     @pure
     @llvm
-    def __neg__(self) -> Int[N]:
+    def __neg__(self, /) -> Int[N]:
         %0 = sub i{=N} 0, %self
         ret i{=N} %0
 
     @pure
     @llvm
-    def __invert__(self) -> Int[N]:
+    def __invert__(self, /) -> Int[N]:
         %0 = xor i{=N} %self, -1
         ret i{=N} %0
 
     @pure
     @llvm
-    def __abs__(self) -> Int[N]:
+    def __abs__(self, /) -> Int[N]:
         declare i{=N} @llvm.abs.i{=N}(i{=N}, i1)
         %0 = call i{=N} @llvm.abs.i{=N}(i{=N} %self, i1 false)
         ret i{=N} %0
@@ -125,13 +125,13 @@ class Int:
     @commutative
     @associative
     @llvm
-    def __add__(self, other: Int[N]) -> Int[N]:
+    def __add__(self, other: Int[N], /) -> Int[N]:
         %0 = add i{=N} %self, %other
         ret i{=N} %0
 
     @pure
     @llvm
-    def __sub__(self, other: Int[N]) -> Int[N]:
+    def __sub__(self, other: Int[N], /) -> Int[N]:
         %0 = sub i{=N} %self, %other
         ret i{=N} %0
 
@@ -140,7 +140,7 @@ class Int:
     @associative
     @distributive
     @llvm
-    def __mul__(self, other: Int[N]) -> Int[N]:
+    def __mul__(self, other: Int[N], /) -> Int[N]:
         %0 = mul i{=N} %self, %other
         ret i{=N} %0
 
@@ -153,7 +153,7 @@ class Int:
     def cdiv(self, other: Int[N]) -> Int[N]:
         return self._floordiv(other)
 
-    def __floordiv__(self, other: Int[N]) -> Int[N]:
+    def __floordiv__(self, other: Int[N], /) -> Int[N]:
         if __py_numerics__:
             if not other:
                 raise ZeroDivisionError("division by zero")
@@ -166,7 +166,7 @@ class Int:
         else:
             return self.cdiv(other)
 
-    def __truediv__(self, other: Int[N]) -> float:
+    def __truediv__(self, other: Int[N], /) -> float:
         return self.__float__() / other.__float__()
 
     @pure
@@ -178,7 +178,7 @@ class Int:
     def cmod(self, other: Int[N]) -> Int[N]:
         return self._mod(other)
 
-    def __mod__(self, other: Int[N]) -> Int[N]:
+    def __mod__(self, other: Int[N], /) -> Int[N]:
         if __py_numerics__:
             if not other:
                 raise ZeroDivisionError("division by zero")
@@ -189,7 +189,7 @@ class Int:
         else:
             return self.cmod(other)
 
-    def __divmod__(self, other: Int[N]) -> Tuple[Int[N], Int[N]]:
+    def __divmod__(self, other: Int[N], /) -> Tuple[Int[N], Int[N]]:
         if __py_numerics__:
             if not other:
                 raise ZeroDivisionError("division by zero")
@@ -208,10 +208,10 @@ class Int:
         %0 = shl i{=N} %self, %other
         ret i{=N} %0
 
-    def __lshift__(self, other: Int[N]) -> Int[N]:
+    def __lshift__(self, other: Int[N], /) -> Int[N]:
         return self._lshift(other)
 
-    def __lshift__(self, other: int) -> Int[N]:
+    def __lshift__(self, other: int, /) -> Int[N]:
         return self._lshift(Int[N](other))
 
     @pure
@@ -220,50 +220,50 @@ class Int:
         %0 = ashr i{=N} %self, %other
         ret i{=N} %0
 
-    def __rshift__(self, other: Int[N]) -> Int[N]:
+    def __rshift__(self, other: Int[N], /) -> Int[N]:
         return self._rshift(other)
 
-    def __rshift__(self, other: int) -> Int[N]:
+    def __rshift__(self, other: int, /) -> Int[N]:
         return self._rshift(Int[N](other))
 
     @pure
     @llvm
-    def __eq__(self, other: Int[N]) -> bool:
+    def __eq__(self, other: Int[N], /) -> bool:
         %0 = icmp eq i{=N} %self, %other
         %1 = zext i1 %0 to i8
         ret i8 %1
 
     @pure
     @llvm
-    def __ne__(self, other: Int[N]) -> bool:
+    def __ne__(self, other: Int[N], /) -> bool:
         %0 = icmp ne i{=N} %self, %other
         %1 = zext i1 %0 to i8
         ret i8 %1
 
     @pure
     @llvm
-    def __lt__(self, other: Int[N]) -> bool:
+    def __lt__(self, other: Int[N], /) -> bool:
         %0 = icmp slt i{=N} %self, %other
         %1 = zext i1 %0 to i8
         ret i8 %1
 
     @pure
     @llvm
-    def __gt__(self, other: Int[N]) -> bool:
+    def __gt__(self, other: Int[N], /) -> bool:
         %0 = icmp sgt i{=N} %self, %other
         %1 = zext i1 %0 to i8
         ret i8 %1
 
     @pure
     @llvm
-    def __le__(self, other: Int[N]) -> bool:
+    def __le__(self, other: Int[N], /) -> bool:
         %0 = icmp sle i{=N} %self, %other
         %1 = zext i1 %0 to i8
         ret i8 %1
 
     @pure
     @llvm
-    def __ge__(self, other: Int[N]) -> bool:
+    def __ge__(self, other: Int[N], /) -> bool:
         %0 = icmp sge i{=N} %self, %other
         %1 = zext i1 %0 to i8
         ret i8 %1
@@ -272,7 +272,7 @@ class Int:
     @commutative
     @associative
     @llvm
-    def __and__(self, other: Int[N]) -> Int[N]:
+    def __and__(self, other: Int[N], /) -> Int[N]:
         %0 = and i{=N} %self, %other
         ret i{=N} %0
 
@@ -280,7 +280,7 @@ class Int:
     @commutative
     @associative
     @llvm
-    def __or__(self, other: Int[N]) -> Int[N]:
+    def __or__(self, other: Int[N], /) -> Int[N]:
         %0 = or i{=N} %self, %other
         ret i{=N} %0
 
@@ -288,7 +288,7 @@ class Int:
     @commutative
     @associative
     @llvm
-    def __xor__(self, other: Int[N]) -> Int[N]:
+    def __xor__(self, other: Int[N], /) -> Int[N]:
         %0 = xor i{=N} %self, %other
         ret i{=N} %0
 
@@ -308,10 +308,10 @@ class Int:
             self *= self
         return result
 
-    def __pow__(self, exp: Int[N]) -> Int[N]:
+    def __pow__(self, exp: Int[N], /) -> Int[N]:
         return self._ipow(exp)
 
-    def __pow__(self, exp: Literal[int]):
+    def __pow__(self, exp: Literal[int], /):
         if exp == 0:
             return 1
         elif exp > 0:
@@ -319,7 +319,7 @@ class Int:
         else:
             return self ** float(exp)
 
-    def __repr__(self) -> str:
+    def __repr__(self, /) -> str:
         if N == 64:
             return self.__str__()
         else:
@@ -370,7 +370,7 @@ class Int:
         %tmp = call i{=N} @llvm.cttz.i{=N}(i{=N} %self, i1 false)
         ret i{=N} %tmp
 
-    def bit_length(self) -> int:
+    def bit_length(self, /) -> int:
         if not self:
             return 0
         else:
@@ -379,7 +379,7 @@ class Int:
     def __match__(self, obj: Int[N]) -> bool:
         return self == obj
 
-    def __round__(self, ndigits=None) -> Int[N]:
+    def __round__(self, ndigits=None, /) -> Int[N]:
         if ndigits is None:
             return self
 

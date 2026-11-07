@@ -34,12 +34,29 @@ Type *TypecheckVisitor::unify(Type *a, Type *b) const {
   if (!((*a) << b)) {
     types::Type::Unification undo;
     a->unify(b, &undo);
-    LOG("[unify] {} {}", a->debugString(2), b->debugString(2));
-    // log("[unify] {} {}", a->debugString(1), b->debugString(1));
     E(Error::TYPE_UNIFY, getSrcInfo(), a->prettyString(), b->prettyString());
     return nullptr;
   }
   return a;
+}
+
+/// Select a nullable target without committing unresolved payloads or coercing values.
+/// Ordinary wrapping/unification still checks payload compatibility at each use.
+TypePtr TypecheckVisitor::joinNullableTypes(Type *left, Type *right) {
+  if (left->getStatic())
+    left = left->getStatic()->getNonStaticType();
+  if (right->getStatic())
+    right = right->getStatic()->getNonStaticType();
+  if (right->is(StdlibTypes::Optional))
+    return right->shared_from_this();
+  if (left->is(StdlibTypes::Optional))
+    return left->shared_from_this();
+  if (!left->is(StdlibTypes::NoneType) && !right->is(StdlibTypes::NoneType))
+    return nullptr;
+  auto member = left->is(StdlibTypes::NoneType) ? right : left;
+  if (member->is(StdlibTypes::NoneType))
+    return member->shared_from_this();
+  return instantiateType(getStdLibType(StdlibTypes::Optional), {member});
 }
 
 /// Infer all types within a Stmt *. Implements the LTS-DI typechecking.
@@ -78,6 +95,34 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool sweepForceRealize) {
     //   preamble = cast<SuiteStmt>(pt);
     // }
     result = tv.transform(result);
+    auto base = ctx->getBase();
+    // Join reached returns before wrapping them; early unification with NoneType
+    // would prevent later value returns from establishing an optional.
+    if (base->inferReturnType && !base->returnStatements.empty()) {
+      TypePtr first, inferred;
+      bool hasEmptyReturn = false, hasUnknown = false;
+      for (const auto &[statement, bare] : base->returnStatements) {
+        auto returned = statement->getExpr()->getType();
+        hasEmptyReturn |= bare;
+        if (returned->getUnbound()) {
+          hasUnknown = true;
+        } else {
+          if (!first)
+            first = returned->shared_from_this();
+          if (!inferred)
+            inferred = returned->shared_from_this();
+          else if (auto nullable = joinNullableTypes(inferred.get(), returned))
+            inferred = nullable;
+        }
+      }
+      if (inferred && (!inferred->is(StdlibTypes::NoneType) || !hasUnknown)) {
+        // Bare returns retain their existing checks (return_none_err_1/2).
+        unify(base->returnType.get(), hasEmptyReturn ? first.get() : inferred.get());
+        base->inferReturnType = false;
+        base->returnStatements.clear();
+        ctx->changedNodes++;
+      }
+    }
     std::swap(ctx->changedNodes, changedNodes);
     std::swap(ctx->returnEarly, returnEarly);
     ctx->typecheckLevel--;
@@ -276,10 +321,13 @@ types::Type *TypecheckVisitor::realizeType(types::ClassType *type) {
   // Realizations should always be visible, so add them to the toplevel
   rn = type->ClassType::realizedName();
   auto rt = std::static_pointer_cast<ClassType>(realized->generalize(0));
+  rt->freeze();
   auto val = std::make_shared<TypecheckItem>(rn, "", ctx->getModule(), rt);
-  if (!val->type->is(StdlibTypes::Type))
+  if (!val->type->is(StdlibTypes::Type) || isMetaclassType(val->type.get()))
     val->type = instantiateTypeVar(realized);
-  ctx->addAlwaysVisible(val, true);
+  // The zero-argument metaclass must not replace the type[T] compiler template.
+  if (!isMetaclassType(type))
+    ctx->addAlwaysVisible(val, true);
   auto realization = getClass(realized)->realizations[rn] =
       std::make_shared<Cache::Class::ClassRealization>();
   realization->type = rt;
@@ -350,6 +398,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
 
   auto oldCtx = this->ctx;
   this->ctx = imp->ctx;
+  ctx->prepareCheckpoint();
   if (ctx->getRealizationDepth() > MAX_REALIZATION_DEPTH) {
     E(Error::MAX_REALIZATION, getSrcInfo(), getUserFacingName(type->getFuncName()));
   }
@@ -379,6 +428,9 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
     ast->suite = s;
   addClassGenerics(type, true);
   ctx->getBase()->func = ast;
+  ctx->getBase()->inferReturnType = !ast->getReturn() &&
+                                    isUnbound(type->getRetType()) && !ast->isAsync() &&
+                                    !ast->hasAttribute(Attr::IsGenerator);
 
   // Internal functions have no AST that can be realized
   bool hasAst = ast->getSuite() && !ast->hasAttribute(Attr::Internal);
@@ -419,7 +471,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
         un = un.substr(1);
         auto g = type->funcGenerics[gi];
         auto t = g.type;
-        if (!g.staticKind && !t->is(StdlibTypes::Type))
+        if (!g.staticKind && (!t->is(StdlibTypes::Type) || isMetaclassType(t.get())))
           t = instantiateTypeVar(t.get());
         auto v = ctx->addType(un, varName, t);
         v->generic = true;
@@ -449,6 +501,41 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
 
   ctx->getBase()->suite = ast->getSuite();
   if (hasAst) {
+    // Prepare captured parameters once per realization, before inference retries.
+    auto bindings = ast->getAttribute<BindingsAttribute>(Attr::Bindings);
+    auto declaredAtToplevel =
+        ast->getSuite()->getAttribute<BindingsAttribute>(Attr::Bindings);
+    std::vector<Stmt *> prepend;
+    for (const auto &param : *ast) {
+      if (!param.isValue())
+        continue;
+      auto name = getUnmangledName(param.getNameWithStars().second);
+      auto binding = bindings ? in(bindings->bindings, name) : nullptr;
+      auto declaration =
+          declaredAtToplevel ? in(declaredAtToplevel->bindings, name) : nullptr;
+      if (declaration || (binding && binding->isNonlocal)) {
+        // Do not overwrite argument with a declaration if
+        // argument is captured by some local function.
+        prepend.push_back(N<AssignStmt>(N<IdExpr>(name), N<IdExpr>(name)));
+        if (declaration) {
+          if (declaration->count > 0)
+            prepend.push_back(
+                N<AssignStmt>(N<IdExpr>(fmt::format("{}{}", name, VAR_USED_SUFFIX)),
+                              N<BoolExpr>(false)));
+          // The suite must not introduce another, uninitialized parameter binding.
+          declaredAtToplevel->bindings.erase(name);
+        }
+      }
+    }
+    // Entry bindings must be visible throughout the body, regardless of call time.
+    auto time = ast->getSuite()->getAttribute<ir::IntValueAttribute>(Attr::ExprTime);
+    for (auto *stmt : prepend) {
+      stmt->setAttribute(Attr::ExprTime, time ? time->value : 0);
+      stmt->setSrcInfo(ast->getSuite()->getSrcInfo());
+    }
+    ast->getSuite()->items.insert(ast->getSuite()->items.begin(), prepend.begin(),
+                                  prepend.end());
+
     auto oldBlockLevel = ctx->blockLevel;
     ctx->blockLevel = 0;
     auto ret = inferTypes(ctx->getBase()->suite);
@@ -519,7 +606,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
   std::vector<Param> args;
   for (auto &i : *ast) {
     auto [_, varName] = i.getNameWithStars();
-    args.emplace_back(varName, nullptr, nullptr, i.status);
+    args.emplace_back(varName, nullptr, nullptr, i.status, i.kind);
   }
   r->ast =
       N<FunctionStmt>(r->type->realizedName(), nullptr, args, ctx->getBase()->suite,
@@ -651,7 +738,18 @@ ir::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
     handle = module->unsafeGetFuncType(realizedName, ret, types);
   } else if (t->name == StdlibTypes::Vec) {
     seqassert(types.size() == 1 && !statics.empty(), "bad generics/statics");
-    handle = module->unsafeGetVectorType(getIntLiteral(statics[0]), types[0]);
+    const auto count = getIntLiteral(statics[0]);
+    constexpr auto MAX_SIMD_LANES = std::numeric_limits<unsigned int>::max();
+    if (count <= 0 || count > MAX_SIMD_LANES)
+      E(Error::CUSTOM, getSrcInfo(),
+        "SIMD vector width must be positive and fit in 32 bits");
+    auto *element = types[0];
+    if (!cast<ir::IntType>(element) && !cast<ir::FloatType>(element) &&
+        !cast<ir::Float32Type>(element) && !cast<ir::Float16Type>(element) &&
+        !cast<ir::BFloat16Type>(element) && !cast<ir::Float128Type>(element))
+      E(Error::CUSTOM, getSrcInfo(),
+        "SIMD element type must be an integer or floating-point type");
+    handle = module->unsafeGetVectorType(static_cast<unsigned int>(count), element);
   } else {
     // Type arguments will be populated afterwards to avoid infinite loop with recursive
     // reference types (e.g., `class X: x: Optional[X]`)
@@ -731,7 +829,7 @@ ir::Func *TypecheckVisitor::makeIRFunction(
   // Create and store a function IR node and a realized AST for IR passes
   if (r->ast->hasAttribute(Attr::Internal)) {
     // e.g., __new__, Ptr.__new__, etc.
-    fn = irm->Nr<ir::InternalFunc>(r->type->ast->name);
+    fn = irm->Nr<ir::InternalFunc>(r->type->realizedName());
   } else if (r->ast->hasAttribute(Attr::LLVM)) {
     fn = irm->Nr<ir::LLVMFunc>(r->type->realizedName());
   } else if (r->ast->hasAttribute(Attr::C)) {
@@ -791,11 +889,28 @@ ir::Func *TypecheckVisitor::makeIRFunction(
                                        types, r->ast->hasAttribute(Attr::CVarArg));
   irType->setAstType(r->type->shared_from_this());
   fn->realize(irType, names);
-  // TODO: move to IR maybe? why is it needed here?!
+  // Identify builtins at the frontend boundary; CIR consumers use intrinsic IDs.
   if (auto *internal = ir::cast<ir::InternalFunc>(fn)) {
     if (r->type->getFuncName() == getMangledMethod("", "type", "_ref_alloc")) {
       internal->setIntrinsic(ir::InternalFunc::Intrinsic::ALLOCATE,
                              ir::cast<ir::FuncType>(irType)->getReturnType());
+    } else if (r->type->getFuncName() == getMangledMethod("", "type", "_force_cast") ||
+               r->type->getFuncName() == getMangledMethod("", "type", "_ref_raw") ||
+               r->type->getFuncName() ==
+                   getMangledMethod("", "type", "_force_value_cast")) {
+      auto *target = ir::cast<ir::FuncType>(irType)->getReturnType();
+      if (r->type->getFuncName() != getMangledMethod("", "type", "_force_value_cast")) {
+        auto pointerLike = [](ir::Type *type) {
+          if (auto *optional = ir::cast<ir::OptionalType>(type))
+            return ir::isA<ir::RefType>(optional->getBase());
+          return ir::isA<ir::RefType>(type) || ir::isA<ir::PointerType>(type) ||
+                 ir::isA<ir::FuncType>(type) || ir::isA<ir::GeneratorType>(type);
+        };
+        if (types.size() != 1 || !pointerLike(types.front()) || !pointerLike(target))
+          E(Error::CUSTOM, r->ast->getSrcInfo(),
+            "pointer cast requires pointer-like source and destination types");
+      }
+      internal->setIntrinsic(ir::InternalFunc::Intrinsic::REPRESENTATION_CAST, target);
     } else if (r->type->getFuncName() == getMangledMethod("", "type", "_ref_size")) {
       internal->setIntrinsic(ir::InternalFunc::Intrinsic::ALLOCATION_SIZE,
                              makeIRType(extractFuncGeneric(r->getType())->getClass()));
@@ -804,6 +919,18 @@ ir::Func *TypecheckVisitor::makeIRFunction(
                              makeIRType(extractFuncGeneric(r->getType())->getClass()));
     } else if (r->type->getFuncName() == getMangledMethod("", "TypeInfo", "_lookup")) {
       internal->setIntrinsic(ir::InternalFunc::Intrinsic::TYPEINFO_LOOKUP);
+    } else if (r->type->getFuncName() ==
+               getMangledMethod("", "TypeInfo", "_lookup_method")) {
+      internal->setIntrinsic(ir::InternalFunc::Intrinsic::TYPEINFO_METHOD_LOOKUP);
+    } else if ((unmangledName == "__new__" &&
+                ir::isA<ir::RecordType>(internal->getParentType())) ||
+               r->type->getFuncName() == getMangledMethod("", "Partial", "__new__")) {
+      internal->setIntrinsic(ir::InternalFunc::Intrinsic::RECORD_NEW,
+                             ir::cast<ir::FuncType>(irType)->getReturnType());
+    } else if (r->type->getFuncName() ==
+               getMangledMethod("", "Generator", "__promise__")) {
+      internal->setIntrinsic(ir::InternalFunc::Intrinsic::GENERATOR_PROMISE,
+                             internal->getParentType());
     }
   }
   return fn;

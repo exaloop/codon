@@ -2,11 +2,12 @@
 
 #include "common.h"
 
-#include "llvm/Support/Path.h"
 #include <cstdlib>
 #include <iostream>
 #include <string>
 #include <vector>
+
+#include "codon/cir/llvm/llvm.h"
 
 namespace codon {
 namespace {
@@ -34,10 +35,8 @@ void compilationMessage(const std::string &header, const std::string &msg,
   }
 
   fmt::print(out, "\033[1m");
-  if (!file.empty()) {
-    auto f = file;
-    fmt::print(out, "{}", f == "-" ? "<stdin>" : f);
-  }
+  if (!file.empty())
+    fmt::print(out, "{}", file == "-" ? "<stdin>" : file);
   if (line > 0)
     fmt::print(out, ":{}", line);
   if (col > 0) {
@@ -59,7 +58,8 @@ std::vector<Logger> loggers;
 } // namespace
 
 std::ostream &operator<<(std::ostream &out, const codon::SrcInfo &src) {
-  out << llvm::sys::path::filename(src.file).str() << ":" << src.line << ":" << src.col;
+  out << llvm::sys::path::filename(src.file.str()).str() << ":" << src.line << ":"
+      << src.col;
   return out;
 }
 

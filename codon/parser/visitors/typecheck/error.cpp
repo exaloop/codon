@@ -182,37 +182,89 @@ void TypecheckVisitor::visit(ThrowStmt *stmt) {
   }
 
   stmt->expr = transform(stmt->getExpr());
-  if (!match(stmt->getExpr(),
+  // Cause staging can wrap the header in a StmtExpr. Recognize it on later passes
+  // so neither exception construction nor header initialization is repeated.
+  // Internal explicit rethrows also retain the original exception's metadata.
+  if (!stmt->hasAttribute(Attr::Internal) &&
+      !match(getHeadExpr(stmt->getExpr()),
              M<CallExpr>(M<IdExpr>(getMangledMethod("std.internal.types.error",
                                                     "BaseException", "_set_header")),
                          M_))) {
-    stmt->expr = transform(N<CallExpr>(
+    auto exception = stmt->getExpr();
+    auto cause = stmt->getFrom()
+                     ? transform(stmt->getFrom())
+                     : transform(N<CallExpr>(N<IdExpr>(StdlibTypes::NoneType)));
+    std::vector<Stmt *> setup;
+    // `raise Error from cause()` evaluates cause() before constructing Error().
+    // Save raw operands in source order before normalizing classes to instances;
+    // in particular, a failing cause expression must not run Error's constructor.
+    if (isTypeExpr(exception) && stmt->getFrom()) {
+      auto exceptionName = getTemporaryVar("exception");
+      auto causeName = getTemporaryVar("cause");
+      setup.push_back(transform(N<AssignStmt>(N<IdExpr>(exceptionName), exception)));
+      setup.push_back(transform(N<AssignStmt>(N<IdExpr>(causeName), cause)));
+      exception = transform(N<IdExpr>(exceptionName));
+      cause = transform(N<IdExpr>(causeName));
+    }
+    if (isTypeExpr(exception))
+      exception = transform(N<CallExpr>(exception));
+    if (isTypeExpr(cause))
+      cause = transform(N<CallExpr>(cause));
+    Expr *header = N<CallExpr>(
         N<IdExpr>(getMangledMethod("std.internal.types.error", "BaseException",
                                    "_set_header")),
-        stmt->getExpr(), N<StringExpr>(ctx->getBase()->name),
+        exception, N<StringExpr>(ctx->getBase()->name),
         N<StringExpr>(stmt->getSrcInfo().file), N<IntExpr>(stmt->getSrcInfo().line),
-        N<IntExpr>(stmt->getSrcInfo().col),
-        stmt->getFrom() ? stmt->getFrom()
-                        : N<CallExpr>(N<IdExpr>(StdlibTypes::NoneType))));
+        N<IntExpr>(stmt->getSrcInfo().col), cause);
+    stmt->expr = transform(setup.empty() ? header : N<StmtExpr>(setup, header));
   }
   if (stmt->getExpr()->isDone())
     stmt->setDone();
 }
 
-/// Transform with statements.
+/// Transform with statements, saving the manager and exit callable independently
+/// of the entry-result binding.
 /// @example
-///   `with foo(), bar() as a: ...` ->
-///   ```tmp = foo()
-///      tmp.__enter__()
-///      try:
-///        a = bar()
-///        a.__enter__()
-///        try:
-///          ...
-///        finally:
-///          a.__exit__()
-///      finally:
-///        tmp.__exit__()```
+///   `with manager() as value: BODY` ->
+///   ```python
+///   tmp = manager()
+///   exit_method = tmp.__exit__
+///   entered = tmp.__enter__()
+///   if BaseException._context_exit_is_legacy_none(exit_method, False):
+///       try:
+///           value = entered
+///           BODY
+///       finally:
+///           exit_method()
+///   else:
+///       exceptional = False
+///       try:
+///           value = entered
+///           BODY
+///       except BaseException as error:
+///           exceptional = True
+///           if not BaseException._context_exit(exit_method, get_typeinfo(error),
+///           error):
+///               raise error  # Internal rethrow preserves the original metadata.
+///       finally:
+///           if not exceptional:
+///               BaseException._context_exit(exit_method, None, None)
+///   ```
+/// _context_exit_is_legacy_none selects a cleanup branch statically; both alternatives
+/// share BODY to avoid recursive duplication.
+///
+/// _context_exit supplies a None traceback, prefers a callable three-argument exit, and
+/// otherwise calls the legacy zero-argument exit. Entry stays outside the try, while
+/// target assignment stays inside. The flag prevents a second exit call if exceptional
+/// cleanup suppresses or raises; finally handles normal completion and
+/// return/break/continue.
+///
+/// For async with, save __aexit__, await __aenter__, pass True to the predicate, and
+/// await either the legacy exit or _context_aexit.
+///
+/// Multiple managers nest this transformation so exits run in reverse entry order.
+/// Without an as target, entry is evaluated without binding its result and the target
+/// assignment is omitted.
 void TypecheckVisitor::visit(WithStmt *stmt) {
   seqassert(!stmt->empty(), "stmt->items is empty");
 
@@ -220,25 +272,73 @@ void TypecheckVisitor::visit(WithStmt *stmt) {
 
   std::vector<Stmt *> content;
   for (auto i = stmt->items.size(); i-- > 0;) {
-    std::string var = stmt->vars[i].empty() ? getTemporaryVar("with") : stmt->vars[i];
-    auto as = N<AssignStmt>(N<IdExpr>(var), (*stmt)[i], nullptr,
-                            (*stmt)[i]->hasAttribute(Attr::ExprDominated)
-                                ? AssignStmt::UpdateMode::Update
-                                : AssignStmt::UpdateMode::Assign);
+    auto var = getTemporaryVar("with");
+    auto as = N<AssignStmt>(N<IdExpr>(var), (*stmt)[i]);
+    auto exitVar = getTemporaryVar("exit");
+    auto exceptional = getTemporaryVar("with_exception");
+    auto exception = getTemporaryVar("exception");
+    auto exitResult = getTemporaryVar("exit_result");
+    auto saveExit =
+        N<AssignStmt>(N<IdExpr>(exitVar),
+                      N<DotExpr>(N<IdExpr>(var), isAsync ? "__aexit__" : "__exit__"));
 
     Expr *enter =
         N<CallExpr>(N<DotExpr>(N<IdExpr>(var), isAsync ? "__aenter__" : "__enter__"));
-    Expr *exit =
-        N<CallExpr>(N<DotExpr>(N<IdExpr>(var), isAsync ? "__aexit__" : "__exit__"));
-    if (isAsync) {
+    if (isAsync)
       enter = N<AwaitExpr>(enter);
-      exit = N<AwaitExpr>(exit);
+    auto callExit = [&](Expr *exceptionType, Expr *exceptionValue) -> Expr * {
+      Expr *call = N<CallExpr>(
+          N<IdExpr>(getMangledMethod("std.internal.types.error", "BaseException",
+                                     isAsync ? "_context_aexit" : "_context_exit")),
+          N<IdExpr>(exitVar), exceptionType, exceptionValue);
+      return isAsync ? N<AwaitExpr>(call) : call;
+    };
+    auto body = !content.empty() ? N<SuiteStmt>(content) : clone(stmt->getSuite());
+    Stmt *entry = N<ExprStmt>(enter);
+    if (!stmt->vars[i].empty()) {
+      auto entered = getTemporaryVar("entered");
+      entry = N<AssignStmt>(N<IdExpr>(entered), enter);
+      body = N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(stmt->vars[i]), N<IdExpr>(entered),
+                                        nullptr,
+                                        (*stmt)[i]->hasAttribute(Attr::ExprDominated)
+                                            ? AssignStmt::UpdateMode::Update
+                                            : AssignStmt::UpdateMode::Assign),
+                          body);
     }
-    content = std::vector<Stmt *>{
-        as, N<ExprStmt>(enter),
-        N<TryStmt>(!content.empty() ? N<SuiteStmt>(content) : clone(stmt->getSuite()),
-                   std::vector<ExceptStmt *>{}, nullptr,
-                   N<SuiteStmt>(N<ExprStmt>(exit)))};
+    // An awaited exit can suspend outside the original native catch frame. Rethrow
+    // the captured object rather than relying on the thread's active exception.
+    auto rethrow = N<ThrowStmt>(N<IdExpr>(exception));
+    rethrow->setAttribute(Attr::Internal);
+    auto handler = N<ExceptStmt>(
+        exception, N<IdExpr>(StdlibTypes::BaseException),
+        N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(exceptional), N<BoolExpr>(true), nullptr,
+                                   AssignStmt::UpdateMode::Update),
+                     N<AssignStmt>(N<IdExpr>(exitResult),
+                                   callExit(N<CallExpr>(N<IdExpr>(getMangledFunc(
+                                                            "std.internal.types.rtti",
+                                                            "get_typeinfo")),
+                                                        N<IdExpr>(exception)),
+                                            N<IdExpr>(exception))),
+                     N<IfStmt>(N<UnaryExpr>("!", N<IdExpr>(exitResult)), rethrow)));
+    auto fullCleanup = N<SuiteStmt>(
+        N<AssignStmt>(N<IdExpr>(exceptional), N<BoolExpr>(false)),
+        N<TryStmt>(body, std::vector<ExceptStmt *>{handler}, nullptr,
+                   N<SuiteStmt>(N<IfStmt>(
+                       N<UnaryExpr>("!", N<IdExpr>(exceptional)),
+                       N<ExprStmt>(
+                           callExit(N<CallExpr>(N<IdExpr>(StdlibTypes::NoneType)),
+                                    N<CallExpr>(N<IdExpr>(StdlibTypes::NoneType))))))));
+    Expr *legacyExit = N<CallExpr>(N<IdExpr>(exitVar));
+    if (isAsync)
+      legacyExit = N<AwaitExpr>(legacyExit);
+    auto legacyCleanup = N<TryStmt>(body, std::vector<ExceptStmt *>{}, nullptr,
+                                    N<SuiteStmt>(N<ExprStmt>(legacyExit)));
+    auto legacyNone = N<CallExpr>(
+        N<IdExpr>(getMangledMethod("std.internal.types.error", "BaseException",
+                                   "_context_exit_is_legacy_none")),
+        N<IdExpr>(exitVar), N<BoolExpr>(isAsync));
+    content = std::vector<Stmt *>{as, saveExit, entry,
+                                  N<IfStmt>(legacyNone, legacyCleanup, fullCleanup)};
   }
   resultStmt = transform(N<SuiteStmt>(content));
 }

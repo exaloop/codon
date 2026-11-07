@@ -23,6 +23,11 @@ const int ListLiteralAttribute::AttributeID = 111;
 const int SetLiteralAttribute::AttributeID = 111;
 const int DictLiteralAttribute::AttributeID = 112;
 const int PartialFunctionAttribute::AttributeID = 113;
+const int ExactTypeAttribute::AttributeID = 114;
+
+std::ostream &ExactTypeAttribute::doFormat(std::ostream &os) const {
+  return os << type->getName();
+}
 
 std::ostream &StringListAttribute::doFormat(std::ostream &os) const {
   fmt::print(os, FMT_STRING("{}"), fmt::join(values.begin(), values.end(), ","));
@@ -196,9 +201,9 @@ std::ostream &PartialFunctionAttribute::doFormat(std::ostream &os) const {
 
 } // namespace ir
 
-std::unordered_map<int, std::unique_ptr<ir::Attribute>>
-clone(const std::unordered_map<int, std::unique_ptr<ir::Attribute>> &t) {
-  std::unordered_map<int, std::unique_ptr<ir::Attribute>> r;
+ir::AttributeMap clone(const ir::AttributeMap &t) {
+  ir::AttributeMap r;
+  r.reserve(t.size());
   for (auto &[k, v] : t)
     r[k] = v->clone();
   return r;

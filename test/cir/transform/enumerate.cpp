@@ -16,6 +16,7 @@ struct LoopCounts {
   int indexed = 0;
   int enumerates = 0;
   int globalTargets = 0;
+  int virtualLookups = 0;
 };
 
 class EnumerateInspector : public ir::util::Operator {
@@ -40,6 +41,10 @@ public:
 
   void handle(ir::CallInstr *call) override {
     auto *func = ir::util::getFunc(call->getCallee());
+    if (auto *intrinsic = ir::cast<ir::InternalFunc>(func);
+        intrinsic &&
+        intrinsic->getIntrinsic() == ir::InternalFunc::Intrinsic::VIRTUAL_LOOKUP)
+      ++counts[getParentFunc()->getUnmangledName()].virtualLookups;
     if (func && func->getName().rfind(
                     ast::getMangledFunc("std.internal.builtin", "enumerate"), 0) == 0)
       ++counts[getParentFunc()->getUnmangledName()].enumerates;
@@ -165,6 +170,7 @@ enum_shadowed([1])
 
   EnumerateInspector after;
   after.process(compiler.getModule());
+  EXPECT_EQ(1, after.counts["enum_virtual"].virtualLookups);
   for (const auto &name : {"enum_generator", "enum_virtual", "enum_default"}) {
     SCOPED_TRACE(name);
     EXPECT_EQ(0, after.counts[name].enumerates);

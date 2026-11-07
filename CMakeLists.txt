@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.14)
 project(
   Codon
-  VERSION "0.20.3"
+  VERSION "0.20.6"
   HOMEPAGE_URL "https://github.com/exaloop/codon"
   DESCRIPTION "high-performance, extensible Python compiler")
-set(CODON_JIT_PYTHON_VERSION "0.5.3")
+set(CODON_JIT_PYTHON_VERSION "0.5.6")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.h.in"
                "${PROJECT_SOURCE_DIR}/codon/config/config.h")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.py.in"
@@ -29,7 +29,8 @@ endif()
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 include_directories(.)
 
-option(SYSTEM_BLAS "Use system-provided BLAS" ON)
+option(SYSTEM_BLAS "Use system-provided BLAS" OFF)
+option(CODON_USE_MIMALLOC "Use bundled mimalloc for the Codon compiler process" ON)
 set(APPLE_ARM OFF)
 if (APPLE AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "arm64")
   set(APPLE_ARM ON)
@@ -170,7 +171,12 @@ elseif(SYSTEM_BLAS)
     PRIVATE -Wl,--whole-archive $<TARGET_FILE:zlibstatic> $<TARGET_FILE:gc>
             $<TARGET_FILE:bz2> $<TARGET_FILE:liblzma> $<TARGET_FILE:re2>
             $<TARGET_FILE:hwy> $<TARGET_FILE:hwy_contrib>
-            $<TARGET_FILE:codonfloat> -Wl,--no-whole-archive)
+            ${COMPILER_RT_LIB} -Wl,--no-whole-archive)
+  if(CMAKE_VERSION VERSION_LESS 3.22)
+    message(FATAL_ERROR "SYSTEM_BLAS requires CMake 3.22+ for ILP64 selection")
+  endif()
+  # The numpy BLAS/LAPACK bindings use 64-bit integers (fint = i64).
+  set(BLA_SIZEOF_INTEGER 8)
   find_package(BLAS REQUIRED)
   target_link_libraries(codonrt PUBLIC BLAS::BLAS)
 else()
@@ -265,6 +271,7 @@ set(CODON_HPPFILES
   codon/cir/cir.h
   codon/cir/transform/cleanup/canonical.h
   codon/cir/transform/cleanup/dead_code.h
+  codon/cir/transform/cleanup/devirtualize.h
   codon/cir/transform/cleanup/global_demote.h
   codon/cir/transform/cleanup/replacer.h
   codon/cir/transform/folding/const_fold.h
@@ -275,7 +282,7 @@ set(CODON_HPPFILES
   codon/cir/transform/lowering/await.h
   codon/cir/transform/lowering/imperative.h
   codon/cir/transform/lowering/pipeline.h
-  codon/cir/transform/lowering/rtti.h
+  codon/cir/transform/lowering/return.h
   codon/cir/transform/lowering/throw.h
   codon/cir/transform/manager.h
   codon/cir/transform/parallel/openmp.h
@@ -381,6 +388,7 @@ set(CODON_CPPFILES
   codon/cir/module.cpp
   codon/cir/transform/cleanup/canonical.cpp
   codon/cir/transform/cleanup/dead_code.cpp
+  codon/cir/transform/cleanup/devirtualize.cpp
   codon/cir/transform/cleanup/global_demote.cpp
   codon/cir/transform/cleanup/replacer.cpp
   codon/cir/transform/folding/const_fold.cpp
@@ -390,7 +398,7 @@ set(CODON_CPPFILES
   codon/cir/transform/lowering/await.cpp
   codon/cir/transform/lowering/imperative.cpp
   codon/cir/transform/lowering/pipeline.cpp
-  codon/cir/transform/lowering/rtti.cpp
+  codon/cir/transform/lowering/return.cpp
   codon/cir/transform/lowering/throw.cpp
   codon/cir/transform/manager.cpp
   codon/cir/transform/parallel/openmp.cpp
@@ -529,6 +537,9 @@ add_dependencies(libs codonrt codonc)
 # Codon command-line tool
 add_executable(codon codon/app/main.cpp)
 target_link_libraries(codon PUBLIC fmt codonc codon_jupyter Threads::Threads)
+if(CODON_USE_MIMALLOC)
+  target_link_libraries(codon PRIVATE mimalloc-obj)
+endif()
 if(ASAN)
   target_compile_options(
     codon PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address"
@@ -560,6 +571,7 @@ set(CODON_TEST_CPPFILES
     test/cir/instr.cpp
     test/cir/llvm/optimize.cpp
     test/cir/module.cpp
+    test/cir/parse_code.cpp
     test/cir/transform/enumerate.cpp
     test/cir/transform/format.cpp
     test/cir/transform/manager.cpp
@@ -639,7 +651,11 @@ foreach(unicode_file IN LISTS CODON_UNICODE_GENERATED_FILES)
   get_filename_component(unicode_directory "${unicode_relative}" DIRECTORY)
   install(FILES "${unicode_file}" DESTINATION "lib/codon/${unicode_directory}")
 endforeach()
-install(DIRECTORY ${CMAKE_SOURCE_DIR}/jit/ DESTINATION python)
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/jit/ DESTINATION python
+  PATTERN "build" EXCLUDE
+  PATTERN "dist" EXCLUDE
+  PATTERN "*.egg-info" EXCLUDE
+  PATTERN "__pycache__" EXCLUDE)
 install(DIRECTORY DESTINATION lib/codon/plugins)
 
 install(CODE [[

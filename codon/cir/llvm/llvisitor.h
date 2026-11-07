@@ -144,6 +144,10 @@ private:
   std::unordered_map<id_t, llvm::Value *> vars;
   /// LLVM functions corresponding to IR functions
   std::unordered_map<id_t, llvm::Function *> funcs;
+  /// Cached AOT LLVM function names keyed by CIR function ID
+  std::unordered_map<id_t, std::string> functionNames;
+  /// Next numeric suffix per full CIR function name, distinguishing clones
+  std::unordered_map<std::string, size_t> functionNameCounts;
   /// AOT resolution of an owner's segment offset, before adding a field's local
   /// offset. Neither a constant nor a function means dynamic MRO lookup is needed.
   struct FieldOffsetResolver {
@@ -160,8 +164,8 @@ private:
   /// LLVM VIRTUAL_LOOKUP helpers -> their static CIR receiver types. Retains the
   /// information needed to recognize lowered dispatch at a call site; per-module.
   std::unordered_map<llvm::Function *, const RefType *> virtualLookupTypes;
-  /// (Static receiver type ID, semantic thunk ID) -> (dynamic type ID, target) pairs.
-  /// Empty entries cache a decision not to specialize. LLVM targets are per-module.
+  /// (Static receiver type ID, semantic thunk ID) -> complete AOT target set.
+  /// Empty entries retain general lookup. All LLVM pointers are per-module.
   std::map<std::pair<int64_t, int64_t>,
            std::vector<std::pair<int64_t, llvm::Function *>>>
       virtualTargets;
@@ -170,7 +174,7 @@ private:
   /// Last emitted semantic-thunk -> CIR-function-ID map for each type. Comparing
   /// these maps detects JIT method-table changes without retaining LLVM pointers.
   std::unordered_map<int64_t, std::map<size_t, id_t>> emittedTypeMethods;
-  /// Pending (existing JIT descriptor, new initializer) updates. Only method-table
+  /// Pending (existing JIT descriptor, new initializer) updates. Only dispatch
   /// fields are copied before publishing the registry; layout fields stay immutable.
   std::vector<std::pair<llvm::GlobalVariable *, llvm::Constant *>> typeInfoUpdates;
   /// Whether the shared registry global has been emitted; later JIT modules refer
@@ -216,30 +220,64 @@ private:
 
   // Try-catch types and utilities
   llvm::StructType *getTypeInfoType();
-  /// Shared descriptor ABI; must match runtime::TypeInfo and the stdlib TypeInfo
+  /// Gets the shared runtime type descriptor layout.
+  /// Must match runtime::TypeInfo and the stdlib TypeInfo.
+  /// @return the LLVM type of a runtime type descriptor
   llvm::StructType *getRuntimeTypeInfoType();
-  /// Layout of fields declared by this class alone, excluding inherited fields
+  /// Gets the layout of fields declared by a class, excluding inherited fields.
+  /// @param type the reference type with runtime metadata
+  /// @return the class's own-field layout
   llvm::StructType *getOwnLayout(RefType *type);
-  /// Allocation layout: fields only for plain classes, header plus MRO segments
-  /// for polymorphic classes. All references still point to the allocation start.
+  /// Gets the allocation layout of a reference type.
+  /// Plain classes contain only fields; polymorphic classes have a header and
+  /// base-first segments in reverse MRO order. References point to the allocation
+  /// start.
+  /// @param type the reference type
+  /// @return the object allocation layout
   llvm::StructType *getObjectLayout(RefType *type);
-  /// Concrete allocation offset of a source-visible field, including padding
+  /// Gets the allocation offset of a declaring class's own-field segment.
+  /// @param type the concrete reference type
+  /// @param owner the declaring class in the type's MRO
+  /// @return the byte offset from the allocation start
+  uint64_t getObjectOwnerOffset(RefType *type, RefType *owner);
+  /// Gets a field offset for an allocation of the given concrete type.
+  /// @param type the concrete reference type
+  /// @param index the source-visible field index, including inherited fields
+  /// @return the byte offset from the allocation start, including padding
   uint64_t getObjectFieldOffset(RefType *type, size_t index);
-  /// Emit/reference a descriptor; AOT globals are constant, JIT addresses are stable
+  /// Emits or references a runtime type descriptor.
+  /// AOT descriptors are constant; JIT descriptor addresses remain stable across cells.
+  /// @param type the type with runtime metadata
+  /// @return the descriptor global in the current LLVM module
   llvm::GlobalVariable *getRuntimeTypeInfo(Type *type);
-  /// Shared JIT {count, table} global used by type-ID lookup across cells
+  /// @return the shared JIT {count, table} global for type-ID lookup across cells
   llvm::GlobalVariable *getRuntimeTypeRegistry();
-  /// Build the JIT initializer that refreshes descriptors and publishes the registry
+  /// Emits a JIT initializer to refresh method tables and publish the registry.
+  /// @param module the CIR module containing the current runtime type metadata
   void prepareRuntimeTypeInfo(Module *module);
-  /// Load one descriptor field by its runtime::TypeInfoField ABI index
+  /// Loads a field from a runtime type descriptor.
+  /// @param info the descriptor pointer
+  /// @param field the runtime::TypeInfoField ABI index
+  /// @return the loaded field value
   llvm::Value *loadRuntimeField(llvm::Value *info, unsigned field);
-  /// Resolve a field address from a canonical object pointer and static receiver
-  /// type; chooses a proven AOT offset/resolver or a dynamic MRO search
+  /// Resolves a field address using the static receiver type and runtime layout.
+  /// Chooses a proven AOT offset/resolver or a dynamic MRO search.
+  /// @param object the canonical pointer to the start of the allocation
+  /// @param type the static receiver type
+  /// @param field the field name
+  /// @return the field's address
   llvm::Value *getFieldAddress(llvm::Value *object, RefType *type,
-                               const std::string &field);
-  /// Emit allocation, descriptor access, or virtual lookup for an RTTI intrinsic
-  llvm::Value *codegenRuntimeIntrinsic(const InternalFunc *function,
-                                       const std::vector<llvm::Value *> &args);
+                               const std::string &field, RefType *exactType = nullptr);
+  /// Evaluates a type query with this module's target layout.
+  /// @param function the valid type-query intrinsic declaration
+  /// @return the query result as an LLVM constant
+  llvm::Constant *codegenTypeQuery(const InternalFunc *function);
+  /// Emits a compiler intrinsic, including its normal control-flow effects.
+  /// @param function the valid intrinsic declaration
+  /// @param args the lowered runtime arguments
+  /// @return the generated intrinsic result
+  llvm::Value *codegenIntrinsic(const InternalFunc *function,
+                                const std::vector<llvm::Value *> &args);
   llvm::StructType *getPadType();
   llvm::StructType *getExceptionType();
   llvm::GlobalVariable *getTypeIdxVar(Type *catchType);
@@ -285,6 +323,7 @@ private:
   bool isStorableType(llvm::Type *type);
   llvm::Value *getDummyValue(llvm::Type *type);
   llvm::DISubprogram *getDISubprogramForFunc(const Func *x);
+  std::string getLLVMNameForFunction(const Func *function);
   void clearLLVMData();
 
 public:
@@ -356,6 +395,9 @@ public:
   /// @return the current module/context, replaced internally
   std::pair<std::unique_ptr<llvm::Module>, std::unique_ptr<llvm::LLVMContext>>
   takeModule(Module *module, const SrcInfo *src = nullptr);
+  /// Gets the most recently emitted runtime type initializer's symbol name.
+  /// The JIT must run this initializer before executing the corresponding cell.
+  /// @return the initializer's symbol name, or an empty string before one is emitted
   const std::string &getRuntimeInitializerName() const {
     return runtimeInitializerName;
   }
@@ -471,7 +513,6 @@ public:
   void visit(const InsertInstr *) override;
   void visit(const CallInstr *) override;
   void visit(const StackAllocInstr *) override;
-  void visit(const TypePropertyInstr *) override;
   void visit(const YieldInInstr *) override;
   void visit(const TernaryInstr *) override;
   void visit(const BreakInstr *) override;

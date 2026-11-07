@@ -26,7 +26,7 @@ __stdin__ = stdin
 __stdout__ = stdout
 __stderr__ = stderr
 
-def exit(status=0):
+def exit(status=0, /):
     if status is None:
         raise SystemExit(0)
     elif isinstance(status, Optional):

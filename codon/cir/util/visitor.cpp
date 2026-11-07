@@ -45,7 +45,6 @@ void Visitor::visit(TernaryInstr *x) { defaultVisit(x); }
 void Visitor::visit(BreakInstr *x) { defaultVisit(x); }
 void Visitor::visit(ContinueInstr *x) { defaultVisit(x); }
 void Visitor::visit(ReturnInstr *x) { defaultVisit(x); }
-void Visitor::visit(TypePropertyInstr *x) { defaultVisit(x); }
 void Visitor::visit(YieldInstr *x) { defaultVisit(x); }
 void Visitor::visit(AwaitInstr *x) { defaultVisit(x); }
 void Visitor::visit(ThrowInstr *x) { defaultVisit(x); }
@@ -107,7 +106,6 @@ void ConstVisitor::visit(const TernaryInstr *x) { defaultVisit(x); }
 void ConstVisitor::visit(const BreakInstr *x) { defaultVisit(x); }
 void ConstVisitor::visit(const ContinueInstr *x) { defaultVisit(x); }
 void ConstVisitor::visit(const ReturnInstr *x) { defaultVisit(x); }
-void ConstVisitor::visit(const TypePropertyInstr *x) { defaultVisit(x); }
 void ConstVisitor::visit(const YieldInstr *x) { defaultVisit(x); }
 void ConstVisitor::visit(const AwaitInstr *x) { defaultVisit(x); }
 void ConstVisitor::visit(const ThrowInstr *x) { defaultVisit(x); }

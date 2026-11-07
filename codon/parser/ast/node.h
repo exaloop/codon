@@ -80,6 +80,14 @@ struct ASTNode : public ir::Node {
   }
 };
 
+struct ASTNodeDeleter {
+  void operator()(ASTNode *node) const noexcept {
+    if (node)
+      node->~ASTNode();
+  }
+};
+using ASTNodePtr = std::unique_ptr<ASTNode, ASTNodeDeleter>;
+
 template <class... TA> void E(error::Error e, ASTNode *o, const TA &...args) {
   E(e, o->getSrcInfo(), args...);
 }

@@ -27,7 +27,7 @@ CPMAddPackage(
 CPMAddPackage(
     NAME semver
     GITHUB_REPOSITORY "Neargye/semver"
-    GIT_TAG v0.3.0)
+    GIT_TAG v1.0.1)
 
 CPMAddPackage(
     NAME zlibng
@@ -156,14 +156,21 @@ CPMAddPackage(
     GIT_TAG v6.1.1
     EXCLUDE_FROM_ALL YES)
 
-if(NOT SYSTEM_BLAS)
+if(NOT APPLE AND NOT SYSTEM_BLAS)
     enable_language(Fortran)
+    set(OPENBLAS_TARGET_OPTIONS "")
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
+        set(OPENBLAS_TARGET_OPTIONS "TARGET PRESCOTT")
+    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")
+        set(OPENBLAS_TARGET_OPTIONS "TARGET ARMV8")
+    endif()
     CPMAddPackage(
         NAME openblas
         GITHUB_REPOSITORY "OpenMathLib/OpenBLAS"
         GIT_TAG v0.3.33
         EXCLUDE_FROM_ALL YES
-        OPTIONS "DYNAMIC_ARCH ON"
+        OPTIONS ${OPENBLAS_TARGET_OPTIONS}
+                "DYNAMIC_ARCH ON"
                 "BUILD_TESTING OFF"
                 "BUILD_BENCHMARKS OFF"
                 "INTERFACE64 ON"
@@ -182,3 +189,23 @@ CPMAddPackage(
             "HWY_ENABLE_INSTALL OFF"
             "HWY_ENABLE_TESTS OFF"
             "BUILD_TESTING OFF")
+
+if(CODON_USE_MIMALLOC)
+    CPMAddPackage(
+        NAME mimalloc
+        GITHUB_REPOSITORY microsoft/mimalloc
+        GIT_TAG v3.6.1
+        EXCLUDE_FROM_ALL YES
+        OPTIONS "MI_OVERRIDE ON"
+                "MI_BUILD_SHARED OFF"
+                "MI_BUILD_STATIC OFF"
+                "MI_BUILD_OBJECT ON"
+                "MI_BUILD_TESTS OFF"
+                "MI_DEBUG OFF"
+                "MI_SECURE OFF"
+                "MI_STATS OFF"
+                "MI_PROFILE OFF")
+    get_directory_property(MIMALLOC_LIBRARIES DIRECTORY "${mimalloc_SOURCE_DIR}"
+                           DEFINITION mi_libraries)
+    target_link_libraries(mimalloc-obj INTERFACE ${MIMALLOC_LIBRARIES})
+endif()

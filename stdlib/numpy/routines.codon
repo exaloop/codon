@@ -107,7 +107,7 @@ def _array(a, dtype: type = NoneType, copy: bool = True, order: str = 'K'):
                 else:
                     return a.astype(dtype, order='C', copy=False)
 
-            if order == 'F':
+            else:
                 if fc:
                     return a.astype(dtype, copy=False)
                 else:
@@ -1696,7 +1696,7 @@ def delete(arr, obj, axis = None):
 
             return new
         elif isinstance(obj, slice):
-            start, stop, step = obj.adjust_indices(N)
+            start, stop, step, _ = obj.adjust_indices(N)
             xr = range(start, stop, step)
             numtodel = len(xr)
 

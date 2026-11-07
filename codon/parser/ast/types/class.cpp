@@ -30,9 +30,8 @@ ClassType::Generic ClassType::Generic::generalize(int atLevel) const {
   return {name, t, id, staticKind};
 }
 
-ClassType::Generic
-ClassType::Generic::instantiate(int atLevel, int *unboundCount,
-                                std::unordered_map<int, TypePtr> *cache) const {
+ClassType::Generic ClassType::Generic::instantiate(int atLevel, int *unboundCount,
+                                                   InstantiationCache *cache) const {
   TypePtr t = nullptr;
   if (!staticKind && type && type->getStatic())
     t = type->getStatic()->getNonStaticType()->instantiate(atLevel, unboundCount,
@@ -42,19 +41,62 @@ ClassType::Generic::instantiate(int atLevel, int *unboundCount,
   return {name, t, id, staticKind};
 }
 
-ClassType::ClassType(Cache *cache, std::string name, std::vector<Generic> generics,
+ClassType::ClassType(Cache *cache, std::string_view name, std::vector<Generic> generics,
                      std::vector<Generic> hiddenGenerics)
-    : Type(cache), name(std::move(name)), generics(std::move(generics)),
+    : ClassType(cache, InternedString(name), std::move(generics),
+                std::move(hiddenGenerics)) {}
+ClassType::ClassType(Cache *cache, InternedString name, std::vector<Generic> generics,
+                     std::vector<Generic> hiddenGenerics)
+    : Type(cache), name(name), generics(std::move(generics)),
       hiddenGenerics(std::move(hiddenGenerics)) {}
 ClassType::ClassType(const ClassType *base)
     : Type(*base), name(base->name), generics(base->generics),
       hiddenGenerics(base->hiddenGenerics), isTuple(base->isTuple) {}
 
+bool ClassType::freeze() {
+  if (immutable)
+    return true;
+  // Do not freeze mutable function signatures, unions, NTuple expansion, or
+  // stored templates.
+  if (typeid(*this) != typeid(ClassType) || name == StdlibTypes::UnrealizedType ||
+      name == "__NTuple__")
+    return false;
+  auto stable = [](const Generic &generic) {
+    if (!generic.type)
+      return false;
+    if (generic.type->getStatic())
+      return true;
+    // Links that point to frozen types are fixed in realize() during typechecking
+    if (generic.type->getLink())
+      return false;
+    auto *child = generic.type->getClass();
+    return child && child->freeze();
+  };
+  for (const auto &generic : generics)
+    if (!stable(generic))
+      return false;
+  for (const auto &generic : hiddenGenerics)
+    if (!stable(generic))
+      return false;
+  immutable = true;
+  return true;
+}
+
 int ClassType::unify(Type *typ, Unification *us) {
+  if (auto canonical = canonicalOptional())
+    return canonical->unify(typ, us);
   if (auto tc = typ->getClass()) {
+    // A defaulted None payload also resolves the original optional slot.
+    if (name == StdlibTypes::Optional && tc->name == StdlibTypes::NoneType &&
+        generics.size() == 1 && generics[0].type->getUnbound())
+      return generics[0].type->unify(tc, us);
+    if (name == StdlibTypes::NoneType && tc->name == StdlibTypes::Optional)
+      return tc->unify(this, us);
     if (name == StdlibTypes::UnrealizedType && tc->name == name) {
+      if (generics[0].type == tc->generics[0].type)
+        return 0;
       // instantiate + unify!
-      std::unordered_map<int, types::TypePtr> genericCache;
+      types::InstantiationCache genericCache;
       auto l = generics[0].type->instantiate(0, &(cache->unboundCount), &genericCache);
       genericCache.clear();
       auto r =
@@ -152,6 +194,16 @@ int ClassType::unify(Type *typ, Unification *us) {
 }
 
 TypePtr ClassType::generalize(int atLevel) const {
+  if (immutable)
+    return const_cast<ClassType *>(this)->shared_from_this();
+  // A plain monomorphic leaf has no inference variables or generic slots to
+  // substitute. Derived function/union types must retain their own behavior.
+  if (generics.empty() && hiddenGenerics.empty() && typeid(*this) == typeid(ClassType))
+    return const_cast<ClassType *>(this)->shared_from_this();
+  // UnrealizedType needs this to avoid recursive references.
+  if (name == StdlibTypes::UnrealizedType && !generics.empty() && generics[0].type &&
+      generics[0].type->getClass())
+    return const_cast<ClassType *>(this)->shared_from_this();
   std::vector<Generic> g, hg;
   g.reserve(generics.size());
   hg.reserve(hiddenGenerics.size());
@@ -166,7 +218,15 @@ TypePtr ClassType::generalize(int atLevel) const {
 }
 
 TypePtr ClassType::instantiate(int atLevel, int *unboundCount,
-                               std::unordered_map<int, TypePtr> *cache) const {
+                               InstantiationCache *cache) const {
+  if (immutable)
+    return const_cast<ClassType *>(this)->shared_from_this();
+  if (generics.empty() && hiddenGenerics.empty() && typeid(*this) == typeid(ClassType))
+    return const_cast<ClassType *>(this)->shared_from_this();
+  // Share stored templates as in generalize(), rather than copying their graphs.
+  if (name == StdlibTypes::UnrealizedType && !generics.empty() && generics[0].type &&
+      generics[0].type->getClass())
+    return const_cast<ClassType *>(this)->shared_from_this();
   std::vector<Generic> g, hg;
   g.reserve(generics.size());
   hg.reserve(hiddenGenerics.size());
@@ -228,6 +288,8 @@ bool ClassType::isInstantiated() const {
 }
 
 std::string ClassType::debugString(char mode) const {
+  if (auto canonical = canonicalOptional())
+    return canonical->debugString(mode);
   if (name == StdlibTypes::NamedTuple) {
     if (auto ids = generics[0].type->getIntStatic()) {
       auto id = ids->value;
@@ -256,10 +318,10 @@ std::string ClassType::debugString(char mode) const {
     size_t ai = 0, gi = 0;
     for (size_t i = 0; i < known.size(); i++) {
       if ((*func->ast)[i].isValue()) {
-        as.emplace_back(ai < args.size() ? (known[i] == ClassType::PartialFlag::Included
-                                                ? args[ai]
-                                                : ("..." + (mode == 0 ? "" : args[ai])))
-                                         : "...");
+        as.emplace_back(
+            ai < args.size()
+                ? (known[i] == ClassType::PartialFlag::Included ? args[ai] : "...")
+                : "...");
         if (known[i] == ClassType::PartialFlag::Included)
           ai++;
       } else {
@@ -306,6 +368,8 @@ std::string ClassType::debugString(char mode) const {
 }
 
 std::string ClassType::realizedName() const {
+  if (auto canonical = canonicalOptional())
+    return canonical->realizedName();
   if (!_rn.empty())
     return _rn;
 
@@ -331,6 +395,23 @@ std::string ClassType::realizedName() const {
     const_cast<ClassType *>(this)->_rn = s;
 
   return s;
+}
+
+ClassType *ClassType::canonicalOptional() const {
+  // Preserve provisional payloads until inference resolves or defaults them.
+  if (name == StdlibTypes::Optional && generics.size() == 1 && generics[0].type) {
+    auto member = generics[0].type->getClass();
+    if (member && member->canRealize() &&
+        (member->name == StdlibTypes::Optional ||
+         member->name == StdlibTypes::NoneType))
+      return member;
+  }
+  return nullptr;
+}
+
+ClassType *ClassType::getClass() {
+  auto canonical = canonicalOptional();
+  return canonical ? canonical : this;
 }
 
 FuncType *ClassType::getPartialFunc() const {

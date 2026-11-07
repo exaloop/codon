@@ -43,9 +43,13 @@ public:
   SingleConstantCommutativeRule(ConstantType val, ConstantType newVal,
                                 std::string magic, Kind kind, Type *type)
       : val(val), type(type), magic(std::move(magic)), kind(kind) {
-    calc = [=](Value *v) -> Value * {
-      return v->getModule()->N<TemplatedConst<ConstantType>>(v->getSrcInfo(), val,
-                                                             type);
+    calc = [=](Value *value) -> Value * {
+      auto *module = value->getModule();
+      auto *result =
+          module->N<TemplatedConst<ConstantType>>(value->getSrcInfo(), newVal, type);
+      auto *flow = module->N<SeriesFlow>(value->getSrcInfo());
+      flow->push_back(value);
+      return module->N<FlowInstr>(value->getSrcInfo(), flow, result);
     };
   }
   /// Constructs a commutative rule.

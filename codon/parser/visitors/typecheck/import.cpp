@@ -35,15 +35,17 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
   // Fetch the import
   auto components = getImportPath(stmt->getFrom(), stmt->getDots());
   auto path = combine2(components, "/");
-  if (stmt->getDots() == 1 && path.empty()) { // from "." case
-    auto w = cast<IdExpr>(stmt->getWhat());
-    seqassert(w, "not an identifier: {}", FormatVisitor::apply(stmt->getWhat()));
-    resultStmt = transform(
-        N<ImportStmt>(stmt->getWhat(), nullptr, std::vector<Param>{}, nullptr, "", 1));
-    return;
-  }
+  const bool relativeFrom = stmt->getDots() > 0 && !stmt->getFrom();
   auto file = getImportFile(ctx->cache, path, ctx->getFilename());
   if (!file) {
+    if (relativeFrom) {
+      resultStmt = transform(N<ImportStmt>(
+          stmt->getWhat(), nullptr, std::vector<Param>{}, nullptr,
+          stmt->getAs().empty() ? cast<IdExpr>(stmt->getWhat())->getValue()
+                                : stmt->getAs(),
+          stmt->getDots()));
+      return;
+    }
     if (stmt->getDots() == 0 &&
         (ctx->autoPython || ctx->cache->compiler->getOptions()->autopy)) {
       auto newStr = FormatVisitor::apply(stmt->getFrom());
@@ -92,6 +94,10 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
 
   const auto &import = getImport(file->path);
   std::string importVar = import->importVar;
+  // The main module has no runtime import variable. Check its identity
+  // instead, so `from internal import gc` is not mistaken for a main-module import.
+  if (import->ctx->getModuleInfo().module == MODULE_MAIN && !ctx->isStdlibLoading)
+    E(Error::CUSTOM, stmt, "cannot import main module '{}'", file->module);
   if (!import->loadedAtToplevel)
     handled = false;
 
@@ -131,8 +137,21 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
     // Case 3: from foo import bar
     auto i = cast<IdExpr>(stmt->getWhat());
     seqassert(i, "not a valid import what expression");
-    auto c = import->ctx->find(i->getValue());
+    auto c = relativeFrom ? import->ctx->Context<TypecheckItem>::find(i->getValue())
+                          : import->ctx->find(i->getValue());
     // Make sure that we are importing an existing global symbol
+    if (!c && relativeFrom &&
+        getImportFile(ctx->cache,
+                      path.empty() ? i->getValue() : path + "/" + i->getValue(),
+                      ctx->getFilename())) {
+      // Support from . import int and similar commands
+      auto relativeImport = N<ImportStmt>(
+          stmt->getWhat(), nullptr, std::vector<Param>{}, nullptr,
+          stmt->getAs().empty() ? i->getValue() : stmt->getAs(), stmt->getDots());
+      resultStmt =
+          transform(N<SuiteStmt>(std::vector<Stmt *>{resultStmt, relativeImport}));
+      return;
+    }
     if (!c)
       E(Error::IMPORT_NO_NAME, i, i->getValue(), file->module);
     if (c->isConditional())
@@ -355,11 +374,11 @@ Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
   std::ranges::replace(moduleID, '.', '_');
   auto ictx = std::make_shared<TypeContext>(ctx->cache, file.path);
   ictx->isStdlibLoading = ctx->isStdlibLoading;
-  ictx->moduleName = file;
+  ictx->setModule(file);
   auto &import = ctx->cache->imports[file.path];
   import.update(file.module, file.path, ictx);
   import.loadedAtToplevel =
-      getImport(ctx->moduleName.path)->loadedAtToplevel &&
+      getImport(ctx->getModuleInfo().path)->loadedAtToplevel &&
       (ctx->isStdlibLoading || (ctx->isGlobal() && ctx->blockLevel == 0));
   auto importVar = import.importVar =
       getTemporaryVar(fmt::format("import_{}", moduleID));
@@ -370,9 +389,10 @@ Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
   Stmt *n = nullptr;
   if (file.module != "internal.core") {
     // str is not defined when loading internal.core; __name__ is not needed anyway
-    n = N<SuiteStmt>(
-        N<AssignStmt>(N<IdExpr>("__name__"), N<StringExpr>(ictx->moduleName.module)),
-        N<AssignStmt>(N<IdExpr>("__file__"), N<StringExpr>(ictx->moduleName.path)));
+    n = N<SuiteStmt>(N<AssignStmt>(N<IdExpr>("__name__"),
+                                   N<StringExpr>(ictx->getModuleInfo().module)),
+                     N<AssignStmt>(N<IdExpr>("__file__"),
+                                   N<StringExpr>(ictx->getModuleInfo().path)));
     ctx->addBlock();
     preamble->addStmt(transform(
         N<AssignStmt>(N<IdExpr>(importVar),

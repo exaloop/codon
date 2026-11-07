@@ -54,11 +54,13 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
     stmt->getLhs()->eraseAttribute(Attr::ExprDominatedUsed);
     auto e = cast<IdExpr>(stmt->getLhs());
     seqassert(e, "dominated bad assignment");
-    resultStmt = transform(N<SuiteStmt>(
-        resultStmt,
-        N<AssignStmt>(N<IdExpr>(fmt::format("{}{}", getUnmangledName(e->getValue()),
-                                            VAR_USED_SUFFIX)),
-                      N<BoolExpr>(true), nullptr, AssignStmt::UpdateMode::Update)));
+    // A type declaration alone must not mark a binding initialized!
+    if (stmt->getRhs())
+      resultStmt = transform(N<SuiteStmt>(
+          resultStmt,
+          N<AssignStmt>(N<IdExpr>(fmt::format("{}{}", getUnmangledName(e->getValue()),
+                                              VAR_USED_SUFFIX)),
+                        N<BoolExpr>(true), nullptr, AssignStmt::UpdateMode::Update)));
   }
 }
 
@@ -101,7 +103,9 @@ void TypecheckVisitor::visit(DelStmt *stmt) {
 /// @example
 ///   `a, b = c, d + foo()` -> `assign = (c, d + foo); a = assign[0]; b = assign[1]`.
 /// Each assignment is unpacked recursively to allow cases like `a, (b, c) = d`.
-Stmt *TypecheckVisitor::unpackAssignment(Expr *lhs, Expr *rhs) {
+/// Compiler-owned loop tuples can be read directly when their arity is known,
+/// preserving the field-read pattern used by loop optimizations.
+Stmt *TypecheckVisitor::unpackAssignment(Expr *lhs, Expr *rhs, bool isLoopTarget) {
   std::vector<Expr *> leftSide;
   if (auto et = cast<TupleExpr>(lhs)) {
     // Case: (a, b) = ...
@@ -119,13 +123,50 @@ Stmt *TypecheckVisitor::unpackAssignment(Expr *lhs, Expr *rhs) {
   auto oldSrcInfo = getSrcInfo();
   setSrcInfo(rhs->getSrcInfo());
   auto *block = N<SuiteStmt>();
-  if (!cast<IdExpr>(rhs)) {
-    // Store any non-trivial right-side expression into a variable
-    auto var = getTemporaryVar("assign");
-    auto newRhs = N<IdExpr>(var);
-    block->addStmt(N<AssignStmt>(newRhs, ast::clone(rhs)));
+  // Consume each nested unpacking source once, including generators.
+  bool hasStar = std::ranges::any_of(
+      leftSide, [](Expr *item) { return cast<StarExpr>(item) != nullptr; });
+  auto newRhs = N<IdExpr>(getTemporaryVar("assign"));
+  auto tuple = cast<TupleExpr>(rhs);
+  bool knownShape =
+      tuple &&
+      std::ranges::none_of(
+          *tuple, [](Expr *item) { return cast<StarExpr>(item) != nullptr; }) &&
+      (hasStar ? tuple->size() >= leftSide.size() - 1
+               : tuple->size() == leftSide.size());
+  auto sourceType = rhs->getType();
+  bool directLoopTuple = false;
+  if (isLoopTarget && sourceType && sourceType->is(StdlibTypes::Tuple)) {
+    auto sourceSize = getClassFields(sourceType->getClass()).size();
+    directLoopTuple =
+        hasStar ? sourceSize >= leftSide.size() - 1 : sourceSize == leftSide.size();
+  }
+  if (!directLoopTuple) {
+    Expr *source = ast::clone(rhs);
+    if (!knownShape)
+      source = N<CallExpr>(
+          N<IdExpr>(getMangledMethod("std.internal.types.collections.list", "List",
+                                     "_unpack")),
+          source, N<IntExpr>(leftSide.size() - hasStar), N<BoolExpr>(hasStar));
+    block->addStmt(N<AssignStmt>(newRhs, source));
     rhs = newRhs;
   }
+
+  auto assignments = N<SuiteStmt>();
+  Stmt *starredSnapshot = nullptr;
+  auto addAssignment = [&](Expr *target, Expr *value, bool starred = false) {
+    if (hasStar) {
+      auto snapshot = N<IdExpr>(getTemporaryVar("unpack"));
+      auto extract = N<AssignStmt>(snapshot, value);
+      if (starred)
+        starredSnapshot = extract;
+      else
+        block->addStmt(extract);
+      assignments->addStmt(unpackAssignment(target, snapshot));
+    } else {
+      block->addStmt(unpackAssignment(target, value));
+    }
+  };
 
   // Process assignments until the fist StarExpr (if any)
   size_t st = 0;
@@ -135,8 +176,7 @@ Stmt *TypecheckVisitor::unpackAssignment(Expr *lhs, Expr *rhs) {
     // Transformation: `leftSide_st = rhs[st]` where `st` is static integer
     auto rightSide = N<IndexExpr>(ast::clone(rhs), N<IntExpr>(st));
     // Recursively process the assignment because of cases like `(a, (b, c)) = d)`
-    auto ns = unpackAssignment(leftSide[st], rightSide);
-    block->addStmt(ns);
+    addAssignment(leftSide[st], rightSide);
   }
   // Process StarExpr (if any) and the assignments that follow it
   if (st < leftSide.size() && cast<StarExpr>(leftSide[st])) {
@@ -153,8 +193,7 @@ Stmt *TypecheckVisitor::unpackAssignment(Expr *lhs, Expr *rhs) {
                              ? nullptr
                              : N<IntExpr>(-leftSide.size() + st + 1),
                          nullptr)));
-    auto ns = unpackAssignment(cast<StarExpr>(leftSide[st])->getExpr(), rightSide);
-    block->addStmt(ns);
+    addAssignment(cast<StarExpr>(leftSide[st])->getExpr(), rightSide, true);
     st += 1;
     // Process remaining assignments. They will use negative indices (-1, -2 etc.)
     // because we do not know how big is StarExpr
@@ -163,9 +202,12 @@ Stmt *TypecheckVisitor::unpackAssignment(Expr *lhs, Expr *rhs) {
         E(Error::ASSIGN_MULTI_STAR, leftSide[st]->getSrcInfo());
       rightSide = N<IndexExpr>(ast::clone(rhs),
                                N<IntExpr>(-static_cast<int>(leftSide.size() - st)));
-      auto next = unpackAssignment(leftSide[st], rightSide);
-      block->addStmt(next);
+      addAssignment(leftSide[st], rightSide);
     }
+  }
+  if (hasStar) {
+    block->addStmt(starredSnapshot);
+    block->addStmt(assignments);
   }
   setSrcInfo(oldSrcInfo);
   return block;
@@ -258,6 +300,10 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
     }
   }
 
+  // Construct collection literals with their declared union storage (union_*_layout).
+  if (typeExpr && (cast<ListExpr>(stmt->getRhs()) || cast<SetExpr>(stmt->getRhs()) ||
+                   cast<DictExpr>(stmt->getRhs())))
+    stmt->getRhs()->setExpectedType(extractType(typeExpr));
   stmt->rhs = transform(stmt->getRhs(), true);
   stmt->type = typeExpr;
 
@@ -301,6 +347,12 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
   ctx->addAlwaysVisible(val);
 
   if (assign->getRhs()) { // not a declaration!
+    // Inferred chain temporaries preserve compile-time comparison operands.
+    if (stmt->hasAttribute(Attr::MaybeLiteral)) {
+      if (auto unbound = assign->getLhs()->getType()->getUnbound())
+        unbound->staticKind = assign->getRhs()->getType()->getStaticKind();
+      assign->setAttribute(Attr::MaybeLiteral);
+    }
     // Check if we can wrap the expression (e.g., `a: float = 3` -> `a = float(3)`)
     if (wrapExpr(&assign->rhs, assign->getLhs()->getType())) {
       unify(assign->getLhs()->getType(), assign->getRhs()->getType());
@@ -363,6 +415,13 @@ Stmt *TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
   if (stmt->getTypeExpr()) {
     unify(stmt->getLhs()->getType(), instantiateType(stmt->getTypeExpr()->getSrcInfo(),
                                                      extractType(stmt->getTypeExpr())));
+  }
+
+  // Annotation-only updates refine the hoisted variable's type, not its value.
+  if (!stmt->getRhs()) {
+    if (realize(stmt->getLhs()->getType()))
+      stmt->setDone();
+    return nullptr;
   }
 
   // Case: wrap expressions if needed (e.g. floats or optionals)

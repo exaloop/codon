@@ -28,6 +28,7 @@ public:
   void run(Module *m) override;
 
   void handle(SeriesFlow *v) override;
+  void handle(FlowInstr *v) override;
   void handle(IfFlow *v) override;
   void handle(WhileFlow *v) override;
   void handle(ImperativeForFlow *v) override;

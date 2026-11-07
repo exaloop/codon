@@ -66,6 +66,90 @@ assert late_result(base) == 30
 assert base.value == 10
 print("late polymorphic layout ok")  # EXPECT: late polymorphic layout ok
 
+#%% test_base_first_layout
+class PrefixRoot(object):
+    tag: u8
+    value: int
+    owner: list[int]
+
+class PrefixChild(PrefixRoot):
+    wide: u128
+
+class PrefixGrandchild(PrefixChild):
+    tail: tuple[int, int, int]
+
+class PrefixSide(PrefixRoot):
+    side: int
+
+class PrefixDiamond(PrefixChild, PrefixSide):
+    leaf: int
+
+class PrefixPadding(object):
+    padding: tuple[int, int, int]
+
+class PrefixMixed(PrefixRoot, PrefixPadding):
+    leaf: int
+
+def prefix_field_offset(T: type, name: str):
+    info = TypeInfo.cache(T)
+    for index in range(info.n_slots):
+        if info.slots[index][0] == name:
+            return info.slots[index][2]
+    raise AssertionError("missing field")
+
+@noinline
+def prefix_update(value: PrefixRoot, delta: int):
+    value.value += delta
+    value.owner[0] += value.value
+    return value.value + value.owner[0]
+
+for name in ("tag", "value", "owner"):
+    offset = prefix_field_offset(PrefixRoot, name)
+    assert prefix_field_offset(PrefixChild, name) == offset
+    assert prefix_field_offset(PrefixGrandchild, name) == offset
+    assert prefix_field_offset(PrefixDiamond, name) == offset
+    assert prefix_field_offset(PrefixMixed, name) > offset
+assert prefix_field_offset(PrefixChild, "wide") == prefix_field_offset(PrefixGrandchild, "wide")
+assert prefix_field_offset(PrefixDiamond, "wide") > prefix_field_offset(PrefixChild, "wide")
+assert prefix_field_offset(PrefixChild, "wide") % u128.__elemsize__ == 0
+
+grandchild = __magic__.new(PrefixGrandchild)
+grandchild.tag = u8(7)
+grandchild.value = 11
+grandchild.owner = [13]
+grandchild.wide = (u128(1) << 90) + u128(17)
+grandchild.tail = (19, 23, 29)
+assert prefix_update(grandchild, 2) == 39
+assert grandchild.value == 13 and grandchild.owner == [26]
+assert grandchild.tag == u8(7)
+assert grandchild.wide == (u128(1) << 90) + u128(17)
+assert grandchild.tail == (19, 23, 29)
+assert __ptr__(grandchild.value) == Ptr[int](type._ref_raw(grandchild) + prefix_field_offset(PrefixGrandchild, "value"))
+__ptr__(grandchild.value)[0] = 31
+assert grandchild.value == 31
+
+diamond = __magic__.new(PrefixDiamond)
+diamond.tag = u8(3)
+diamond.value = 5
+diamond.owner = [7]
+diamond.wide = u128(41)
+diamond.side = 43
+diamond.leaf = 47
+assert prefix_update(diamond, 3) == 23
+assert diamond.value == 8 and diamond.owner == [15]
+assert diamond.wide == u128(41) and diamond.side == 43 and diamond.leaf == 47
+
+mixed = __magic__.new(PrefixMixed)
+mixed.tag = u8(2)
+mixed.value = 3
+mixed.owner = [5]
+mixed.padding = (53, 59, 61)
+mixed.leaf = 67
+assert prefix_update(mixed, 4) == 19
+assert mixed.value == 7 and mixed.owner == [12]
+assert mixed.padding == (53, 59, 61) and mixed.leaf == 67
+print("base-first layout ok")  # EXPECT: base-first layout ok
+
 #%% test_rtti_layout
 class LayoutRoot:
     marker: u8
@@ -105,12 +189,12 @@ assert info.n_mro == 4
 assert info.mro[0] == LayoutLeaf.__id__
 assert info.mro[1] == LayoutRoot.__id__
 assert info.mro[2] == LayoutSide.__id__
-assert info.offsets[0] > 0
-assert info.offsets[1] > info.offsets[0]
-assert info.offsets[2] > info.offsets[1]
+assert info.offsets[2] > 0
+assert info.offsets[1] > info.offsets[2]
+assert info.offsets[0] > info.offsets[1]
 assert type._get_class_offset(LayoutLeaf, 0) == info.slots[0][2]
 assert type._get_class_offset(LayoutLeaf, 4) == type._ref_size(LayoutLeaf)
-assert type._ref_size(LayoutLeaf) > info.offsets[2]
+assert type._ref_size(LayoutLeaf) > info.offsets[0]
 
 @noinline
 def update_root(value: LayoutRoot):
@@ -181,6 +265,12 @@ except ValueError:
 except DeepErrorOne as error:
     assert error.message == "deep"
     assert isinstance(error, DeepErrorEight)
+try:
+    raise DeepErrorEight("exact")
+except ValueError:
+    assert False
+except DeepErrorEight as error:
+    assert error.message == "exact"
 print("deep membership ok")  # EXPECT: deep membership ok
 
 #%% test_rtti_exception
@@ -212,8 +302,12 @@ assert caught
 print("rtti exception ok")  # EXPECT: rtti exception ok
 
 #%% test_rtti_call_order
+# Four receivers share two implementations, exercising bounded direct calls
+# and their normal continuations when argument or target evaluation throws.
 class DispatchBase:
     def method(self, value: int):
+        if value == 9:
+            raise ValueError("dispatch failure")
         return value
 
 class DispatchChild(DispatchBase):
@@ -221,10 +315,10 @@ class DispatchChild(DispatchBase):
         return value + 100
 
 class DispatchThrow(DispatchBase):
-    def method(self, value: int):
-        if value == 9:
-            raise ValueError("dispatch failure")
-        return value - 1
+    pass
+
+class DispatchInheritedOne(DispatchChild):
+    pass
 
 @noinline
 def check_dispatch(value: DispatchBase):
@@ -237,8 +331,10 @@ def receiver(events: list[int], value: DispatchBase) -> DispatchBase:
     events.append(1)
     return value
 
-def argument(events: list[int]):
+def argument(events: list[int], fail: bool = False):
     events.append(2)
+    if fail:
+        raise ValueError("argument failure")
     return 9
 
 value = DispatchChild()
@@ -248,37 +344,130 @@ assert receiver(events, value).method(argument(events)) == 109
 assert events == [1, 2]
 
 @noinline
-def checked_dispatch(value: DispatchBase, events: list[int]):
+def checked_dispatch(value: DispatchBase, events: list[int], fail: bool = False):
     try:
-        return value.method(argument(events))
+        return receiver(events, value).method(argument(events, fail))
     except ValueError:
         events.append(3)
         return -1
 
 events = []
 assert checked_dispatch(DispatchThrow(), events) == -1
-assert events == [2, 3]
+assert events == [1, 2, 3]
 events = []
 assert checked_dispatch(DispatchChild(), events) == 109
-assert events == [2]
+assert events == [1, 2]
+events = []
+assert checked_dispatch(DispatchInheritedOne(), events) == 109
+assert events == [1, 2]
+events = []
+assert checked_dispatch(DispatchChild(), events, True) == -1
+assert events == [1, 2, 3]
 print("rtti calls ok")  # EXPECT: rtti calls ok
+
+#%% test_rtti_fallback_order
+# Nine distinct overrides retain general AOT lookup. Receiver and argument
+# effects still happen once, and both argument and target exceptions unwind.
+class FallbackBase:
+    def method(self, value: int, events: list[int]):
+        return value
+
+class FallbackChild[N: Static[int]](FallbackBase):
+    def method(self, value: int, events: list[int]):
+        events.append(3)
+        if value < 0:
+            raise ValueError("target failure")
+        return value + N
+
+def fallback_receiver(value: FallbackBase, events: list[int]) -> FallbackBase:
+    events.append(1)
+    return value
+
+def fallback_argument(events: list[int], fail: int):
+    events.append(2)
+    if fail == 1:
+        raise ValueError("argument failure")
+    return -9 if fail == 2 else 9
+
+@noinline
+def invoke_fallback(value: FallbackBase, events: list[int], fail: int):
+    try:
+        return fallback_receiver(value, events).method(fallback_argument(events, fail), events)
+    except ValueError:
+        events.append(4)
+        return -1
+    finally:
+        events.append(5)
+
+values: list[FallbackBase] = []
+values.append(FallbackChild[0]())
+values.append(FallbackChild[1]())
+values.append(FallbackChild[2]())
+values.append(FallbackChild[3]())
+values.append(FallbackChild[4]())
+values.append(FallbackChild[5]())
+values.append(FallbackChild[6]())
+values.append(FallbackChild[7]())
+values.append(FallbackChild[8]())
+for index, value in enumerate(values):
+    events = []
+    assert invoke_fallback(value, events, 0) == 9 + index
+    assert events == [1, 2, 3, 5]
+    events = []
+    assert invoke_fallback(value, events, 1) == -1
+    assert events == [1, 2, 4, 5]
+    events = []
+    assert invoke_fallback(value, events, 2) == -1
+    assert events == [1, 2, 3, 4, 5]
+print("rtti fallback order ok")  # EXPECT: rtti fallback order ok
 
 #%% test_rtti_any
 class BoxBase:
     number: int
 
+    def __eq__(self, other: BoxBase):
+        return self.number == other.number
+
+    def __hash__(self):
+        return hash(self.number)
+
 class BoxChild(BoxBase):
     payload: list[int]
+
+    def __eq__(self, other: BoxBase):
+        return self.number == other.number and self.payload == type._force_cast(other, BoxChild).payload
+
+    def __hash__(self):
+        return hash((self.number, self.payload))
 
 child = __magic__.new(BoxChild)
 child.number = 41
 child.payload = [1, 2]
 base: BoxBase = child
 boxed = Any(base)
+assert Any.__elemsize__ == Ptr[byte].__elemsize__ + TypeInfo.__elemsize__
+assert Any(boxed) == boxed
+assert hash(Any(boxed)) == hash(boxed)
+assert Any(child) == boxed
+assert hash(boxed) == hash(child)
+equal_child = __magic__.new(BoxChild)
+equal_child.number = 41
+equal_child.payload = [1, 2]
+assert Any(equal_child) == boxed
+equal_child.payload = [1, 3]
+assert Any(equal_child) != boxed
+plain = BoxBase(41)
+assert Any(plain) != boxed
+assert boxed != Any(plain)
+boxed_pointer = Ptr[Any](1)
+boxed_pointer[0] = boxed
+assert Any(TypeInfo.cache(Any), boxed_pointer.as_byte()) == boxed
 assert isinstance(boxed, BoxChild)
 assert boxed.__unwrap__(BoxChild) is child
 assert boxed.__unwrap__(BoxBase) is child
 assert boxed.__getattr__("number", int) == 41
+assert boxed.__getattr__("number") == Any(41)
+assert hash(boxed.__getattr__("payload")) == hash([1, 2])
 boxed.__setattr__("number", 42)
 assert child.number == 42
 replacement = [3, 4]
@@ -448,8 +637,8 @@ def test_simple_hierarchy():
     assert getattr(dog, "legs") == 4
     assert getattr(poodle, "size") == "toy"
 
-    assert getattr(dog, "wings", default=None) is None
-    assert getattr(dog, "wings", default="absent") == "absent"
+    assert getattr(dog, "wings", None) is None
+    assert getattr(dog, "wings", "absent") == "absent"
 
     try:
         getattr(dog, "wings")  # no default argument

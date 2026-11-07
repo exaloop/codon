@@ -15,6 +15,8 @@
 #include <utility>
 #include <vector>
 
+#include <fmt/format.h>
+
 namespace codon::ast {
 namespace {
 
@@ -108,11 +110,7 @@ Formatted formatValue(double value, bool, int, int) {
     return {"nan", true};
   if (std::isinf(value))
     return {value < 0 ? "-inf" : "inf", true};
-  char buffer[64];
-  auto [end, error] = std::to_chars(buffer, buffer + sizeof(buffer), value);
-  if (error != std::errc())
-    return {"", true};
-  std::string result(buffer, end);
+  std::string result = fmt::format("{}", value);
   // Python's float repr uses fixed notation for decimal exponents in [-4, 16).
   auto exponentPos = result.find_first_of("eE");
   if (exponentPos != std::string::npos) {
@@ -703,7 +701,7 @@ STMT_IMPL(ThrowStmt, FIELD("expr", expr), FIELD("from_expr", from),
 STMT_IMPL(GlobalStmt, FIELD("var", var), FIELD("non_local", nonLocal))
 STMT_IMPL(FunctionStmt, FIELD("items", items), FIELD("name", name), FIELD("ret", ret),
           FIELD("suite", suite), FIELD("decorators", decorators),
-          FIELD("async_", async), FIELD("signature", signature))
+          FIELD("async_", async))
 STMT_IMPL(ClassStmt, FIELD("items", items), FIELD("name", name), FIELD("suite", suite),
           FIELD("decorators", decorators), FIELD("base_classes", baseClasses))
 STMT_IMPL(YieldFromStmt, FIELD("expr", expr))

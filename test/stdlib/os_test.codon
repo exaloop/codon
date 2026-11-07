@@ -219,7 +219,7 @@ def test_environment_default_overloads():
                 if present:
                     os.environ[key] = "value"
                 reference: Dict[str, str] = {key: "value"} if present else {}
-                expected = reference.pop(key, missing=default)
+                expected = reference.pop(key, default)
                 popped = os.environ.pop(key, missing=default)
                 assert type(popped) is type(expected) and popped == expected
                 assert type(popped) is Optional[str]
@@ -254,10 +254,10 @@ def test_environment_default_overloads():
             os.environ[key] = ""
             reference = {key: ""}
             popped_empty = os.environ.pop(key, missing=default)
-            expected_empty = reference.pop(key, missing=default)
+            expected_empty = reference.pop(key, default)
             assert type(popped_empty) is type(expected_empty) and popped_empty == expected_empty
             assert key not in os.environ and process_getenv(key) is None
-            assert os.environ.pop(key, missing=default) == reference.pop(key, missing=default)
+            assert os.environ.pop(key, missing=default) == reference.pop(key, default)
         os.putenv(key, "process-only")
         assert os.environ.pop(key, missing=None) is None
         assert process_getenv(key) == "process-only"

@@ -103,11 +103,12 @@ class Philox:
 
     def __init__(self,
                  ctr: Tuple[u64, u64, u64, u64],
-                 key: Tuple[u64, u64]):
+                 key: Tuple[u64, u64], seed: SeedSequence):
         self.ctr = ctr
         self.key = key
         self.buffer_pos = PHILOX_BUFFER_SIZE
         self.buffer = (u64(0), u64(0), u64(0), u64(0))
+        self.seed = seed
 
     def __init__(self, seed):
         if not isinstance(seed, SeedSequence):
@@ -116,8 +117,7 @@ class Philox:
             ctr = (u64(0), u64(0), u64(0), u64(0))
             key = seed.generate_state(2, u64)
             key = (key[0], key[1])
-            self.__init__(ctr, key)
-            self.seed = seed
+            self.__init__(ctr, key, seed)
 
     def __get_state__(self):
         return (self.ctr, self.key, self.buffer_pos, self.buffer)

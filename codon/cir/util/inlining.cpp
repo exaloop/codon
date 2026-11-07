@@ -59,6 +59,8 @@ public:
     auto *rep = M->N<SeriesFlow>(v);
     if (var) {
       rep->push_back(M->N<AssignInstr>(v, var, cv.clone(v->getValue())));
+    } else if (v->getValue()) {
+      rep->push_back(cv.clone(v->getValue()));
     }
     if (aggressive)
       rep->push_back(M->N<BreakInstr>(v, implicitLoop));

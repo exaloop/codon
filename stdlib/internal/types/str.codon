@@ -2744,7 +2744,7 @@ class str:
         bytes.memcpy(p, source, n)
         return str(p, _make_meta(n, KIND_ASCII))
 
-    def __len__(self) -> int:
+    def __len__(self, /) -> int:
         return _meta_len(self._meta)
 
     def __bool__(self) -> bool:
@@ -2791,7 +2791,7 @@ class str:
             raise IndexError("string index out of range")
         return self._load_codepoint(i)
 
-    def __getitem__(self, item: int):
+    def __getitem__(self, item: int, /):
         n = len(self)
 
         if item < 0:
@@ -2802,7 +2802,7 @@ class str:
 
         return _unicode_from_codepoint(self._load_codepoint(item))
 
-    def __getitem__(self, item: slice[int, int, int]) -> str:
+    def __getitem__(self, item: slice[int, int, int], /) -> str:
         start, stop, step, slicelen = item.adjust_indices(len(self))
 
         if slicelen == 0:
@@ -2821,7 +2821,7 @@ class str:
     def _slice(self, start: int, stop: int) -> str:
         return _unicode_slice_impl(self, start, stop)
 
-    def __eq__(self, other: str) -> bool:
+    def __eq__(self, other: str, /) -> bool:
         if len(self) != len(other):
             return False
 
@@ -2838,22 +2838,22 @@ class str:
 
         return True
 
-    def __ne__(self, other: str) -> bool:
+    def __ne__(self, other: str, /) -> bool:
         return not self.__eq__(other)
 
-    def __lt__(self, other: str) -> bool:
+    def __lt__(self, other: str, /) -> bool:
         return _unicode_compare(self, other) < 0
 
-    def __le__(self, other: str) -> bool:
+    def __le__(self, other: str, /) -> bool:
         return _unicode_compare(self, other) <= 0
 
-    def __gt__(self, other: str) -> bool:
+    def __gt__(self, other: str, /) -> bool:
         return _unicode_compare(self, other) > 0
 
-    def __ge__(self, other: str) -> bool:
+    def __ge__(self, other: str, /) -> bool:
         return _unicode_compare(self, other) >= 0
 
-    def __add__(self, other: str) -> str:
+    def __add__(self, other: str, /) -> str:
         if len(self) == 0:
             return other
 
@@ -2862,22 +2862,22 @@ class str:
 
         return _unicode_concat_impl(self, other)
 
-    def __mul__(self, count: int) -> str:
+    def __mul__(self, count: int, /) -> str:
         if count <= 0:
             return str()
 
         return _unicode_repeat_impl(self, count)
 
-    def __rmul__(self, count: int) -> str:
+    def __rmul__(self, count: int, /) -> str:
         return self.__mul__(count)
 
-    def find(self, sub: str) -> int:
+    def find(self, sub: str, /) -> int:
         return self.find(sub, 0, len(self))
 
     def find(
         self,
         sub: str,
-        start: int,
+        start: int, /,
     ) -> int:
         return self.find(sub, start, len(self))
 
@@ -2885,7 +2885,7 @@ class str:
         self,
         sub: str,
         start: int,
-        end: int,
+        end: int, /,
     ) -> int:
         start, end = _normalize_search_bounds(len(self), start, end)
 
@@ -2899,13 +2899,13 @@ class str:
 
         return _unicode_fastsearch(self, sub, start, end)
 
-    def rfind(self, sub: str) -> int:
+    def rfind(self, sub: str, /) -> int:
         return self.rfind(sub, 0, len(self))
 
     def rfind(
         self,
         sub: str,
-        start: int,
+        start: int, /,
     ) -> int:
         return self.rfind(sub, start, len(self))
 
@@ -2913,7 +2913,7 @@ class str:
         self,
         sub: str,
         start: int,
-        end: int,
+        end: int, /,
     ) -> int:
         start, end = _normalize_search_bounds(len(self), start, end)
 
@@ -2927,13 +2927,13 @@ class str:
 
         return _unicode_fastsearch_reverse(self, sub, start, end)
 
-    def index(self, sub: str) -> int:
+    def index(self, sub: str, /) -> int:
         return self.index(sub, 0, len(self))
 
     def index(
         self,
         sub: str,
-        start: int,
+        start: int, /,
     ) -> int:
         return self.index(sub, start, len(self))
 
@@ -2941,7 +2941,7 @@ class str:
         self,
         sub: str,
         start: int,
-        end: int,
+        end: int, /,
     ) -> int:
         pos = self.find(sub, start, end)
 
@@ -2950,13 +2950,13 @@ class str:
 
         return pos
 
-    def rindex(self, sub: str) -> int:
+    def rindex(self, sub: str, /) -> int:
         return self.rindex(sub, 0, len(self))
 
     def rindex(
         self,
         sub: str,
-        start: int,
+        start: int, /,
     ) -> int:
         return self.rindex(sub, start, len(self))
 
@@ -2964,7 +2964,7 @@ class str:
         self,
         sub: str,
         start: int,
-        end: int,
+        end: int, /,
     ) -> int:
         pos = self.rfind(sub, start, end)
 
@@ -2973,13 +2973,13 @@ class str:
 
         return pos
 
-    def count(self, sub: str) -> int:
+    def count(self, sub: str, /) -> int:
         return self.count(sub, 0, len(self))
 
     def count(
         self,
         sub: str,
-        start: int,
+        start: int, /,
     ) -> int:
         return self.count(sub, start, len(self))
 
@@ -2987,7 +2987,7 @@ class str:
         self,
         sub: str,
         start: int,
-        end: int,
+        end: int, /,
     ) -> int:
         start, end = _normalize_search_bounds(len(self), start, end)
 
@@ -2998,13 +2998,13 @@ class str:
 
         return _unicode_count(self, sub, start, end)
 
-    def startswith(self, prefix: str) -> bool:
+    def startswith(self, prefix: str, /) -> bool:
         return self.startswith(prefix, 0, len(self))
 
     def startswith(
         self,
         prefix: str,
-        start: int,
+        start: int, /,
     ) -> bool:
         return self.startswith(prefix, start, len(self))
 
@@ -3012,7 +3012,7 @@ class str:
         self,
         prefix: str,
         start: int,
-        end: int,
+        end: int, /,
     ) -> bool:
         start, end = _normalize_search_bounds(len(self), start, end)
 
@@ -3024,13 +3024,13 @@ class str:
 
         return _unicode_starts_at(self, prefix, start)
 
-    def endswith(self, suffix: str) -> bool:
+    def endswith(self, suffix: str, /) -> bool:
         return self.endswith(suffix, 0, len(self))
 
     def endswith(
         self,
         suffix: str,
-        start: int,
+        start: int, /,
     ) -> bool:
         return self.endswith(suffix, start, len(self))
 
@@ -3038,7 +3038,7 @@ class str:
         self,
         suffix: str,
         start: int,
-        end: int,
+        end: int, /,
     ) -> bool:
         start, end = _normalize_search_bounds(len(self), start, end)
         m = len(suffix)
@@ -3052,7 +3052,7 @@ class str:
         return _unicode_starts_at(self, suffix, end - m)
 
     def encode(
-        self,
+        self, /,
         encoding: str = "utf-8",
         errors: str = "strict",
     ) -> bytes:
@@ -3061,7 +3061,7 @@ class str:
     def c_str(self) -> cobj:
         return _unicode_encode_utf8_c_str(self)
 
-    def __repr__(self) -> str:
+    def __repr__(self, /) -> str:
         single_quotes = 0
         double_quotes = 0
 
@@ -3087,10 +3087,10 @@ class str:
         output.append_byte(u8(quote))
         return _unicode_decode_utf8_strict(output.data, output.length)
 
-    def __str__(self) -> str:
+    def __str__(self, /) -> str:
         return self
 
-    def __contains__(self, sub: str) -> bool:
+    def __contains__(self, sub: str, /) -> bool:
         return self.find(sub) != -1
 
     def __copy__(self) -> str:
@@ -3105,27 +3105,27 @@ class str:
         return str(data, self._meta)
 
     @staticmethod
-    def maketrans(x: dict[int, int]) -> dict[int, int]:
+    def maketrans(x: dict[int, int], /) -> dict[int, int]:
         return x
 
     @staticmethod
-    def maketrans(x: dict[int, str]) -> dict[int, str]:
+    def maketrans(x: dict[int, str], /) -> dict[int, str]:
         return x
 
     @staticmethod
-    def maketrans(x: dict[int, Optional[int]]) -> dict[int, Optional[int]]:
+    def maketrans(x: dict[int, Optional[int]], /) -> dict[int, Optional[int]]:
         return x
 
     @staticmethod
     def maketrans(
-        x: dict[int, Optional[str]],
+        x: dict[int, Optional[str]], /,
     ) -> dict[int, Optional[str]]:
         return x
 
     @staticmethod
     def maketrans(
         x: str,
-        y: str,
+        y: str, /,
     ) -> dict[int, int]:
         if len(x) != len(y):
             raise ValueError("the first two maketrans arguments must have the same length")
@@ -3139,7 +3139,7 @@ class str:
     def maketrans(
         x: str,
         y: str,
-        z: str,
+        z: str, /,
     ) -> dict[int, Optional[int]]:
         if len(x) != len(y):
             raise ValueError("the first two maketrans arguments must have the same length")
@@ -3151,77 +3151,77 @@ class str:
             table[z._load_codepoint(i)] = None
         return table
 
-    def translate(self, table: dict[int, int]) -> str:
+    def translate(self, table: dict[int, int], /) -> str:
         return _unicode_translate_int_impl(self, table)
 
-    def translate(self, table: dict[int, str]) -> str:
+    def translate(self, table: dict[int, str], /) -> str:
         return _unicode_translate_unicode_impl(self, table)
 
-    def translate(self, table: dict[int, Optional[int]]) -> str:
+    def translate(self, table: dict[int, Optional[int]], /) -> str:
         return _unicode_translate_optional_int_impl(self, table)
 
-    def translate(self, table: dict[int, Optional[str]]) -> str:
+    def translate(self, table: dict[int, Optional[str]], /) -> str:
         return _unicode_translate_optional_unicode_impl(self, table)
 
-    def lower(self) -> str:
+    def lower(self, /) -> str:
         if self._is_ascii():
             return _unicode_ascii_map(self, _ascii_lower)
         return _unicode_lower_full(self)
 
-    def upper(self) -> str:
+    def upper(self, /) -> str:
         if self._is_ascii():
             return _unicode_ascii_map(self, _ascii_upper)
         return _unicode_upper_full(self)
 
-    def casefold(self) -> str:
+    def casefold(self, /) -> str:
         if self._is_ascii():
             return _unicode_ascii_map(self, _ascii_casefold)
         return _unicode_casefold_full(self)
 
-    def capitalize(self) -> str:
+    def capitalize(self, /) -> str:
         if self._is_ascii():
             return _unicode_ascii_capitalize(self)
         return _unicode_capitalize_full(self)
 
-    def title(self) -> str:
+    def title(self, /) -> str:
         if self._is_ascii():
             return _unicode_ascii_title(self)
         return _unicode_title_full(self)
 
-    def swapcase(self) -> str:
+    def swapcase(self, /) -> str:
         if self._is_ascii():
             return _unicode_ascii_map(self, _ascii_swapcase)
         return _unicode_swapcase_full(self)
 
-    def removeprefix(self, prefix: str) -> str:
+    def removeprefix(self, prefix: str, /) -> str:
         if len(prefix) > len(self) or not self.startswith(prefix):
             return self
 
         return _unicode_slice_impl(self, len(prefix), len(self))
 
-    def removesuffix(self, suffix: str) -> str:
+    def removesuffix(self, suffix: str, /) -> str:
         if len(suffix) > len(self) or not self.endswith(suffix):
             return self
 
         return _unicode_slice_impl(self, 0, len(self) - len(suffix))
 
-    def strip(self, chars: Optional[str] = None) -> str:
+    def strip(self, chars: Optional[str] = None, /) -> str:
         if chars is None:
             return _unicode_strip_impl(self, True, True)
         return _unicode_strip_chars_impl(self, chars, True, True)
 
-    def lstrip(self, chars: Optional[str] = None) -> str:
+    def lstrip(self, chars: Optional[str] = None, /) -> str:
         if chars is None:
             return _unicode_strip_impl(self, True, False)
         return _unicode_strip_chars_impl(self, chars, True, False)
 
-    def rstrip(self, chars: Optional[str] = None) -> str:
+    def rstrip(self, chars: Optional[str] = None, /) -> str:
         if chars is None:
             return _unicode_strip_impl(self, False, True)
         return _unicode_strip_chars_impl(self, chars, False, True)
 
     def split(
-        self,
+        self, /,
         sep: Optional[str] = None,
         maxsplit: int = -1,
     ) -> List[str]:
@@ -3231,7 +3231,7 @@ class str:
         return _unicode_split_exact_impl(self, sep, maxsplit)
 
     def rsplit(
-        self,
+        self, /,
         sep: Optional[str] = None,
         maxsplit: int = -1,
     ) -> List[str]:
@@ -3240,10 +3240,10 @@ class str:
 
         return _unicode_split_exact_impl(self, sep, maxsplit, True)
 
-    def splitlines(self, keepends: bool = False) -> List[str]:
+    def splitlines(self, /, keepends: bool = False) -> List[str]:
         return _unicode_splitlines_impl(self, keepends)
 
-    def join(self, values) -> str:
+    def join(self, values, /) -> str:
         result = _strbuf()
         first = True
         for value in values:
@@ -3255,18 +3255,18 @@ class str:
             first = False
         return result.__str__()
 
-    def join(self, values: List[str]) -> str:
+    def join(self, values: List[str], /) -> str:
         return _unicode_join_impl(self, values)
 
     def replace(
         self,
         old: str,
-        new: str,
+        new: str, /,
         count: int = -1,
     ) -> str:
         return _unicode_replace_impl(self, old, new, count)
 
-    def center(self, width: int) -> str:
+    def center(self, width: int, /) -> str:
         if len(self) >= width:
             return self
 
@@ -3286,7 +3286,7 @@ class str:
 
         return result
 
-    def ljust(self, width: int) -> str:
+    def ljust(self, width: int, /) -> str:
         if len(self) >= width:
             return self
 
@@ -3299,7 +3299,7 @@ class str:
 
         return result
 
-    def rjust(self, width: int) -> str:
+    def rjust(self, width: int, /) -> str:
         if len(self) >= width:
             return self
 
@@ -3312,16 +3312,16 @@ class str:
 
         return result
 
-    def center(self, width: int, fillchar: str) -> str:
+    def center(self, width: int, fillchar: str, /) -> str:
         return _unicode_center_impl(self, width, fillchar)
 
-    def ljust(self, width: int, fillchar: str) -> str:
+    def ljust(self, width: int, fillchar: str, /) -> str:
         return _unicode_ljust_impl(self, width, fillchar)
 
-    def rjust(self, width: int, fillchar: str) -> str:
+    def rjust(self, width: int, fillchar: str, /) -> str:
         return _unicode_rjust_impl(self, width, fillchar)
 
-    def zfill(self, width: int) -> str:
+    def zfill(self, width: int, /) -> str:
         if len(self) >= width:
             return self
 
@@ -3358,7 +3358,7 @@ class str:
 
         return result
 
-    def expandtabs(self, tabsize: int = 8) -> str:
+    def expandtabs(self, /, tabsize: int = 8) -> str:
         length = len(self)
         col = 0
 
@@ -3405,7 +3405,7 @@ class str:
 
         return result
 
-    def __hash__(self) -> int:
+    def __hash__(self, /) -> int:
         h = u64(0x9e3779b97f4a7c15)
 
         for i in range(len(self)):
@@ -3414,11 +3414,11 @@ class str:
         h ^= u64(len(self))
         return int(h)
 
-    def __iter__(self):
+    def __iter__(self, /):
         for i in range(len(self)):
             yield self[i]
 
-    def isalnum(self) -> bool:
+    def isalnum(self, /) -> bool:
         if len(self) == 0:
             return False
 
@@ -3435,7 +3435,7 @@ class str:
 
         return True
 
-    def isalpha(self) -> bool:
+    def isalpha(self, /) -> bool:
         if len(self) == 0:
             return False
 
@@ -3461,7 +3461,7 @@ class str:
 
         return True
 
-    def isdigit(self) -> bool:
+    def isdigit(self, /) -> bool:
         if len(self) == 0:
             return False
 
@@ -3487,7 +3487,7 @@ class str:
 
         return True
 
-    def isspace(self) -> bool:
+    def isspace(self, /) -> bool:
         if len(self) == 0:
             return False
 
@@ -3503,14 +3503,14 @@ class str:
 
         return True
 
-    def isascii(self) -> bool:
+    def isascii(self, /) -> bool:
         if self._kind() != KIND_ASCII:
             for i in range(len(self)):
                 if self._load_codepoint(i) > 0x7F:
                     return False
         return True
 
-    def islower(self) -> bool:
+    def islower(self, /) -> bool:
         has_cased = False
 
         if self._is_ascii():
@@ -3532,7 +3532,7 @@ class str:
 
         return has_cased
 
-    def isupper(self) -> bool:
+    def isupper(self, /) -> bool:
         has_cased = False
 
         if self._is_ascii():
@@ -3554,7 +3554,7 @@ class str:
 
         return has_cased
 
-    def istitle(self) -> bool:
+    def istitle(self, /) -> bool:
         has_cased = False
         previous_is_cased = False
 
@@ -3576,7 +3576,7 @@ class str:
 
         return has_cased
 
-    def isnumeric(self) -> bool:
+    def isnumeric(self, /) -> bool:
         if len(self) == 0:
             return False
 
@@ -3586,7 +3586,7 @@ class str:
 
         return True
 
-    def isdecimal(self) -> bool:
+    def isdecimal(self, /) -> bool:
         if len(self) == 0:
             return False
 
@@ -3596,7 +3596,7 @@ class str:
 
         return True
 
-    def isprintable(self) -> bool:
+    def isprintable(self, /) -> bool:
         for i in range(len(self)):
             cp = self._load_codepoint(i)
             if not unicode_is_printable(cp):
@@ -3604,7 +3604,7 @@ class str:
 
         return True
 
-    def isidentifier(self) -> bool:
+    def isidentifier(self, /) -> bool:
         if len(self) == 0:
             return False
 
@@ -3626,7 +3626,7 @@ class str:
 
         return True
 
-    def partition(self, sep: str) -> Tuple[str, str, str]:
+    def partition(self, sep: str, /) -> Tuple[str, str, str]:
         if len(sep) == 0:
             raise ValueError("empty separator")
 
@@ -3641,7 +3641,7 @@ class str:
             _unicode_slice_impl(self, pos + len(sep), len(self)),
         )
 
-    def rpartition(self, sep: str) -> Tuple[str, str, str]:
+    def rpartition(self, sep: str, /) -> Tuple[str, str, str]:
         if len(sep) == 0:
             raise ValueError("empty separator")
 

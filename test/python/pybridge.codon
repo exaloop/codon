@@ -102,6 +102,29 @@ def test_pyargs():
 test_pyargs()
 
 @test
+def test_pywrap_missing_arguments():
+    from internal.python import _PyWrap
+
+    def required_int(value: int):
+        return value
+
+    def required_str(value: str):
+        return value
+
+    def required_object(value):
+        return value
+
+    def default_int(value: int = 42):
+        return value
+
+    missing = (cobj(),)
+    assert _PyWrap._args_from_py(required_int, missing) is None
+    assert _PyWrap._args_from_py(required_str, missing) is None
+    assert _PyWrap._args_from_py(required_object, missing) is None
+    assert _PyWrap._args_from_py(default_int, missing) == (42,)
+test_pywrap_missing_arguments()
+
+@test
 def test_roundtrip(x: T, T: type):
     assert T.__from_py__(x.__to_py__()) == x
 

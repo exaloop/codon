@@ -1596,14 +1596,14 @@ class File[T]:
         if err:
             raise IOError(f"file I/O error: {msg}")
 
-    def __enter__(self):
+    def __enter__(self, /):
         self._ensure_open()
         return self
 
-    def __exit__(self):
+    def __exit__(self, /):
         self.close()
 
-    def __iter__(self) -> Generator[T]:
+    def __iter__(self, /) -> Generator[T]:
         self._ensure_open()
         while True:
             line = self.readline()
@@ -1611,10 +1611,10 @@ class File[T]:
                 break
             yield line
 
-    def readlines(self) -> List[T]:
+    def readlines(self, /) -> List[T]:
         return [l for l in self]
 
-    def readline(self) -> T:
+    def readline(self, /) -> T:
         self._ensure_open()
         _file_ensure_readable(self._state)
         _file_prepare_stdio_read(self._state)
@@ -1672,7 +1672,7 @@ class File[T]:
         )
         return prefix + value if len(prefix) > 0 else value
 
-    def write(self, s: T) -> int:
+    def write(self, s: T, /) -> int:
         self._ensure_open()
         _file_ensure_writable(self._state)
         if T is bytes:
@@ -1709,7 +1709,7 @@ class File[T]:
             self.write(s)
 
     @inline
-    def read(self, sz: int = -1) -> T:
+    def read(self, sz: int = -1, /) -> T:
         self._ensure_open()
         _file_ensure_readable(self._state)
         _file_prepare_stdio_read(self._state)
@@ -1925,7 +1925,7 @@ class File[T]:
             self._state, buffer, length, bom_length
         )
 
-    def tell(self) -> int:
+    def tell(self, /) -> int:
         self._ensure_open()
         _file_flush_stdio_write_buffer(self._state)
         if (
@@ -1949,11 +1949,11 @@ class File[T]:
             return cookie
         return position - _file_text_pending_raw_length(self._state)
 
-    def seekable(self) -> bool:
+    def seekable(self, /) -> bool:
         self._ensure_open()
         return _C.ftell(self._state._fp) >= 0
 
-    def seek(self, offset: int, whence: int):
+    def seek(self, offset: int, whence: int, /):
         self._ensure_open()
         _file_flush_stdio_write_buffer(self._state)
         if whence == 1:
@@ -1996,7 +1996,7 @@ class File[T]:
         self._state._stdio_direction = _FILE_STDIO_NONE
         return self.tell()
 
-    def flush(self):
+    def flush(self, /):
         self._ensure_open()
         _file_flush_stdio_write_buffer(self._state)
         if _C.fflush(self._state._fp) != 0:
@@ -2004,7 +2004,7 @@ class File[T]:
         if self._state._stdio_direction == _FILE_STDIO_WRITE:
             self._state._stdio_direction = _FILE_STDIO_NONE
 
-    def close(self):
+    def close(self, /):
         self._state._close(True)
 
     def _ensure_open(self):
@@ -2047,7 +2047,7 @@ class gzFile[T]:
             _file_open_error(path)
         return gzFile[T](_FileState(fp, encoding, errors, newline, path, mode_flags, _FILE_BACKEND_GZIP))
 
-    def __iter__(self) -> Generator[T]:
+    def __iter__(self, /) -> Generator[T]:
         self._ensure_open()
         while True:
             line = self.readline()
@@ -2055,17 +2055,17 @@ class gzFile[T]:
                 break
             yield line
 
-    def __enter__(self):
+    def __enter__(self, /):
         self._ensure_open()
         return self
 
-    def __exit__(self):
+    def __exit__(self, /):
         self.close()
 
     def close(self):
         self._state._close(True)
 
-    def readlines(self) -> List[T]:
+    def readlines(self, /) -> List[T]:
         return [l for l in self]
 
     def readline(self) -> T:
@@ -2650,7 +2650,7 @@ class bzFile[T]:
                 self._state._position -= 1
             return length
 
-    def __iter__(self) -> Generator[T]:
+    def __iter__(self, /) -> Generator[T]:
         self._ensure_open()
         while True:
             line = self.readline()
@@ -2658,11 +2658,11 @@ class bzFile[T]:
                 break
             yield line
 
-    def __enter__(self):
+    def __enter__(self, /):
         self._ensure_open()
         return self
 
-    def __exit__(self):
+    def __exit__(self, /):
         self.close()
 
     def close(self):
@@ -2964,7 +2964,7 @@ class bzFile[T]:
             return offset
         return self.tell()
 
-    def flush(self):
+    def flush(self, /):
         self._ensure_open()
         if _bz_flush(self._bz):
             raise IOError("bzip2 error: error in flush")

@@ -8,8 +8,7 @@
 #include <ranges>
 #include <string>
 
-#include <llvm/Support/Error.h>
-
+#include "codon/cir/llvm/llvm.h"
 #include "codon/compiler/compiler.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/common.h"

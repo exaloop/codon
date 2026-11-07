@@ -74,6 +74,22 @@ codon build -release -linker-flags '-Wl,-rpath,/foo/bar' program.py
 Multiple linker flags can be passed by separating them with a space in the argument
 to `-linker-flags`.
 
+#### Position-independent executables
+
+Use `--pie` to build a position-independent executable (PIE):
+
+``` bash
+codon build -release --pie -o program program.py
+```
+
+This selects executable output, generates position-independent object code, and
+links with `-pie`. It cannot be combined with another explicit output type such as
+`-obj`, `-lib`, or `-pyext`. Specifying `-pie` via `-linker-flags` also works:
+
+``` bash
+codon build -release -linker-flags=-pie -o program program.py
+```
+
 ### Compile to shared library
 
 The `-lib` flag can be used to generate a shared library:

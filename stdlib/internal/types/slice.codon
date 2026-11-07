@@ -9,13 +9,13 @@ class Slice:
     U: type
     V: type
 
-    def __new__(stop: Optional[U], U: type = int) -> Slice[int, U, int]:
+    def __new__(stop: Optional[U], /, U: type = int) -> Slice[int, U, int]:
         return Slice(None, stop, None)
 
     @overload
     def __new__(
             start: Optional[T],
-            stop: Optional[U],
+            stop: Optional[U], /,
             T: type = int,
             U: type = int) -> Slice[T, U, int]:
         return Slice(start, stop, None)
@@ -24,7 +24,7 @@ class Slice:
     def __new__(
             start: Optional[T],
             stop: Optional[U],
-            step: Optional[V],
+            step: Optional[V], /,
             T: type = int,
             U: type = int,
             V: type = int) -> Slice[T, U, V]:
@@ -74,21 +74,21 @@ class Slice:
 
         return start, stop, step, 0
 
-    def indices(self, length: int):
+    def indices(self, length: int, /):
         if length < 0:
             raise ValueError("length should not be negative")
         return self.adjust_indices(length)[:-1]
 
     @overload
-    def __repr__(self):
+    def __repr__(self, /):
         return f"slice({self.start}, {self.stop}, {self.step})"
 
     @overload
-    def __eq__(self, other: Slice):
+    def __eq__(self, other: Slice, /):
         return self.start == other.start and self.step == other.step and self.stop == other.stop
 
     @overload
-    def __ne__(self, other: Slice):
+    def __ne__(self, other: Slice, /):
         return not self.__eq__(other)
 
 slice = Slice

@@ -3,6 +3,7 @@
 #pragma once
 
 #include <map>
+#include <memory_resource>
 #include <ostream>
 #include <set>
 #include <string>
@@ -265,6 +266,9 @@ struct Cache {
       ir::Func *ir;
       /// Resolved captures
       std::vector<std::string> captures;
+      /// Whether this constructor requires an independent field-initialization check.
+      /// Targets realized only for super() dispatch are checked through the caller.
+      bool checkInitialization = false;
 
       types::FuncType *getType() const { return type.get(); }
     };
@@ -307,9 +311,9 @@ struct Cache {
   ParserErrors errors;
 
 public:
-  explicit Cache(std::vector<std::unique_ptr<ast::ASTNode>> &nodes,
-                 std::string argv0 = "",
-                 const std::shared_ptr<IFilesystem> &fs = nullptr);
+  explicit Cache(std::vector<ASTNodePtr> &nodes, std::string argv0,
+                 const std::shared_ptr<IFilesystem> &fs,
+                 std::pmr::memory_resource *nodeStorage);
 
   /// Return a uniquely named temporary variable of a format
   /// "{sigil}_{prefix}{counter}". A sigil should be a non-lexable symbol.
@@ -370,20 +374,21 @@ public:
   void populatePythonModule();
 
 private:
-  std::vector<std::unique_ptr<ast::ASTNode>> *_nodes;
+  std::vector<ASTNodePtr> *_nodes;
+  std::pmr::memory_resource *_nodeStorage;
 
 public:
   /// Convenience method that constructs a node with the visitor's source location.
   template <typename Tn, typename... Ts> Tn *N(Ts &&...args) {
-    _nodes->emplace_back(std::make_unique<Tn>(std::forward<Ts>(args)...));
-    Tn *t = static_cast<Tn *>(_nodes->back().get());
+    auto *storage = _nodeStorage->allocate(sizeof(Tn), alignof(Tn));
+    ASTNodePtr node(::new (storage) Tn(std::forward<Ts>(args)...));
+    Tn *t = static_cast<Tn *>(node.get());
     t->cache = this;
+    _nodes->push_back(std::move(node));
     return t;
   }
   template <typename Tn, typename... Ts> Tn *NS(const ASTNode *srcInfo, Ts &&...args) {
-    _nodes->emplace_back(std::make_unique<Tn>(std::forward<Ts>(args)...));
-    Tn *t = static_cast<Tn *>(_nodes->back().get());
-    t->cache = this;
+    Tn *t = N<Tn>(std::forward<Ts>(args)...);
     t->setSrcInfo(srcInfo->getSrcInfo());
     return t;
   }

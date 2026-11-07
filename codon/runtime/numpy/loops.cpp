@@ -153,7 +153,7 @@ struct CosFunctor {
     // Values outside of [-LIMIT, LIMIT] are not valid for SIMD version.
     const T LIMIT = limit<T>();
     HWY_LANES_CONSTEXPR size_t L = hn::Lanes(d);
-    T tmp[L];
+    HWY_ALIGN T tmp[L];
     Store(v, d, tmp);
 
     for (auto i = 0; i < L; ++i) {
@@ -331,7 +331,7 @@ struct SinFunctor {
     // Values outside of [-LIMIT, LIMIT] are not valid for SIMD version.
     const T LIMIT = limit<T>();
     HWY_LANES_CONSTEXPR size_t L = hn::Lanes(d);
-    T tmp[L];
+    HWY_ALIGN T tmp[L];
     Store(v, d, tmp);
 
     for (auto i = 0; i < L; ++i) {
@@ -368,7 +368,7 @@ struct SinhFunctor {
     // Values outside of [-LIMIT, LIMIT] are not valid for SIMD version.
     const T LIMIT = limit<T>();
     HWY_LANES_CONSTEXPR size_t L = hn::Lanes(d);
-    T tmp[L];
+    HWY_ALIGN T tmp[L];
     Store(v, d, tmp);
 
     for (auto i = 0; i < L; ++i) {
@@ -428,7 +428,7 @@ template <typename T, typename F>
 void UnaryLoop(const T *in, size_t is, T *out, size_t os, size_t n) {
   const hn::ScalableTag<T> d;
   HWY_LANES_CONSTEXPR size_t L = hn::Lanes(d);
-  T tmp[L];
+  HWY_ALIGN T tmp[L];
   size_t i;
 
   if (is == sizeof(T) && os == sizeof(T)) {
@@ -463,8 +463,8 @@ void BinaryLoop(const T *in1, size_t is1, const T *in2, size_t is2, T *out, size
                 size_t n) {
   const hn::ScalableTag<T> d;
   HWY_LANES_CONSTEXPR size_t L = hn::Lanes(d);
-  T tmp1[L];
-  T tmp2[L];
+  HWY_ALIGN T tmp1[L];
+  HWY_ALIGN T tmp2[L];
   size_t i;
 
   if (is1 == sizeof(T) && is2 == sizeof(T) && os == sizeof(T)) {
@@ -530,9 +530,9 @@ template <typename T, typename F>
 void ComplexUnaryLoop(const T *in, size_t is, T *out, size_t os, size_t n) {
   const hn::ScalableTag<T> d;
   HWY_LANES_CONSTEXPR size_t L = hn::Lanes(d);
-  T tmp_re[L];
-  T tmp_im[L];
-  T tmp_out[L];
+  HWY_ALIGN T tmp_re[L];
+  HWY_ALIGN T tmp_im[L];
+  HWY_ALIGN T tmp_out[L];
   size_t i;
 
   for (i = 0; i + L <= n; i += L) {

@@ -8,14 +8,14 @@ class DynamicTuple:
     _len: int
     T: type
 
-    def __new__(x: List[T]):
+    def __new__(x: List[T], /):
         from internal.gc import sizeof
         n = x.__len__()
         p = Ptr[T](n)
         str.memcpy(p.as_byte(), x._ptr.as_byte(), n * sizeof(T))
         return DynamicTuple(p, n)
 
-    def __new__(x: Generator[T]):
+    def __new__(x: Generator[T], /):
         from internal.gc import realloc, sizeof
         n = 0
         m = 0
@@ -39,7 +39,7 @@ class DynamicTuple:
     def __new__() -> DynamicTuple[T]:
         return DynamicTuple(Ptr[T](), 0)
 
-    def __len__(self):
+    def __len__(self, /):
         return self._len
 
     def __bool__(self):
@@ -49,7 +49,7 @@ class DynamicTuple:
         if not isinstance(x, Tuple):
             compile_error("expected tuple type")
 
-    def __eq__(self, other):
+    def __eq__(self, other, /):
         DynamicTuple._ensure_tuple(other)
 
         p = self._ptr
@@ -67,7 +67,7 @@ class DynamicTuple:
 
         return True
 
-    def __eq__(self, other: DynamicTuple[T]):
+    def __eq__(self, other: DynamicTuple[T], /):
         p = self._ptr
         n = self._len
         q = other._ptr
@@ -82,11 +82,11 @@ class DynamicTuple:
 
         return True
 
-    def __ne__(self, other):
+    def __ne__(self, other, /):
         DynamicTuple._ensure_tuple(other)
         return not (self == other)
 
-    def __ne__(self, other: DynamicTuple[T]):
+    def __ne__(self, other: DynamicTuple[T], /):
         return not (self == other)
 
     def _cmp(self, other):
@@ -141,31 +141,31 @@ class DynamicTuple:
         else:
             return 1
 
-    def __lt__(self, other):
+    def __lt__(self, other, /):
         return self._cmp(other) < 0
 
-    def __gt__(self, other):
+    def __gt__(self, other, /):
         return self._cmp(other) > 0
 
-    def __le__(self, other):
+    def __le__(self, other, /):
         return self._cmp(other) <= 0
 
-    def __ge__(self, other):
+    def __ge__(self, other, /):
         return self._cmp(other) >= 0
 
-    def __lt__(self, other: DynamicTuple[T]):
+    def __lt__(self, other: DynamicTuple[T], /):
         return self._cmp(other) < 0
 
-    def __gt__(self, other: DynamicTuple[T]):
+    def __gt__(self, other: DynamicTuple[T], /):
         return self._cmp(other) > 0
 
-    def __le__(self, other: DynamicTuple[T]):
+    def __le__(self, other: DynamicTuple[T], /):
         return self._cmp(other) <= 0
 
-    def __ge__(self, other: DynamicTuple[T]):
+    def __ge__(self, other: DynamicTuple[T], /):
         return self._cmp(other) >= 0
 
-    def __hash__(self):
+    def __hash__(self, /):
         p = self._ptr
         n = self._len
         seed = 0
@@ -173,13 +173,13 @@ class DynamicTuple:
             seed = seed ^ ((p[i].__hash__() + 2654435769) + ((seed << 6) + (seed >> 2)))
         return seed
 
-    def __iter__(self):
+    def __iter__(self, /):
         p = self._ptr
         n = self._len
         for i in range(n):
             yield p[i]
 
-    def __contains__(self, item: T):
+    def __contains__(self, item: T, /):
         p = self._ptr
         n = self._len
         for i in range(n):
@@ -187,7 +187,7 @@ class DynamicTuple:
                 return True
         return False
 
-    def __getitem__(self, idx: int):
+    def __getitem__(self, idx: int, /):
         p = self._ptr
         n = self._len
         if idx < 0:
@@ -196,7 +196,7 @@ class DynamicTuple:
             raise IndexError(f"tuple index {idx} out of range 0..{n}")
         return p[idx]
 
-    def __getitem__(self, s: Slice):
+    def __getitem__(self, s: Slice, /):
         p = self._ptr
         n = self._len
 
@@ -214,5 +214,5 @@ class DynamicTuple:
                 n += 1
             return DynamicTuple(q, length)
 
-    def __repr__(self):
+    def __repr__(self, /):
         return f"({', '.join(a.__repr__() for a in self)})"

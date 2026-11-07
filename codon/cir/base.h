@@ -55,7 +55,7 @@ private:
 
 protected:
   /// key-value attribute store
-  std::unordered_map<int, std::unique_ptr<Attribute>> attributes;
+  AttributeMap attributes;
 
 public:
   // RTTI is implemented using a port of LLVM's Extensible RTTI
