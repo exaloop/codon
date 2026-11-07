@@ -11,7 +11,6 @@ import markdown
 import textwrap
 
 from pathlib import Path
-from importlib.resources import files
 
 
 # =============================================================================
@@ -19,6 +18,7 @@ from importlib.resources import files
 # =============================================================================
 
 GITHUB_STDLIB_URL = "https://github.com/exaloop/codon/blob/master/stdlib"
+API_ROUTE = "/libraries/api"
 
 TAG_TOOLTIPS = {
     "llvm": "Implemented with inline LLVM IR",
@@ -69,28 +69,6 @@ print("Load done!")
 # =============================================================================
 # General helpers
 # =============================================================================
-
-def load_material_icon(path):
-    """
-    Load an SVG icon bundled with Material for MkDocs.
-
-    Example:
-        load_material_icon("fontawesome/brands/github")
-    """
-    icon = (
-        files("material")
-        / "templates"
-        / ".icons"
-        / f"{path}.svg"
-    )
-
-    return icon.read_text(encoding="utf-8")
-
-
-GITHUB_ICON = load_material_icon(
-    "fontawesome/brands/github"
-)
-
 
 def escape(value):
     return html.escape(str(value), quote=True)
@@ -250,7 +228,7 @@ def member_anchor(owner_anchor, name):
 
 def write_permalink(anchor, f, label):
     """
-    Custom API permalink. This does not depend on MkDocs heading anchors.
+    Custom API permalink. This does not depend on generated heading anchors.
     """
     f.write(
         f'<a class="api-permalink" '
@@ -1489,24 +1467,29 @@ def write_docstr(
 
 def write_frontmatter(title, f):
     title = title.replace('"', '\\"')
+    route_parts = list(Path(f.name).relative_to(out_path).with_suffix("").parts)
+    if route_parts[-1] == "index":
+        route_parts.pop()
+    route = API_ROUTE + "/" + "/".join(route_parts)
 
     f.write("---\n")
     f.write(f'title: "{title}"\n')
+    f.write(f'slug: "{route.rstrip("/")}/"\n')
+    f.write("hide_title: true\n")
+    f.write("hide_table_of_contents: true\n")
+    f.write("displayed_sidebar: docs\n")
+    f.write("pagination_prev: null\npagination_next: null\n")
+    f.write("custom_edit_url: null\n")
     f.write("---\n\n")
 
 
 def write_signature(signature, f):
     f.write(
-        '<div class="api-signature" markdown="1">\n\n'
+        '<div class="api-signature">\n'
+        '<pre><code class="language-python">'
     )
-
-    f.write(
-        "``` { .python .no-copy }\n"
-    )
-
-    f.write(signature)
-    f.write("\n```\n\n")
-    f.write("</div>\n\n")
+    f.write(escape(signature))
+    f.write("</code></pre>\n</div>\n\n")
 
 
 def write_section_heading(
@@ -1652,14 +1635,6 @@ def write_page_header(
         )
 
         f.write(
-            '<span class="api-source-icon" '
-            'aria-hidden="true">'
-        )
-
-        f.write(GITHUB_ICON)
-
-        f.write(
-            '</span>'
             '<span class="api-source-text">'
             'View source'
             '</span>'
@@ -2393,10 +2368,8 @@ def write_class_page_header(class_info, f):
             f'href="{escape(source_url)}" '
             'target="_blank" rel="noopener noreferrer">'
         )
-        f.write('<span class="api-source-icon" aria-hidden="true">')
-        f.write(GITHUB_ICON)
         f.write(
-            '</span><span class="api-source-text">View source</span></a>\n'
+            '<span class="api-source-text">View source</span></a>\n'
         )
 
     f.write('</div>\n')
@@ -2836,6 +2809,9 @@ os.makedirs(
     out_path,
     exist_ok=True,
 )
+
+for generated_page in Path(out_path).rglob("*.md"):
+    generated_page.unlink()
 
 root_path = output_path_for_page("")
 

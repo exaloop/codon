@@ -1,7 +1,15 @@
-!!! tip
+---
+title: Build from source
+---
 
-    Unless you really need to build Codon from source, it is strongly
-    recommended to use pre-built binaries if possible.
+:::tip
+
+
+The [prebuilt installation](../start/install.mdx) is usually sufficient for
+compiling applications. Building from source is useful for compiler development,
+custom toolchains or platforms that need a locally configured build.
+
+:::
 
 ## Dependencies
 
@@ -30,7 +38,8 @@ cmake -S llvm-project/llvm -B llvm-project/build \
     -DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON \
     -DCOMPILER_RT_INCLUDE_TESTS=OFF
 cmake --build llvm-project/build
-cmake --install llvm-project/build --prefix=llvm-project/install
+cmake --install llvm-project/build --prefix="$PWD/llvm-project/install"
+export LLVM_DIR="$PWD/llvm-project/install/lib/cmake/llvm"
 ```
 
 You can use `-DLLVM_ENABLE_PROJECTS="clang;openmp"` if you do not have `clang`
@@ -59,19 +68,20 @@ On Linux:
 export CODON_SYSTEM_LIBRARIES=/usr/lib/x86_64-linux-gnu
 ```
 
-Then, the following can generally be used to build Codon. The build process
-will automatically download and build several smaller dependencies.
+With that LLVM installation selected, obtain the Codon source and configure
+its build. An existing checkout can be used in place of the clone command.
+The build process downloads and builds several smaller dependencies.
 
 ```bash
+git clone https://github.com/exaloop/codon.git
 cd codon
-mkdir build
 cmake -S . -B build \
     -DCMAKE_BUILD_TYPE=Release \
-    -DLLVM_DIR=$(llvm-config --cmakedir) \
+    -DLLVM_DIR="$LLVM_DIR" \
     -DCMAKE_C_COMPILER=clang \
     -DCMAKE_CXX_COMPILER=clang++
 cmake --build build --config Release
-cmake --install build --prefix=install
+cmake --install build --prefix="$PWD/install"
 ```
 
 This will produce the `codon` executable in the `install/bin` directory, as
@@ -82,38 +92,36 @@ Additionally, a number of shared libraries are produced in `install/lib/codon`:
 - `libcodonrt`: The runtime library used during execution.
 - `libomp`: OpenMP runtime used to execute parallel code.
 
-!!! warning
+:::warning
 
-    Make sure the `llvm-config` being used corresponds to Codon's LLVM. You can also use
-    `-DLLVM_DIR=llvm-project/install/lib/cmake/llvm` on the first `cmake` command if you
-    followed the instructions above for compiling LLVM.
+
+`LLVM_DIR` needs to refer to Codon's LLVM fork, not an unrelated system LLVM
+installation. The absolute path exported above remains valid after changing
+into the Codon checkout.
+
+:::
 
 ## Jupyter support
 
 To enable Jupyter support, you will need to build the Jupyter plugin:
 
 ```bash
-# Linux version:
 cmake -S jupyter -B jupyter/build \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_COMPILER=clang \
     -DCMAKE_CXX_COMPILER=clang++ \
-    -DLLVM_DIR=$(llvm-config --cmakedir) \
-    -DCODON_PATH=install \
-    -DOPENSSL_ROOT_DIR=$(openssl version -d | cut -d' ' -f2 | tr -d '"') \
-    -DOPENSSL_CRYPTO_LIBRARY=/usr/lib64/libssl.so \
-    -DXEUS_USE_DYNAMIC_UUID=ON
-# n.b. OPENSSL_CRYPTO_LIBRARY might differ on your system.
-
-# On macOS, do this instead:
-OPENSSL_ROOT_DIR=/usr/local/opt/openssl cmake -S jupyter -B jupyter/build \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_C_COMPILER=clang \
-    -DCMAKE_CXX_COMPILER=clang++ \
-    -DLLVM_DIR=$(llvm-config --cmakedir) \
-    -DCODON_PATH=install
-
-# Then:
+    -DLLVM_DIR="$LLVM_DIR" \
+    -DCODON_PATH="$PWD/install"
 cmake --build jupyter/build
 cmake --install jupyter/build
 ```
+
+On Linux, add `-DXEUS_USE_DYNAMIC_UUID=ON` to the configuration command.
+If CMake cannot discover OpenSSL, its installation prefix can be supplied with
+`-DOPENSSL_ROOT_DIR=/path/to/openssl`. For a Homebrew installation, the value
+reported by `brew --prefix openssl@3` avoids assuming an Intel or Apple Silicon
+prefix. CMake can then select the appropriate SSL and crypto libraries.
+
+The plugin is installed into the selected Codon installation. The
+[Jupyter guide](../integrations/jupyter.md) describes registering it with a
+frontend after the build.

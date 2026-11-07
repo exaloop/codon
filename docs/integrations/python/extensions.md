@@ -1,3 +1,7 @@
+---
+title: Create Python extensions
+---
+
 Codon includes a build mode called `pyext` for generating
 [Python extensions](https://docs.python.org/3/extending/extending.html)
 (which are traditionally written in C, C++ or Cython):
@@ -6,16 +10,24 @@ Codon includes a build mode called `pyext` for generating
 codon build -pyext extension.codon  # add -release to enable optimizations
 ```
 
+This command produces an object file containing the extension wrappers. A
+link step is still needed to create the module that Python imports; the
+[setuptools example](#building-with-setuptools) below performs both steps and
+chooses Python's platform-specific extension filename.
+
 `codon build -pyext` accepts the following options:
 
 - `-o <output object>`: Writes the compilation result to the specified file.
 - `-module <module name>`: Specifies the generated Python module's name.
 
-!!! warning
+:::warning
 
-    It is recommended to use the `pyext` build mode with Python versions 3.9
-    and up.
 
+It is recommended to use the `pyext` build mode with Python versions 3.9
+and up.
+
+
+:::
 
 ## Functions
 
@@ -99,106 +111,119 @@ c = b + 10.0           # Vec(14.0, 16.0)
 
 Codon's `pyext` build mode can be used with `setuptools`. Here is an example `setup.py` script:
 
-??? example "Example `setup.py`"
+<details>
+<summary>Example <code>setup.py</code></summary>
 
-    ``` python
-    # setup.py
-    import os
-    import sys
-    import shutil
-    from pathlib import Path
-    from setuptools import setup, Extension
-    from setuptools.command.build_ext import build_ext
 
-    # Find Codon
-    codon_path = os.environ.get('CODON_DIR')
-    if not codon_path:
-        c = shutil.which('codon')
-        if c:
-            codon_path = Path(c).parent / '..'
-    else:
-        codon_path = Path(codon_path)
-    for path in [
-        os.path.expanduser('~') + '/.codon',
-        os.getcwd() + '/..',
-    ]:
-        path = Path(path)
-        if not codon_path and path.exists():
-            codon_path = path
-            break
+``` python
+# setup.py
+import os
+import sys
+import shutil
+from pathlib import Path
+from setuptools import setup, Extension
+from setuptools.command.build_ext import build_ext
 
-    if (
-        not codon_path
-        or not (codon_path / 'include' / 'codon').exists()
-        or not (codon_path / 'lib' / 'codon').exists()
-    ):
-        print(
-            'Cannot find Codon.',
-            'Please either install Codon (https://github.com/exaloop/codon),',
-            'or set CODON_DIR if Codon is not in PATH.',
-            file=sys.stderr,
-        )
-        sys.exit(1)
-    codon_path = codon_path.resolve()
-    print('Found Codon:', str(codon_path))
+# Find Codon
+codon_path = os.environ.get('CODON_DIR')
+if not codon_path:
+    c = shutil.which('codon')
+    if c:
+        codon_path = Path(c).parent / '..'
+else:
+    codon_path = Path(codon_path)
+for path in [
+    os.path.expanduser('~') + '/.codon',
+    os.getcwd() + '/..',
+]:
+    path = Path(path)
+    if not codon_path and path.exists():
+        codon_path = path
+        break
 
-    # Build with Codon
-    class CodonExtension(Extension):
-        def __init__(self, name, source):
-            self.source = source
-            super().__init__(name, sources=[], language='c')
-
-    class BuildCodonExt(build_ext):
-        def build_extensions(self):
-            pass
-
-        def run(self):
-            inplace, self.inplace = self.inplace, False
-            super().run()
-            for ext in self.extensions:
-                self.build_codon(ext)
-            if inplace:
-                self.copy_extensions_to_source()
-
-        def build_codon(self, ext):
-            extension_path = Path(self.get_ext_fullpath(ext.name))
-            build_dir = Path(self.build_temp)
-            os.makedirs(build_dir, exist_ok=True)
-            os.makedirs(extension_path.parent.absolute(), exist_ok=True)
-
-            codon_cmd = str(codon_path / 'bin' / 'codon')
-            optimization = '-debug' if self.debug else '-release'
-            self.spawn([codon_cmd, 'build', optimization, '--relocation-model=pic', '-pyext',
-                        '-o', str(extension_path) + ".o", '-module', ext.name, ext.source])
-
-            ext.runtime_library_dirs = [str(codon_path / 'lib' / 'codon')]
-            self.compiler.link_shared_object(
-                [str(extension_path) + '.o'],
-                str(extension_path),
-                libraries=['codonrt'],
-                library_dirs=ext.runtime_library_dirs,
-                runtime_library_dirs=ext.runtime_library_dirs,
-                extra_preargs=['-Wl,-rpath,@loader_path'],
-                debug=self.debug,
-                build_temp=self.build_temp,
-            )
-            self.distribution.codon_lib = extension_path
-
-    setup(
-        name='mymodule',
-        version='0.1',
-        packages=['mymodule'],
-        ext_modules=[
-            CodonExtension('mymodule', 'mymodule.codon'),
-        ],
-        cmdclass={'build_ext': BuildCodonExt}
+if (
+    not codon_path
+    or not (codon_path / 'include' / 'codon').exists()
+    or not (codon_path / 'lib' / 'codon').exists()
+):
+    print(
+        'Cannot find Codon.',
+        'Please either install Codon (https://github.com/exaloop/codon),',
+        'or set CODON_DIR if Codon is not in PATH.',
+        file=sys.stderr,
     )
-    ```
+    sys.exit(1)
+codon_path = codon_path.resolve()
+print('Found Codon:', str(codon_path))
 
-Then, we can build with:
+# Build with Codon
+class CodonExtension(Extension):
+    def __init__(self, name, source):
+        self.source = source
+        super().__init__(name, sources=[], language='c')
+
+class BuildCodonExt(build_ext):
+    def build_extensions(self):
+        pass
+
+    def run(self):
+        inplace, self.inplace = self.inplace, False
+        super().run()
+        for ext in self.extensions:
+            self.build_codon(ext)
+        if inplace:
+            self.copy_extensions_to_source()
+
+    def build_codon(self, ext):
+        extension_path = Path(self.get_ext_fullpath(ext.name))
+        build_dir = Path(self.build_temp)
+        os.makedirs(build_dir, exist_ok=True)
+        os.makedirs(extension_path.parent.absolute(), exist_ok=True)
+
+        codon_cmd = str(codon_path / 'bin' / 'codon')
+        optimization = '-debug' if self.debug else '-release'
+        self.spawn([codon_cmd, 'build', optimization, '--relocation-model=pic', '-pyext',
+                    '-o', str(extension_path) + ".o", '-module', ext.name, ext.source])
+
+        ext.runtime_library_dirs = [str(codon_path / 'lib' / 'codon')]
+        self.compiler.link_shared_object(
+            [str(extension_path) + '.o'],
+            str(extension_path),
+            libraries=['codonrt'],
+            library_dirs=ext.runtime_library_dirs,
+            runtime_library_dirs=ext.runtime_library_dirs,
+            debug=self.debug,
+            build_temp=self.build_temp,
+        )
+        self.distribution.codon_lib = extension_path
+
+setup(
+    name='mymodule',
+    version='0.1',
+    ext_modules=[
+        CodonExtension('mymodule', 'mymodule.codon'),
+    ],
+    cmdclass={'build_ext': BuildCodonExt}
+)
+```
+
+</details>
+
+Place this setup script beside `mymodule.codon`, containing the Codon functions
+and types to export. This is a single extension module, so no separate
+`mymodule/` Python package directory is required. With `setuptools` installed
+in the target Python environment, build it using that interpreter:
 
 ``` bash
 python3 setup.py build_ext --inplace
 ```
 
-Finally, we can `import mymodule` in Python and use the module.
+The resulting module can be imported as `mymodule` from that directory. Its
+name should agree with the `CodonExtension` entry and generated `-module`
+argument; changing only the output filename does not rename Python's module
+initialization function.
+
+The example links against the local Codon runtime and records that runtime's
+library directory. It is a local build workflow, not a self-contained wheel:
+distributing the extension also requires arranging for compatible runtime
+libraries and Python/platform versions on the destination machine.
