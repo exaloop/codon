@@ -185,8 +185,6 @@ private:
   Value *callee;
   /// the arguments
   std::vector<Value *> args;
-  /// ID of a thunk if the callee is polymorphic (0 if not)
-  size_t thunk_id;
 
 public:
   static const char NodeId;
@@ -195,16 +193,14 @@ public:
   /// @param callee the function
   /// @param args the arguments
   /// @param name the instruction's name
-  CallInstr(Value *callee, std::vector<Value *> args, std::string name = "",
-            size_t thunk_id = 0)
-      : AcceptorExtend(std::move(name)), callee(callee), args(std::move(args)),
-        thunk_id(thunk_id) {}
+  CallInstr(Value *callee, std::vector<Value *> args, std::string name = "")
+      : AcceptorExtend(std::move(name)), callee(callee), args(std::move(args)) {}
 
   /// Constructs a call instruction with no arguments.
   /// @param callee the function
   /// @param name the instruction's name
-  explicit CallInstr(Value *callee, std::string name = "", size_t thunk_id = 0)
-      : CallInstr(callee, {}, std::move(name), thunk_id) {}
+  explicit CallInstr(Value *callee, std::string name = "")
+      : CallInstr(callee, {}, std::move(name)) {}
 
   /// @return the callee
   Value *getCallee() { return callee; }
@@ -247,8 +243,6 @@ public:
 
   /// @return the number of arguments
   int numArgs() const { return args.size(); }
-
-  size_t getThunkID() const { return thunk_id; }
 
 protected:
   Type *doGetType() const override;

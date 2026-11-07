@@ -98,20 +98,6 @@ void TypecheckVisitor::visit(IfExpr *expr) {
     expr->elsexpr = transform(N<CallExpr>(clone(T), expr->getElse()));
   }
 
-  // Types not compatible! Check if an union can be made
-  if (expr->getIf()->getType()->unify(expr->getElse()->getType(), nullptr) < 0 &&
-      expr->getExpectedType() && expr->getExpectedType()->is(StdlibTypes::Union)) {
-    if (!expr->getIf()->getType()->canRealize() ||
-        !expr->getElse()->getType()->canRealize())
-      return;
-    auto T = N<InstantiateExpr>(
-        N<IdExpr>(StdlibTypes::Union),
-        std::vector<Expr *>{N<IdExpr>(expr->getIf()->getType()->realizedName()),
-                            N<IdExpr>(expr->getElse()->getType()->realizedName())});
-    expr->ifexpr = transform(N<CallExpr>(T, expr->getIf()));
-    expr->elsexpr = transform(N<CallExpr>(clone(T), expr->getElse()));
-  }
-
   unify(expr->getType(), expr->getIf()->getType());
   unify(expr->getType(), expr->getElse()->getType());
   if (expr->getCond()->isDone() && expr->getIf()->isDone() && expr->getElse()->isDone())

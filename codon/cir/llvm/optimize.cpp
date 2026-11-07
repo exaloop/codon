@@ -5,9 +5,6 @@
 #include <algorithm>
 #include <deque>
 
-#include <llvm/Analysis/CaptureTracking.h>
-#include <llvm/Transforms/Utils/Cloning.h>
-
 #include "codon/cir/llvm/gpu.h"
 #include "codon/cir/llvm/llvisitor.h"
 #include "codon/cir/llvm/native/native.h"
