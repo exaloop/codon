@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ... import ast
+from ...error import TypecheckError
 from . import infer, utils
 
 if TYPE_CHECKING:
@@ -17,12 +18,13 @@ def typecheck_none(self: TypeVisitor, node: ast.NoneExpr):
 
     node.type |= utils.instantiate(self.ctx, ast.types.Stdlib.Optional)
     if infer.realize(self.ctx, node.type):
-        # Realize the appropriate `Optional.__new__` for the translation stage
+        # Keep None provisional until inference resolves or defaults its payload.
+        name = "Optional" if node.type == ast.types.Stdlib.Optional else "NoneType"
         infer.realize(
             self.ctx,
             utils.instantiate(
                 self.ctx,
-                ast.types.mangle(cls="Optional", func="__new__"),
+                ast.types.mangle(cls=name, func="__new__"),
                 utils.extract_class_type(self.ctx, node),
             ),
         )
@@ -52,7 +54,8 @@ def typecheck_int(self: TypeVisitor, node: ast.IntExpr):
     value, suffix = node.get_raw_data()
     if not node.has_value:
         holder = ast.StringExpr(value)
-        suffix = suffix or "i64"
+        if not suffix:
+            raise TypecheckError(node, f"integer '{value}' is out of range")
     else:
         holder = ast.IntExpr(node.get_value())
 
@@ -90,7 +93,7 @@ def typecheck_int(self: TypeVisitor, node: ast.IntExpr):
     else:
         # Custom suffix: call `int.__suffix_[suffix]__(value)`
         call = ast.CallExpr(
-            ast.DotExpr(ast.IdExpr(value="int"), f"__suffix_{suffix}__"), items=[holder]
+            ast.DotExpr(ast.IdExpr(value="Int"), f"__suffix_{suffix}__"), items=[holder]
         )
         return self.visit_expr(call)
 
@@ -131,29 +134,24 @@ def typecheck_str(self: TypeVisitor, node: ast.StringExpr):
     assert node.type
 
     if node.is_simple:
-        node.type |= utils.instantiate_static(self.ctx, node.get_value())
+        node.type |= (
+            utils.get_stdlib_type(self.ctx, "bytes")
+            if node.strings[0].prefix == "b"
+            else utils.instantiate_static(self.ctx, node.get_value())
+        )
         node.done = True
         return node
 
     items = []
     for part in node.strings:
         if expr := part.expr:
-            conv = ""
-            match part.format.conversion:
-                case "r":
-                    conv = "repr"
-                case "s":
-                    conv = "str"
-                case "a":
-                    conv = "ascii"
-                case _:
-                    pass
-            if conv:
-                expr = ast.CallExpr(ast.IdExpr(conv), [expr])
+            format = "{"
+            if part.format.conversion:
+                format += "!" + part.format.conversion
             if part.format.spec:
-                expr = ast.CallExpr(
-                    ast.DotExpr(expr, "__format__"), [ast.StringExpr(part.format.spec)]
-                )
+                format += ":" + part.format.spec
+            format += "}"
+            expr = ast.CallExpr(ast.DotExpr(ast.StringExpr(format), "format"), [expr])
             expr = ast.CallExpr(ast.IdExpr("str"), [expr])
             if part.value:
                 expr = ast.CallExpr(
@@ -162,6 +160,8 @@ def typecheck_str(self: TypeVisitor, node: ast.StringExpr):
                 )
             part.expr = expr
             items.append(expr)
+        elif part.prefix.lower() == "b":
+            items.append(ast.StringExpr(part.value, "b"))
         elif part.prefix:
             # Custom prefix strings:
             # call `str.__prefsix_[prefix]__(str, [static length of str])`

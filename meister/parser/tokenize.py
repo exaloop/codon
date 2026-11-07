@@ -543,83 +543,94 @@ def _tokenize(readline, token_patterns) -> Generator[TokenInfo]:
                 (spos[0], spos[1] + len(prefix)),
                 line,
             )
+            begin, end = len(prefix), len(token) - len(prefix)
 
-            last_brace, brace_cnt = len(prefix), 0
-            last_pos = current_pos = spos[0], spos[1] + len(prefix)
-            for i in range(len(prefix), len(token) - len(prefix)):
-                if token[i] == "{":
-                    if last_brace < i:
-                        # from last_brace to i
-                        yield TokenInfo(
-                            Tokens.FSTRING_MIDDLE,
-                            token[last_brace:i],
-                            last_pos,
-                            current_pos,
-                            line,
-                        )
-                    if brace_cnt == 0:
-                        last_brace = i + 1
-                        last_pos = current_pos
-                    brace_cnt += 1
-                elif token[i] == "}":
-                    brace_cnt -= 1
-                    if brace_cnt == 0:
-                        code = token[last_brace - 1 : i + 1].split("\n")
-                        tokens = list(_tokenize(iter(code), token_patterns))
-                        if tokens and tokens[-1].type == Tokens.ENDMARKER:
-                            tokens.pop()
-                        if tokens and tokens[-1].type == Tokens.NEWLINE:
-                            tokens.pop()
-                        split_tokens = []
-                        nesting = 0
-                        for index, t in enumerate(tokens):
-                            if t.string in ("(", "["):
-                                nesting += 1
-                            elif t.string in (")", "]"):
-                                nesting -= 1
-                            # expr:=<30 would be tokenized as := instead of : and =
-                            if t.string == ":=" and nesting == 0:
-                                yield TokenInfo(
-                                    Tokens.OP,
-                                    ":",
-                                    (last_pos[0] + t.start[0] - 1, last_pos[1] + t.start[1]),
-                                    (last_pos[0] + t.end[0] - 1, last_pos[1] + t.start[1] + 1),
-                                    t.line,
-                                )
-                                t.type = Tokens.OP
-                                t.start = (t.start[0], t.start[1] + 1)
-                                t.string = "="
-                            t.start = (
-                                last_pos[0] + t.start[0] - 1,
-                                last_pos[1] + t.start[1],
-                            )
-                            t.end = (last_pos[0] + t.end[0] - 1, last_pos[1] + t.end[1])
-                            yield t
-                        for t in split_tokens:
-                            t.start = (
-                                last_pos[0] + t.start[0] - 1,
-                                last_pos[1] + t.start[1],
-                            )
-                            t.end = (last_pos[0] + t.end[0] - 1, last_pos[1] + t.end[1])
-                            yield t
-                    last_brace = i + 1
-                if token[i] == "\n":
-                    current_pos = (current_pos[0] + 1, 0)
-                else:
-                    current_pos = (current_pos[0], current_pos[1] + 1)
-            if brace_cnt > 0:
-                raise TokenError("expecting '}' in f-string", spos)
-            if brace_cnt < 0:
-                raise TokenError("single '}' is not allowed in f-string", spos)
-            if last_brace < len(token) - len(prefix):
-                yield TokenInfo(
-                    Tokens.FSTRING_MIDDLE,
-                    token[last_brace : len(token) - len(prefix)],
-                    last_pos,
-                    current_pos,
-                    line,
+            def location(offset):
+                preceding = token[:offset]
+                rows = preceding.count("\n")
+                return (
+                    spos[0] + rows,
+                    len(preceding.rsplit("\n", 1)[-1]) if rows else spos[1] + offset,
                 )
 
+            literal_start = begin
+            i = begin
+            while i < end:
+                char = token[i]
+                if char in "{}" and i + 1 < end and token[i + 1] == char:
+                    if literal_start < i:
+                        yield TokenInfo(
+                            Tokens.FSTRING_MIDDLE,
+                            token[literal_start:i],
+                            location(literal_start),
+                            location(i),
+                            line,
+                        )
+                    yield TokenInfo(Tokens.FSTRING_MIDDLE, char, location(i), location(i + 2), line)
+                    i += 2
+                    literal_start = i
+                    continue
+                if char == "}":
+                    raise TokenError("single '}' is not allowed in f-string", location(i))
+                if char != "{":
+                    i += 1
+                    continue
+                if literal_start < i:
+                    yield TokenInfo(
+                        Tokens.FSTRING_MIDDLE,
+                        token[literal_start:i],
+                        location(literal_start),
+                        location(i),
+                        line,
+                    )
+                start, depth = i, 1
+                i += 1
+                while i < end and depth:
+                    if token[i] == "{":
+                        depth += 1
+                    elif token[i] == "}":
+                        depth -= 1
+                    i += 1
+                if depth:
+                    raise TokenError("expecting '}' in f-string", location(start))
+                fragment = token[start:i]
+                tokens = list(_tokenize(iter(fragment.split("\n")), token_patterns))
+                while tokens and tokens[-1].type in {Tokens.ENDMARKER, Tokens.NEWLINE}:
+                    tokens.pop()
+                nesting = 0
+                base_line, base_col = location(start)
+                for t in tokens:
+                    if t.string in {"(", "[", "{"}:
+                        nesting += 1
+                    elif t.string in {")", "]", "}"}:
+                        nesting -= 1
+
+                    def mapped(position):
+                        return (
+                            base_line + position[0] - 1,
+                            position[1] + (base_col if position[0] == 1 else 0),
+                        )
+
+                    if t.string == ":=" and nesting == 1:
+                        yield TokenInfo(
+                            Tokens.OP,
+                            ":",
+                            mapped(t.start),
+                            mapped((t.start[0], t.start[1] + 1)),
+                            t.line,
+                        )
+                        t = TokenInfo(Tokens.OP, "=", (t.start[0], t.start[1] + 1), t.end, t.line)
+                    t.start, t.end = mapped(t.start), mapped(t.end)
+                    yield t
+                literal_start = i
+            if literal_start < end:
+                yield TokenInfo(
+                    Tokens.FSTRING_MIDDLE,
+                    token[literal_start:end],
+                    location(literal_start),
+                    location(end),
+                    line,
+                )
             yield TokenInfo(
                 Tokens.FSTRING_END, prefix, (lnum, pos - len(prefix)), (lnum, pos), line
             )

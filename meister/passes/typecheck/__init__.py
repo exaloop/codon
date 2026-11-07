@@ -69,6 +69,20 @@ class TypeVisitor(ast.NodeVisitor):
         simple_types: bool = False,
     ) -> ast.Expr:
         if enforce_type:
+            if (
+                isinstance(node, ast.IdExpr)
+                and node.value == ast.types.Stdlib.Type
+                and (builtin := self.ctx.find_at(ast.types.Stdlib.Type, self.ctx.time))
+                and builtin.canonical == ast.types.Stdlib.Type
+            ):
+                return ast.IdExpr(
+                    ast.types.Stdlib.Type,
+                    type=utils.instantiate(
+                        self.ctx, utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Type)
+                    ),
+                    done=True,
+                    info=node.info,
+                )
             if isinstance(node, ast.NoneExpr):
                 node = ast.IdExpr(ast.types.Stdlib.NoneType, info=node.info)
             with self.ctx.substitute("simple_types", simple_types):
@@ -350,7 +364,7 @@ def typecheck_program(
         if not inferred:
             raise TypecheckError(trace=utils.find_typecheck_errors(type_ctx, suite))
         result = ast.SuiteStmt(preamble, inferred)
-        if isinstance(inferred, ast.SuiteStmt):
+        if not cache.options.pyext:
             special.prepare_vtables(type_ctx)
     return result
 
@@ -428,11 +442,14 @@ def load_std_library(
     stdlib.is_stdlib_loading = False
 
 
-def typecheck_node(ctx: TypeContext, node: ast.Stmt, file: str = "<internal>") -> ast.Stmt | None:
+def typecheck_node(
+    ctx: TypeContext, node: ast.Stmt, file: str = "<internal>", sweep_force_realize=True
+) -> ast.Stmt | None:
+    ctx.prepare_checkpoint()
     with ast.Node.creation_context(None):
         preamble = ast.SuiteStmt()
     with ctx.substitute("filename", file), ctx.substitute("preamble", preamble):
-        if inferred := infer.infer_types(ctx, node, is_toplevel=True):
+        if inferred := infer.infer_types(ctx, node, is_toplevel=sweep_force_realize):
             with ast.Node.creation_context(None):
                 return ast.SuiteStmt(preamble, inferred)
         raise TypecheckError(trace=utils.find_typecheck_errors(ctx, node))

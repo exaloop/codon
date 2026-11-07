@@ -203,6 +203,7 @@ def typecheck_chainbinary(self: TypeVisitor, node: ast.ChainBinaryExpr) -> ast.N
             right = node.exprs[idx][1].clone()
         else:
             assignment = ast.AssignStmt(ast.IdExpr(prev), rhs=node.exprs[idx][1].clone())
+            assignment.set(ast.Attr.MaybeLiteral)
             right = ast.StmtExpr([assignment], expr=ast.IdExpr(prev))
         items.append(
             ast.BinaryExpr(
@@ -388,7 +389,7 @@ def typecheck_index(self: TypeVisitor, node: ast.IndexExpr) -> ast.Expr:
     match node:
         case ast.IndexExpr(
             expr=ast.IdExpr(value="Literal" | "Static"),
-            index=ast.IdExpr(value="int" | "str" | "bool"),
+            index=ast.IdExpr(value="int" | "Int" | "str" | "bool"),
         ):
             # Special case: static types.
             node.type |= utils.instantiate_unbound(
@@ -413,6 +414,13 @@ def typecheck_index(self: TypeVisitor, node: ast.IndexExpr) -> ast.Expr:
             item = ast.InstantiateExpr(ast.IdExpr(ast.types.Stdlib.Tuple), items=list(item.items))
         items[idx] = self.visit_expr(item)
     if utils.is_type_expr(node.expr):
+        methods = utils.find_method(
+            self.ctx, utils.extract_class_type(self.ctx, node.expr), "__getitem__"
+        )
+        if any(method.ast.has(ast.Attr.StaticMethod) for method in methods):
+            return self.visit_expr(
+                ast.CallExpr(ast.DotExpr(node.expr, "__getitem__"), [node.index])
+            )
         # Special case: `A[[A, B], C]` -> `A[Tuple[A, B], C]` (e.g., in `Function[...]`)
         return self.visit_expr(ast.InstantiateExpr(node.expr, items=items))
 
@@ -444,6 +452,12 @@ def typecheck_instantiate(self: TypeVisitor, node: ast.InstantiateExpr) -> ast.N
     node.expr = self.visit_expr(node.expr, enforce_type=True)
     types_count = len(node.items)
     root_type = utils.extract_type(self.ctx, node.expr)
+    if root_type == ast.types.Stdlib.Optional and len(node.items) == 1:
+        node.items[0] = self.visit_expr(node.items[0], enforce_type=True)
+        member = utils.extract_type(self.ctx, node.items[0])
+        if member == ast.types.Stdlib.Optional or member == ast.types.Stdlib.NoneType:
+            node.type |= node.items[0].type
+            return node.items[0]
     if root_type == ast.types.Stdlib.Tuple:
         if node.items:
             first = node.items[0] = self.visit_expr(node.items[0])
@@ -544,6 +558,10 @@ def typecheck_instantiate(self: TypeVisitor, node: ast.InstantiateExpr) -> ast.N
                 union_tuple = typ[0]
                 union_tuple |= tuple_type
                 node.type |= utils.instantiate_type_var(self.ctx, typ)
+            if (realized := infer.realize(self.ctx, node.type)) and result is None:
+                result = ast.IdExpr(
+                    utils.extract_type(self.ctx, realized).realized_name(), type=realized, done=True
+                )
         case _:
             for idx, param in enumerate(node.items):
                 node.items[idx] = self.visit_expr(param, enforce_type=True)
@@ -560,14 +578,11 @@ def typecheck_instantiate(self: TypeVisitor, node: ast.InstantiateExpr) -> ast.N
                         raise TypecheckError(node, "expected type expression")
                 param_type |= typ[idx]
             node.type |= utils.instantiate_type_var(self.ctx, typ)
-
-    realized = infer.realize(self.ctx, node.type)
-    if realized and result is None:
-        # If the type is realizable, use the realized name instead of instantiation
-        # (e.g. use Id("Ptr[byte]") instead of Instantiate(Ptr, {byte}))
-        result = ast.IdExpr(
-            utils.extract_type(self.ctx, realized).realized_name(), type=realized, done=True
-        )
+            # Replace realizable subscriptions, but keep trait instantiations provisional.
+            if (realized := infer.realize(self.ctx, node.type)) and result is None:
+                result = ast.IdExpr(
+                    utils.extract_type(self.ctx, realized).realized_name(), type=realized, done=True
+                )
 
     # Handle side effects
     if not self.ctx.simple_types:
@@ -664,7 +679,7 @@ def div_mod(self: TypeVisitor, left: int, right: int):
         division = -division
     modulus = left - division * right
     # Use Python implementation.
-    if self.ctx.cache.python_compat and modulus and ((right ^ modulus) < 0):
+    if self.ctx.cache.options.pynum and modulus and ((right ^ modulus) < 0):
         modulus += right
         division -= 1
     # Use C implementation.
@@ -851,6 +866,13 @@ def transform_binary_is(self: TypeVisitor, expr: ast.BinaryExpr) -> ast.Expr | N
     # Case: `is None` expressions
     if isinstance(expr.rexpr, ast.NoneExpr):
         left_type = utils.extract_class_type(self.ctx, expr.lexpr)
+        if left_type.union and not utils.is_type_expr(expr.lexpr):
+            return self.visit_expr(
+                ast.CallExpr(
+                    ast.DotExpr(ast.IdExpr(ast.types.Stdlib.Union), "_isinstance"),
+                    [expr.lexpr, ast.IdExpr(ast.types.Stdlib.NoneType)],
+                )
+            )
         if left_type == ast.types.Stdlib.NoneType:
             return wrap_side(ast.BoolExpr(True))
         if left_type != ast.types.Stdlib.Optional:
@@ -1007,6 +1029,13 @@ def transform_binary_magic(self: TypeVisitor, expr: ast.BinaryExpr) -> ast.Expr 
     magic, right_magic = get_magic(expr.op)
     lt, rt = expr.lexpr.type, expr.rexpr.type
     assert lt and rt
+    if lt.union or rt.union:
+        return self.visit_expr(
+            ast.CallExpr(
+                ast.IdExpr(ast.types.mangle(cls="Union", func="_binary")),
+                [expr.lexpr, expr.rexpr, ast.StringExpr(expr.op)],
+            )
+        )
     if lt != "pyobj" and rt == "pyobj":
         # Special case: `obj op pyobj` -> `rhs.__rmagic__(lhs)` on lhs
         # Assumes that pyobj implements all left and right magics
@@ -1023,11 +1052,6 @@ def transform_binary_magic(self: TypeVisitor, expr: ast.BinaryExpr) -> ast.Expr 
                     items=[ast.IdExpr(l_var)],
                 ),
             )
-        )
-    elif lt.union:
-        # Special case: `union op obj` -> `union.__magic__(rhs)`
-        return self.visit_expr(
-            ast.CallExpr(ast.DotExpr(expr.lexpr, member=f"__{magic}__"), items=[expr.rexpr])
         )
     else:
         lt = lt.cls
@@ -1052,6 +1076,18 @@ def transform_binary_magic(self: TypeVisitor, expr: ast.BinaryExpr) -> ast.Expr 
                         ast.IdExpr(method.func_name), [ast.IdExpr(r_var), ast.IdExpr(l_var)]
                     ),
                 )
+            )
+        elif lt == ast.types.Stdlib.Optional:
+            unwrapped = ast.BinaryExpr(
+                self.visit_expr(
+                    ast.CallExpr(ast.IdExpr(ast.types.Stdlib.OptionalUnwrap), [expr.lexpr])
+                ),
+                expr.op,
+                expr.rexpr,
+                in_place=expr.in_place,
+            )
+            return transform_binary_inplace_magic(self, unwrapped, False) or transform_binary_magic(
+                self, unwrapped
             )
         else:
             return None

@@ -180,84 +180,143 @@ def typecheck_try(self: TypeVisitor, node: ast.TryStmt) -> ast.Stmt:
     return node
 
 
-def typecheck_throw(self: TypeVisitor, node: ast.ThrowStmt) -> ast.Stmt:
-    """
-    Transform `raise` statements.
-    @example
-    `raise exc` -> ```raise BaseException.set_header(exc, "fn", "file", line, col)```
-    """
-    if node.expr is None:
+def typecheck_throw(self, node):
+    """Stage raise operands in source order and initialize exception headers once."""
+    if not node.expr:
         node.done = True
         return node
-
     node.expr = self.visit_expr(node.expr)
-    setter_name = ast.types.mangle(
-        module="std.internal.types.error", cls="BaseException", func="_set_header"
+    setter = ast.types.mangle("std.internal.types.error", cls="BaseException", func="_set_header")
+    head = utils.get_head_expr(node.expr)
+    initialized = (
+        isinstance(head, ast.CallExpr)
+        and isinstance(head.expr, ast.IdExpr)
+        and head.expr.value == setter
     )
-    match node.expr:
-        case ast.CallExpr(ast.IdExpr(value)) if value == setter_name:
-            # already wrapped
-            pass
-        case _:
-            call = ast.CallExpr(
-                ast.IdExpr(setter_name),
-                items=[
-                    node.expr,
-                    ast.StringExpr(self.ctx.base_name),
-                    ast.StringExpr(node.info.file),
-                    ast.IntExpr(node.info.line),
-                    ast.IntExpr(node.info.col),
-                    node.from_expr or ast.CallExpr(ast.IdExpr(ast.types.Stdlib.NoneType)),
-                ],
+    if not node.has(ast.Attr.Internal) and not initialized:
+        exception = node.expr
+        cause = self.visit_expr(
+            node.from_expr or ast.CallExpr(ast.IdExpr(ast.types.Stdlib.NoneType))
+        )
+        setup = []
+        if utils.is_type_expr(exception) and node.from_expr:
+            en, cn = (
+                utils.get_temporary_var(self.ctx, "exception"),
+                utils.get_temporary_var(self.ctx, "cause"),
             )
-            node.expr = self.visit_expr(call)
+            setup.append(self.visit_stmt(ast.AssignStmt(ast.IdExpr(en), exception)))
+            setup.append(self.visit_stmt(ast.AssignStmt(ast.IdExpr(cn), cause)))
+            exception, cause = self.visit_expr(ast.IdExpr(en)), self.visit_expr(ast.IdExpr(cn))
+        if utils.is_type_expr(exception):
+            exception = self.visit_expr(ast.CallExpr(exception))
+        if utils.is_type_expr(cause):
+            cause = self.visit_expr(ast.CallExpr(cause))
+        header = ast.CallExpr(
+            ast.IdExpr(setter),
+            [
+                exception,
+                ast.StringExpr(self.ctx.base_name),
+                ast.StringExpr(node.info.file),
+                ast.IntExpr(node.info.line),
+                ast.IntExpr(node.info.col),
+                cause,
+            ],
+        )
+        node.expr = self.visit_expr(ast.StmtExpr(setup, header) if setup else header)
     if node.expr.done:
         node.done = True
     return node
 
 
-def typecheck_with(self: TypeVisitor, node: ast.WithStmt) -> ast.Stmt:
-    """
-    Transform with statements.
-    @example
-    `with foo(), bar() as a: ...` ->
-    ```tmp = foo()
-    tmp.__enter__()
-    try:
-    a = bar()
-    a.__enter__()
-    try:
-    ...
-    finally:
-    a.__exit__()
-    finally:
-    tmp.__exit__()```
-    """
-
-    is_async = node.async_
-    content = []
-    for var, item in reversed(list(zip(node.vars, node.items))):
-        var = var or utils.get_temporary_var(self.ctx, "with")
-        assignment = ast.AssignStmt(
-            ast.IdExpr(var),
-            rhs=item,
-            update=ast.AssignStmt.Mode.Update
-            if item.has(ast.Attr.ExprDominated)
-            else ast.AssignStmt.Mode.Assign,
+def typecheck_with(self, node):
+    """Save managers and exit callables separately from entry-result bindings."""
+    assert node.items, "stmt.items is empty"
+    is_async, content = node.async_, []
+    helper = lambda name: ast.IdExpr(
+        ast.types.mangle("std.internal.types.error", cls="BaseException", func=name)
+    )
+    for target, item in reversed(list(zip(node.vars, node.items))):
+        var, exit_var, exceptional, exception, exit_result = [
+            utils.get_temporary_var(self.ctx, name)
+            for name in ("with", "exit", "with_exception", "exception", "exit_result")
+        ]
+        assignment = ast.AssignStmt(ast.IdExpr(var), item)
+        save_exit = ast.AssignStmt(
+            ast.IdExpr(exit_var),
+            ast.DotExpr(ast.IdExpr(var), "__aexit__" if is_async else "__exit__"),
         )
         enter = ast.CallExpr(
-            ast.DotExpr(ast.IdExpr(var), member="__aenter__" if is_async else "__enter__")
-        )
-        exit = ast.CallExpr(
-            ast.DotExpr(ast.IdExpr(var), member="__aexit__" if is_async else "__exit__")
+            ast.DotExpr(ast.IdExpr(var), "__aenter__" if is_async else "__enter__")
         )
         if is_async:
             enter = ast.AwaitExpr(enter)
-            exit = ast.AwaitExpr(exit)
-        if content:
-            body = ast.SuiteStmt(*content)
-        else:
-            body = node.suite.clone()
-        try_statement = ast.TryStmt(body, finally_suite=ast.ExprStmt(exit))
-        content = [assignment, ast.ExprStmt(enter), try_statement]
+
+        def call_exit(exc_type, exc_value):
+            call = ast.CallExpr(
+                helper("_context_aexit" if is_async else "_context_exit"),
+                [ast.IdExpr(exit_var), exc_type, exc_value],
+            )
+            return ast.AwaitExpr(call) if is_async else call
+
+        body = ast.SuiteStmt(*content) if content else node.suite.clone()
+        entry = ast.ExprStmt(enter)
+        if target:
+            entered = utils.get_temporary_var(self.ctx, "entered")
+            entry = ast.AssignStmt(ast.IdExpr(entered), enter)
+            body = ast.SuiteStmt(
+                ast.AssignStmt(
+                    ast.IdExpr(target),
+                    ast.IdExpr(entered),
+                    update=ast.AssignStmt.Mode.Update
+                    if item.has(ast.Attr.ExprDominated)
+                    else ast.AssignStmt.Mode.Assign,
+                ),
+                body,
+            )
+        rethrow = ast.ThrowStmt(ast.IdExpr(exception))
+        rethrow.set(ast.Attr.Internal)
+        handler = ast.TryStmt.Except(
+            ast.IdExpr(ast.types.Stdlib.BaseException),
+            var=exception,
+            suite=ast.SuiteStmt(
+                ast.AssignStmt(
+                    ast.IdExpr(exceptional), ast.BoolExpr(True), update=ast.AssignStmt.Mode.Update
+                ),
+                ast.AssignStmt(
+                    ast.IdExpr(exit_result),
+                    call_exit(
+                        ast.CallExpr(
+                            ast.IdExpr(
+                                ast.types.mangle("std.internal.types.rtti", func="get_typeinfo")
+                            ),
+                            [ast.IdExpr(exception)],
+                        ),
+                        ast.IdExpr(exception),
+                    ),
+                ),
+                ast.IfStmt(ast.UnaryExpr("!", ast.IdExpr(exit_result)), rethrow),
+            ),
+        )
+        none = lambda: ast.CallExpr(ast.IdExpr(ast.types.Stdlib.NoneType))
+        full = ast.SuiteStmt(
+            ast.AssignStmt(ast.IdExpr(exceptional), ast.BoolExpr(False)),
+            ast.TryStmt(
+                body,
+                items=[handler],
+                finally_suite=ast.SuiteStmt(
+                    ast.IfStmt(
+                        ast.UnaryExpr("!", ast.IdExpr(exceptional)),
+                        ast.ExprStmt(call_exit(none(), none())),
+                    )
+                ),
+            ),
+        )
+        legacy_exit = ast.CallExpr(ast.IdExpr(exit_var))
+        if is_async:
+            legacy_exit = ast.AwaitExpr(legacy_exit)
+        legacy = ast.TryStmt(body, finally_suite=ast.SuiteStmt(ast.ExprStmt(legacy_exit)))
+        predicate = ast.CallExpr(
+            helper("_context_exit_is_legacy_none"), [ast.IdExpr(exit_var), ast.BoolExpr(is_async)]
+        )
+        content = [assignment, save_exit, entry, ast.IfStmt(predicate, legacy, full)]
     return self.visit_stmt(ast.SuiteStmt(*content))

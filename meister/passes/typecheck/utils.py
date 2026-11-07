@@ -45,7 +45,7 @@ def best_method(
             call_args.append(ast.CallExpr.Arg(value=arg))
         else:
             call_args.append(ast.CallExpr.Arg(name=arg[0], value=ast.NoneExpr(type=arg[1])))
-    methods = find_method(ctx, typ, member, hide_shadowed=False)
+    methods = find_method(ctx, typ, member)
     if matches := matching_methods(ctx, typ, methods, call_args):
         return matches[0]
     return None
@@ -68,113 +68,263 @@ def matching_methods(
     for method in methods:
         if not method:
             continue  # avoid overloads that have not been seen yet
+        if not partial and not (typ and typ.partial) and not accepts_call_shape(ctx, method, args):
+            continue
         fn = instantiate(ctx, method, typ).func
-        if fn and can_call(ctx, fn, args, partial) >= 0:
+        if fn and match_callable(ctx, fn, args, captured=partial, instantiated=True) >= 0:
             results.append(method)
     return results
 
 
-def can_call(
-    ctx: TypeContext,
-    function: ast.types.Function,
-    args: List[ast.CallExpr.Arg],
-    partial: ast.types.Class | None = None,
-) -> int:
-    """
-    Check if a function can be called with the given args.
-    See @c reorderNamedArgs for details.
-    """
-    partial_args = []
-    known = []
-    if partial and partial.partial:
-        known = partial.partial_mask
-        known_arg_types = partial[1].require_cls
-        known_idx = 0
-        for flag in known:
-            if flag == ast.types.Class.Flag.Included:
-                partial_args.append(known_arg_types[known_idx])
-                known_idx += 1
-            elif flag == ast.types.Class.Flag.Default:
-                known_idx += 1
+def get_partial_arg_types(fn, partial):
+    """Types captured by a partial, indexed by AST parameter."""
+    result = [None] * len(fn.ast.items)
+    if partial:
+        captured = iter(partial[1].require_cls)
+        for idx, flag in enumerate(partial.partial_mask):
+            if fn.ast.items[idx].is_value() and flag in {
+                ast.types.Class.Flag.Included,
+                ast.types.Class.Flag.Default,
+            }:
+                result[idx] = next(captured)
+    return result
 
-    reordered: List[Tuple[ast.types.Type | None, int]] = []
-    non_inferrable = function.ast.get_non_inferrable_generics()
 
+def get_call_default(ctx, param):
+    """An unannotated None default participates in optional inference at calls."""
+    from . import TypeVisitor
+
+    node = (
+        ast.CallExpr(
+            ast.InstantiateExpr(
+                ast.IdExpr(ast.types.Stdlib.Optional), [ast.IdExpr(ast.types.Stdlib.NoneType)]
+            )
+        )
+        if isinstance(param.default, ast.NoneExpr) and not param.type
+        else param.default.clone(clean=True)
+    )
+    return TypeVisitor(ctx).visit_expr(node)
+
+
+def get_call_arg_type(ctx, fn, param_idx, value_idx, actual):
+    expected = fn[value_idx]
+    if (union := expected.union) and union.can_realize():
+        signature = get_function(ctx, fn.func_name).type
+        from ..scope import Bindings
+
+        bindings = fn.ast.get(ast.Attr.Bindings, Bindings)
+        binding = (
+            bindings.bindings.get(
+                get_unmangled_name(ctx, fn.ast.items[param_idx].get_name_with_stars()[1])
+            )
+            if bindings
+            else None
+        )
+        if (
+            actual.can_realize()
+            and signature[value_idx].union
+            and (not binding or (binding.count == 1 and not binding.is_nonlocal))
+            and not fn.ast.has(ast.Attr.LLVM)
+            and not fn.ast.has(ast.Attr.C)
+        ):
+            for member in union.get_realization_types():
+                if member.unify(actual, None) >= 0:
+                    return actual
+    return expected
+
+
+_callable_probes = []
+
+
+def can_call(ctx, fn, args, partial=None, preserve_unions=None, undo=None, probing=False):
+    """Match the same slots, coercions and defaults as a real call."""
+    from . import TypeVisitor
+
+    if undo is None:
+        return match_callable(ctx, fn, args, captured=partial, preserve_unions=preserve_unions)
+    if preserve_unions is not None:
+        preserve_unions[:] = [False] * len(args)
+    captured = get_partial_arg_types(fn, partial)
+    known = partial.partial_mask if partial else []
+    non_inferrable = fn.ast.get_non_inferrable_generics()
     try:
-        score, (star_idx, kwstar_idx, slots, _) = reorder_named_args(ctx, function, args, known)
-        generic_idx = 0
-        partial_idx = 0
-        for slot_idx, slot in enumerate(slots):
-            param = function.ast.items[slot_idx]
-            if param.is_generic():
-                if not slot:
-                    if param.name in non_inferrable and not param.default:
-                        return -1  # is this "real" type?
-                    reordered.append((None, 0))
-                else:
-                    expected_type = extract_func_generic(function, generic_idx)
-                    arg = args[slot[0]].value
-                    if expected_type.is_runtime and not is_type_expr(arg):
-                        return -1
-                    reordered.append((arg.type, slot[0]))
-                generic_idx += 1
-            elif slot_idx in {star_idx, kwstar_idx} or len(slot) != 1:
-                # Partials
-                if (
-                    not slot
-                    and partial
-                    and partial.partial
-                    and known[slot_idx] is ast.types.Class.Flag.Included
-                ):
-                    reordered.append((partial_args[partial_idx], 0))
-                    partial_idx += 1
-                else:
-                    # Ignore *args, *kwargs and default args
-                    reordered.append((None, 0))
-            else:
-                reordered.append((args[slot[0]].value.type, slot[0]))
-    except (TypecheckError, ReorderError):
+        score, (star, kwstar, slots, is_partial) = reorder_named_args(ctx, fn, args, known)
+    except (ReorderError, TypecheckError):
         return -1
 
-    value_idx = 0
-    generic_idx = 0
-    real_generic_idx = 0
-    arg_idx = 0
-    while score != -1 and arg_idx < len(reordered):
-        param = function.ast.items[arg_idx]
-        if param.is_value():
-            expected_type = function[value_idx]
-            value_idx += 1
-        else:
-            expected_type = extract_func_generic(function, generic_idx)
-            generic_idx += 1
-        arg_type, source_idx = reordered[arg_idx]
-        if arg_type is None:
-            arg_idx += 1
-            continue
-        if not param.is_value():
-            real_generic_idx += 1
-            if not expected_type.is_runtime:
-                arg = args[source_idx].value.type
-                # Check if this is a good generic!
-                if arg and arg.is_runtime:
-                    score = -1
-                    break
-                arg_type = arg
-            else:
-                arg_idx += 1
-                # TODO: check if these are real types or if traits are satisfied
-                continue
+    visitor = TypeVisitor(ctx)
+    with with_class_generics(ctx, fn, func=True):
+        provided = vi = gi = 0
+        replacements = [None] * len(fn)
 
-        assert arg_type
-        _, wrapped_type, _ = can_wrap_expr(ctx, arg_type, expected_type, function)
-        candidate = wrapped_type or arg_type
-        if candidate.unify(expected_type, None) < 0:
-            score = -1
-        arg_idx += 1
-    if score >= 0:
-        score += int(real_generic_idx == len(function.func_generics))
-    return score
+        def wrap(actual, expected):
+            _, wrapped, conversion = can_wrap_expr(ctx, actual, expected, fn)
+            if conversion is None and expected.is_runtime:
+                wrapped = get_underlying_static_type(ctx, actual)
+            wrapped = wrapped or actual
+            if wrapped.unify(expected, undo) < 0:
+                return None
+            return expected if expected.cls else wrapped
+
+        for si, slot in enumerate(slots):
+            param = fn.ast.items[si]
+            if param.is_generic():
+                expected = extract_func_generic(fn, gi)
+                gi += 1
+                if slot:
+                    value = args[slot[0]].value
+                    if (expected.is_runtime and not is_type_expr(value)) or (
+                        not expected.is_runtime and value.type.is_runtime
+                    ):
+                        return -1
+                    if extract_type(ctx, value).unify(expected, undo) < 0:
+                        return -1
+                    provided += 1
+                elif (
+                    not is_partial
+                    and expected.unbound
+                    and param.name in non_inferrable
+                    and not param.default
+                ):
+                    return -1
+                continue
+            expected = fn[vi]
+            vi += 1
+            actual = None
+            if si in {star, kwstar}:
+                values, names = [], []
+                supplied = {args[index].name for index in slot}
+                if partial and si == star:
+                    values.extend(partial[1].require_cls.generics[-1].type.require_cls)
+                elif partial and si == kwstar:
+                    kwargs = partial[2].require_cls
+                    keys = ctx.cache.generated_tuple_names[kwargs[0].require_int]
+                    for key, value in zip(keys, kwargs[1].require_cls):
+                        if key not in supplied:
+                            names.append(key)
+                            values.append(value)
+                for index in slot:
+                    values.append(args[index].value.type)
+                    if si == kwstar:
+                        names.append(args[index].name)
+                if param.type:
+                    annotation = extract_type(ctx, visitor.visit_expr(param.type.clone()))
+                    for index, value in enumerate(values):
+                        converted = wrap(value, annotation)
+                        if not converted:
+                            return -1
+                        values[index] = converted
+                actual = instantiate(ctx, generate_tuple(ctx, len(values)), values)
+                if si == kwstar:
+                    from .classes import generate_kw_id
+
+                    identifier = ast.types.IntLiteral(
+                        generate_kw_id(visitor, names), cache=ctx.cache
+                    )
+                    actual = instantiate(
+                        ctx, get_stdlib_type(ctx, ast.types.Stdlib.NamedTuple), [identifier, actual]
+                    )
+            elif slot:
+                index = slot[0]
+                actual = args[index].value.type
+                if (
+                    preserve_unions is not None
+                    and actual.union
+                    and expected.union
+                    and actual.unify(expected, None) >= 0
+                ):
+                    preserve_unions[index] = True
+            elif captured[si]:
+                actual = captured[si]
+            elif not probing and param.default:
+                actual = get_call_default(ctx, param).type
+            elif not probing and param.name.startswith("$"):
+                actual = visitor.visit_expr(
+                    ast.IdExpr(get_unmangled_name(ctx, param.name)[1:])
+                ).type
+            if not actual:
+                continue
+            selected = get_call_arg_type(
+                ctx, fn, si, vi - 1, get_underlying_static_type(ctx, actual)
+            )
+            if not wrap(actual, selected):
+                return -1
+            if not probing and selected is not expected:
+                replacements[vi - 1] = selected
+                if not fn.ast.ret and fn.ret_type.can_realize():
+                    fn.generics[1].type = instantiate(
+                        ctx, get_function(ctx, fn.func_name).type.ret_type
+                    )
+        if any(replacements):
+            fn.replace_arg_types(replacements)
+        if not probing and not is_partial:
+            gi = 0
+            for si, slot in enumerate(slots):
+                param = fn.ast.items[si]
+                if param.is_generic():
+                    expected = extract_func_generic(fn, gi)
+                    gi += 1
+                    if expected.unbound and param.default:
+                        default = visitor.visit_expr(param.default.clone(clean=True))
+                        if extract_type(ctx, default).unify(expected, undo) < 0:
+                            return -1
+        return score + int(provided == len(fn.func_generics))
+
+
+def match_callable(
+    ctx,
+    typ,
+    args,
+    return_type=None,
+    undo=None,
+    captured=None,
+    preserve_unions=None,
+    instantiated=False,
+):
+    """Shared entry for CallableTrait, adapters and static call probes."""
+    changes = undo if undo is not None else ast.types.Type.UnifyContext()
+    if undo is None:
+        _callable_probes.append(changes)
+    probing = undo is None or any(journal is changes for journal in _callable_probes)
+    try:
+        cls = typ.cls
+        if not cls or (
+            cls != ast.types.Stdlib.Function
+            and not cls.partial
+            and cls != ast.types.Stdlib.TypeWrap
+        ):
+            return -1
+        part = captured or cls.partial
+        fn = None
+        if cls.partial:
+            fn = instantiate(ctx, cls.partial_func.generalize(0)).func
+        elif cls == ast.types.Stdlib.TypeWrap:
+            methods = find_method(ctx, cls, "__call_no_self__")
+            if not methods:
+                return -1
+            fn = instantiate(ctx, methods[0], cls).func
+        elif cls.func:
+            fn = cls.func if instantiated else instantiate(ctx, cls).func
+        if fn:
+            score = can_call(ctx, fn, args, part, preserve_unions, changes, probing)
+            if score < 0:
+                return -1
+            if not probing and return_type and fn.can_realize():
+                realized = infer.realize(ctx, fn)
+                if not realized or fn.ret_type.unify(realized.ret_type, changes) < 0:
+                    return -1
+            return score if not return_type or return_type.unify(fn.ret_type, changes) >= 0 else -1
+        parameters = cls[0].require_cls
+        if len(parameters) != len(args):
+            return -1
+        for arg, expected in zip(args, parameters):
+            if arg.name or arg.value.type.unify(expected, changes) < 0:
+                return -1
+        return 1 if not return_type or return_type.unify(cls[1], changes) >= 0 else -1
+    finally:
+        if undo is None:
+            _callable_probes.pop()
+            changes.undo()
 
 
 def wrap_expr(
@@ -231,7 +381,7 @@ def can_wrap_expr(
         callee
         and callee.ast
         and callee.ast.has_function_attr(
-            ast.types.mangle("std.internal.attributes", func="no_arg_wrap")
+            ast.types.mangle("std.internal.attributes", func="no_argument_wrap")
         )
     ):
         return True, expected_type, None  # do not wrap
@@ -241,6 +391,13 @@ def can_wrap_expr(
         expr_type = extract_class_type(ctx, expr_type)
         if not expr_type:
             return False, None, None
+        if expected_class == ast.types.Stdlib.Generator and best_method(
+            ctx, expr_type, "__iter__", []
+        ):
+            iterator = TypeVisitor(ctx).visit_expr(
+                ast.CallExpr(ast.DotExpr(ast.IdExpr(expr_type.realized_name()), "__iter__"))
+            )
+            return True, iterator.type, lambda value: ast.CallExpr(ast.DotExpr(value, "__iter__"))
         if not expected_class or expected_class != ast.types.Stdlib.Type:
             wrapped_type = instantiate(ctx, ast.types.Stdlib.TypeWrap, [expr_type])
             wrapper = lambda value: ast.CallExpr(
@@ -312,13 +469,14 @@ def can_wrap_expr(
         and expr_class != expected_class.name
         and not is_ellipsis
     ):
-        if not find_method(ctx, expr_class, "__iter__"):
+        method = best_method(ctx, expr_class, "__iter__", [expr_class])
+        if not method:
             # Do not wrap already wrapped vars
             return False, None, None
         # Note: do not do this in pipelines (TODO: why?)
-        wrapped_type = instantiate(ctx, expected_class)
+        wrapped_type = instantiate(ctx, method, expr_class).ret_type
         wrapper = lambda value: ast.CallExpr(ast.DotExpr(value, member="__iter__"), items=[])
-    elif expected_class and expected_class == "float" and expr_class and expr_class == "int":
+    elif expected_class and expected_class == "float" and expr_class and expr_class == "Int":
         wrapped_type = instantiate(ctx, expected_class)
         wrapper = lambda value: ast.CallExpr(ast.IdExpr("float"), items=[value])
     elif (
@@ -337,6 +495,19 @@ def can_wrap_expr(
         and expr_class
         and expr_class != ast.types.Stdlib.Optional
     ):
+        if expr_class == ast.types.Stdlib.NoneType:
+            wrapped_type = expected_class
+
+            def from_none(value):
+                constructor = ast.IdExpr(
+                    ast.types.Stdlib.Optional, type=instantiate_type_var(ctx, expected_class)
+                )
+                member = ast.IdExpr(
+                    "T", type=instantiate_type_var(ctx, expected_class[0]), done=True
+                )
+                return ast.CallExpr(ast.DotExpr(constructor, "_from_none"), [value, member])
+
+            return True, wrapped_type, from_none
         expected_inner = expected_class[0]
         _, inner_type, inner_wrapper = can_wrap_expr(
             ctx, expr_class, expected_inner, callee, allow_unwrap, is_ellipsis
@@ -352,6 +523,14 @@ def can_wrap_expr(
         and expr_class
         and expr_class == ast.types.Stdlib.Optional
         and expected_class != ast.types.Stdlib.Optional
+        and not (
+            expected_class.union
+            and expected_class.can_realize()
+            and any(
+                member == ast.types.Stdlib.Optional
+                for member in expected_class.require_union.get_realization_types()
+            )
+        )
     ):
         expression_inner = expr_class[0]
         _, inner_type, inner_wrapper = can_wrap_expr(
@@ -390,57 +569,22 @@ def can_wrap_expr(
         and expr_class
         and (expr_class.partial or expr_type.func or expr_class == ast.types.Stdlib.Function)
     ):
-        arg_types = []
-        # Get list of args
-        fn_type: ast.types.Function | None = None
-
-        if partial := expr_class.partial:
-            fn_type = instantiate(ctx, partial.partial_func)
-            for idx, flag in enumerate(partial.partial_mask):
-                if flag != ast.types.Class.Flag.Included:
-                    arg_types.append(fn_type[idx])
-            ret_type = fn_type.ret_type
-        else:
-            tuple_type = expr_class[0].require_cls
-            for generic in tuple_type.generics:
-                arg_types.append(generic.type)
-            ret_type = expr_class[1]
-
         expected_args = expected_class[0].require_cls
-        if len(arg_types) != len(expected_args.generics):
+        call_args = [ast.CallExpr.Arg(ast.NoneExpr(type=g.type)) for g in expected_args.generics]
+        if match_callable(ctx, expr_class, call_args, expected_class[1]) < 0:
             return False, None, None
-        for idx, arg_type in enumerate(arg_types):
-            expected_arg = expected_args[idx]
-            if arg_type.unify(expected_arg) < 0:
-                return False, None, None
-        if ret_type.unify(expected_class[1]) < 0:
-            return False, None, None
-
         wrapped_type = expected_type
 
-        def wrap_callable(value: ast.Expr) -> ast.Expr:
-            assert value.type
+        def wrap_callable(value):
             value_class = value.type.require_cls
-            assert wrapped_type
             expected_class = wrapped_type.require_cls
-
-            value_arg_types = []
-            if value_partial := value_class.partial:
-                partial_fn = instantiate(ctx, value_partial.partial_func)
-                for idx, flag in enumerate(value_partial.partial_mask):
-                    if flag != ast.types.Class.Flag.Included:
-                        value_arg_types.append(partial_fn[idx])
-                value_return_type = partial_fn.ret_type
-            else:
-                value_tuple = value_class[0].require_cls
-                for generic in value_tuple.generics:
-                    value_arg_types.append(generic.type)
-                value_return_type = value_class[1]
-
+            changes = ast.types.Type.UnifyContext()
+            if match_callable(ctx, value_class, call_args, expected_class[1], changes) < 0:
+                raise TypecheckError(
+                    value, f"'{value_class}' does not match expected type '{expected_class}'"
+                )
             callable_args = expected_class[0].require_cls
-            for idx, arg_type in enumerate(value_arg_types):
-                arg_type |= callable_args[idx]
-            value_return_type |= expected_class[1]
+            value_partial = value_class.partial
 
             ret_fn: ast.Expr | None = None
             data_arg: ast.Expr | None = None
@@ -461,10 +605,8 @@ def can_wrap_expr(
                 )
                 data_type = ast.IdExpr(ast.types.Stdlib.CObj)
             elif value.type.func:
-                value_class = infer.realize(ctx, value_class, force=True)
-                assert value_class
-                fn_name = value_class.realized_name()
-                ret_fn = ast.IdExpr(value_class.realized_name())
+                fn_name = value.type.require_func.func_name
+                ret_fn = ast.IdExpr(fn_name)
                 data_arg = ast.CallExpr(ast.IdExpr(ast.types.Stdlib.CObj))
                 data_type = ast.IdExpr(ast.types.Stdlib.CObj)
             elif value_class.name == ast.types.Stdlib.Function:
@@ -479,7 +621,7 @@ def can_wrap_expr(
             else:
                 assert False, f"bad type: {value_class!r}"
 
-            fn_name = f".proxy.{fn_name}"
+            fn_name = f".proxy.{fn_name}.{expected_class.realized_name()}"
             if not ctx.get(fn_name):
                 proxy = ast.FunctionStmt(
                     fn_name,
@@ -545,7 +687,17 @@ def can_wrap_expr(
         if not expr_class or not expr_class.union:
             return False, None, None
         union_types = expr_class.union.get_realization_types()
-        if any(item.unify(expected_class) >= 0 for item in union_types):
+        if any(
+            item.unify(expected_class) >= 0
+            or (
+                item == ast.types.Stdlib.Optional
+                and (
+                    expected_class == ast.types.Stdlib.NoneType
+                    or item.require_cls[0].unify(expected_class, None) >= 0
+                )
+            )
+            for item in union_types
+        ):
             wrapped_type = expected_class
             wrapper = lambda value: ast.CallExpr(
                 ast.IdExpr(ast.types.mangle(cls="Union", func="_get")),
@@ -603,7 +755,9 @@ def can_wrap_expr(
                                 ast.IdExpr(ast.types.Stdlib.Optional), items=[type_expr]
                             )
                         return ast.CallExpr(
-                            ast.IdExpr(ast.types.mangle(cls="RTTIType", func="_cast")),
+                            ast.IdExpr(
+                                ast.types.mangle("std.internal.types.rtti", func="force_cast")
+                            ),
                             items=[value, type_expr],
                         )
 
@@ -693,7 +847,7 @@ def extract_type(ctx: TypeContext, value) -> ast.types.Type:
             return extract_type(ctx, value.type)
         case ast.types.Type():
             result = value
-            while result == ast.types.Stdlib.Type:
+            while result == ast.types.Stdlib.Type and not is_metaclass_type(result):
                 result = result.require_cls[0]
             return result
         case ast.types.Stdlib.Type:
@@ -836,7 +990,9 @@ def add_class_generics(
             if isinstance(typ, ast.types.Link) and typ.kind is ast.types.Link.Kind.Generic:
                 typ = ast.types.Link(kind=ast.types.Link.Kind.Unbound, src=typ)
         assert generic.static_kind is ast.types.Type.Behaviour.Runtime or not typ.is_runtime
-        if generic.static_kind is ast.types.Type.Behaviour.Runtime and typ != ast.types.Stdlib.Type:
+        if generic.static_kind is ast.types.Type.Behaviour.Runtime and (
+            typ != ast.types.Stdlib.Type or is_metaclass_type(typ)
+        ):
             typ = instantiate_type_var(ctx, typ)
         name = generic.name if only_mangled else get_unmangled_name(ctx, generic.name)
         value = ctx.add_item(name, generic.name, typ)
@@ -873,7 +1029,45 @@ def add_class_generics(
 
 
 def instantiate_type_var(ctx: TypeContext, typ: ast.types.Type) -> ast.types.Type:
-    return instantiate(ctx, ctx[ast.types.Stdlib.Type].type, [typ])
+    return instantiate(ctx, get_stdlib_type(ctx, ast.types.Stdlib.Type), [typ])
+
+
+def get_metaclass_type(ctx):
+    """Concrete type metaclass, without the type[T] wrapper's generic."""
+    typ = ast.types.Class(base=get_stdlib_type(ctx, ast.types.Stdlib.Type))
+    typ.generics = []
+    return typ
+
+
+def is_metaclass_type(typ):
+    return bool(typ and typ == ast.types.Stdlib.Type and not typ.require_cls.generics)
+
+
+def get_self_type(ctx, typ):
+    receiver = get_underlying_static_type(ctx, typ).cls
+    if receiver and receiver.func:
+        return ast.types.Class(base=receiver)
+    return receiver
+
+
+def is_polymorphic(ctx, fn):
+    if not len(fn) or not fn.ast:
+        return False
+    if get_unmangled_name(ctx, fn.ast.items[0].name) != "self":
+        return False
+    cls = get_class(ctx, fn[0].require_cls)
+    member = get_unmangled_name(ctx, fn.ast.name)
+    virtual = member in cls.virtuals
+    if any(get_unmangled_name(ctx, g.name) == "Self" for g in fn.func_generics):
+        if parent := fn.ast.get(ast.Attr.ParentClass, str):
+            virtual |= member in get_class(ctx, parent).virtuals
+    return (
+        cls.has_rtti()
+        and virtual
+        and not is_dispatch(fn)
+        and not fn.ast.has(ast.Attr.StaticMethod)
+        and not fn.ast.has(ast.Attr.Property)
+    )
 
 
 def register_global(ctx: TypeContext, name: str):
@@ -1009,7 +1203,7 @@ def instantiate[T: ast.types.Type](
                 ast.types.Generic(generic.name, generic_type, generic.id, generic.static_kind)
             )
     elif isinstance(generics, ast.types.Class):
-        cls_type = generics
+        cls_type = get_underlying_static_type(ctx, generics).require_cls
 
     if cls_type:
         for generic in [*cls_type.hidden_generics, *cls_type.generics]:
@@ -1017,10 +1211,10 @@ def instantiate[T: ast.types.Type](
                 continue
             if not ((link := generic.type.link) and link.kind is ast.types.Link.Kind.Generic):
                 instantiate_ctx.cache[generic.id] = generic.type
-        if (fn := typ.func) and fn.func_generics:
-            self_generic = fn.func_generics[0]
-            if get_unmangled_name(ctx, self_generic.name) == "__SELF__":
-                instantiate_ctx.cache[self_generic.id] = cls_type
+        if fn := typ.func:
+            for generic in fn.func_generics:
+                if get_unmangled_name(ctx, generic.name) == "Self":
+                    instantiate_ctx.cache[generic.id] = get_self_type(ctx, cls_type)
 
     instantiated = typ.instantiate(ctx.typecheck_level, instantiate_ctx)
     for value in instantiate_ctx.cache.values():
@@ -1032,11 +1226,10 @@ def instantiate[T: ast.types.Type](
 
 
 def find_method(
-    ctx: TypeContext, typ: ast.types.Class | None, method: str, hide_shadowed: bool = True
+    ctx: TypeContext, typ: ast.types.Class | None, method: str
 ) -> List[ast.types.Function]:
     """Returns the list of generic methods that correspond to typeName.method."""
     result: List[ast.types.Function] = []
-    signature_loci: Set[str] = set()
 
     def populate(class_data: cache.ClassData):
         root = class_data.methods.get(method)
@@ -1047,14 +1240,7 @@ def find_method(
             fn_data = get_function(ctx, exact_method)
             if is_dispatch(exact_method) or fn_data is None or fn_data.type is None:
                 continue
-            if hide_shadowed:
-                assert fn_data.ast
-                signature = fn_data.ast.get_signature()
-                if signature not in signature_loci:
-                    signature_loci.add(signature)
-                    result.append(fn_data.type)
-            else:
-                result.append(fn_data.type)
+            result.append(fn_data.type)
 
     if typ and typ == ast.types.Stdlib.Tuple and method == "__new__" and typ.generics:
         generate_tuple(ctx, len(typ.generics))
@@ -1150,15 +1336,10 @@ def reorder_named_args(
         and args[-1].value.is_partial()
     )
 
-    star_idx = -1
-    keyword_star_idx = -1
-    for idx, param in enumerate(fn.ast.items):
-        if param.name.startswith("**"):
-            keyword_star_idx = idx
-            score -= 2
-        elif param.name.startswith("*"):
-            star_idx = idx
-            score -= 2
+    layout = fn.ast.call_layout
+    assert layout, "function call layout was not initialized"
+    star_idx, keyword_star_idx = layout.star, layout.kwstar
+    score = layout.variadic_penalty
 
     slots = [[] for _ in fn.ast.items]
     extra: List[int] = []
@@ -1173,7 +1354,7 @@ def reorder_named_args(
                 known and slot_idx < len(slots) and known[slot_idx] == ast.types.Class.Flag.Included
             ):
                 slot_idx += 1
-            if slot_idx < len(slots) and (star_idx == -1 or slot_idx < star_idx):
+            if slot_idx < layout.positional_limit:
                 slots[slot_idx] = [arg_idx]
                 slot_idx += 1
             else:
@@ -1190,10 +1371,9 @@ def reorder_named_args(
             slots[variadic_idx].clear()
     if named_args:
         slot_names: Dict[str, int] = {}
-        for idx, param in enumerate(fn.ast.items):
+        for name, idx in layout.keywords:
             if not known or known[idx] != ast.types.Class.Flag.Included:
-                _, name = param.get_name_with_stars()
-                slot_names[get_unmangled_name(ctx, name)] = idx
+                slot_names[name] = idx
         for name, arg_idx in sorted(named_args.items()):
             if name not in slot_names:
                 extra_named_args[name] = arg_idx
@@ -1207,7 +1387,7 @@ def reorder_named_args(
     if extra and star_idx == -1:
         raise ReorderError(
             ctx.info,
-            f"{get_user_facing_name(ctx, fn.func_name)}() takes {len(fn.ast)} arguments "
+            f"{get_user_facing_name(ctx, fn.func_name)}() takes {layout.positional_limit} arguments "
             f"({len(args) - int(partial)} given)",
         )
     if star_idx != -1:
@@ -1224,22 +1404,45 @@ def reorder_named_args(
             slots[keyword_star_idx].append(extra_named_args[name])
     for idx, param in enumerate(fn.ast.items):
         if not slots[idx] and idx not in (star_idx, keyword_star_idx):
-            if param.is_value() and (
-                param.default or (known and known[idx] == ast.types.Class.Flag.Included)
+            if layout.optional[idx] or (
+                param.is_value() and known and known[idx] == ast.types.Class.Flag.Included
             ):
-                score -= 2
-            elif param.name.startswith("$"):
                 score -= 2
             elif not partial and param.is_value():
                 _, missing_name = param.get_name_with_stars()
                 raise ReorderError(
                     ctx.info,
-                    f"{get_unmangled_name(ctx, fn.func_name)}() missing 1 required positional argument: "
+                    f"{get_unmangled_name(ctx, fn.func_name)}() missing 1 required "
+                    f"{'keyword-only' if param.kind is ast.Param.Kind.KeywordOnly else 'positional'} argument: "
                     f"'{get_unmangled_name(ctx, missing_name)}'",
                 )
     return score, (star_idx, keyword_star_idx, slots, partial)
     # done_score = on_done(star_idx, keyword_star_idx, slots, partial)
     # return score + done_score if done_score != -1 else -1
+
+
+def accepts_call_shape(ctx, fn, args):
+    """Reject impossible arities before allocating a speculative instantiation."""
+    if any(isinstance(arg.value, ast.EllipsisExpr) for arg in args):
+        return True
+    layout = fn.ast.call_layout
+    assert layout, "function call layout was not initialized"
+    positional = sum(not arg.name for arg in args)
+    if positional > layout.positional_limit and layout.star == -1:
+        return False
+    named_slots = []
+    for arg in args:
+        if not arg.name:
+            continue
+        slot = next((idx for name, idx in reversed(layout.keywords) if name == arg.name), -1)
+        if slot == -1:
+            if layout.kwstar == -1:
+                return False
+        else:
+            if slot < min(positional, layout.positional_limit):
+                return False
+            named_slots.append(slot)
+    return all(slot < positional or slot in named_slots for slot in layout.required_values)
 
 
 def is_canonical_name(name: str):

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+from sys import intern
 
 from ... import ast, cache
 from ...bridge import Dict, List, Set, contextmanager, dataclass
@@ -49,8 +50,8 @@ class Item:
         info: ast.Node.SrcInfo | None = None,
     ):
         self.canonical = canonical
-        self.base = base
-        self.module = module
+        self.base = intern(base)
+        self.module = intern(module)
         self.type = typ
         self.block_level = block_level
         self.time = time
@@ -135,6 +136,10 @@ class Base:
     # block, the corresponding loop variable is empty.
     loops: List[LoopData]
     pending_defaults: Dict[int, Set[ast.types.Type]]
+    infer_return_type: bool
+    return_statements: List[tuple[ast.ReturnStmt, bool]]
+    recursive_dependencies: Set[ast.types.Type]
+    NONE_ARGUMENT_DEFAULT_PRIORITY = -1
 
     def __init__(
         self,
@@ -150,7 +155,7 @@ class Base:
         loops: List[LoopData] | None = None,
         pending_defaults: Dict[int, Set[ast.types.Type]] | None = None,
     ):
-        self.name = name
+        self.name = intern(name)
         self.type = type
         self.return_type = return_type
         self.iteration = iteration
@@ -161,6 +166,9 @@ class Base:
         self.py_captures = py_captures
         self.loops = [] if loops is None else loops
         self.pending_defaults = {} if pending_defaults is None else pending_defaults
+        self.infer_return_type = False
+        self.return_statements = []
+        self.recursive_dependencies = set()
 
     @property
     def loop(self) -> LoopData | None:
@@ -174,6 +182,75 @@ class Base:
 @dataclass(init=False)
 class TypeContext:
     """Context class that tracks identifiers during the typechecking."""
+
+    _checkpoints = {}
+
+    class BindingCheckpoint:
+        """Journal bindings changed during a speculative realization."""
+
+        def __init__(self, ctx):
+            self.ctx = ctx
+            self.bindings = {}
+            self.saved = None
+            self.previous = TypeContext._checkpoints.get(id(ctx))
+            TypeContext._checkpoints[id(ctx)] = self
+
+        def prepare(self):
+            if self.saved is None:
+                self.saved = self.ctx.save_inference_state()
+
+        def rollback(self):
+            if self.saved is None:
+                return
+            for name, saved in self.bindings.items():
+                if saved is not None:
+                    self.ctx.map[name] = saved
+                elif (current := self.ctx.map.get(name)) and current[-1].is_global():
+                    self.ctx.map[name] = [current[-1]]
+                else:
+                    self.ctx.map.pop(name, None)
+            self.ctx.restore_inference_state(self.saved)
+
+        def close(self):
+            if self.previous:
+                TypeContext._checkpoints[id(self.ctx)] = self.previous
+            else:
+                TypeContext._checkpoints.pop(id(self.ctx), None)
+
+    def prepare_checkpoint(self):
+        checkpoint = self._checkpoints.get(id(self))
+        while checkpoint:
+            checkpoint.prepare()
+            checkpoint = checkpoint.previous
+
+    def record_binding(self, name):
+        checkpoint = self._checkpoints.get(id(self))
+        while checkpoint:
+            checkpoint.prepare()
+            if name not in checkpoint.bindings:
+                values = self.map.get(name)
+                checkpoint.bindings[name] = values.copy() if values is not None else None
+            checkpoint = checkpoint.previous
+
+    @contextmanager
+    def binding_checkpoint_group(self, contexts):
+        checkpoints = [self.BindingCheckpoint(ctx) for ctx in contexts]
+        previous_errors = copy.copy(getattr(self.cache, "errors", None))
+
+        class Group:
+            def rollback(group):
+                for checkpoint in checkpoints:
+                    checkpoint.rollback()
+                    checkpoint.close()
+                if previous_errors is not None:
+                    self.cache.errors = previous_errors
+
+        try:
+            self.prepare_checkpoint()
+            yield Group()
+        finally:
+            for checkpoint in reversed(checkpoints):
+                checkpoint.close()
 
     # The absolute path of the current module.
     filename: str = ""
@@ -196,7 +273,8 @@ class TypeContext:
     # Current base stack (the last enclosing base is the last base in the stack).
     bases: List[Base]
     # Current module. The default module is named `__main__`.
-    module: cache.Import.File
+    _module: cache.Import.File
+    _module_identifier: str
     # Set if the standard library is currently being loaded.
     is_stdlib_loading: bool = False
     # The current type-checking level (for type instantiation and generalization).
@@ -285,12 +363,29 @@ class TypeContext:
         result.bases = [copy.copy(base) for base in self.bases]
         for base in result.bases:
             base.loops = [copy.copy(loop) for loop in base.loops]
-            base.pending_defaults = {key: values.copy() for key, values in base.pending_defaults.items()}
+            base.pending_defaults = {
+                key: values.copy() for key, values in base.pending_defaults.items()
+            }
+            base.return_statements = base.return_statements.copy()
+            base.recursive_dependencies = base.recursive_dependencies.copy()
         return result
+
+    def save_inference_state(self):
+        bindings = self.map
+        self.map = {}
+        try:
+            return copy.copy(self)
+        finally:
+            self.map = bindings
+
+    def restore_inference_state(self, saved):
+        saved.map = self.map
+        self.__dict__.update(saved.__dict__)
 
     def add(self, name: str, variable: Item):
         """Add an object to the top of the stack."""
         assert name, "adding an empty identifier"
+        self.record_binding(name)
         self.map.setdefault(name, []).insert(0, variable)
         self.stack[0].append(name)
 
@@ -308,6 +403,7 @@ class TypeContext:
 
     def add_block(self):
         """Add a new block (i.e. adds a stack level)."""
+        self.prepare_checkpoint()
         self.stack.insert(0, [])
 
     def pop_block(self):
@@ -331,6 +427,7 @@ class TypeContext:
         values = self.map.get(name)
         if values is None:
             return
+        self.record_binding(name)
         assert values, f"identifier {name} not found in the map"
         values.pop(0)
         if not values:
@@ -366,6 +463,7 @@ class TypeContext:
 
     def add_toplevel(self, name: str, item: Item):
         """Convenience method for adding an object to the context."""
+        self.record_binding(name)
         self.map.setdefault(name, []).insert(0, item)
         return item
 
@@ -448,10 +546,17 @@ class TypeContext:
 
     @property
     def module_name(self) -> str:
-        name = "std." if self.module.status is cache.Import.File.Status.StdLibrary else ""
-        name += self.module.module
-        name = name.removeprefix("__main__")
-        return name
+        return self._module_identifier
+
+    @property
+    def module(self):
+        return self._module
+
+    @module.setter
+    def module(self, module):
+        self._module = module
+        prefix = "std." if module.status is cache.Import.File.Status.StdLibrary else ""
+        self._module_identifier = intern((prefix + module.module).removeprefix("__main__"))
 
     @property
     def module_path(self) -> str:

@@ -1,12 +1,12 @@
 # PEG grammar for Codon
-# Generate: python -m pegen meister/converted/parser/codon.gram -o meister/converted/parser/parser.py
+# Generate: python -m pegen meister/parser/codon.gram -o meister/parser/parser.py
 
 @class CodonParser
 
 @header"""
 import itertools
 
-from ...bridge import *
+from ..bridge import *
 from ..ast import nodes as ast
 from .pegen import *
 """
@@ -259,18 +259,18 @@ function_def[ast.FunctionStmt]:
 function_def_raw[ast.FunctionStmt]:
     | invalid_def_raw
     | 'def' n=NAME t=[type_params] &&'(' params=[params] ')' a=['->' z=expression { z }] &&':' b=block {
-        ast.FunctionStmt(
+        self.make_function(
             name=n.string,
-            items=(params or self.make_arguments(LOCATIONS)) + (t or []),
+            params=params or [], generics=t or [],
             ret=a,
             suite=b,
             LOCATIONS,
         )
     }
     | 'async' 'def' n=NAME t=[type_params] &&'(' params=[params] ')' a=['->' z=expression { z }] &&':' b=block {
-        ast.FunctionStmt(
+        self.make_function(
             name=n.string,
-            items=(params or self.make_arguments(LOCATIONS)) + (t or []),
+            params=params or [], generics=t or [],
             ret=a,
             suite=b,
             async_=True,
@@ -283,9 +283,9 @@ decorator_not_extern[ast.Expr]:
 function_def_extern[ast.FunctionStmt]:
     | invalid_def_raw
     | 'def' n=NAME t=[type_params] &&'(' params=[params] ')' a=['->' z=expression { z }] &&':' b=llvm_block {
-        ast.FunctionStmt(
+        self.make_function(
             name=n.string,
-            items=(params or self.make_arguments(LOCATIONS)) + (t or []),
+            params=params or [], generics=t or [],
             ret=a,
             suite=self.suite([
                 ast.ExprStmt(
@@ -510,7 +510,12 @@ subject_expr[ast.Expr]:
 
 case_block[ast.MatchStmt.Case]:
     | invalid_case_block
-    | "case" pattern=expression guard=guard? ':' body=block { ast.MatchStmt.Case(pattern=pattern, guard=guard, suite=body, LOCATIONS) }
+    | "case" pattern=match_pattern guard=guard? ':' body=block { ast.MatchStmt.Case(pattern=pattern, guard=guard, suite=body, LOCATIONS) }
+
+match_pattern[ast.Expr]:
+    | value=expression alias=['as' name=NAME { name.string }] {
+        ast.AssignExpr(ast.IdExpr(alias, LOCATIONS), value, LOCATIONS) if alias else value
+    }
 
 guard[ast.Expr]: 'if' g=pipe { g }
 
@@ -524,12 +529,7 @@ pattern[ast.Expr]:
 
 as_pattern[ast.Expr]:
     | pattern=or_pattern 'as' target=pattern_capture_target {
-        ast.BinaryExpr(
-            lexpr=pattern,
-            op="as",
-            rexpr=ast.IdExpr(value=target, LOCATIONS),
-            LOCATIONS,
-        )
+        ast.AssignExpr(ast.IdExpr(target, LOCATIONS), pattern, LOCATIONS)
     }
     | invalid_as_pattern
 
@@ -975,10 +975,9 @@ fstring_mid[ast.StringExpr.String]:
 fstring_replacement_field[ast.StringExpr.String]:
     | left='{' a=(yield_expr | star_expressions) debug_expr="="? conversion=[fstring_conversion] format=[fstring_full_format_spec] '}' {
         ast.StringExpr.String(
-            value=self.source_between(left.end, debug_expr.end) if debug_expr else "",
+            value=self.debug_field_text(left, debug_expr) if debug_expr else "",
             expr=a,
             format=ast.StringExpr.FormatSpec(
-                # conversion=(conversion or ("r" if debug_expr else "")),
                 conversion=conversion or "",
                 spec=format or "",
             ),
@@ -991,8 +990,8 @@ fstring_conversion[str]:
     | conv_token="!" conv=NAME { self.check_fstring_conversion(conv_token, conv) }
 fstring_full_format_spec[str]:
     | ':' spec=fstring_format_char* { ''.join(spec) }
-# TODO: this is a hack, should be fstring_format_spec (fix after porting)
 fstring_format_char[str]:
+    | field=fstring_replacement_field { self.field_source(field) }
     | !'}' a=ANY_BUT_NEWLINE { a.string }
 fstring[ast.StringExpr]:
     | a=FSTRING_START b=fstring_mid* c=FSTRING_END { self.make_fstring(a, b, LOCATIONS) }

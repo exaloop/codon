@@ -54,13 +54,15 @@ class Comprehension:
     is_async: bool = False
 
 
-def unescape(string):
+def unescape(string, utf8=True):
     # C++ implementation: codon/parser/common.cpp:182
     # TODO: merge
     string = string.encode("utf-8")
     result = bytearray()
     i = 0
     while i < len(string):
+        if not utf8 and string[i] >= 0x80:
+            raise ValueError("bytes can only contain ASCII literal characters")
         if string[i] == ord("\\") and i + 1 < len(string):
             if string[i + 1] == ord("a"):
                 result.append(ord("\a"))
@@ -102,15 +104,33 @@ def unescape(string):
                 if pos == 0:
                     raise ValueError("invalid \\x code")
                 code = int(digits[:pos], 16)
-                result.append(code & 0xFF)
+                if utf8:
+                    result.extend(chr(code).encode("utf-8", errors="surrogatepass"))
+                else:
+                    result.append(code & 0xFF)
                 i += pos + 1
+            elif string[i + 1] in (ord("u"), ord("U")) and utf8:
+                count = 4 if string[i + 1] == ord("u") else 8
+                if i + count + 2 > len(string):
+                    raise ValueError("truncated Unicode escape")
+                digits = string[i + 2 : i + count + 2]
+                if any(c not in b"0123456789abcdefABCDEF" for c in digits):
+                    raise ValueError("invalid Unicode escape")
+                code = int(digits, 16)
+                if code > 0x10FFFF:
+                    raise ValueError("Unicode escape out of range")
+                result.extend(chr(code).encode("utf-8", errors="surrogatepass"))
+                i += count + 1
             elif ord("0") <= string[i + 1] <= ord("7"):
                 digits = string[i + 1 : i + 4].decode("ascii")
                 pos = 0
                 while pos < len(digits) and "0" <= digits[pos] <= "7":
                     pos += 1
                 code = int(digits[:pos], 8)
-                result.append(code & 0xFF)
+                if utf8:
+                    result.extend(chr(code).encode("utf-8", errors="surrogatepass"))
+                else:
+                    result.append(code & 0xFF)
                 i += pos
             else:
                 result.append(string[i])
@@ -1094,7 +1114,22 @@ class Parser(BaseParser):
             for part in parts:
                 if part.expr is None:
                     part.value = unescape(part.value)
+        for part in parts:
+            if part.expr and part.value and not part.format.conversion and not part.format.spec:
+                part.format.conversion = "r"
         return ast.StringExpr(parts, **locations)
+
+    def field_source(self, field):
+        return self.source_between(
+            (field.info.line, field.info.col - 1), (field.info.end_line, field.info.end_col - 1)
+        )
+
+    def debug_field_text(self, left, debug):
+        text = self.source_between(left.end, debug.end)
+        suffix = self.source_between(
+            debug.end, self._tokenizer.get_last_non_whitespace_token().start
+        )
+        return text + suffix[: len(suffix) - len(suffix.lstrip(" \t"))]
 
     def check_fstring_conversion(self, mark: tokenize.TokenInfo, name: tokenize.TokenInfo) -> str:
         if mark.end != name.start:
@@ -1116,11 +1151,13 @@ class Parser(BaseParser):
             value = value[3:-3]
         elif len(value) >= 2 and value[0] == value[-1]:
             value = value[1:-1]
-        raw = prefix.lower() == "r"
-        if raw:
-            prefix = ""
+        lower = prefix.lower()
+        if lower in {"rf", "fr"}:
+            prefix = "f"
+        elif lower in {"r", "rb", "br"}:
+            prefix = "" if lower == "r" else "b"
         else:
-            value = unescape(value)
+            value = unescape(value, utf8=lower != "b")
         return ast.StringExpr(value, prefix=prefix, **kwargs)
 
     def generate_ast_for_string(self, tokens, **locations) -> Optional[ast.Expr]:
@@ -1161,6 +1198,12 @@ class Parser(BaseParser):
     def get_comparators(self, pairs):
         return [comp for _, comp in pairs]
 
+    def make_function(self, name, params, generics, **locations):
+        fn = ast.FunctionStmt(name, items=params, **locations)
+        for generic in generics:
+            fn.add_param(generic)
+        return fn
+
     def make_arguments(
         self,
         pos_only=None,  #: Optional[List[Tuple[ast.Param, None]]],
@@ -1179,6 +1222,8 @@ class Parser(BaseParser):
             for param, default in pos_only_with_default:
                 param.default = default
                 params.append(param)
+        for param in params:
+            param.kind = ast.Param.Kind.PositionalOnly
         if param_no_default is not None:
             params.extend(param_no_default)
         if param_default is not None:

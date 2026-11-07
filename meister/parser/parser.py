@@ -1331,18 +1331,10 @@ class CodonParser(Parser):
             b = Codon.unwrap(b)
             tok = self._tokenizer.get_last_non_whitespace_token()
             end_lineno, end_col_offset = tok.end
-            return ast.FunctionStmt(
+            return self.make_function(
                 name=n.string,
-                items=(
-                    params
-                    or self.make_arguments(
-                        lineno=start_lineno,
-                        col_offset=start_col_offset,
-                        end_lineno=end_lineno,
-                        end_col_offset=end_col_offset,
-                    )
-                )
-                + (t or []),
+                params=params or [],
+                generics=t or [],
                 ret=a,
                 suite=b,
                 lineno=start_lineno,
@@ -1372,18 +1364,10 @@ class CodonParser(Parser):
             b = Codon.unwrap(b)
             tok = self._tokenizer.get_last_non_whitespace_token()
             end_lineno, end_col_offset = tok.end
-            return ast.FunctionStmt(
+            return self.make_function(
                 name=n.string,
-                items=(
-                    params
-                    or self.make_arguments(
-                        lineno=start_lineno,
-                        col_offset=start_col_offset,
-                        end_lineno=end_lineno,
-                        end_col_offset=end_col_offset,
-                    )
-                )
-                + (t or []),
+                params=params or [],
+                generics=t or [],
                 ret=a,
                 suite=b,
                 async_=True,
@@ -1437,18 +1421,10 @@ class CodonParser(Parser):
             b = Codon.unwrap(b)
             tok = self._tokenizer.get_last_non_whitespace_token()
             end_lineno, end_col_offset = tok.end
-            return ast.FunctionStmt(
+            return self.make_function(
                 name=n.string,
-                items=(
-                    params
-                    or self.make_arguments(
-                        lineno=start_lineno,
-                        col_offset=start_col_offset,
-                        end_lineno=end_lineno,
-                        end_col_offset=end_col_offset,
-                    )
-                )
-                + (t or []),
+                params=params or [],
+                generics=t or [],
                 ret=a,
                 suite=self.suite(
                     [
@@ -2672,7 +2648,7 @@ class CodonParser(Parser):
         self._reset(mark)
         if (
             (self.expect_literal("case"))
-            and (pattern := self.expression())
+            and (pattern := self.match_pattern())
             and (guard := self.guard(),)
             and (self.expect_literal(":"))
             and (body := self.block())
@@ -2694,6 +2670,21 @@ class CodonParser(Parser):
         pattern = None
         guard = None
         body = None
+        return None
+
+    def match_pattern(self) -> Optional[ast.Expr]:
+        # match_pattern: expression ['as' NAME]
+        mark = self._mark()
+        if value := self.expression():
+            if self.expect_literal("as"):
+                if name := self.name():
+                    return ast.AssignExpr(
+                        ast.IdExpr(name.string, info=value.info), value, info=value.info
+                    )
+                self._reset(mark)
+                return None
+            return value
+        self._reset(mark)
         return None
 
     def guard(self) -> Optional[ast.Expr]:
@@ -2760,16 +2751,15 @@ class CodonParser(Parser):
             target = Codon.unwrap(target)
             tok = self._tokenizer.get_last_non_whitespace_token()
             end_lineno, end_col_offset = tok.end
-            return ast.BinaryExpr(
-                lexpr=pattern,
-                op="as",
-                rexpr=ast.IdExpr(
+            return ast.AssignExpr(
+                var=ast.IdExpr(
                     value=target,
                     lineno=start_lineno,
                     col_offset=start_col_offset,
                     end_lineno=end_lineno,
                     end_col_offset=end_col_offset,
                 ),
+                expr=pattern,
                 lineno=start_lineno,
                 col_offset=start_col_offset,
                 end_lineno=end_lineno,
@@ -5430,7 +5420,7 @@ class CodonParser(Parser):
             tok = self._tokenizer.get_last_non_whitespace_token()
             end_lineno, end_col_offset = tok.end
             return ast.StringExpr.String(
-                value=self.source_between(left.end, debug_expr.end) if debug_expr else "",
+                value=self.debug_field_text(left, debug_expr) if debug_expr else "",
                 expr=a,
                 format=ast.StringExpr.FormatSpec(
                     conversion=conversion or "",
@@ -5477,6 +5467,9 @@ class CodonParser(Parser):
     def fstring_format_char(self) -> Optional[str]:
         # fstring_format_char: !'}' ANY_BUT_NEWLINE
         mark = self._mark()
+        if field := self.fstring_replacement_field():
+            return self.field_source(field)
+        self._reset(mark)
         if (self.negative_lookahead(self.expect_literal, "}")) and (a := self.any_but_newline()):
             a = Codon.unwrap(a)
             return a.string
@@ -6824,11 +6817,7 @@ class CodonParser(Parser):
             return a
         self._reset(mark)
         a = None
-        if (
-            (self.expect_literal("("))
-            and (a := self.del_targets(),)
-            and (self.expect_literal(")"))
-        ):
+        if (self.expect_literal("(")) and (a := self.del_targets(),) and (self.expect_literal(")")):
             tok = self._tokenizer.get_last_non_whitespace_token()
             end_lineno, end_col_offset = tok.end
             return ast.TupleExpr(
@@ -6840,11 +6829,7 @@ class CodonParser(Parser):
             )
         self._reset(mark)
         a = None
-        if (
-            (self.expect_literal("["))
-            and (a := self.del_targets(),)
-            and (self.expect_literal("]"))
-        ):
+        if (self.expect_literal("[")) and (a := self.del_targets(),) and (self.expect_literal("]")):
             tok = self._tokenizer.get_last_non_whitespace_token()
             end_lineno, end_col_offset = tok.end
             return ast.ListExpr(
@@ -7376,9 +7361,7 @@ class CodonParser(Parser):
         mark = self._mark()
         if (a := self.expect_literal("/")) and (self.expect_literal(",")):
             a = Codon.unwrap(a)
-            return self.raise_syntax_error_known_location(
-                "at least one argument must precede /", a
-            )
+            return self.raise_syntax_error_known_location("at least one argument must precede /", a)
         self._reset(mark)
         a = None
         if (self._tmp_182()) and (self._loop0_183(),) and (a := self.expect_literal("/")):
@@ -7539,9 +7522,7 @@ class CodonParser(Parser):
         mark = self._mark()
         if (a := self.expect_literal("/")) and (self.expect_literal(",")):
             a = Codon.unwrap(a)
-            return self.raise_syntax_error_known_location(
-                "at least one argument must precede /", a
-            )
+            return self.raise_syntax_error_known_location("at least one argument must precede /", a)
         self._reset(mark)
         a = None
         if (self._tmp_199()) and (self._loop0_200(),) and (a := self.expect_literal("/")):
@@ -7617,11 +7598,7 @@ class CodonParser(Parser):
         if (self.expect_literal("*")) and (self._tmp_211()):
             return self.raise_syntax_error("named arguments must follow bare *")
         self._reset(mark)
-        if (
-            (self.expect_literal("*"))
-            and (self.lambda_param())
-            and (a := self.expect_literal("="))
-        ):
+        if (self.expect_literal("*")) and (self.lambda_param()) and (a := self.expect_literal("=")):
             a = Codon.unwrap(a)
             return self.raise_syntax_error_known_location(
                 "var-positional argument cannot have default value", a
@@ -8500,9 +8477,7 @@ class CodonParser(Parser):
             and (self._loop0_259(),)
             and (self.negative_lookahead(self.expect_literal, "}"))
         ):
-            return self.raise_syntax_error_on_next_token(
-                "f-string: expecting '}', or format specs"
-            )
+            return self.raise_syntax_error_on_next_token("f-string: expecting '}', or format specs")
         self._reset(mark)
         if (
             (self.expect_literal("{"))
@@ -9709,9 +9684,7 @@ class CodonParser(Parser):
     def _gather_93(self) -> Optional:
         # _gather_93: key_value_pattern _loop0_94
         mark = self._mark()
-        if (elem := self.key_value_pattern()) is not None and (
-            seq := self._loop0_94()
-        ) is not None:
+        if (elem := self.key_value_pattern()) is not None and (seq := self._loop0_94()) is not None:
             elem = Codon.unwrap(elem)
             seq = Codon.unwrap(seq)
             return [elem] + seq
@@ -10408,9 +10381,7 @@ class CodonParser(Parser):
     def _gather_146(self) -> Optional:
         # _gather_146: kwarg_or_starred _loop0_147
         mark = self._mark()
-        if (elem := self.kwarg_or_starred()) is not None and (
-            seq := self._loop0_147()
-        ) is not None:
+        if (elem := self.kwarg_or_starred()) is not None and (seq := self._loop0_147()) is not None:
             elem = Codon.unwrap(elem)
             seq = Codon.unwrap(seq)
             return [elem] + seq
@@ -10460,9 +10431,7 @@ class CodonParser(Parser):
     def _gather_150(self) -> Optional:
         # _gather_150: kwarg_or_starred _loop0_151
         mark = self._mark()
-        if (elem := self.kwarg_or_starred()) is not None and (
-            seq := self._loop0_151()
-        ) is not None:
+        if (elem := self.kwarg_or_starred()) is not None and (seq := self._loop0_151()) is not None:
             elem = Codon.unwrap(elem)
             seq = Codon.unwrap(seq)
             return [elem] + seq

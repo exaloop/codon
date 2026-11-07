@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 from contextlib import contextmanager
 from contextvars import ContextVar
+from sys import intern
 from typing import TYPE_CHECKING
 
 from ..bridge import CODON, Any, Codon, Dict, Enum, Iterator, List, Set, Tuple, cast, dataclass
@@ -69,8 +70,10 @@ class Attr(Enum):
     ExprTime = 250
     ExprDoNotRealize = 251
     ExprNoSpecial = 252
-    TryPyVar = 253
-    LocalRenames = 254
+    ExprVirtual = 253
+    TryPyVar = 254
+    LocalRenames = 255
+    MaybeLiteral = 256
 
 
 class Node:
@@ -88,13 +91,22 @@ class Node:
         finally:
             Node._creation_context.reset(token)
 
-    @dataclass
+    @dataclass(init=False)
     class SrcInfo:
-        file: str = ""
-        line: int = 0
-        col: int = 0
-        end_line: int = 0
-        end_col: int = 0
+        file: str
+        line: int
+        col: int
+        end_line: int
+        end_col: int
+
+        def __init__(
+            self, file: str = "", line: int = 0, col: int = 0, end_line: int = 0, end_col: int = 0
+        ):
+            self.file = intern(file)
+            self.line = line
+            self.col = col
+            self.end_line = end_line
+            self.end_col = end_col
 
     class Attribute:
         pass
@@ -192,6 +204,11 @@ class Node:
                 setattr(result, key, False if clean else value)
             elif key in ("cache", "orig"):
                 setattr(result, key, value)
+            elif isinstance(self, FunctionStmt) and key in (
+                "call_layout",
+                "non_inferrable_generics",
+            ):
+                setattr(result, key, None)
             else:
                 setattr(result, key, copy.deepcopy(value, memo))
         return result
@@ -286,10 +303,16 @@ class Param(Node):
         Generic = 1
         HiddenGeneric = 2
 
+    class Kind(Enum):
+        Normal = 0
+        PositionalOnly = 1
+        KeywordOnly = 2
+
     name: str = ""
     type: Expr | None = None
     default: Expr | None = None
     status: Param.Status = Status.Value
+    kind: Param.Kind = Kind.Normal
 
     def __init__(
         self,
@@ -297,6 +320,7 @@ class Param(Node):
         type: Expr | None = None,
         default: Expr | None = None,
         status: Param.Status = Status.Value,
+        kind: Param.Kind = Kind.Normal,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -305,6 +329,7 @@ class Param(Node):
         self.type = type
         self.default = default
         self.status = status
+        self.kind = kind
 
         if self.status is Param.Status.Value:
             match self.type:
@@ -501,7 +526,7 @@ class StringExpr(Expr):
 
     @property
     def is_simple(self):
-        return len(self.strings) == 1 and not self.strings[0].prefix
+        return len(self.strings) == 1 and self.strings[0].prefix in {"", "b"}
 
     def get_value(self) -> str:
         assert self.is_simple, "invalid StringExpr"
@@ -834,7 +859,7 @@ class LambdaExpr(Expr, ItemIterator):
     def __init__(self, expr: Expr, items: List[Param] | None = None, **kwargs):
         super().__init__(**kwargs)
         self.expr = expr
-        self.items = [] if items is None else items
+        self.items = FunctionStmt.parse_params(items or [])
 
 
 # Yield (send to generator) expression
@@ -1326,13 +1351,34 @@ class GlobalStmt(Stmt):
 
 @dataclass(init=False)
 class FunctionStmt(Stmt, ItemIterator):
+    @dataclass(init=False)
+    class CallLayout:
+        """Argument structure computed once for the normalized declaration."""
+
+        positional_limit: int
+        star: int
+        kwstar: int
+        variadic_penalty: int
+        keywords: List[Tuple[str, int]]
+        required_values: List[int]
+        optional: List[bool]
+
+        def __init__(self):
+            self.positional_limit = 0
+            self.star = self.kwstar = -1
+            self.variadic_penalty = 0
+            self.keywords = []
+            self.required_values = []
+            self.optional = []
+
     name: str = ""
     ret: Expr | None = None
     items: List[Param]
     suite: SuiteStmt
     decorators: List[Expr]
     async_: bool = False
-    signature: str = ""
+    non_inferrable_generics: Set[str] | None
+    call_layout: FunctionStmt.CallLayout | None
 
     def __init__(
         self,
@@ -1342,18 +1388,56 @@ class FunctionStmt(Stmt, ItemIterator):
         suite: Stmt | None = None,
         decorators: List[Expr] | None = None,
         async_: bool = False,
-        signature: str = "",
         **kwargs,
     ):
         super().__init__(**kwargs)
-        self.items = [] if items is None else items
+        self.items = self.parse_params(items or [])
         self.name = name
         self.ret = ret
         self.suite = SuiteStmt.wrap(suite)
         self.decorators = [] if decorators is None else decorators
         self.async_ = async_
-        self.signature = signature
+        self.non_inferrable_generics = None
+        self.call_layout = None
         self.validate()
+
+    @staticmethod
+    def parse_params(args):
+        """Consume parameter separators, sharing validation with lambda constructors."""
+        params = []
+        slash = star = bare_star = keyword = False
+        star_info = None
+        for param in args:
+            if param.name == "/":
+                if slash or star or not params:
+                    raise NodeError(param, "'/' must follow positional parameters and precede '*'")
+                for previous in params:
+                    previous.kind = Param.Kind.PositionalOnly
+                slash = True
+            elif param.name == "*":
+                if star:
+                    raise NodeError(param, "'*' may appear only once")
+                star = bare_star = True
+                star_info = param.info
+            else:
+                stars, _ = param.get_name_with_stars()
+                if stars:
+                    if bare_star and stars == 1:
+                        raise NodeError(param, "'*' may appear only once")
+                    star = True
+                elif star:
+                    param.kind = Param.Kind.KeywordOnly
+                    keyword = True
+                params.append(param)
+        if bare_star and not keyword:
+            raise NodeError(star_info, "named arguments must follow bare '*'")
+        return params
+
+    def add_param(self, param):
+        assert self.call_layout is None, "cannot add a parameter to a finalized function"
+        self.items.append(param)
+        if self.non_inferrable_generics is not None:
+            self.non_inferrable_generics.clear()
 
     def validate(self):
         decorators = []
@@ -1407,19 +1491,17 @@ class FunctionStmt(Stmt, ItemIterator):
             if name in seen:
                 raise NodeError(arg, f"duplicate argument '{name}' in function definition")
             seen.add(name)
-            if arg.default is None and defaults_started and not stars and arg.is_value():
+            if (
+                arg.default is None
+                and defaults_started
+                and not stars
+                and arg.is_value()
+                and arg.kind is not Param.Kind.KeywordOnly
+            ):
                 raise NodeError(arg, "star arguments cannot have default values")
             defaults_started = defaults_started or arg.default is not None
             if self.has(Attr.C) and (arg.default or (stars != 1 and arg.type is None)):
                 raise NodeError(arg, f"argument '{name}' in a C import requires a type annotation")
-
-    def get_signature(self):
-        """A function signature that consists of generics and arguments in a S-expression form."""
-        if not self.signature:
-            self.signature = ":".join(
-                "-" if p.type is None else _expression_string(p.type) for p in self.items
-            )
-        return self.signature
 
     def get_star_arg(self) -> int:
         return next(
@@ -1443,6 +1525,9 @@ class FunctionStmt(Stmt, ItemIterator):
     # Check if a function can be called with the given arguments.
     # See @c reorderNamedArgs for details.
     def get_non_inferrable_generics(self) -> Set[str]:
+        if self.non_inferrable_generics is not None:
+            return self.non_inferrable_generics
+
         class IdMatch(NodeVisitor):
             def __init__(self, value):
                 self.value = value
@@ -1461,7 +1546,7 @@ class FunctionStmt(Stmt, ItemIterator):
             v.visit(expr)
             return v.found
 
-        result: Set[str] = set()
+        result = set()
         for i in self.items:
             if i.is_generic() and i.default is None:
                 inferrable = False
@@ -1473,6 +1558,7 @@ class FunctionStmt(Stmt, ItemIterator):
                     inferrable = True
                 if not inferrable:
                     result.add(i.name)
+        self.non_inferrable_generics = result
         return result
 
     def has_function_attr(self, attribute: str):
@@ -1745,77 +1831,6 @@ def get_docstring(suite) -> str:
             return ""
 
 
-def _expression_string(node: Expr) -> str:
-    """Format an expression like C++ Expr::toString(), for function signatures."""
-    # TODO: really remove this thing
-
-    def wrap(body):
-        if node.done:
-            body = "*" + body
-        if node.type and not node.done:
-            typ = node.type.to_string(2).replace("\\", "\\\\").replace('"', '\\"')
-            body += f' #:type "{typ}"'
-        return f"({body})"
-
-    def combine(items):
-        return " ".join(_expression_string(item) for item in items if item)
-
-    match node:
-        case IdExpr(value=value):
-            return f"'{value}" if not node.type else wrap(f"'{value}")
-        case NoneExpr():
-            return wrap("none")
-        case BoolExpr(value=value):
-            return wrap(f"bool {int(value)}")
-        case IntExpr(value=value, suffix=suffix):
-            suffix = "" if not suffix else f' #:suffix "{suffix}"'
-            return wrap(f"int {value}{suffix}")
-        case FloatExpr(value=value, suffix=suffix):
-            suffix = "" if not suffix else f' #:suffix "{suffix}"'
-            return wrap(f"float {value}{suffix}")
-        case StarExpr(expr=expr):
-            return wrap(f"star {_expression_string(expr)}")
-        case KeywordStarExpr(expr=expr):
-            return wrap(f"kwstar {_expression_string(expr)}")
-        case TupleExpr(items=items):
-            return wrap(f"tuple {combine(items)}")
-        case ListExpr(items=items):
-            return wrap("list" + (f" {combine(items)}" if items else ""))
-        case SetExpr(items=items):
-            return wrap("set" + (f" {combine(items)}" if items else ""))
-        case DictExpr(items=items):
-            return wrap("dict" + (f" {combine(items)}" if items else ""))
-        case IfExpr(cond=cond, ifexpr=ifexpr, elsexpr=elsexpr):
-            return wrap(
-                f"if-expr {_expression_string(cond)} {_expression_string(ifexpr)} "
-                f"{_expression_string(elsexpr)}"
-            )
-        case UnaryExpr(op=op, expr=expr):
-            return wrap(f'unary "{op}" {_expression_string(expr)}')
-        case BinaryExpr(lexpr=left, op=op, rexpr=right, in_place=in_place):
-            suffix = " #:in-place" if in_place else ""
-            return wrap(
-                f'binary "{op}" {_expression_string(left)} {_expression_string(right)}{suffix}'
-            )
-        case IndexExpr(expr=expr, index=index):
-            return wrap(f"index {_expression_string(expr)} {_expression_string(index)}")
-        case DotExpr(expr=expr, member=member):
-            return wrap(f"dot {_expression_string(expr)} '{member}")
-        case SliceExpr(start=start, stop=stop, step=step):
-            values = ""
-            if start:
-                values += f" #:start {_expression_string(start)}"
-            if stop:
-                values += f" #:end {_expression_string(stop)}"
-            if step:
-                values += f" #:step {_expression_string(step)}"
-            return wrap("slice" + values)
-        case InstantiateExpr(expr=expr, items=items):
-            return wrap(f"instantiate {_expression_string(expr)} {combine(items)}")
-        case _:
-            return str(node)
-
-
 def _quote_dump_string(value):
     use_double = "'" in value and '"' not in value
     delimiter = '"' if use_double else "'"
@@ -1842,31 +1857,6 @@ def _quote_dump_string(value):
         else:
             result += char
     return result + delimiter
-
-
-def _format_dump_float(value):
-    value_repr = repr(value)
-    if "e" not in value_repr and "E" not in value_repr:
-        return value_repr
-
-    mantissa, exponent_text = value_repr.lower().split("e")
-    exponent = int(exponent_text)
-    negative = mantissa.startswith("-")
-    digits = mantissa.removeprefix("-").replace(".", "")
-    decimal_pos = exponent + 1
-    sign = "-" if negative else ""
-    if decimal_pos <= 0:
-        fixed = sign + "0." + "0" * -decimal_pos + digits
-    elif decimal_pos >= len(digits):
-        fixed = sign + digits + "0" * (decimal_pos - len(digits))
-    else:
-        fixed = sign + digits[:decimal_pos] + "." + digits[decimal_pos:]
-
-    # std::to_chars first chooses the shortest round-tripping representation;
-    # the C++ dumper then expands scientific notation in Python's [-4, 16) range.
-    if -4 <= exponent < 16 or len(fixed) <= len(value_repr):
-        return fixed + (".0" if "." not in fixed else "")
-    return value_repr
 
 
 def dump(
@@ -1969,7 +1959,9 @@ def dump(
             args = []
             allsimple = True
             for name, value in Codon.any_members(node):  # type: ignore
-                if name in ["attributes", "info", "done"]:
+                if name in ["attributes", "info", "done", "non_inferrable_generics", "call_layout"]:
+                    continue
+                if isinstance(node, Param) and name == "kind":
                     continue
                 if not types and name in ["type", "expected_type", "orig"]:
                     continue
@@ -2001,7 +1993,7 @@ def dump(
         if isinstance(node, str):
             return (_quote_dump_string(node) if node else ""), True
         if isinstance(node, float):
-            return _format_dump_float(node), True
+            return f"{node!r}", True
         if isinstance(node, int):
             return f"{node}", True
         if isinstance(node, bool):
@@ -2047,6 +2039,8 @@ def iter_fields(node: Node) -> Iterator[Tuple[str, Any]]:
     """
 
     for name, value in Codon.any_members(node):  # type: ignore
+        if name in {"non_inferrable_generics", "call_layout"}:
+            continue
         n = value
         if isinstance(n, Node) or Any.is_tuple(n) or Any.is_list(n) or Any.is_optional(n):  # type: ignore
             yield name, n  # type: ignore

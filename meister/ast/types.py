@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from sys import intern
 from typing import TYPE_CHECKING
 
 from ..bridge import Callable, Dict, Enum, List, abstractmethod, cast, dataclass
@@ -60,13 +61,13 @@ class Stdlib:
     Complex = mangle(cls="complex", module="std.internal.types.complex")
     Complex64 = mangle(cls="complex64", module="std.internal.types.complex")
     Coroutine = mangle(cls="Coroutine")
-    Dict = mangle(cls="Dict", module="std.internal.types.array")
+    Dict = mangle(var="Dict")
     Float = mangle(cls="float")
     Float16 = mangle(cls="float16")
     Function = mangle(cls="Function")
     Generator = mangle(cls="Generator")
     Int = mangle(cls="Int")
-    List = mangle(cls="List", module="std.internal.types.array")
+    List = mangle(cls="List", module="std.internal.types.collections.list")
     NamedTuple = mangle(cls="NamedTuple")
     NDArray = mangle(cls="ndarray", module="std.numpy.ndarray")
     NoneType = mangle(cls="NoneType")
@@ -90,6 +91,7 @@ class Stdlib:
     TypeTrait = "TypeTrait"
 
     Argv = mangle(var="__argv__")
+    Argc = mangle(var="__argc__")
     OptionalUnwrap = mangle(func="unwrap", module="std.internal.types.optional")
 
 
@@ -110,7 +112,7 @@ class Type:
 
         @staticmethod
         def literal_from_string(value: str) -> Type.Behaviour:
-            if value == "int":
+            if value in {"int", "Int"}:
                 return Type.Behaviour.Int
             if value == "str":
                 return Type.Behaviour.String
@@ -275,7 +277,7 @@ class Type:
     def cls(self) -> Class | None:
         t = self.follow()
         if isinstance(t, Class):
-            return cast(Class, t)
+            return t.canonical_optional() or t
         return None
 
     @property
@@ -475,26 +477,34 @@ class Link(Type):
     # Checks if a current (unbound) type occurs within a given type.
     # Needed to prevent a recursive unification (e.g. ?1 with list[?1]).
     def occurs(self, what: Type, undo: Type.UnifyContext | None):
-        match what:
-            case Link(kind=Link.Kind.Unbound, id=self.id):
-                return True
-            case Link(kind=Link.Kind.Unbound, trait=trait) if trait and self.occurs(trait, undo):
-                return True
-            case Link(kind=Link.Kind.Unbound, level=level):
-                if level > self.level:
-                    if undo:
-                        undo.leveled.append((what, what.level))
-                    what.level = self.level
+        visited = set()
+
+        def check(typ):
+            if id(typ) in visited:
                 return False
-            case Link(kind=Link.Kind.Link):
-                assert what.type, "type is None"
-                return self.occurs(what.type, undo)
-            case Literal():
-                return False
-            case Class(generics=generics):
-                return any(g.type and self.occurs(g.type, undo) for g in generics)
-            case _:
-                return False
+            visited.add(id(typ))
+            match typ:
+                case Link(kind=Link.Kind.Unbound, id=uid) if uid == self.id:
+                    return True
+                case Link(kind=Link.Kind.Unbound, trait=trait) if trait and check(trait):
+                    return True
+                case Link(kind=Link.Kind.Unbound, level=level):
+                    if level > self.level:
+                        if undo:
+                            undo.leveled.append((what, level))
+                        typ.level = self.level
+                    return False
+                case Link(kind=Link.Kind.Link, type=type):
+                    assert type, "type is None"
+                    return check(type)
+                case Literal():
+                    return False
+                case Class(generics=generics):
+                    return any(g.type and check(g.type) for g in generics)
+                case _:
+                    return False
+
+        return check(what)
 
     def unify(self, what: Type, undo: Type.UnifyContext | None = None) -> int:
         if self.kind is Link.Kind.Link and self.type:
@@ -652,12 +662,18 @@ class Link(Type):
             return link.static_kind
 
 
-@dataclass
+@dataclass(init=False)
 class Generic:
     name: str
     type: Type
     id: int = 0
     static_kind: Type.Behaviour = Type.Behaviour.Runtime
+
+    def __init__(self, name: str, type: Type, id=0, static_kind=Type.Behaviour.Runtime):
+        self.name = intern(name)
+        self.type = type
+        self.id = id
+        self.static_kind = static_kind
 
     def generalize(self, level: int):
         if self.static_kind is Type.Behaviour.Runtime and isinstance(self.type, Literal):
@@ -708,6 +724,7 @@ class Class(Type):
     hidden_generics: List[Generic]
     is_tuple: bool = False
     _cached_name: str = ""
+    immutable: bool = False
 
     def __init__(
         self,
@@ -716,6 +733,7 @@ class Class(Type):
         hidden_generics: List[Generic] | None = None,
         is_tuple: bool = False,
         _cached_name: str = "",
+        immutable: bool = False,
         **kwargs,
     ):
         base = kwargs.pop("base", None)
@@ -729,89 +747,137 @@ class Class(Type):
             self.is_tuple = base.is_tuple
             self._cached_name = base._cached_name
         else:
-            self.name = name
+            self.name = intern(name)
             self.generics = [] if generics is None else generics
             self.hidden_generics = [] if hidden_generics is None else hidden_generics
             self.is_tuple = is_tuple
             self._cached_name = _cached_name
+        self.immutable = immutable
+
+    def freeze(self):
+        if self.immutable:
+            return True
+        if type(self) is not Class or self.name in {Stdlib.UnrealizedType, "__NTuple__"}:
+            return False
+
+        def stable(generic):
+            if not generic.type:
+                return False
+            if generic.type.literal:
+                return True
+            if generic.type.link:
+                return False
+            child = generic.type.cls
+            return bool(child and child.freeze())
+
+        if not all(stable(g) for g in [*self.generics, *self.hidden_generics]):
+            return False
+        self.immutable = True
+        return True
+
+    def canonical_optional(self):
+        if self.name == Stdlib.Optional and len(self.generics) == 1 and self[0]:
+            member = self[0].cls
+            if (
+                member
+                and member.can_realize()
+                and member.name in {Stdlib.Optional, Stdlib.NoneType}
+            ):
+                return member
+        return None
 
     def unify(self, what: Type, undo: Type.UnifyContext | None = None) -> int:
-        if isinstance(what, Class):
-            if self.name == "int" and what.name == Stdlib.Int:
-                return what.unify(self, undo)
-            if what.name == "int" and self.name == Stdlib.Int:
-                return self[0].unify(IntLiteral(value=64, cache=self.cache), undo)
-            if self.name == what.name == Stdlib.UnrealizedType:
-                left = self[0].instantiate(0, Type.InstantiateContext(self.cache))
-                right = what[0].instantiate(0, Type.InstantiateContext(self.cache))
-                return left.unify(right, undo)
-            score = 3
-            if self.name == what.name == "__NTuple__":
-                self_n, what_n = self[0], what[0]
-                self_t, what_t = self[1].require_cls, what[1].require_cls
-                if (self_i := self_n.int) and (what_i := what_n.int):
-                    count = self_i * len(self_t.generics)
-                    if count != what_i * len(what_t.generics):
-                        return -1
-                    for i in range(count):
-                        if (part := self_t[i].unify(what_t[i], undo)) < 0:
-                            return part
-                        score += part
-                    return score
-            elif what.name == "__NTuple__":
-                return what.unify(self, undo)
-            elif self.name == "__NTuple__" and what.name == Stdlib.Tuple:
-                self_n, self_t = self[0].require_cls, self[1].require_cls
-                if isinstance(self_n, IntLiteral):
-                    count = self_n.value
-                    if count * len(self_t.generics) != len(what.generics):
-                        return -1
-                    for idx in range(len(self_t.generics) * count):
-                        if (part := self_t[idx % len(self_t.generics)].unify(what[idx], undo)) < 0:
+        if canonical := self.canonical_optional():
+            return canonical.unify(what, undo)
+        elif isinstance(what, Link):
+            return what.unify(self, undo)
+        if not what.cls:
+            return -1
+        what = what.require_cls
+        if (
+            self.name == Stdlib.Optional
+            and what.name == Stdlib.NoneType
+            and len(self.generics) == 1
+            and self[0].unbound
+        ):
+            return self[0].unify(what, undo)
+        if self.name == Stdlib.NoneType and what.name == Stdlib.Optional:
+            return what.unify(self, undo)
+        if self.name == what.name == Stdlib.UnrealizedType:
+            if self[0] is what[0]:
+                return 0
+            left = self[0].instantiate(0, Type.InstantiateContext(self.cache))
+            right = what[0].instantiate(0, Type.InstantiateContext(self.cache))
+            return left.unify(right, undo)
+        score = 3
+        if self.name == what.name == "__NTuple__":
+            self_n, what_n = self[0], what[0]
+            self_t, what_t = self[1].require_cls, what[1].require_cls
+            if (self_i := self_n.int) and (what_i := what_n.int):
+                count = self_i * len(self_t.generics)
+                if count != what_i * len(what_t.generics):
+                    return -1
+                for i in range(count):
+                    if (part := self_t[i].unify(what_t[i], undo)) < 0:
+                        return part
+                    score += part
+                return score
+        elif what.name == "__NTuple__":
+            return what.unify(self, undo)
+        elif self.name == "__NTuple__" and what.name == Stdlib.Tuple:
+            self_n, self_t = self[0].require_cls, self[1].require_cls
+            if isinstance(self_n, IntLiteral):
+                count = self_n.value
+                if count * len(self_t.generics) != len(what.generics):
+                    return -1
+                for idx in range(len(self_t.generics) * count):
+                    if (part := self_t[idx % len(self_t.generics)].unify(what[idx], undo)) < 0:
+                        return part
+                    score += part
+            else:
+                count = len(what.generics)
+                # If we are unifying NT[N, T] and T[X, X, ...], we assume that N is number of X
+                if (part := self_n.unify(IntLiteral(value=count, cache=self.cache), undo)) < 0:
+                    return part
+
+                from ..passes.typecheck.utils import generate_tuple, instantiate
+
+                ctx = self.cache.type_ctx
+                assert ctx
+                tuple_type = generate_tuple(ctx, 1)
+                if count:
+                    tup = instantiate(ctx, tuple_type, [what[0]]).require_cls
+                    for generic in what.generics[1:]:
+                        if (part := tup[0].unify(generic.type, undo)) < 0:
                             return part
                         score += part
                 else:
-                    count = len(what.generics)
-                    # If we are unifying NT[N, T] and T[X, X, ...], we assume that N is number of X
-                    if (part := self_n.unify(IntLiteral(value=count, cache=self.cache), undo)) < 0:
-                        return part
-
-                    from ..passes.typecheck.utils import generate_tuple, instantiate
-
-                    ctx = self.cache.type_ctx
-                    assert ctx
-                    tuple_type = generate_tuple(ctx, 1)
-                    if count:
-                        tup = instantiate(ctx, tuple_type, [what[0]]).require_cls
-                        for generic in what.generics[1:]:
-                            if (part := tup[0].unify(generic.type, undo)) < 0:
-                                return part
-                            score += part
-                    else:
-                        tup = instantiate(ctx, tuple_type).require_cls
-                    if (part := self[1].unify(tup, undo)) < 0:
-                        return part
-                return score
-
-            if self.name != what.name:
-                return -1
-            if len(self.generics) != len(what.generics):
-                return -1
-            for left, right in zip(self.generics, what.generics):
-                if (part := left.type.unify(right.type, undo)) < 0:
+                    tup = instantiate(ctx, tuple_type).require_cls
+                if (part := self[1].unify(tup, undo)) < 0:
                     return part
-                score += part
-            for left, right in zip(self.hidden_generics, what.hidden_generics):
-                if (part := left.type.unify(right.type, undo)) < 0:
-                    return part
-                score += part
             return score
-        elif isinstance(what, Link):
-            return what.unify(self, undo)
-        else:
+
+        if self.name != what.name:
             return -1
+        if len(self.generics) != len(what.generics):
+            return -1
+        for left, right in zip(self.generics, what.generics):
+            if (part := left.type.unify(right.type, undo)) < 0:
+                return part
+            score += part
+        for left, right in zip(self.hidden_generics, what.hidden_generics):
+            if (part := left.type.unify(right.type, undo)) < 0:
+                return part
+            score += part
+        return score
 
     def generalize(self, level: int):
+        if self.immutable or (
+            not self.generics and not self.hidden_generics and type(self) is Class
+        ):
+            return self
+        if self.name == Stdlib.UnrealizedType and self.generics and self[0] and self[0].cls:
+            return self
         return Class(
             self.name,
             [g.generalize(level) for g in self.generics],
@@ -822,6 +888,12 @@ class Class(Type):
         )
 
     def instantiate(self, level: int, ctx: Type.InstantiateContext):
+        if self.immutable or (
+            not self.generics and not self.hidden_generics and type(self) is Class
+        ):
+            return self
+        if self.name == Stdlib.UnrealizedType and self.generics and self[0] and self[0].cls:
+            return self
         return Class(
             self.name,
             [g.instantiate(level, ctx) for g in self.generics],
@@ -870,6 +942,8 @@ class Class(Type):
         )
 
     def to_string(self, mode: int) -> str:
+        if canonical := self.canonical_optional():
+            return canonical.to_string(mode)
         if self.name == Stdlib.NamedTuple:
             if (tid := self[0].int) is not None:
                 assert 0 <= tid < len(self.cache.generated_tuple_names), f"bad id: {tid}"
@@ -894,11 +968,7 @@ class Class(Type):
             for i in range(len(known)):
                 if function.ast[i].is_value():
                     values.append(
-                        (
-                            positional[ai]
-                            if known[i] is Class.Flag.Included
-                            else ("..." + ("" if not mode else positional[ai]))
-                        )
+                        (positional[ai] if known[i] is Class.Flag.Included else "...")
                         if ai < len(positional)
                         else "..."
                     )
@@ -932,9 +1002,12 @@ class Class(Type):
             name = self.name
             if mode == 0:
                 name = self.cache.rev(name)
-            return name if not values else f"{name}[{','.join(values)}]"
+            result = name if not values else f"{name}[{','.join(values)}]"
+            return "int" if result == "Int[64]" else result
 
     def realized_name(self) -> str:
+        if canonical := self.canonical_optional():
+            return canonical.realized_name()
         if self._cached_name:
             return self._cached_name
         if self.name == "Partial":
@@ -976,7 +1049,12 @@ class Class(Type):
     @property
     def partial_mask(self) -> List[Flag]:
         assert self.partial, "not a partial"
-        return [Class.Flag(int(p)) for p in self[0].require_str]
+        return [Class.Flag(int(p)) for p in self[0].require_str.removeprefix("v")]
+
+    @property
+    def is_partial_virtual(self):
+        assert self.partial, "not a partial"
+        return self[0].require_str.startswith("v")
 
     @property
     def is_partial_empty(self):
@@ -1024,24 +1102,29 @@ class IntLiteral(Literal):
 
     def __init__(self, value: int = 0, **kwargs):
         super().__init__(**kwargs)
-        self.name = "int"
+        self.name = Stdlib.Int
+        self._cached_name = "Int[64]"
         self.value = value
 
     def unify(self, what: Type, undo: Type.UnifyContext | None = None) -> int:
         if isinstance(what, IntLiteral):
             return 1 if self.value == what.value else -1
         elif isinstance(what, Class):
-            return super().unify(what, undo)
+            return self.runtime_type.unify(what, undo)
         elif isinstance(what, Link):
             return what.unify(self, undo)
         else:
             return -1
 
     def generalize(self, level: int):
-        return copy.copy(self)
+        return self
 
     def instantiate(self, level: int, ctx: Type.InstantiateContext):
-        return copy.copy(self)
+        return self
+
+    @property
+    def runtime_type(self):
+        return self.cache.find_class("Int[64]")
 
     def to_string(self, mode: int):
         return f"{self.value}" if mode < 2 else f"Literal[{self.value}]"
@@ -1074,10 +1157,10 @@ class StrLiteral(Literal):
             return -1
 
     def generalize(self, level: int):
-        return copy.copy(self)
+        return self
 
     def instantiate(self, level: int, ctx: Type.InstantiateContext):
-        return copy.copy(self)
+        return self
 
     def to_string(self, mode: int):
         # TODO: use value!r after cpp equality pass
@@ -1126,10 +1209,10 @@ class BoolLiteral(Literal):
             return -1
 
     def generalize(self, level: int):
-        return copy.copy(self)
+        return self
 
     def instantiate(self, level: int, ctx: Type.InstantiateContext):
-        return copy.copy(self)
+        return self
 
     def to_string(self, mode: int):
         return f"{self.value}" if mode < 2 else f"Literal[{self.value}]"
@@ -1250,22 +1333,43 @@ class Function(Class):
     def can_realize(self):
         allow_passthrough = self.ast.has(ast.Attr.AllowPassThrough)
 
-        # Important: return type does not have to be realized.
-        for arg in self:
-            if not isinstance(arg, Function) and not arg.can_realize():
-                if not allow_passthrough:
-                    return False
-                for unbound in arg.get_unbounds(include_generics=True):
-                    if unbound.kind is Link.Kind.Generic or not unbound.pass_through:
-                        return False
-        result = all(g.type.can_realize() for g in self.func_generics if g.type)
-        if result and self.func_parent and not self.func_parent.can_realize():
+        def can_realize(typ):
+            if typ.can_realize():
+                return True
             if not allow_passthrough:
                 return False
-            for unbound in self.func_parent.get_unbounds(include_generics=True):
-                if unbound.kind is Link.Kind.Generic or not unbound.pass_through:
-                    return False
-        return result
+            return all(
+                u.kind is not Link.Kind.Generic and u.pass_through
+                for u in typ.get_unbounds(include_generics=True)
+            )
+
+        # Important: return type does not have to be realized.
+        for arg in self:
+            if not arg.func and not can_realize(arg):
+                return False
+        generics = all(
+            not g.type
+            or g.type.can_realize()
+            or (
+                allow_passthrough
+                and g.name
+                and self.cache.rev(g.name) == "Self"
+                and can_realize(g.type)
+            )
+            for g in self.func_generics
+        )
+        return generics and (not self.func_parent or can_realize(self.func_parent))
+
+    def replace_arg_types(self, replacements):
+        """Replace non-null argument types without mutating shared argument tuples."""
+        assert len(replacements) == len(self), "function argument count mismatch"
+        args = Class(base=self.arg_type)
+        args.generics = [copy.copy(g) for g in args.generics]
+        for generic, replacement in zip(args.generics, replacements):
+            if replacement:
+                generic.type = replacement
+        self.generics[0].type = args
+        self._cached_name = ""
 
     def is_instantiated(self):
         ret_type = self.ret_type
@@ -1430,174 +1534,39 @@ class CallableTrait(Trait):
         self.args = [] if args is None else args
 
     def unify(self, what: Type, undo: Type.UnifyContext | None = None) -> int:
-        # TODO: this fn is total mess. one day merge with the CallExpr's logic...
-
-        from ..passes.typecheck import classes, infer, utils
-
-        ctx = self.cache.type_ctx
-        assert ctx
-
-        if what_cls := what.cls:
-            if what_cls == Stdlib.TypeWrap:
-                methods = utils.find_method(ctx, what_cls, "__call_no_self__")
-                what_cls = utils.instantiate(ctx, methods[0])
-
-            if what_cls == Stdlib.NoneType:
+        if what.cls:
+            if what == Stdlib.NoneType:
                 return 1
-            if what_cls.name != Stdlib.Function and not what_cls.partial:
-                return -1
-            if not what_cls.is_tuple:
-                return -1
             if not self.args:
-                return 1
+                return (
+                    1
+                    if (what == Stdlib.Function or what.partial or what == Stdlib.TypeWrap)
+                    else -1
+                )
 
-            known = ""
-            what_fn = what_cls
-            if partial := what_cls.partial:
-                what_fn = partial.partial_func.instantiate(0, Type.InstantiateContext(ctx.cache))
-                known = partial.partial_mask
+            from ..passes.typecheck import utils
 
-                known_type = partial[1].require_cls
-                generic_idx, known_idx = 0, 0
-                for param_idx in range(len(known)):
-                    param = what_fn.ast.items[param_idx]
-                    if param.is_generic:
-                        generic_idx += 1
-                    elif known[param_idx] is Class.Flag.Included:
-                        fn_arg = what_fn[param_idx - generic_idx]
-                        known_arg = known_type.generics[known_idx].type
-                        if (
-                            fn_arg is None
-                            or known_arg is None
-                            or fn_arg.unify(known_arg, undo) == -1
-                        ):
-                            return -1
-                        known_idx += 1
-            else:
-                count = len(what_cls.generics[0].type.require_cls)
-                known = [Class.Flag.Missing] * count
-
-            input_args = self.args[0].require_cls
-            tr_input_args = what_fn.generics[0].type.require_cls
-            tr_func = what_fn.func
-            tr_ast = tr_func.ast if tr_func else None
-            star_idx, kwargs_idx = 0, len(tr_input_args.generics)
-            total = 0
-            if tr_ast:
-                star_idx = tr_ast.get_star_arg()
-                kwargs_idx = tr_ast.get_kwstar_arg()
-                for fn_idx in range(len(tr_ast)):
-                    if fn_idx < star_idx and not tr_ast[fn_idx].is_value():
-                        star_idx -= 1
-                    if fn_idx < kwargs_idx and not tr_ast[fn_idx].is_value():
-                        kwargs_idx -= 1
-                if kwargs_idx < len(tr_ast) and star_idx >= len(tr_input_args.generics):
-                    star_idx -= 1
-                pre_star = 0
-                for fn_idx in range(len(tr_ast)):
-                    if (
-                        fn_idx != kwargs_idx
-                        and known[fn_idx] is not Class.Flag.Included
-                        and tr_ast.items[fn_idx].is_value
-                        and not tr_ast[fn_idx].name.startswith("$")
-                    ):
-                        total += 1
-                        if fn_idx < star_idx:
-                            pre_star += 1
-                if pre_star < total:
-                    if len(input_args.generics) < pre_star:
-                        return -1
-                elif len(input_args.generics) != total:
-                    return -1
-            else:
-                total = len(tr_input_args.generics)
-                star_idx = total
-                if len(input_args.generics) != total:
-                    return -1
-
-            input_idx, fn_idx = 0, 0
-            while input_idx < len(input_args.generics) and fn_idx < star_idx:
-                if (
-                    known[fn_idx] is not Class.Flag.Included
-                    and tr_ast is not None
-                    and tr_ast[fn_idx].is_value()
-                    and not tr_ast[fn_idx].name.startswith("$")
-                ):
-                    input_type = input_args.generics[input_idx].type
-                    target_type = tr_input_args.generics[fn_idx].type
-                    input_idx += 1
-                    if (
-                        input_type is None
-                        or target_type is None
-                        or input_type.unify(target_type, undo) == -1
-                    ):
-                        return -1
-                fn_idx += 1
-
-            if tr_func:
-                # Make sure to set types of *args/**kwargs so that the function that
-                # is being unified with Callable[] can be realized
-                if star_idx < len(tr_input_args.generics) - int(
-                    kwargs_idx < len(tr_input_args.generics)
-                ):
-                    star_arg_types = []
-                    if partial:
-                        final = partial[1].require_cls[-1].require_cls
-                        for generic in final.generics:
-                            star_arg_types.append(generic.type)
-                    while input_idx < len(input_args.generics):
-                        star_arg_types.append(input_args[input_idx])
-                        input_idx += 1
-                    star_param = tr_func.ast[star_idx]
-                    if star_param.type:
-                        transformed = ctx.cache.typecheck(star_param.type.clone(), ctx=ctx)
-                        assert isinstance(transformed, ast.Expr), "bad *args annotation"
-                        # if we have *args: type, use those types
-                        star_type = utils.extract_type(ctx, transformed)
-                        star_arg_types = [star_type for _ in star_arg_types]
-                    tuple_type = utils.instantiate(
-                        ctx, classes.generate_tuple(ctx, len(star_arg_types)), star_arg_types
-                    )
-                    target_type = tr_input_args[star_idx]
-                    if target_type is None or tuple_type.unify(target_type, undo) == -1:
-                        return -1
-                if kwargs_idx < len(tr_input_args.generics):
-                    tuple_type = classes.generate_tuple(ctx, 0)
-                    tuple_id = 0
-                    if partial:
-                        tuple_id = partial[2].require_cls[0].require_int
-                        tuple_type = partial[2].require_cls[1].require_cls
-                    kw_type = utils.instantiate(
-                        ctx,
-                        utils.get_stdlib_type(ctx, Stdlib.NamedTuple),
-                        [IntLiteral(tuple_id, cache=ctx.cache), tuple_type],
-                    )
-                    target_type = tr_input_args.generics[kwargs_idx].type
-                    if target_type is None or kw_type.unify(target_type, undo) == -1:
-                        return -1
-
-                if undo is not None and tr_func.can_realize():
-                    # Realize if possible to allow deduction of return type
-                    realized = infer.realize(ctx, tr_func)
-                    assert realized
-                    tr_func.unify(realized, undo)
-                if not tr_func.ret_type or self.args[1].unify(tr_func.ret_type, undo) == -1:
-                    return -1
-            return 1
-        elif link := what.link:
-            if link.kind is Link.Kind.Link and link.type:
+            return (
+                1
+                if utils.match_callable(
+                    self.cache.type_ctx,
+                    what,
+                    [
+                        ast.CallExpr.Arg(value=ast.NoneExpr(type=g.type))
+                        for g in self.args[0].require_cls.generics
+                    ],
+                    self.args[1],
+                    undo,
+                )
+                >= 0
+                else -1
+            )
+        if link := what.link:
+            if link.kind is Link.Kind.Link:
                 return self.unify(link.type, undo)
-            if link.kind is Link.Kind.Unbound:
-                if link.trait:
-                    if isinstance(link.trait, CallableTrait):
-                        if len(link.trait.args) != len(self.args):
-                            return -1
-                        for left, right in zip(self.args, link.trait.args):
-                            if left.unify(right, undo) == -1:
-                                return -1
-                    else:
-                        return -1
-                return 1
+            if link.kind is Link.Kind.Generic:
+                return -1
+            return link.unify(self, undo)
         return -1
 
     def generalize(self, level: int):

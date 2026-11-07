@@ -80,8 +80,8 @@ def typecheck_call(self: TypeVisitor, node: ast.CallExpr) -> ast.Expr:
     # Do not allow realization here (function will be realized later);
     # used to prevent early realization of compile_error
     node.set(ast.Attr.ParentCallExpr)
-    if partial.is_partial:
-        node.expr.set(ast.Attr.ExprDoNotRealize)
+    node.expr.set(ast.Attr.ExprDoNotRealize)
+    utils.get_head_expr(node.expr).set(ast.Attr.ExprDoNotRealize)
     node.expr = self.visit_expr(node.expr)
     node.erase(ast.Attr.ParentCallExpr)
     if utils.is_unbound(node.expr):
@@ -161,7 +161,7 @@ def typecheck_call(self: TypeVisitor, node: ast.CallExpr) -> ast.Expr:
             node.expr.type = callee_fn
         elif matching is not None and not matching:
             arg_names = [
-                arg.value.type.require_cls.name
+                str(arg.value.type.literal.runtime_type)
                 if arg.value.type and arg.value.type.literal
                 else str(arg.value.type)
                 for arg in node.items
@@ -189,8 +189,18 @@ def typecheck_call(self: TypeVisitor, node: ast.CallExpr) -> ast.Expr:
     # Typecheck arguments with the function signature
     done = typecheck_call_args(self, callee_fn, node.items, partial)
     if not partial.is_partial and callee_fn.can_realize():
-        # Previous unifications can qualify existing identifiers.
-        # Transform again to get the full identifier
+        # Clean up DoNotRealize
+        head = node.expr
+        while True:
+            head.erase(ast.Attr.ExprDoNotRealize)
+            head.type = callee_fn
+            if not isinstance(head, ast.StmtExpr):
+                break
+            head = head.expr
+        # Fix original fn (without replacements) with the updated one!
+        if isinstance(head, ast.IdExpr) and (realized := infer.realize(self.ctx, callee_fn)):
+            head.value = realized.realized_name()
+            head.done = True
         node.expr = self.visit_expr(node.expr)
     done = done and node.expr.done
 
@@ -205,7 +215,11 @@ def typecheck_call(self: TypeVisitor, node: ast.CallExpr) -> ast.Expr:
         new_args.append(partial.args)
         partial_call = generate_partial_call(
             self,
-            partial.known,
+            (
+                "v" + "".join(str(flag.value) for flag in partial.known)
+                if node.has(ast.Attr.ExprVirtual)
+                else partial.known
+            ),
             callee_fn.require_func,
             ast.TupleExpr(new_args),
             partial.kw_args,
@@ -230,6 +244,18 @@ def typecheck_call(self: TypeVisitor, node: ast.CallExpr) -> ast.Expr:
         assert node.type
         node.type |= callee_fn.ret_type
         if done:
+            thunk = node.get(ast.Attr.ExprVirtual, int, -1)
+            if node.has(ast.Attr.ExprVirtual) and thunk != -1:
+                self.ctx.cache.super_call_signatures[thunk] = callee_fn
+            elif (
+                not node.has(ast.Attr.Internal)
+                and utils.get_unmangled_name(self.ctx, callee_fn.func_name) == "__init__"
+            ):
+                realization = utils.get_function(self.ctx, callee_fn).realizations.get(
+                    callee_fn.realized_name()
+                )
+                if realization:
+                    realization.check_initialization = True
             node.done = True
         return node
 
@@ -351,6 +377,28 @@ def transform_call_args(self: TypeVisitor, expr: ast.CallExpr):
     return True
 
 
+def transform_optional_call(self, expr, typ):
+    """Normalize Optional construction without introducing redundant value layers.
+    Empty constructors must keep their arguments for deferred inference
+    (optional_canonicalization); other calls use ordinary constructor matching.
+    """
+    if not expr.items:
+        return self.visit_expr(ast.NoneExpr(type=typ))
+    if len(expr.items) != 1 or expr.items[0].name not in {"", "what"}:
+        return None
+    arg = expr.items[0]
+    arg.value = self.visit_expr(arg.value)
+    actual = arg.value.type
+    if actual == ast.types.Stdlib.Optional and typ.unify(actual, None) >= 0:
+        return arg.value
+    if actual != ast.types.Stdlib.NoneType:
+        return None
+    if typ[0].unbound:
+        return arg.value
+    member = ast.IdExpr("T", type=utils.instantiate_type_var(self.ctx, typ[0]), done=True)
+    return self.visit_expr(ast.CallExpr(ast.DotExpr(expr.expr, "_from_none"), [arg.value, member]))
+
+
 def get_callee_fn(
     self: TypeVisitor, expr: ast.CallExpr, part
 ) -> tuple[ast.types.Function | None, ast.Expr | None]:
@@ -386,6 +434,14 @@ def get_callee_fn(
         if class_type is None:
             return None, None
 
+        if class_type == ast.types.Stdlib.Optional:
+            if replacement := transform_optional_call(self, expr, class_type):
+                return None, replacement
+        if class_type == ast.types.mangle("std.internal.types.error", cls="OSError"):
+            return None, self.visit_expr(
+                ast.CallExpr(ast.DotExpr(expr.expr, "_construct"), expr.items)
+            )
+
         if class_type.is_tuple:
             if expr.has(ast.Attr.TupleCall):
                 expr.erase(ast.Attr.TupleCall)
@@ -393,22 +449,57 @@ def get_callee_fn(
             replacement = ast.CallExpr(ast.DotExpr(expr.expr, member="__new__"), items=expr.items)
             return None, self.visit_expr(replacement)
 
-        # Case: reference type constructor. Transform to
-        # `ctr = T.__new__(); v.__init__(args)`
-        var = ast.IdExpr(utils.get_temporary_var(self.ctx, "ctr"))
-        new_init = ast.AssignStmt(
-            var.clone(), ast.CallExpr(ast.DotExpr(expr.expr, member="__new__"))
+        # Reference classes with a custom __new__ receive constructor arguments.
+        # enum_test / class_custom_new: cache arguments so __new__ and __init__
+        # see the same values without evaluating side effects twice.
+        allocators = utils.find_method(self.ctx, class_type, "__new__")
+        # internal reference types such as Any implement
+        # their own zero-argument allocator and retain that calling convention.
+        custom_new = (
+            not utils.get_class(self.ctx, class_type).ast.has(ast.Attr.Internal)
+            and allocators
+            and not allocators[0].ast.has(ast.Attr.AutoGenerated)
         )
-        result = ast.StmtExpr([ast.SuiteStmt(new_init)], expr=var.clone())
-        result.items.append(
-            ast.ExprStmt(
-                ast.CallExpr(ast.DotExpr(var.clone(), member="__init__"), items=expr.items)
+        stmts = []
+        args = [ast.CallExpr.Arg(arg.value, name=arg.name) for arg in expr.items]
+        if custom_new:
+            for arg in args:
+                tmp = ast.IdExpr(utils.get_temporary_var(self.ctx, "ctor_arg"))
+                star, kwstar = (
+                    isinstance(arg.value, ast.StarExpr),
+                    isinstance(arg.value, ast.KeywordStarExpr),
+                )
+                value = arg.value.expr if star or kwstar else arg.value
+                stmts.append(ast.AssignStmt(tmp.clone(), value))
+                arg.value = (
+                    ast.StarExpr(tmp) if star else ast.KeywordStarExpr(tmp) if kwstar else tmp
+                )
+        # The generated allocator still takes no arguments; __init__ receives them.
+        var = ast.IdExpr(utils.get_temporary_var(self.ctx, "ctr"))
+        stmts.append(
+            ast.AssignStmt(
+                var.clone(),
+                ast.CallExpr(ast.DotExpr(expr.expr, "__new__"), args if custom_new else []),
             )
         )
-        return None, self.visit_expr(result)
+        inits = utils.find_method(self.ctx, class_type, "__init__")
+        # Check if object.__init__ (which is a stub) is being used (no default __init__).
+        if not (custom_new and not inits):
+            init = ast.ExprStmt(ast.CallExpr(ast.DotExpr(var.clone(), "__init__"), args))
+            # a factory may return another type, in which case its result must not be initialized as T
+            stmts.append(
+                ast.IfStmt(
+                    ast.CallExpr(ast.IdExpr("isinstance"), [var.clone(), expr.expr.clone()]), init
+                )
+                if custom_new
+                else init
+            )
+        return None, self.visit_expr(ast.StmtExpr(stmts, var.clone()))
 
     if partial := callee.partial:
         mask = partial.partial_mask
+        if partial.is_partial_virtual:
+            expr.set(ast.Attr.ExprVirtual, -1)
         partial_fn = partial.partial_func
         generalized = partial_fn.generalize(0)
         instantiated = utils.instantiate(self.ctx, generalized)
@@ -418,31 +509,33 @@ def get_callee_fn(
             # Case: calling partial object `p`. Transform roughly to
             # `part = callee; partial_fn(*part.args, args...)`
             part.var = utils.get_temporary_var(self.ctx, "partcall")
-            expr.expr = self.visit_expr(
-                ast.StmtExpr(
-                    [ast.AssignStmt(ast.IdExpr(part.var), rhs=expr.expr)],
-                    expr=ast.IdExpr(instantiated.func_name, type=instantiated),
-                )
+            identifier = ast.IdExpr(instantiated.func_name, type=instantiated)
+            identifier.set(ast.Attr.ExprDoNotRealize)
+            callee_expr = ast.StmtExpr(
+                [ast.AssignStmt(ast.IdExpr(part.var), rhs=expr.expr)], identifier
             )
+            callee_expr.set(ast.Attr.ExprDoNotRealize)
+            expr.expr = self.visit_expr(callee_expr)
             part.known = mask
         else:
-            expr.expr = self.visit_expr(ast.IdExpr(instantiated.func_name))
+            identifier = ast.IdExpr(instantiated.func_name)
+            identifier.set(ast.Attr.ExprDoNotRealize)
+            callee_expr = identifier
+            if utils.has_side_effect(expr.expr):
+                # In case this partial is returned from a fn that might have side effects
+                callee_expr = ast.StmtExpr(ast.ExprStmt(expr.expr), identifier)
+                callee_expr.set(ast.Attr.ExprDoNotRealize)
+            expr.expr = self.visit_expr(callee_expr)
         assert expr.expr.type and expr.expr.type.func, f"not a function: {expr.expr.type}"
         expr.expr.type |= instantiated
-
-        # Unify partial generics with types known thus far
-        known_types = partial[1].require_cls
-        generic_idx = 0
-        known_idx = 0
+        # Bind captured values using the same AST/value index mapping as call probes.
+        captured = utils.get_partial_arg_types(instantiated, partial)
+        value_idx = 0
         for param_idx, flag in enumerate(mask):
-            if instantiated.ast.items[param_idx].is_generic():
-                generic_idx += 1
-            elif flag == ast.types.Class.Flag.Included:
-                arg_type = instantiated[param_idx - generic_idx]
-                arg_type |= known_types[known_idx]
-                known_idx += 1
-            elif flag == ast.types.Class.Flag.Default:
-                known_idx += 1
+            if instantiated.ast.items[param_idx].is_value():
+                if flag == ast.types.Class.Flag.Included:
+                    instantiated[value_idx] |= captured[param_idx]
+                value_idx += 1
         return instantiated, None
 
     if callee_fn is None:
@@ -617,33 +710,46 @@ def call_reorder_arguments(
                     default = param.default
                     # Case 4: default is present
                     if isinstance(default, ast.IdExpr):
-                        # Case 4a: non-values (Ids / .default names)
+                        # Non-values (Ids / .default names)
+                        slot_item = self.ctx.find_at(default.value)
+                        # Compiler-owned module slots keep definition-time values
+                        # without storing another copy.
+                        # Local/method defaults and user globals still need capturing.
+                        global_default = (
+                            slot_item
+                            and slot_item.is_global()
+                            and default.value.startswith(".default.")
+                            and not callee_fn.ast.has(ast.Attr.ParentClass)
+                        )
+                        if partial:
+                            new_mask[slot_idx] = ast.types.Class.Flag.Default
                         if part.known and part.known[slot_idx] == ast.types.Class.Flag.Default:
                             # Case 4a/1: Default already captured by partial.
                             args.append(
                                 ast.CallExpr.Arg(get_partial_argument(partial_idx), name=real_name)
                             )
                             partial_idx += 1
+                        elif partial and global_default:
+                            args.append(
+                                ast.CallExpr.Arg(
+                                    self.visit_expr(
+                                        ast.EllipsisExpr(ast.EllipsisExpr.Kind.Partial)
+                                    ),
+                                    name=real_name,
+                                )
+                            )
+                            new_mask[slot_idx] = ast.types.Class.Flag.Missing
                         else:
-                            # TODO: check if the value is toplevel to avoid capturing it
                             transformed = self.visit_expr(ast.IdExpr(default.value))
                             assert transformed.type and transformed.type.link, "not a link type"
                             args.append(ast.CallExpr.Arg(transformed, name=real_name))
-                        if partial:
-                            new_mask[slot_idx] = ast.types.Class.Flag.Default
                     elif not partial:
-                        # Case 4b: values / non-Id defaults (None, etc.)
-                        if isinstance(default, ast.NoneExpr) and param.type is None:
-                            transformed = ast.CallExpr(
-                                ast.InstantiateExpr(
-                                    ast.IdExpr(ast.types.Stdlib.Optional),
-                                    type_expr=ast.IdExpr(ast.types.Stdlib.NoneType),
-                                )
+                        # Case 4b: Values / non-Id defaults (None, etc.)
+                        args.append(
+                            ast.CallExpr.Arg(
+                                utils.get_call_default(self.ctx, param), name=real_name
                             )
-                        else:
-                            transformed = default.clone(clean=True)
-                        arg = self.visit_expr(transformed)
-                        args.append(ast.CallExpr.Arg(arg, name=real_name))
+                        )
                     else:
                         ellipsis = self.visit_expr(ast.EllipsisExpr(ast.EllipsisExpr.Kind.Partial))
                         args.append(ast.CallExpr.Arg(ellipsis, name=real_name))
@@ -680,6 +786,13 @@ def call_reorder_arguments(
             star_args = [swap if item is old else item for item in star_args]
             kwstar_args = [swap if item is old else item for item in kwstar_args]
             prepends.append(front)
+        # getCalleeFn has already replaced the partial with its underlying function.
+        # Restore the saved partial args and run its setup before new arguments,
+        # without retaining the trailing, potentially unresolved function expression from
+        # the StmtExpr.
+        if part.var:
+            prepends[0:0] = expr.expr.items
+            expr.expr = ast.IdExpr(part.var)
         return self.visit_expr(ast.StmtExpr(prepends, expr=expr))
 
     # Handle *args
@@ -777,9 +890,25 @@ def typecheck_call_args(
 
     wrapping_done = True  # tracks whether all arguments are wrapped
     replacements = []  # list of replacement arguments
+    # Unify Self with the argument so that generics (e.g. N in Int[N].__lshift__) propagate
+    parent = callee_fn.func_parent.cls if callee_fn.func_parent else None
+    if (
+        parent
+        and not parent.can_realize()
+        and args
+        and callee_fn.ast.items
+        and not callee_fn.ast.has(ast.Attr.StaticMethod)
+        and utils.get_unmangled_name(self.ctx, callee_fn.ast.items[0].name) == "self"
+    ):
+        receiver = utils.get_underlying_static_type(self.ctx, args[0].value.type).cls
+        if receiver:
+            for base in utils.get_class(self.ctx, receiver).mro:
+                if base.name == parent.name:
+                    parent |= utils.instantiate(self.ctx, base, receiver)
+                    break
     with utils.with_class_generics(self.ctx, callee_fn, func=True):
         signature_idx = 0
-        for _, param in enumerate(callee_fn.ast.items):
+        for param_idx, param in enumerate(callee_fn.ast.items):
             if param.is_generic():
                 continue
             arg = args[signature_idx]
@@ -826,7 +955,22 @@ def typecheck_call_args(
                 # Defaults should not be unified (yet)!
                 replacements.append(callee_fn[signature_idx])
             else:
-                expected_type = callee_fn[signature_idx]
+                original = callee_fn[signature_idx]
+                expected_type = utils.get_call_arg_type(
+                    self.ctx,
+                    callee_fn,
+                    param_idx,
+                    signature_idx,
+                    utils.get_underlying_static_type(self.ctx, arg.value.type),
+                )
+                if (
+                    expected_type is not original
+                    and not callee_fn.ast.ret
+                    and callee_fn.ret_type.can_realize()
+                ):
+                    callee_fn.generics[1].type = utils.instantiate(
+                        self.ctx, utils.get_function(self.ctx, callee_fn.func_name).type.ret_type
+                    )
                 can_wrap, arg.value = utils.wrap_expr(self.ctx, arg.value, expected_type, callee_fn)
                 if can_wrap:
                     assert arg.value.type
@@ -839,6 +983,10 @@ def typecheck_call_args(
     # Realize arguments
     done = True
     for arg in args:
+        if arg.value.type == ast.types.Stdlib.Optional:
+            if payload := arg.value.type.require_cls[0].unbound:
+                self.ctx.base.pending_defaults.setdefault(-1, set()).add(payload)
+                self.ctx.base.pending_defaults.setdefault(0, set()).discard(payload)
         # Previous unifications can qualify existing identifiers.
         # Transform again to get the full identifier
         if infer.realize(self.ctx, arg.value.type):
@@ -860,12 +1008,7 @@ def typecheck_call_args(
                 generic_idx += 1
 
     # Replace the arguments
-    callee_type = callee_fn.arg_type
-    for idx, replacement in enumerate(replacements):
-        if replacement:
-            callee_type.generics[idx].type = replacement
-    callee_type._cached_name = ""
-    callee_fn._cached_name = ""  # TODO: TERRIBLE!
+    callee_fn.replace_arg_types(replacements)
     return done
 
 
@@ -951,6 +1094,10 @@ def transform_special_call(self: TypeVisitor, expr: ast.CallExpr):
         return True, special.transform_static_format(self, expr)
     if name == ast.types.mangle("std.internal.static", func="int_to_string"):
         return True, special.transform_static_int_to_str(self, expr)
+    if name == ast.types.mangle("std.internal.static", func="platform"):
+        return True, special.transform_static_platform(self, expr)
+    if name == ast.types.mangle("std.internal.static", func="contains"):
+        return True, special.transform_static_contains(self, expr)
     return False, None
 
 

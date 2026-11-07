@@ -198,12 +198,6 @@ def typecheck_for(self: TypeVisitor, node: ast.ForStmt) -> ast.Stmt:
         return node  # wait until the iterator is known
     elif static_loop:
         return static_loop
-    if not isinstance(node.var, ast.IdExpr):
-        temp = ast.IdExpr(utils.get_temporary_var(self.ctx, "for"))
-        unpacked = assign.unpack_assignment(self, node.var, temp)
-        node.var = temp
-        node.suite = ast.SuiteStmt(unpacked, node.suite)
-
     # Replace for (i, j) in ... { ... } with for tmp in ...: { i, j = tmp ; ... }
     is_generator = iter_type.name == ("AsyncGenerator" if node.async_ else "Generator")
     if not is_generator and not node.wrapped:
@@ -213,6 +207,13 @@ def typecheck_for(self: TypeVisitor, node: ast.ForStmt) -> ast.Stmt:
         if not iter_type:
             return node
         is_generator = iter_type.name == ("AsyncGenerator" if node.async_ else "Generator")
+    if not isinstance(node.var, ast.IdExpr):
+        temp = ast.IdExpr(utils.get_temporary_var(self.ctx, "for"))
+        if is_generator:
+            temp.type = iter_type[0]
+        unpacked = assign.unpack_assignment(self, node.var, temp, is_loop_target=True)
+        node.var = temp
+        node.suite = ast.SuiteStmt(unpacked, node.suite)
     var = cast(ast.IdExpr, node.var)
     assert var, f"corrupt for variable: {node.var}"
 

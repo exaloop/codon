@@ -36,7 +36,9 @@ def typecheck_list(self: TypeVisitor, node: ast.ListExpr) -> ast.Node:
     """
 
     node.type = utils.instantiate_unbound(self.ctx)
-    result = transform_comprehension(self, ast.types.Stdlib.List, node.items, method="append")
+    result = transform_comprehension(
+        self, ast.types.Stdlib.List, node.items, method="append", expected_type=node.expected_type
+    )
     if result:
         result.set(ast.Attr.ExprList)
         return result
@@ -50,7 +52,9 @@ def typecheck_set(self: TypeVisitor, node: ast.SetExpr) -> ast.Node:
     """
 
     node.type = utils.instantiate_unbound(self.ctx)
-    result = transform_comprehension(self, ast.types.Stdlib.Set, node.items, method="add")
+    result = transform_comprehension(
+        self, ast.types.Stdlib.Set, node.items, method="add", expected_type=node.expected_type
+    )
     if result:
         result.set(ast.Attr.ExprSet)
         return result
@@ -64,7 +68,13 @@ def typecheck_dict(self: TypeVisitor, node: ast.DictExpr) -> ast.Node:
     """
 
     node.type = utils.instantiate_unbound(self.ctx)
-    result = transform_comprehension(self, ast.types.Stdlib.Dict, node.items, method="__setitem__")
+    result = transform_comprehension(
+        self,
+        ast.types.Stdlib.Dict,
+        node.items,
+        method="__setitem__",
+        expected_type=node.expected_type,
+    )
     if result:
         result.set(ast.Attr.ExprDict)
         return result
@@ -195,6 +205,7 @@ def transform_comprehension(
     type_name: str,
     items: List[ast.Expr],
     method: str,
+    expected_type: ast.types.Type | None = None,
 ) -> ast.Expr | None:
     """
     Transform a collection of type `type` to a statement expression:
@@ -226,7 +237,14 @@ def transform_comprehension(
         """
         if not typ:
             return item_type
-        elif typ == "int" and item_type == "float":
+        elif (typ == ast.types.Stdlib.NoneType) != (item_type == ast.types.Stdlib.NoneType):
+            member = item_type if typ == ast.types.Stdlib.NoneType else typ
+            return (
+                member
+                if member == ast.types.Stdlib.Optional
+                else utils.instantiate(self.ctx, ast.types.Stdlib.Optional, [member])
+            )
+        elif typ == "Int" and item_type == "float":
             return item_type
         elif typ.name != ast.types.Stdlib.Optional and item_type.name == ast.types.Stdlib.Optional:
             return utils.instantiate(
@@ -256,9 +274,18 @@ def transform_comprehension(
                             return typ
         return None
 
-    collection_type = utils.instantiate_unbound(self.ctx)
-    done = True
     is_dict = type_name == ast.types.Stdlib.Dict
+    root = utils.get_stdlib_type(self.ctx, type_name)
+    if is_dict:
+        root = utils.get_stdlib_type(self.ctx, root.name)
+    element_types, declared_unions = [], []
+    for idx in range(2 if is_dict else 1):
+        member = (
+            expected_type.require_cls[idx] if expected_type and expected_type == root.name else None
+        )
+        declared_unions.append(bool(member and member.union))
+        element_types.append(member if declared_unions[-1] else utils.instantiate_unbound(self.ctx))
+    done = True
     for idx, item in enumerate(items):
         item_type = None
         if not is_dict and isinstance(item, ast.StarExpr):
@@ -276,29 +303,19 @@ def transform_comprehension(
             done = False
             continue
 
-        if not collection_type.cls:
-            collection_type |= item_type
-        elif not is_dict:
-            if common := lowest_common_type(collection_type.require_cls, item_type.require_cls):
-                collection_type = common
-        else:
-            tuple_type = utils.instantiate(self.ctx, classes.generate_tuple(self.ctx, 2))
-            item_type |= tuple_type
-            collection_type = collection_type.require_cls
-            assert collection_type.is_tuple and len(collection_type.generics) == 2
-            assert len(tuple_type.require_cls.generics) == 2
-
-            new_types = []
-            for dict_idx in range(2):
-                new_type = collection_type[dict_idx].require_cls
-                if not new_type:
-                    new_type |= tuple_type[dict_idx]
-                elif common := lowest_common_type(new_type, tuple_type[dict_idx].require_cls):
-                    new_type = common
-                new_types.append(new_type)
-            collection_type = utils.instantiate(
-                self.ctx, classes.generate_tuple(self.ctx, len(new_types)), new_types
-            )
+        item_type = item_type.require_cls
+        if is_dict:
+            item_type |= utils.instantiate(self.ctx, classes.generate_tuple(self.ctx, 2))
+        for dict_idx in range(len(element_types)):
+            if declared_unions[dict_idx]:
+                continue
+            member = item_type[dict_idx] if is_dict else item_type
+            if not element_types[dict_idx].cls:
+                element_types[dict_idx] |= member
+            elif common := lowest_common_type(
+                element_types[dict_idx].require_cls, member.require_cls
+            ):
+                element_types[dict_idx] = common
     if not done:
         return None
 
@@ -307,21 +324,8 @@ def transform_comprehension(
     ctr_args = []
     if type_name == ast.types.Stdlib.List and items:
         ctr_args.append(ast.CallExpr.Arg(ast.IntExpr(len(items))))
-    ctr = ast.IdExpr(type_name)
-    collection_template = utils.instantiate(self.ctx, utils.get_stdlib_type(self.ctx, type_name))
-    if is_dict and collection_type:
-        assert collection_type.require_cls.is_tuple
-        collection_template = utils.instantiate(
-            self.ctx,
-            utils.get_stdlib_type(self.ctx, type_name),
-            [generic.type for generic in collection_type.require_cls.generics],
-        )
-    elif not is_dict:
-        collection_template = utils.instantiate(
-            self.ctx,
-            utils.get_stdlib_type(self.ctx, type_name),
-            [collection_type],
-        )
+    ctr = ast.IdExpr(root.name if is_dict else type_name)
+    collection_template = utils.instantiate(self.ctx, root, element_types)
     ctr.type = utils.instantiate_type_var(self.ctx, collection_template)
     stmts.append(ast.AssignStmt(var.clone(), rhs=ast.CallExpr(ctr, items=ctr_args)))
     for item in items:

@@ -9,6 +9,22 @@ from . import TypeContext, classes, utils
 from .ctx import Base, Item
 
 
+def join_nullable_types(ctx, left, right):
+    """Select a nullable target without committing unresolved payloads."""
+    left = left.literal.runtime_type if left.literal else left
+    right = right.literal.runtime_type if right.literal else right
+    if right == ast.types.Stdlib.Optional:
+        return right
+    if left == ast.types.Stdlib.Optional:
+        return left
+    if left != ast.types.Stdlib.NoneType and right != ast.types.Stdlib.NoneType:
+        return None
+    member = right if left == ast.types.Stdlib.NoneType else left
+    if member == ast.types.Stdlib.NoneType:
+        return member
+    return utils.instantiate(ctx, utils.get_stdlib_type(ctx, ast.types.Stdlib.Optional), [member])
+
+
 def infer_types(
     ctx: TypeContext, result: ast.Stmt | None, is_toplevel: bool = False
 ) -> ast.Stmt | None:
@@ -39,6 +55,26 @@ def infer_types(
             ctx.substitute("return_early", False),
         ):
             result = ctx.cache.typecheck(result, ctx=ctx)
+            if base.infer_return_type and base.return_statements:
+                first = inferred = None
+                has_empty = has_unknown = False
+                for stmt, bare in base.return_statements:
+                    returned = stmt.expr.type
+                    has_empty |= bare
+                    if returned.unbound:
+                        has_unknown = True
+                    else:
+                        first = first or returned
+                        inferred = (
+                            join_nullable_types(ctx, inferred, returned) or inferred
+                            if inferred
+                            else returned
+                        )
+                if inferred and (inferred != ast.types.Stdlib.NoneType or not has_unknown):
+                    base.return_type |= first if has_empty else inferred
+                    base.infer_return_type = False
+                    base.return_statements.clear()
+                    ctx.changed_nodes += 1
             changed_nodes = ctx.changed_nodes
         if base.iteration == 1 and is_toplevel:
             # Realize all @force_realize functions
@@ -240,10 +276,12 @@ def realize_type(ctx: TypeContext, typ: ast.types.Class) -> ast.types.Class | No
     # TODO: also make it nicer (remove Class manual override)!
     realized_name = ast.types.Class.realized_name(typ)
     generalized = realized.generalize(0)
+    generalized.freeze()
     item = Item(realized_name, base="", module=ctx.module_name, typ=generalized)
-    if generalized != ast.types.Stdlib.Type:
+    if generalized != ast.types.Stdlib.Type or utils.is_metaclass_type(generalized):
         item.type = utils.instantiate_type_var(ctx, realized)
-    ctx.add_always_visible(item, True)
+    if not utils.is_metaclass_type(typ):
+        ctx.add_always_visible(item, True)
 
     realization = cache.ClassData.Realization(type=generalized)
     ctx.cache.class_realization_cnt += 1
@@ -291,9 +329,12 @@ def realize_func(
     imported = utils.get_import_module(ctx, fn_data.module)
     existing = fn_data.realizations.get(typ.realized_name())
     if existing and not force:
+        if not existing.ast and not existing.type.ret_type.can_realize():
+            ctx.base.recursive_dependencies.add(existing.type)
         return existing.type
 
     old_ctx, ctx = ctx, imported.ctx
+    ctx.prepare_checkpoint()
     try:
         if len(ctx.bases) > cache.MAX_REALIZATION_DEPTH:
             raise TypecheckError(
@@ -304,7 +345,7 @@ def realize_func(
         is_import = utils.is_import_fn(typ.ast.name)
         if is_import:
             with ast.Node.creation_context(ctx):
-                return _realize_func_body(ctx, typ, force, fn_data, existing, True)
+                return _realize_func_body(ctx, typ, force, fn_data, existing, True, old_ctx)
         ctx.add_block()
         try:
             new_base = Base(name=typ.ast.name, type=typ, return_type=typ.ret_type)
@@ -317,7 +358,7 @@ def realize_func(
                         ctx.base.parent = idx
                         break
                 with ast.Node.creation_context(ctx):
-                    return _realize_func_body(ctx, typ, force, fn_data, existing, False)
+                    return _realize_func_body(ctx, typ, force, fn_data, existing, False, old_ctx)
         finally:
             ctx.pop_block()
     finally:
@@ -331,6 +372,7 @@ def _realize_func_body(
     fn_data: cache.FunctionData,
     existing,
     is_import: bool,
+    caller_ctx: TypeContext,
 ) -> ast.types.Function | None:
     from ..scope import Bindings
     from . import special
@@ -349,6 +391,12 @@ def _realize_func_body(
     base = ctx.base
     if base:
         base.func = fn_ast
+        base.infer_return_type = (
+            not fn_ast.ret
+            and utils.is_unbound(typ.ret_type)
+            and not fn_ast.async_
+            and not fn_ast.has(ast.Attr.IsGenerator)
+        )
 
     # Internal functions have no AST that can be realized
     has_ast = fn_ast.suite is not None and not fn_ast.has(ast.Attr.Internal)
@@ -391,7 +439,9 @@ def _realize_func_body(
             if unmangled.startswith("$"):
                 unmangled = unmangled.removeprefix("$")
                 generic_type = typ.func_generics[generic_idx].type
-                if generic_type.is_runtime and generic_type != ast.types.Stdlib.Type:
+                if generic_type.is_runtime and (
+                    generic_type != ast.types.Stdlib.Type or utils.is_metaclass_type(generic_type)
+                ):
                     generic_type = utils.instantiate_type_var(ctx, generic_type)
                 value = ctx.add_item(unmangled, variable_name, generic_type)
                 value.generic = True
@@ -415,11 +465,46 @@ def _realize_func_body(
     if base:
         base.suite = fn_ast.suite
     if has_ast and base:
+        # Prepare captured entry bindings once per realization, before inference retries.
+        declared = fn_ast.suite.get(ast.Attr.Bindings, Bindings)
+        prepend = []
+        for param in fn_ast.items:
+            if not param.is_value():
+                continue
+            name = utils.get_unmangled_name(ctx, param.get_name_with_stars()[1])
+            binding = bindings.bindings.get(name) if bindings else None
+            declaration = declared.bindings.get(name) if declared else None
+            if declaration or (binding and binding.is_nonlocal):
+                prepend.append(ast.AssignStmt(ast.IdExpr(name), ast.IdExpr(name)))
+                if declaration:
+                    if declaration.count > 0:
+                        prepend.append(
+                            ast.AssignStmt(
+                                ast.IdExpr(name + cache.VAR_USED_SUFFIX), ast.BoolExpr(False)
+                            )
+                        )
+                    del declared.bindings[name]
+        for stmt in prepend:
+            stmt.set(ast.Attr.ExprTime, fn_ast.suite.get(ast.Attr.ExprTime, int, 0))
+            stmt.info = fn_ast.suite.info
+        fn_ast.suite.items[0:0] = prepend
         with ctx.substitute("block_level", 0):
             inferred = infer_types(ctx, base.suite)
         if not inferred:
             fn_data.realizations.pop(key, None)
-            if not fn_ast.name.startswith("%_lambda"):
+            dependencies = base.recursive_dependencies
+            base.recursive_dependencies = set()
+            deferred = False
+            for dependency in dependencies:
+                if dependency.require_func.ret_type.can_realize():
+                    continue
+                for imported in ctx.cache.imports.values():
+                    if imported.ctx:
+                        for active in imported.ctx.bases:
+                            if active.type is dependency:
+                                deferred = True
+                                caller_ctx.base.recursive_dependencies.add(dependency)
+            if not fn_ast.name.startswith("%_lambda") and not deferred:
                 # TODO: generalize this further.
                 assert base.suite
                 raise TypecheckError(trace=utils.find_typecheck_errors(ctx, base.suite))
@@ -451,7 +536,7 @@ def _realize_func_body(
     realized_params = []
     for param in fn_ast.items:
         _, variable_name = param.get_name_with_stars()
-        realized_params.append(ast.Param(variable_name, status=param.status))
+        realized_params.append(ast.Param(variable_name, status=param.status, kind=param.kind))
     realized_ast = ast.FunctionStmt(
         typ.realized_name(),
         items=realized_params,
@@ -493,7 +578,7 @@ def make_ir_type(ctx: TypeContext, typ: ast.types.Class) -> ast.ir.Type:
         assert cls_data
     realization = cls_data.realizations[realized_name]
     if realization.ir:
-        if cls_data.rtti:
+        if cls_data.has_rtti():
             if False:
                 raise NotImplementedError
                 realization.ir.set_polymorphic()
@@ -607,7 +692,7 @@ def make_ir_type(ctx: TypeContext, typ: ast.types.Class) -> ast.ir.Type:
             handle.set(module.make_member_attribute(member_info))
         else:
             handle = module.unsafe_get_membered_type(realized_name, not typ.is_record())
-            if cls_data.rtti:
+            if cls_data.has_rtti():
                 handle.set_polymorphic()
         handle.info = typ.info
         handle.ast_type = typ

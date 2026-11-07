@@ -5,9 +5,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ... import ast
-from ...bridge import List
 from ...error import TypecheckError
-from . import utils
+from . import infer, utils
 
 if TYPE_CHECKING:
     from . import TypeVisitor
@@ -62,8 +61,13 @@ def typecheck_ifexpr(self: TypeVisitor, node: ast.IfExpr) -> ast.Expr:
         if branch.type and (literal := branch.type.literal):
             # Add wrappers and unify both sides
             branch.type = literal.runtime_type
-    _, node.elsexpr = utils.wrap_expr(self.ctx, node.elsexpr, node.ifexpr.type, allow_unwrap=False)
-    _, node.ifexpr = utils.wrap_expr(self.ctx, node.ifexpr, node.elsexpr.type, allow_unwrap=False)
+    nullable = infer.join_nullable_types(self.ctx, node.ifexpr.type, node.elsexpr.type)
+    _, node.elsexpr = utils.wrap_expr(
+        self.ctx, node.elsexpr, nullable or node.ifexpr.type, allow_unwrap=False
+    )
+    _, node.ifexpr = utils.wrap_expr(
+        self.ctx, node.ifexpr, nullable or node.elsexpr.type, allow_unwrap=False
+    )
 
     assert node.elsexpr.type and node.ifexpr.type
     # Types not compatible! Check if an union can be made
@@ -110,12 +114,17 @@ def typecheck_if(self: TypeVisitor, node: ast.IfStmt) -> ast.Stmt:
         ):
             # isinstance(a, T) ->
             # { if (c := isinstance(a, T)): i = getinstance(a, T)) } ; c
+            original_name = name
             name = self.ctx.generate_canonical_name(utils.get_unmangled_name(self.ctx, name))
             condition_name = utils.get_temporary_var(self.ctx, "cond")
             if node.if_suite:
-                node.if_suite.set(
-                    ast.Attr.LocalRenames, {utils.get_unmangled_name(self.ctx, name): name}
-                )
+                renames = dict(node.if_suite.get(ast.Attr.LocalRenames, dict, {}))
+                source_name = utils.get_unmangled_name(self.ctx, original_name)
+                for alias, target in list(renames.items()):
+                    if target in {source_name, original_name}:
+                        renames[alias] = name
+                renames[source_name] = name
+                node.if_suite.set(ast.Attr.LocalRenames, renames)
             getter = fn_name.replace("_isinstance", "_getinstance")
             result = self.visit_stmt(
                 ast.SuiteStmt(
@@ -211,112 +220,68 @@ def typecheck_match(self: TypeVisitor, node: ast.MatchStmt) -> ast.Stmt:
     return self.visit_stmt(loop)
 
 
-def typecheck_pattern(
-    self: TypeVisitor, var: ast.Expr, pattern: ast.Expr, suite: ast.Stmt
-) -> ast.Stmt:
-    """
-    Transform a match pattern into a series of if statements.
-    @example
-    `case True`          -> `if isinstance(var, bool): if var == True`
-    `case 1`             -> `if isinstance(var, "int"): if var == 1`
-    `case 1...3`         -> ```if isinstance(var, "int"):
-    if var >= 1: if var <= 3```
-    `case (1, pat)`      -> ```if isinstance(var, "Tuple"): if static.len(var) == 2:
-    if match(var[0], 1): if match(var[1], pat)```
-    `case [1, ..., pat]` -> ```if isinstance(var, "List"): if len(var) >= 2:
-    if match(var[0], 1): if match(var[-1], pat)```
-    `case 1 or pat`      -> `if match(var, 1): if match(var, pat)`
-    (note: pattern suite is cloned for each `or`)
-    `case (x := pat)`    -> `(x := var; if match(var, pat))`
-    `case x`             -> `(x := var)`
-    (only when `x` is not '_')
-    `case expr`          -> `if hasattr(typeof(var), "__match__"): if
-    var.__match__(foo())`
-    (any expression that does not fit above patterns)
-    """
-
-    def isinstance_call(expression: ast.Expr, type_name: str) -> ast.Expr:
-        """Convenience function to generate `isinstance(e, typ)` calls"""
-        return ast.CallExpr(
-            ast.IdExpr("isinstance"),
-            items=[expression.clone(), ast.IdExpr(type_name)],
+def typecheck_pattern(self, var, pattern, suite):
+    """Lower match patterns, evaluating each field or index only once."""
+    if not isinstance(var, ast.IdExpr):
+        tmp = utils.get_temporary_var(self.ctx, "match")
+        return ast.SuiteStmt(
+            ast.AssignStmt(ast.IdExpr(tmp), var),
+            typecheck_pattern(self, ast.IdExpr(tmp), pattern, suite),
         )
 
-    def ellipsis_idx(items: List[ast.Expr]) -> int:
-        """Convenience function to find the index of an ellipsis within a list pattern."""
-        # TODO: replace with StarExpr
-        result = len(items)
-        for idx, item in enumerate(items):
-            if isinstance(item, ast.EllipsisExpr):
-                if result != len(items):
-                    raise TypecheckError(item, "multiple ellipses in a pattern")
-                result = idx
-        return result
+    def instance(value, typ):
+        return ast.CallExpr(ast.IdExpr("isinstance"), [value.clone(), ast.IdExpr(typ)])
 
     match pattern:
-        case ast.IntExpr():
+        case ast.NoneExpr():
+            return ast.IfStmt(ast.BinaryExpr(var, "is", pattern), suite)
+        case ast.IntExpr() | ast.BoolExpr():
+            typ = ast.types.Stdlib.Bool if isinstance(pattern, ast.BoolExpr) else "int"
             return ast.IfStmt(
-                isinstance_call(var, ast.types.Stdlib.Int),
-                if_suite=ast.IfStmt(ast.BinaryExpr(var, "==", pattern), suite),
-            )
-        case ast.BoolExpr():
-            return ast.IfStmt(
-                isinstance_call(var, ast.types.Stdlib.Bool),
-                if_suite=ast.IfStmt(ast.BinaryExpr(var, "==", pattern), suite),
+                instance(var, typ), ast.IfStmt(ast.BinaryExpr(var, "==", pattern), suite)
             )
         case ast.RangeExpr(start=start, stop=stop):
-            upper = ast.IfStmt(ast.BinaryExpr(var.clone(), "<=", stop), suite)
-            lower = ast.IfStmt(ast.BinaryExpr(var, ">=", start), upper)
-            return ast.IfStmt(isinstance_call(var, "int"), lower)
-        case ast.TupleExpr(items=items):
-            nested = suite
-            for idx in range(len(items) - 1, -1, -1):
-                nested = typecheck_pattern(
-                    self,
-                    ast.IndexExpr(var.clone(), index=ast.IntExpr(idx)),
-                    items[idx],
-                    nested,
-                )
-            length = ast.CallExpr(
-                ast.IdExpr(ast.types.mangle("std.internal.static", func="len")),
-                items=[var],
-            )
             return ast.IfStmt(
-                isinstance_call(var, ast.types.Stdlib.Tuple),
-                ast.IfStmt(ast.BinaryExpr(length, "==", ast.IntExpr(len(items))), if_suite=nested),
-            )
-        case ast.ListExpr(items=items):
-            ellipsis = ellipsis_idx(items)
-            size = len(items)
-            op = "=="
-            if ellipsis != len(items):
-                op, size = ">=", size - 1
-            nested = suite
-            for idx in range(len(items) - 1, ellipsis, -1):
-                relative = idx - len(items)
-                nested = typecheck_pattern(
-                    self,
-                    ast.IndexExpr(var.clone(), index=ast.IntExpr(relative)),
-                    items[idx],
-                    nested,
-                )
-            for idx in range(ellipsis - 1, -1, -1):
-                nested = typecheck_pattern(
-                    self,
-                    ast.IndexExpr(var.clone(), index=ast.IntExpr(idx)),
-                    items[idx],
-                    nested,
-                )
-            return ast.IfStmt(
-                isinstance_call(var, "List"),
+                instance(var, "int"),
                 ast.IfStmt(
-                    ast.BinaryExpr(
-                        ast.CallExpr(ast.IdExpr("len"), items=[var]), op, ast.IntExpr(size)
-                    ),
-                    if_suite=nested,
+                    ast.BinaryExpr(var, ">=", start),
+                    ast.IfStmt(ast.BinaryExpr(var.clone(), "<=", stop), suite),
                 ),
             )
-        case ast.BinaryExpr(op=op) if op in ("|", "||"):
+        case ast.TupleExpr(items=items):
+            is_tuple = type(pattern) is ast.TupleExpr
+            wildcard, size = len(items), len(items)
+            for idx, item in enumerate(items):
+                if isinstance(item, ast.StarExpr) and not (
+                    isinstance(item.expr, ast.IdExpr) and item.expr.value == "_"
+                ):
+                    raise TypecheckError(item, "only *_ is supported in sequence patterns")
+                if isinstance(item, (ast.EllipsisExpr, ast.StarExpr)):
+                    if wildcard != size:
+                        raise TypecheckError(item, "multiple ellipses in a pattern")
+                    wildcard = idx
+            for idx in range(size - 1, wildcard, -1):
+                suite = typecheck_pattern(
+                    self, ast.IndexExpr(var.clone(), ast.IntExpr(idx - size)), items[idx], suite
+                )
+            for idx in range(wildcard - 1, -1, -1):
+                suite = typecheck_pattern(
+                    self, ast.IndexExpr(var.clone(), ast.IntExpr(idx)), items[idx], suite
+                )
+            length = ast.CallExpr(
+                ast.IdExpr(
+                    ast.types.mangle("std.internal.static", func="len") if is_tuple else "len"
+                ),
+                [var.clone()],
+            )
+            gap = wildcard != size
+            return ast.IfStmt(
+                instance(var, ast.types.Stdlib.Tuple if is_tuple else ast.types.Stdlib.List),
+                ast.IfStmt(
+                    ast.BinaryExpr(length, ">=" if gap else "==", ast.IntExpr(size - gap)), suite
+                ),
+            )
+        case ast.BinaryExpr(op="|" | "||"):
             return ast.SuiteStmt(
                 typecheck_pattern(self, var.clone(), pattern.lexpr, suite.clone()),
                 typecheck_pattern(self, var, pattern.rexpr, suite),
@@ -324,13 +289,74 @@ def typecheck_pattern(
         case ast.IdExpr(value="_"):
             return suite
         case ast.IdExpr():
-            return ast.SuiteStmt(ast.AssignStmt(pattern, rhs=var), suite)
-        case ast.AssignExpr(var=ast.IdExpr() as var, expr=expr):
-            return ast.SuiteStmt(
-                ast.AssignStmt(var, rhs=var.clone()), typecheck_pattern(self, var, expr, suite)
+            return ast.SuiteStmt(ast.AssignStmt(pattern, var), suite)
+        case ast.AssignExpr():
+            assert isinstance(pattern.var, ast.IdExpr), (
+                "only simple assignment expressions are supported"
             )
-        case ast.AssignExpr:
-            assert False, "only simple assignment expressions are supported"
+            return typecheck_pattern(
+                self,
+                var,
+                pattern.expr,
+                ast.SuiteStmt(ast.AssignStmt(pattern.var, var.clone()), suite),
+            )
+        case ast.CallExpr():
+            head = self.visit_expr(pattern.expr.clone())
+            if not utils.is_type_expr(head):
+                raise TypecheckError(pattern, "called match pattern must be a class")
+            if not pattern.items or any(arg.name for arg in pattern.items):
+                for arg in reversed(pattern.items):
+                    if not arg.name:
+                        raise TypecheckError(arg.value, "expected a keyword class pattern")
+                    attribute = utils.get_temporary_var(self.ctx, "match_attr")
+                    suite = ast.IfStmt(
+                        ast.CallExpr(
+                            ast.IdExpr("hasattr"), [var.clone(), ast.StringExpr(arg.name)]
+                        ),
+                        ast.TryStmt(
+                            ast.AssignStmt(
+                                ast.IdExpr(attribute), ast.DotExpr(var.clone(), arg.name)
+                            ),
+                            items=[
+                                ast.TryStmt.Except(
+                                    ast.IdExpr(
+                                        ast.types.mangle(
+                                            "std.internal.types.error", cls="AttributeError"
+                                        )
+                                    ),
+                                    suite=ast.SuiteStmt(),
+                                )
+                            ],
+                            else_suite=typecheck_pattern(
+                                self, ast.IdExpr(attribute), arg.value, suite
+                            ),
+                        ),
+                    )
+                temporary = utils.get_temporary_var(self.ctx, "match")
+                optional_suite = ast.SuiteStmt.wrap(suite.clone())
+                optional_suite.set(
+                    ast.Attr.LocalRenames,
+                    {utils.get_unmangled_name(self.ctx, var.value): temporary},
+                )
+                return ast.IfStmt(
+                    instance(var, ast.types.Stdlib.Optional),
+                    ast.IfStmt(
+                        ast.BinaryExpr(var.clone(), "is not", ast.NoneExpr()),
+                        ast.SuiteStmt(
+                            ast.AssignStmt(
+                                ast.IdExpr(temporary),
+                                ast.CallExpr(ast.IdExpr("unwrap"), [var.clone()]),
+                            ),
+                            ast.IfStmt(
+                                ast.CallExpr(
+                                    ast.IdExpr("isinstance"), [ast.IdExpr(temporary), head.clone()]
+                                ),
+                                optional_suite,
+                            ),
+                        ),
+                    ),
+                    ast.IfStmt(ast.CallExpr(ast.IdExpr("isinstance"), [var, head]), suite),
+                )
 
     pattern = self.visit_expr(pattern)
     if isinstance(pattern, ast.EllipsisExpr):

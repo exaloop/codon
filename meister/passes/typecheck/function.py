@@ -15,6 +15,31 @@ if TYPE_CHECKING:
     from . import TypeVisitor
 
 
+def prepare_call_layout(ctx, node):
+    """Finalize argument structure after captures, names and defaults are normalized."""
+    assert node.call_layout is None, "function call layout was already initialized"
+    layout = ast.FunctionStmt.CallLayout()
+    layout.positional_limit = len(node.items)
+    for idx, param in enumerate(node.items):
+        if param.kind is ast.Param.Kind.KeywordOnly or param.name.startswith("*"):
+            layout.positional_limit = min(layout.positional_limit, idx)
+        if param.name.startswith("**"):
+            layout.kwstar = idx
+            layout.variadic_penalty -= 2
+        elif param.name.startswith("*"):
+            layout.star = idx
+            layout.variadic_penalty -= 2
+        optional = bool((param.is_value() and param.default) or param.name.startswith("$"))
+        layout.optional.append(optional)
+        if param.is_value() and not optional and not param.name.startswith("*"):
+            layout.required_values.append(idx)
+        if param.kind is not ast.Param.Kind.PositionalOnly:
+            layout.keywords.append(
+                (utils.get_unmangled_name(ctx, param.get_name_with_stars()[1]), idx)
+            )
+    node.call_layout = layout
+
+
 def typecheck_lambda(self: TypeVisitor, node: ast.LambdaExpr) -> ast.Expr:
     """
     Unify the function return type with `Generator[?]`.
@@ -115,6 +140,7 @@ def typecheck_return(self: TypeVisitor, node: ast.ReturnStmt) -> ast.Stmt:
     assert base.func and base.return_type
 
     is_async = base.func.async_
+    bare = node.expr is None
     if node.expr is None and base.func.has(ast.Attr.IsGenerator):
         node.done = True
     else:
@@ -123,9 +149,10 @@ def typecheck_return(self: TypeVisitor, node: ast.ReturnStmt) -> ast.Stmt:
         if node.expr is None:
             node.expr = ast.CallExpr(ast.IdExpr(ast.types.Stdlib.NoneType))
         node.expr = self.visit_expr(node.expr)
+        was_realizable = node.expr.type.can_realize()
 
         # Wrap expression to match the return type
-        if not base.return_type.unbound:
+        if not base.infer_return_type and not base.return_type.unbound:
             can_wrap, node.expr = utils.wrap_expr(self.ctx, node.expr, base.return_type)
             if not can_wrap:
                 return node
@@ -150,15 +177,20 @@ def typecheck_return(self: TypeVisitor, node: ast.ReturnStmt) -> ast.Stmt:
                 utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Coroutine),
                 [node.expr.type],
             )
+        elif base.infer_return_type:
+            if not any(stmt is node for stmt, _ in base.return_statements):
+                base.return_statements.append((node, bare))
         else:
             base.return_type |= node.expr.type
+        if not was_realizable and node.expr.type.can_realize():
+            self.ctx.changed_nodes += 1
 
     if self.ctx.block_level == 0:
         # If we are not within conditional block, ignore later statements in this function.
         # Useful with static if statements.
         self.ctx.return_early = True
 
-    if node.expr is None or node.expr.done:
+    if not base.infer_return_type and (node.expr is None or node.expr.done):
         node.done = True
     return node
 
@@ -397,6 +429,7 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
                         | ast.FloatExpr()
                         | ast.IdExpr()
                         | ast.StringExpr()
+                        | ast.UnaryExpr(expr=ast.IntExpr())
                     ),
                     _,
                 ):
@@ -440,6 +473,7 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
                     type=param.type,
                     default=default,
                     status=param.status,
+                    kind=param.kind,
                 )
             )
 
@@ -518,23 +552,19 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
                 if not param.is_value():
                     continue
                 arg_generic = arg_tuple[arg_idx]
+                if (
+                    parent_class
+                    and param_idx == 0
+                    and node.has(ast.Attr.HasSelf)
+                    and utils.get_class(self.ctx, parent_class).ast.has(ast.Attr.ClassDeduce)
+                    and node.has(ast.Attr.ClassDeduce)
+                    and node.name == "__init__"
+                ):
+                    for unbound in parent_class.get_unbounds(True):
+                        node.set(ast.Attr.AllowPassThrough)
+                        unbound.pass_through = True
                 if param.type is None:
-                    if parent_class and param_idx == 0 and param.name == "self":
-                        # Special case: self in methods
-                        arg_generic |= parent_class
-                        parent_cache = utils.get_class(self.ctx, parent_class)
-                        if (
-                            parent_cache
-                            and parent_cache.ast
-                            and parent_cache.ast.has(ast.Attr.ClassDeduce)
-                            and node.has(ast.Attr.ClassDeduce)
-                            and node.name == "__init__"
-                        ):
-                            for unbound in arg_generic.get_unbounds(True):
-                                node.set(ast.Attr.AllowPassThrough)
-                                unbound.pass_through = True
-                    else:
-                        generic_types.append(arg_generic)
+                    generic_types.append(arg_generic)
                 elif param.name.startswith("*"):
                     # Special case: `*args: type` and `**kwargs: type`. Do not add this type to the
                     # signature (as the real type is `Tuple[type, ...]`); it will be used during
@@ -565,9 +595,10 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
                 generic_types.append(ret_type)
 
         # Generalize generics and remove them from the context
+        parent_generics = {u.id for u in parent_class.get_unbounds(True)} if parent_class else set()
         for generic_type in generic_types:
             for unbound in generic_type.get_unbounds(False):
-                if link := unbound.unbound:
+                if (link := unbound.unbound) and link.id not in parent_generics:
                     link.kind = ast.types.Link.Kind.Generic
 
         # Parse function body
@@ -586,9 +617,8 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
     fn_ast = ast.FunctionStmt(
         canonical, ret=ret, items=args, suite=suite, async_=node.async_, done=True
     )
-    if "_thunk_dispatch" in canonical:
-        node.set(ast.Attr.AllowPassThrough)
     fn_ast.attributes = copy.deepcopy(node.attributes)
+    prepare_call_layout(self.ctx, fn_ast)
     fn_data = cache.FunctionData(
         module=self.ctx.module_path,
         root_name=root_name,

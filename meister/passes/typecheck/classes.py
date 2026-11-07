@@ -6,13 +6,309 @@ import copy
 from typing import TYPE_CHECKING
 
 from ... import ast, cache, error
-from ...bridge import List, cast
+from ...bridge import List, cast, dataclass
 from ...error import TypecheckError
 from . import utils
 from .ctx import Item, TypeContext
 
 if TYPE_CHECKING:
     from . import TypeVisitor
+
+
+@dataclass(init=False)
+class InitializedFields:
+    """Initialization facts for the tracked receiver on a modeled control-flow path."""
+
+    def __init__(self, fields=None, aliases=None, reachable=True):
+        self.fields = set() if fields is None else set(fields)
+        self.aliases = set() if aliases is None else set(aliases)
+        self.reachable = reachable
+
+    def clone(self):
+        return InitializedFields(self.fields, self.aliases, self.reachable)
+
+    def intersect(self, other):
+        if not other.reachable:
+            return
+        if not self.reachable:
+            self.fields, self.aliases, self.reachable = set(other.fields), set(other.aliases), True
+        else:
+            self.fields.intersection_update(other.fields)
+            self.aliases.intersection_update(other.aliases)
+
+
+class ReboundLocalsVisitor(ast.NodeVisitor):
+    def __init__(self):
+        self.names = set()
+
+    def visit_FunctionStmt(self, node):
+        pass
+
+    def visit_ClassStmt(self, node):
+        pass
+
+    def visit_AssignStmt(self, node):
+        if isinstance(node.lhs, ast.IdExpr):
+            self.names.add(node.lhs.value)
+        self.generic_visit(node)
+
+    def visit_ForStmt(self, node):
+        if isinstance(node.var, ast.IdExpr):
+            self.names.add(node.var.value)
+        self.generic_visit(node)
+
+    def visit_Except(self, node):
+        self.names.add(node.var)
+        self.generic_visit(node)
+
+
+class FieldInitializationVisitor(ast.NodeVisitor):
+    """Conservatively track field writes in a realized AST, following known helpers."""
+
+    def __init__(self, ctx, receiver, active, summaries):
+        self.ctx, self.receiver = ctx, receiver
+        self.active, self.summaries = active, summaries
+        self.state = InitializedFields()
+        self.exits, self.exceptions = [], []
+
+    def visit(self, node):
+        if node and self.state.reachable:
+            return super().visit(node)
+
+    def record_exception(self):
+        if self.state.reachable and self.exceptions:
+            self.exceptions[-1].intersect(self.state)
+
+    def forget_rebound_aliases(self, node):
+        rebound = ReboundLocalsVisitor()
+        rebound.visit(node)
+        self.state.aliases.difference_update(rebound.names)
+
+    def analyze_loop_body(self, body):
+        incoming = self.state.clone()
+        previous = len(self.exits)
+        self.visit(body)
+        pending = self.exits[previous:]
+        del self.exits[previous:]
+        self.state = incoming
+        for kind, state in pending:
+            if kind == "break":
+                self.state.intersect(state)
+            elif kind == "return":
+                self.exits.append((kind, state))
+
+    def is_instance(self, expr):
+        match expr:
+            case ast.IdExpr(value=value):
+                return value in self.state.aliases
+            case ast.DotExpr(expr=source, member="_obj") if source.type == "Super":
+                return self.is_instance(source)
+            case ast.DotExpr(expr=ast.DotExpr(expr=source, member="args"), member="item1") if (
+                source.type == "Partial"
+            ):
+                return self.is_instance(source)
+            case ast.CallExpr() if expr.items:
+                fn = expr.expr.type.func if expr.expr.type else None
+                if not fn:
+                    return False
+                if fn.func_name.startswith(
+                    (
+                        ast.types.mangle("std.internal.types.rtti", func="force_cast"),
+                        ast.types.mangle(cls="type", func="_force_cast"),
+                        ast.types.mangle(cls="Super", func="__getattr__"),
+                    )
+                ):
+                    return self.is_instance(expr.items[0].value)
+                if fn.func_name.startswith(ast.types.mangle(cls="Super", func="__new__")):
+                    return any(self.is_instance(a.value) for a in expr.items)
+        return False
+
+    def analyze(self, fn, argument):
+        if fn.async_ or fn.has(ast.Attr.IsGenerator):
+            return InitializedFields()
+        key = (id(fn), argument)
+        if key in self.summaries:
+            return self.summaries[key].clone()
+        if key in self.active:
+            return self.state.clone()
+        self.active.add(key)
+        self.state.aliases.add(fn.items[argument].name)
+        self.visit(fn.suite)
+        for kind, state in self.exits:
+            if kind == "return":
+                self.state.intersect(state)
+        self.active.remove(key)
+        self.summaries[key] = self.state.clone()
+        return self.state
+
+    def visit_FunctionStmt(self, node):
+        pass
+
+    def visit_ClassStmt(self, node):
+        pass
+
+    def visit_AssignStmt(self, node):
+        self.visit(node.rhs)
+        if isinstance(node.lhs, ast.IdExpr) and node.rhs:
+            if self.is_instance(node.rhs):
+                self.state.aliases.add(node.lhs.value)
+            else:
+                self.state.aliases.discard(node.lhs.value)
+
+    def visit_AssignMemberStmt(self, node):
+        self.visit(node.lhs)
+        self.visit(node.rhs)
+        if self.is_instance(node.lhs):
+            self.state.fields.add(node.member)
+
+    def visit_CallExpr(self, node):
+        self.generic_visit(node)
+        if not self.state.reachable:
+            return
+        self.record_exception()
+        fn = node.expr.type.func if node.expr.type else None
+        if not fn:
+            return
+        if node.has(ast.Attr.ExprVirtual):
+            dispatch = node.get(ast.Attr.ExprVirtual, int)
+            thunk = dispatch if dispatch >= 0 else 0
+            if dispatch < 0 and utils.is_polymorphic(self.ctx, fn):
+                from .special import vtable_signature
+
+                thunk = self.ctx.cache.thunk_ids.get(vtable_signature(self.ctx, fn), 0)
+                if not thunk:
+                    return
+            if thunk:
+                if not node.items or not self.is_instance(node.items[0].value):
+                    return
+                fn = self.receiver.vtable.get(thunk)
+                if not fn:
+                    return
+        cached = self.ctx.cache.functions.get(fn.func_name)
+        realization = cached.realizations.get(fn.realized_name()) if cached else None
+        if not realization or not realization.ast:
+            return
+        argument = 0
+        for idx, param in enumerate(realization.ast.items):
+            if not param.is_value():
+                continue
+            if argument >= len(node.items):
+                break
+            value = node.items[argument].value
+            argument += 1
+            if self.is_instance(value):
+                helper = FieldInitializationVisitor(
+                    self.ctx, self.receiver, self.active, self.summaries
+                )
+                initialized = helper.analyze(realization.ast, idx)
+                self.state.fields.update(initialized.fields)
+                self.state.reachable &= initialized.reachable
+
+    def visit_IfStmt(self, node):
+        self.visit(node.cond)
+        incoming = self.state.clone()
+        self.visit(node.if_suite)
+        first = self.state.clone()
+        self.state = incoming
+        self.visit(node.else_suite)
+        self.state.intersect(first)
+
+    def visit_IfExpr(self, node):
+        self.visit(node.cond)
+        incoming = self.state.clone()
+        self.visit(node.ifexpr)
+        first = self.state.clone()
+        self.state = incoming
+        self.visit(node.elsexpr)
+        self.state.intersect(first)
+
+    def visit_WhileStmt(self, node):
+        self.forget_rebound_aliases(node)
+        self.visit(node.cond)
+        self.analyze_loop_body(node.suite)
+
+    def visit_ForStmt(self, node):
+        self.visit(node.iter)
+        self.forget_rebound_aliases(node)
+        self.record_exception()
+        self.analyze_loop_body(node.suite)
+
+    def visit_BreakStmt(self, node):
+        self.exits.append(("break", self.state.clone()))
+        self.state.reachable = False
+
+    def visit_ContinueStmt(self, node):
+        self.exits.append(("continue", self.state.clone()))
+        self.state.reachable = False
+
+    def visit_ReturnStmt(self, node):
+        self.visit(node.expr)
+        if self.state.reachable:
+            self.exits.append(("return", self.state.clone()))
+        self.state.reachable = False
+
+    def visit_ThrowStmt(self, node):
+        self.visit(node.expr)
+        self.record_exception()
+        self.state.reachable = False
+
+    def visit_TryStmt(self, node):
+        previous = len(self.exits)
+        self.exceptions.append(InitializedFields(reachable=False))
+        self.visit(node.suite)
+        thrown = self.exceptions[-1].clone()
+        self.exceptions[-1] = InitializedFields(reachable=False)
+        self.visit(node.else_suite)
+        normal = self.state.clone()
+        catches_all = False
+        for handler in node.items:
+            self.state = thrown.clone()
+            self.state.aliases.discard(handler.var)
+            self.visit(handler.suite)
+            normal.intersect(self.state)
+            if (
+                not handler.exc
+                or utils.extract_type(self.ctx, handler.exc.type) == ast.types.Stdlib.BaseException
+            ):
+                catches_all = True
+        if not catches_all:
+            self.exceptions[-1].intersect(thrown)
+        unhandled = self.exceptions.pop()
+        pending = self.exits[previous:]
+        del self.exits[previous:]
+        for kind, state in pending:
+            self.state = state.clone()
+            self.visit(node.finally_suite)
+            if self.state.reachable:
+                self.exits.append((kind, self.state.clone()))
+        self.state = unhandled
+        self.visit(node.finally_suite)
+        self.record_exception()
+        self.state = normal
+        self.visit(node.finally_suite)
+
+
+def check_field_initialization(ctx, typ, fn):
+    """Reject fields not proven initialized at a realized constructor's normal exits."""
+    if (
+        not typ.func_parent
+        or utils.get_unmangled_name(ctx, typ.func_name) != "__init__"
+        or not fn.items
+    ):
+        return
+    parent = typ.func_parent.require_cls
+    cls = utils.get_class(ctx, parent)
+    if parent.is_tuple or not cls or not cls.ast or cls.ast.has(ast.Attr.Internal):
+        return
+    receiver = utils.get_class_realization(ctx, typ[0].cls or parent)
+    initialized = FieldInitializationVisitor(ctx, receiver, set(), {}).analyze(fn, 0)
+    if initialized.reachable:
+        for field in utils.get_class_fields(ctx, parent):
+            if field.name not in initialized.fields:
+                raise TypecheckError(
+                    fn,
+                    f"field '{utils.get_unmangled_name(ctx, parent.name)}.{field.name}' may be uninitialized when __init__ returns",
+                )
 
 
 def typecheck_class(self: TypeVisitor, node: ast.ClassStmt) -> ast.Node:
@@ -157,6 +453,8 @@ def typecheck_class(self: TypeVisitor, node: ast.ClassStmt) -> ast.Node:
                         ast.Param(var_name, type=arg.type, default=default_expr, status=arg.status)
                     )
 
+            enum_init = prepare_enum(self, node, class_type, var_stmts)
+
             # Form class type node (e.g. `Foo`, or `Foo[T, U]` for generic classes)
             type_expr = None
             if not node.has(ast.Attr.Extend):
@@ -288,9 +586,15 @@ def typecheck_class(self: TypeVisitor, node: ast.ClassStmt) -> ast.Node:
                 cls_data.jit_cell = self.ctx.cache.jit_cell
 
                 # Codegen default magic methods
+                custom_new = any(
+                    isinstance(stmt, ast.FunctionStmt) and stmt.name == "__new__"
+                    for stmt in get_class_methods(self, node.suite)
+                )
                 if magics := node.get(ast.Attr.ClassMagic, list[str]):
                     assert type_expr
                     for magic in magics:
+                        if magic == "new" and custom_new and not node.is_record():
+                            continue
                         magic_statement = codegen_magic(
                             self, magic, type_expr, member_args, node.has(ast.Attr.Tuple)
                         )
@@ -301,8 +605,8 @@ def typecheck_class(self: TypeVisitor, node: ast.ClassStmt) -> ast.Node:
                 if isinstance(stmt, ast.FunctionStmt):
                     for idx, decorator in enumerate(stmt.decorators):
                         match decorator:
-                            case ast.DotExpr(ast.IdExpr(value=name), memver="setter") if (
-                                name == stmt.name and len(stmt.items) == 2
+                            case ast.DotExpr(ast.IdExpr(value=name), member="setter") if (
+                                name == stmt.name and sum(p.is_value() for p in stmt.items) == 2
                             ):
                                 # Handle @setter setters
                                 stmt.name = f"{cache.FN_SETTER_SUFFIX}{stmt.name}"
@@ -377,10 +681,220 @@ def typecheck_class(self: TypeVisitor, node: ast.ClassStmt) -> ast.Node:
         assert cls_ast is not None, f"not a class AST for {canonical}"
         cls_ast.done = True
         class_stmts.append(cls_ast)
+        if canonical == ast.types.Stdlib.Int:
+            from . import infer
+
+            # Auto-realize int64
+            realized = utils.instantiate(self.ctx, class_type)
+            value = Item(
+                "Int[64]", "", self.ctx.module_name, utils.instantiate_type_var(self.ctx, realized)
+            )
+            self.ctx.add_always_visible(value, True)
+            self.ctx.cache.type_ctx.add("int", value)
+            realized[0] |= ast.types.IntLiteral(64, cache=self.ctx.cache)
+            self.ctx.cache.class_realization_cnt += 1
+            cls_data.realizations["Int[64]"] = cache.ClassData.Realization(
+                type=realized, id=self.ctx.cache.class_realization_cnt
+            )
+            infer.make_ir_type(self.ctx, realized)
     class_stmts.extend(fn_stmts)
     for assignment in var_stmts:
         class_stmts.append(self.visit_stmt(assignment))
+    for stmt in enum_init:
+        class_stmts.append(self.visit_stmt(stmt))
     return ast.SuiteStmt(*class_stmts)
+
+
+def is_enum(ctx, typ):
+    return any(
+        base == ast.types.mangle("std.enum", cls="Enum") for base in utils.get_class(ctx, typ).mro
+    )
+
+
+def prepare_enum(self, node, typ, values):
+    """Lower Enum declarations to reference classes and singleton globals."""
+    if node.has(ast.Attr.Extend):
+        return []
+    enumeration = False
+    for base in node.base_classes:
+        cls = utils.extract_class_type(
+            self.ctx, self.visit_expr(base.clone(), enforce_type=True, simple_types=True)
+        )
+        if not cls or not is_enum(self.ctx, cls):
+            continue
+        for name, var in utils.get_class(self.ctx, cls).class_vars.items():
+            if not name.startswith("__") and self.ctx[var].type == cls.name:
+                raise TypecheckError(node, "cannot extend an enumeration with members")
+        enumeration = True
+    if not enumeration:
+        return []
+    if len(node.base_classes) != 1 or node.has(ast.Attr.Tuple):
+        raise TypecheckError(node, "Enum requires a single enumeration base class")
+    for stmt in get_class_methods(self, node.suite):
+        if isinstance(stmt, ast.FunctionStmt) and stmt.name in {"__init__", "__new__"}:
+            raise TypecheckError(stmt, "custom enumeration constructors are not supported")
+    names, raw_values, members, init = [], [], [], []
+    member_buffer = utils.get_temporary_var(self.ctx, "enum_members")
+    auto_maximum = ""
+
+    def self_type():
+        return ast.IdExpr(typ.name)
+
+    def helper(name):
+        return ast.IdExpr(ast.types.mangle("std.enum", func=name))
+
+    for param in node.items:
+        if (
+            not param.is_value()
+            or not ast.ClassStmt.is_class_var(param)
+            or not param.default
+            or param.name.startswith("__")
+        ):
+            continue
+        if param.name in {"_name_", "_value_", "name", "value"}:
+            raise TypecheckError(param, f"reserved enumeration member name '{param.name}'")
+        value = param.default.clone()
+        if isinstance(value, ast.CallExpr):
+            head = self.visit_expr(value.expr.clone())
+            if utils.is_type_expr(head) and utils.extract_class_type(
+                self.ctx, head
+            ) == ast.types.mangle("std.enum", cls="auto"):
+                if value.items:
+                    raise TypecheckError(value, "auto() does not accept arguments")
+                value = (
+                    ast.IntExpr(1)
+                    if not raw_values
+                    else ast.CallExpr(
+                        helper("_next_value"), [ast.IdExpr(auto_maximum), raw_values[0].clone()]
+                    )
+                )
+        raw = utils.get_temporary_var(self.ctx, "enum_value")
+        values.append(self.visit_stmt(ast.AssignStmt(ast.IdExpr(raw), value)))
+        binding = self.ctx[raw]
+        binding.base, binding.block_level = "", 0
+        utils.register_global(self.ctx, binding.canonical)
+        self.ctx.add(param.name, binding)
+        raw_values.append(ast.IdExpr(binding.canonical))
+        if not auto_maximum:
+            auto_maximum = utils.get_temporary_var(self.ctx, "enum_maximum")
+            values.append(
+                self.visit_stmt(
+                    ast.AssignStmt(
+                        ast.IdExpr(auto_maximum),
+                        ast.CallExpr(
+                            helper("_auto_maximum"),
+                            [raw_values[-1].clone(), ast.IntExpr(0), ast.BoolExpr(True)],
+                        ),
+                    )
+                )
+            )
+            maximum = self.ctx[auto_maximum]
+            maximum.base, maximum.block_level = "", 0
+            utils.register_global(self.ctx, maximum.canonical)
+            auto_maximum = maximum.canonical
+        else:
+            values.append(
+                self.visit_stmt(
+                    ast.AssignStmt(
+                        ast.IdExpr(auto_maximum),
+                        ast.CallExpr(
+                            helper("_auto_maximum"),
+                            [raw_values[-1].clone(), ast.IdExpr(auto_maximum), ast.BoolExpr(False)],
+                        ),
+                        update=ast.AssignStmt.Mode.Update,
+                    )
+                )
+            )
+        member = ast.IdExpr(f"{typ.name}.{param.name}")
+        init.append(
+            ast.AssignStmt(
+                member.clone(),
+                ast.CallExpr(
+                    helper("_make_member"),
+                    [
+                        self_type(),
+                        ast.StringExpr(param.name),
+                        raw_values[-1].clone(),
+                        ast.IdExpr(member_buffer),
+                        ast.IntExpr(len(members)),
+                    ],
+                ),
+                type_expr=self_type(),
+                update=ast.AssignStmt.Mode.Update,
+            )
+        )
+        names.append(param.name)
+        members.append(member)
+        param.type = ast.IndexExpr(ast.IdExpr("ClassVar"), self_type())
+        param.default = None
+    if raw_values:
+        from . import infer
+
+        value_type = self.ctx[raw_values[0].value].type
+        for value in raw_values:
+            actual = self.ctx[value.value].type
+            if (
+                utils.get_underlying_static_type(self.ctx, value_type).unify(
+                    utils.get_underlying_static_type(self.ctx, actual), None
+                )
+                < 0
+            ):
+                raise TypecheckError(node, "enumeration values must have the same type")
+        realized = infer.realize(self.ctx, utils.get_underlying_static_type(self.ctx, value_type))
+        if not realized:
+            raise TypecheckError(node, "cannot infer enumeration value type")
+        node.items.append(ast.Param("_value_", ast.IdExpr(realized.realized_name())))
+        index_type = ast.IndexExpr(
+            ast.IdExpr(ast.types.mangle("std.enum", cls="_ValueIndex")),
+            ast.TupleExpr([ast.IdExpr(realized.realized_name()), self_type()]),
+        )
+        node.items.append(
+            ast.Param("__value_index__", ast.IndexExpr(ast.IdExpr("ClassVar"), index_type))
+        )
+        init.insert(
+            0,
+            ast.AssignStmt(
+                ast.IdExpr(member_buffer),
+                ast.CallExpr(
+                    ast.IndexExpr(ast.IdExpr("Ptr"), self_type()), [ast.IntExpr(len(members))]
+                ),
+            ),
+        )
+    mapping_type = ast.IndexExpr(
+        ast.IdExpr(ast.types.mangle("std.internal.types.collections.dict", cls="OrderedDict")),
+        ast.TupleExpr([ast.IdExpr(ast.types.Stdlib.String), self_type()]),
+    )
+    node.items.append(
+        ast.Param("__members__", ast.IndexExpr(ast.IdExpr("ClassVar"), mapping_type.clone()))
+    )
+    entries = [
+        ast.TupleExpr([ast.StringExpr(name), member.clone()])
+        for name, member in zip(names, members)
+    ]
+    mapping = (
+        ast.CallExpr(
+            mapping_type, [ast.CallExpr(ast.DotExpr(ast.ListExpr(items=entries), "__iter__"))]
+        )
+        if names
+        else ast.CallExpr(mapping_type)
+    )
+    init.append(
+        ast.AssignStmt(
+            ast.IdExpr(f"{typ.name}.__members__"), mapping, update=ast.AssignStmt.Mode.Update
+        )
+    )
+    if raw_values:
+        init.append(
+            ast.AssignStmt(
+                ast.IdExpr(f"{typ.name}.__value_index__"),
+                ast.CallExpr(helper("_make_value_index"), [self_type(), raw_values[0].clone()]),
+                update=ast.AssignStmt.Mode.Update,
+            )
+        )
+    node.erase(ast.Attr.ClassDeduce)
+    if magic := node.get(ast.Attr.ClassMagic, List[str]):
+        magic[:] = [name for name in magic if name not in {"init", "new"}]
+    return init
 
 
 def parse_base_classes(
@@ -424,16 +938,18 @@ def parse_base_classes(
             raise TypecheckError(attr, "internal classes cannot inherit other classes")
 
         # Mark parent classes as polymorphic as well.
-        if not base_data.rtti:
-            if self.ctx.cache.is_jit and base_data.jit_cell != self.ctx.cache.jit_cell:
+        if not base_data.has_rtti():
+            if self.ctx.cache.options.jit and base_data.jit_cell != self.ctx.cache.jit_cell:
                 raise TypecheckError(
                     base_expr,
                     f"cannot inherit from a non-RTTI class defined in previous cell '{utils.get_unmangled_name(self.ctx, base_type.name)}' in JIT mode",
                 )
-            base_data.rtti = True
             if base_type.name != ast.types.Stdlib.Object and len(base_data.mro) == 1:
                 object_type = utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Object)
                 base_data.mro.append(object_type)
+                utils.get_class(self.ctx, object_type).descendants.add(base_type.name)
+                for realization in base_data.realizations.values():
+                    realization.bases.append(object_type)
 
         root_mro = [utils.instantiate(self.ctx, typ, base_type) for typ in base_data.mro]
         mro.append(root_mro)
@@ -448,22 +964,10 @@ def parse_base_classes(
             generic.type = generic.type.generalize(self.ctx.typecheck_level)
             typ.hidden_generics.append(generic)
 
-        # Add class variables
-        for var_name, var_canonical in sorted(base_data.class_vars.items()):
-            # Handle class variables. Transform them later to allow self-references
-            new_name = f"{canonical_name}.{var_name}"
-            new_canonical = self.ctx.generate_canonical_name(new_name)
-            cls_data = utils.get_class(self.ctx, typ)
-            assert cls_data
-            cls_data.class_vars[var_name] = var_canonical
-            self.ctx.add(new_name, self.ctx[var_canonical])
-            self.ctx.add(new_canonical, self.ctx[var_canonical])
-
     cls_data = utils.get_class(self.ctx, typ)
     assert cls_data
     if asts or typ.name == ast.types.Stdlib.Object:
         mro.append(asts)
-        cls_data.rtti = True
     cls_data.mro = cache.Cache.merge_c3(mro)
     if not cls_data.mro:
         raise TypecheckError(attr, "inconsistent class hierarchy")
@@ -474,6 +978,17 @@ def parse_base_classes(
         mro_class.descendants.add(canonical_name)
 
     # Add normal fields
+    for base in asts:
+        if base.name == canonical_name:
+            continue
+        for var_name, canonical in sorted(utils.get_class(self.ctx, base).class_vars.items()):
+            if canonical != f"{base.name}.{var_name}" or var_name in cls_data.class_vars:
+                continue
+            new_name = f"{canonical_name}.{var_name}"
+            new_canonical = self.ctx.generate_canonical_name(new_name)
+            cls_data.class_vars[var_name] = canonical
+            self.ctx.add(new_name, self.ctx[canonical])
+            self.ctx.add(new_canonical, self.ctx[canonical])
     for inherited_type in asts:
         if inherited_type.name == typ.name:
             continue
@@ -733,13 +1248,13 @@ def codegen_magic(
         ret = ast.IdExpr("int")
         stmts.append(ast.ReturnStmt(expr=ast.CallExpr(M(magic), [ast.IdExpr("self")])))
     elif magic == "pickle":
-        # def __pickle__(self: T, dest: Ptr[byte])
+        # def __pickle__(self: T, dest: Ptr[u8])
         fn_args.extend(
             [
                 ast.Param("self", type=type_expr.clone()),
                 ast.Param(
                     "dest",
-                    type=ast.IndexExpr(ast.IdExpr(ast.types.Stdlib.Ptr), index=ast.IdExpr("byte")),
+                    type=ast.IndexExpr(ast.IdExpr(ast.types.Stdlib.Ptr), index=ast.IdExpr("u8")),
                 ),
             ]
         )
@@ -747,11 +1262,11 @@ def codegen_magic(
             ast.ReturnStmt(expr=ast.CallExpr(M(magic), [ast.IdExpr("self"), ast.IdExpr("dest")]))
         )
     elif magic in {"unpickle", "from_py"}:
-        # def __unpickle__(src: Ptr[byte]) -> T
+        # def __unpickle__(src: Ptr[u8]) -> T
         fn_args.append(
             ast.Param(
                 "src",
-                type=ast.IndexExpr(ast.IdExpr(ast.types.Stdlib.Ptr), index=ast.IdExpr("byte")),
+                type=ast.IndexExpr(ast.IdExpr(ast.types.Stdlib.Ptr), index=ast.IdExpr("u8")),
             )
         )
         ret = type_expr.clone()
@@ -759,9 +1274,9 @@ def codegen_magic(
             ast.ReturnStmt(expr=ast.CallExpr(M(magic), [ast.IdExpr("src"), type_expr.clone()]))
         )
     elif magic == "to_py":
-        # def __to_py__(self: T) -> Ptr[byte]
+        # def __to_py__(self: T) -> Ptr[u8]
         fn_args.append(ast.Param("self", type=type_expr.clone()))
-        ret = ast.IndexExpr(ast.IdExpr(ast.types.Stdlib.Ptr), index=ast.IdExpr("byte"))
+        ret = ast.IndexExpr(ast.IdExpr(ast.types.Stdlib.Ptr), index=ast.IdExpr("u8"))
         stmts.append(ast.ReturnStmt(expr=ast.CallExpr(M(magic), [ast.IdExpr("self")])))
     elif magic == "to_gpu":
         # def __to_gpu__(self: T, cache) -> T
@@ -876,12 +1391,13 @@ def generate_tuple(ctx: TypeContext, count: int, generate_new: bool = True) -> a
         extension = ast.SuiteStmt(extension)
         ctx.cache.scope(extension)
 
+        stdlib.ctx.prepare_checkpoint()
         with (
             stdlib.ctx.substitute("bases", [stdlib.ctx.bases[0]]),
             stdlib.ctx.substitute("block_level", 0),
         ):
             from . import typecheck_node
 
-            extension = typecheck_node(stdlib.ctx, extension)
+            extension = typecheck_node(stdlib.ctx, extension, sweep_force_realize=False)
             ctx.preamble.add(extension)
     return result

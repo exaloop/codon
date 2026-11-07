@@ -6,7 +6,6 @@ import copy
 from typing import TYPE_CHECKING
 
 from ... import ast, cache
-from ...bridge import List, cast
 from ...error import TypecheckError
 from ..scope import Bindings
 from . import infer, ops, utils
@@ -50,18 +49,20 @@ def typecheck_assign(self: TypeVisitor, node: ast.AssignStmt) -> ast.Stmt:
         must_update = True
 
     result = transform_assignment(self, node, must_update)
-    if node.lhs.has(ast.Attr.ExprDominatedUsed):
+    if node.lhs.has(ast.Attr.ExprDominatedUsed) and node.rhs:
         # If this is dominated, set __used__ if needed
         node.lhs.erase(ast.Attr.ExprDominatedUsed)
         assert isinstance(node.lhs, ast.IdExpr), "dominated bad assignment"
-        used_assignment = ast.AssignStmt(
-            ast.IdExpr(
-                f"{utils.get_unmangled_name(self.ctx, node.lhs.value)}{cache.VAR_USED_SUFFIX}"
-            ),
-            rhs=ast.BoolExpr(True),
-            update=ast.AssignStmt.Mode.Update,
-        )
-        result = self.visit_stmt(ast.SuiteStmt(result, used_assignment))
+        # A type declaration alone must not mark a binding initialized!
+        if node.rhs:
+            used_assign = ast.AssignStmt(
+                ast.IdExpr(
+                    f"{utils.get_unmangled_name(self.ctx, node.lhs.value)}{cache.VAR_USED_SUFFIX}"
+                ),
+                rhs=ast.BoolExpr(True),
+                update=ast.AssignStmt.Mode.Update,
+            )
+            result = self.visit_stmt(ast.SuiteStmt(result, used_assign))
     return result
 
 
@@ -97,7 +98,7 @@ def typecheck_del(self: TypeVisitor, node: ast.DelStmt) -> ast.Node:
             raise TypecheckError(node, "cannot delete given expression")
 
 
-def unpack_assignment(self: TypeVisitor, lhs: ast.Expr, rhs: ast.Expr) -> ast.Stmt:
+def unpack_assignment(self, lhs, rhs, is_loop_target=False):
     """
     Unpack an assignment expression `lhs = rhs` into a list of simple assignment
     expressions (e.g., `a = b`, `a.x = b`, or `a[x] = b`).
@@ -110,78 +111,91 @@ def unpack_assignment(self: TypeVisitor, lhs: ast.Expr, rhs: ast.Expr) -> ast.St
     @example
     `a, b = c, d + foo()` -> `assign = (c, d + foo); a = assign[0]; b = assign[1]`.
     Each assignment is unpacked recursively to allow cases like `a, (b, c) = d`.
+    Compiler-owned loop tuples can be read directly when their arity is known,
+    preserving the field-read pattern used by loop optimizations.
     """
+    if not isinstance(lhs, (ast.TupleExpr, ast.ListExpr)):
+        return ast.AssignStmt(lhs, rhs)
 
-    # Case: (a, b) = ... or [a, b] = ...
-    left_side: List[ast.Expr] = []
-    if isinstance(lhs, (ast.TupleExpr, ast.ListExpr)):
-        left_side = list(lhs.items)
-    else:
-        return ast.AssignStmt(lhs, rhs=rhs)
+    left = list(lhs.items)
+    # Prepare the right-side expression
+    with self.ctx.substitute("node_stack", self.ctx.node_stack + [rhs]):
+        block, assignments = ast.SuiteStmt(), ast.SuiteStmt()
+        # Consume each nested unpacking source once, including generators
+        has_star = any(isinstance(item, ast.StarExpr) for item in left)
+        known_shape = (
+            type(rhs) is ast.TupleExpr
+            and not any(isinstance(item, ast.StarExpr) for item in rhs.items)
+            and (len(rhs.items) >= len(left) - 1 if has_star else len(rhs.items) == len(left))
+        )
+        direct = False
+        if is_loop_target and rhs.type and rhs.type == ast.types.Stdlib.Tuple:
+            count = len(utils.get_class_fields(self.ctx, rhs.type.require_cls))
+            direct = count >= len(left) - 1 if has_star else count == len(left)
+        if not direct:
+            tmp = ast.IdExpr(utils.get_temporary_var(self.ctx, "assign"))
+            src = rhs.clone()
+            if not known_shape:
+                src = ast.CallExpr(
+                    ast.IdExpr(
+                        ast.types.mangle(
+                            "std.internal.types.collections.list", cls="List", func="_unpack"
+                        )
+                    ),
+                    [src, ast.IntExpr(len(left) - has_star), ast.BoolExpr(has_star)],
+                )
+            block.add(ast.AssignStmt(tmp, src))
+            rhs = tmp
+        starred_snapshot = None
 
-    old_info, self.ctx.node_stack[-1].info = self.ctx.node_stack[-1].info, rhs.info
-    try:
-        # Prepare the right-side expression
-        block = ast.SuiteStmt()
-        if not isinstance(rhs, ast.IdExpr):
-            # Store any non-trivial right-side expression into a variable
-            var = utils.get_temporary_var(self.ctx, "assign")
-            new_rhs = ast.IdExpr(var)
-            block.items.append(ast.AssignStmt(new_rhs, rhs=rhs.clone()))
-            rhs = new_rhs
+        def add_assignment(target, value, starred=False):
+            nonlocal starred_snapshot
+            if has_star:
+                snapshot = ast.IdExpr(utils.get_temporary_var(self.ctx, "unpack"))
+                extract = ast.AssignStmt(snapshot, value)
+                if starred:
+                    starred_snapshot = extract
+                else:
+                    block.add(extract)
+                assignments.add(unpack_assignment(self, target, snapshot))
+            else:
+                block.add(unpack_assignment(self, target, value))
 
         # Process assignments until the fist StarExpr (if any)
-        star_idx = 0
-        while star_idx < len(left_side):
-            if isinstance(left_side[star_idx], ast.StarExpr):
-                break
+        idx = 0
+        while idx < len(left) and not isinstance(left[idx], ast.StarExpr):
             # Transformation: `leftSide_st = rhs[st]` where `st` is static integer
             # Recursively process the assignment because of cases like `(a, (b, c)) = d)`
-            block.items.append(
-                unpack_assignment(
-                    self,
-                    left_side[star_idx],
-                    ast.IndexExpr(rhs.clone(), index=ast.IntExpr(star_idx)),
-                )
-            )
-            star_idx += 1
+            add_assignment(left[idx], ast.IndexExpr(rhs.clone(), ast.IntExpr(idx)))
+            idx += 1
         # Process StarExpr (if any) and the assignments that follow it
-        if star_idx < len(left_side) and isinstance(left_side[star_idx], ast.StarExpr):
+        if idx < len(left):
             # StarExpr becomes SliceExpr (e.g., `b` in `(a, *b, c) = d` becomes
             # `list(d[1:-2])`)
-            stop = (
-                None
-                if len(left_side) == star_idx + 1
-                else ast.IntExpr(-len(left_side) + star_idx + 1)
-            )
-            right_side = ast.CallExpr(
+            stop = None if idx + 1 == len(left) else ast.IntExpr(-len(left) + idx + 1)
+            value = ast.CallExpr(
                 ast.IdExpr(
-                    ast.types.mangle("std.internal.types.array", cls="List", func="as_list")
-                ),
-                items=[
-                    ast.IndexExpr(
-                        # this slice is either [st:] or [st:-lhs_len + st + 1]
-                        rhs.clone(),
-                        index=ast.SliceExpr(ast.IntExpr(star_idx), stop=stop),
+                    ast.types.mangle(
+                        "std.internal.types.collections.list", cls="List", func="_as_list"
                     )
-                ],
+                ),
+                [ast.IndexExpr(rhs.clone(), ast.SliceExpr(ast.IntExpr(idx), stop))],
             )
-            star = left_side[star_idx]
-            block.items.append(unpack_assignment(self, cast(ast.StarExpr, star).expr, right_side))
-            star_idx += 1
+            add_assignment(left[idx].expr, value, True)
+            idx += 1
             # Process remaining assignments. They will use negative indices (-1, -2 etc.)
             # because we do not know how big is StarExpr
-            while star_idx < len(left_side):
-                if isinstance(left_side[star_idx], ast.StarExpr):
-                    raise TypecheckError(lhs, "multiple starred expressions in assignment")
-                right_side = ast.IndexExpr(
-                    rhs.clone(), index=ast.IntExpr(-(len(left_side) - star_idx))
+            while idx < len(left):
+                if isinstance(left[idx], ast.StarExpr):
+                    raise TypecheckError(left[idx], "multiple starred expressions in assignment")
+                add_assignment(
+                    left[idx], ast.IndexExpr(rhs.clone(), ast.IntExpr(-(len(left) - idx)))
                 )
-                block.items.append(unpack_assignment(self, left_side[star_idx], right_side))
-                star_idx += 1
-    finally:
-        self.ctx.node_stack[-1].info = old_info
-    return block
+                idx += 1
+        if has_star:
+            block.add(starred_snapshot)
+            block.add(assignments)
+        return block
 
 
 def transform_assignment(
@@ -269,7 +283,6 @@ def transform_assignment(
             type_expr = None
 
     # Make sure that existing values that cannot be shadowed are only updated
-    # mustExist |= val && !ctx->isOuter(val);
     if must_exist:
         value = self.ctx.find_at(var.value, self.ctx.time)
         if not value:
@@ -286,6 +299,8 @@ def transform_assignment(
         return transform_update(self, update) or update  # delay on fail
 
     # Generate new canonical variable name for this assignment and add it to the context
+    if type_expr and isinstance(stmt.rhs, (ast.ListExpr, ast.SetExpr, ast.DictExpr)):
+        stmt.rhs.expected_type = utils.extract_type(self.ctx, type_expr)
     stmt.rhs = self.visit_expr(stmt.rhs, type_allowed=True) if stmt.rhs else None
     stmt.type_expr = type_expr
     if var.value.endswith(cache.VAR_USED_SUFFIX):
@@ -328,6 +343,10 @@ def transform_assignment(
     self.ctx.add_always_visible(value)
 
     if assignment.rhs:  # not a declaration
+        if stmt.has(ast.Attr.MaybeLiteral):
+            if unbound := assignment.lhs.type.unbound:
+                unbound._static_kind = assignment.rhs.type.static_kind
+            assignment.set(ast.Attr.MaybeLiteral)
         # Check if we can wrap the expression (e.g., `a: float = 3` -> `a = float(3)`)
         can_wrap, assignment.rhs = utils.wrap_expr(self.ctx, assignment.rhs, lhs.type)
         if can_wrap and assignment.rhs.type:
@@ -355,15 +374,15 @@ def transform_assignment(
     # Register all toplevel variables as global in JIT mode
     # or if they are in imported module (not toplevel)
     is_global = (
-        self.ctx.cache.is_jit
+        self.ctx.cache.options.jit
         and value.is_global()
         and (not value.generic)
-        or canonical == ast.types.Stdlib.Argv
+        or canonical in {ast.types.Stdlib.Argv, ast.types.Stdlib.Argc}
         or (value.is_global() and value.module)
     )
     if is_global and value.is_var():
         utils.register_global(self.ctx, canonical)
-        if self.ctx.cache.is_jit:
+        if self.ctx.cache.options.jit:
             imported_stdlib = utils.get_import_module(self.ctx, cache.STDLIB_IMPORT)
             imported_stdlib.ctx.add_toplevel(
                 utils.get_unmangled_name(self.ctx, value.canonical), value
@@ -385,8 +404,7 @@ def transform_update(self: TypeVisitor, stmt: ast.AssignStmt) -> ast.Stmt:
     if in_place:
         return replacement or stmt
 
-    assert stmt.rhs
-    stmt.rhs = self.visit_expr(stmt.rhs)
+    stmt.rhs = self.visit_expr(stmt.rhs) if stmt.rhs else None
     stmt.type_expr = self.visit_expr(stmt.type_expr, enforce_type=True) if stmt.type_expr else None
     if stmt.type_expr:
         assert stmt.lhs.type
@@ -394,6 +412,11 @@ def transform_update(self: TypeVisitor, stmt: ast.AssignStmt) -> ast.Stmt:
             self.ctx, utils.extract_type(self.ctx, stmt.type_expr), info=stmt.type_expr.info
         )
 
+    if not stmt.rhs:
+        # Annotation-only updates refine the variable's type, not its value
+        if infer.realize(self.ctx, stmt.lhs.type):
+            stmt.done = True
+        return stmt
     # Case: wrap expressions if needed (e.g. floats or optionals)
     can_wrap, stmt.rhs = utils.wrap_expr(self.ctx, stmt.rhs, stmt.lhs.type)
     if can_wrap:
@@ -416,6 +439,13 @@ def typecheck_assignmember(self: TypeVisitor, node: ast.AssignMemberStmt) -> ast
     node.lhs = self.visit_expr(node.lhs)
     if (lhs_type := utils.extract_class_type(self.ctx, node.lhs)) is None:
         return node  # delay
+
+    from .classes import is_enum
+
+    if is_enum(self.ctx, lhs_type) and not node.member.startswith("__"):
+        var = utils.get_class(self.ctx, lhs_type).class_vars.get(node.member)
+        if var and self.ctx[var].type == lhs_type.name:
+            raise TypecheckError(node, f"cannot reassign enumeration member '{node.member}'")
 
     member = utils.find_member(self.ctx, lhs_type, node.member)
     # Case: property setters
@@ -441,6 +471,14 @@ def typecheck_assignmember(self: TypeVisitor, node: ast.AssignMemberStmt) -> ast
         return self.visit_stmt(assignment)
 
     # Case: __setattr__ support. Ensure that only Literal[str] arguments are accepted.
+    if member is None and lhs_type == "pyobj":
+        return self.visit_stmt(
+            ast.ExprStmt(
+                ast.CallExpr(
+                    ast.DotExpr(node.lhs, "_setattr"), [ast.StringExpr(node.member), node.rhs]
+                )
+            )
+        )
     if member is None:
         static_name = utils.instantiate_unbound(self.ctx)
         static_name._static_kind = ast.types.Type.Behaviour.String
@@ -478,24 +516,6 @@ def typecheck_assignmember(self: TypeVisitor, node: ast.AssignMemberStmt) -> ast
     if not field_type.can_realize() and member.type_expr:
         member_type = self.visit_expr(member.type_expr.clone(clean=True))
         field_type |= utils.extract_type(self.ctx, member_type)
-    cls_data = utils.get_class(self.ctx, lhs_type)
-    if member.base_class != lhs_type.name and cls_data and cls_data.rtti:
-        base_type = None
-        for candidate in utils.get_base_classes(self.ctx, lhs_type):
-            if (candidate_class := candidate.cls) and candidate_class.name == member.base_class:
-                base_type = candidate
-                break
-        assert base_type is not None, f"cannot find base type of {lhs_type!r}"
-        if not base_type.can_realize():
-            return node  # delay!
-        cast_call = ast.CallExpr(
-            ast.IdExpr(ast.types.mangle("", "RTTIType", "_cast")),
-            items=[node.lhs, ast.IdExpr(base_type.realized_name())],
-        )
-        base_assignment = ast.AssignMemberStmt(
-            cast_call, member=node.member, rhs=node.rhs, type_expr=node.type_expr
-        )
-        return self.visit_stmt(base_assignment)
 
     can_wrap, node.rhs = utils.wrap_expr(self.ctx, node.rhs, field_type)
     if not can_wrap:

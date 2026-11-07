@@ -60,13 +60,14 @@ def typecheck_import(self: TypeVisitor, node: ast.ImportStmt) -> ast.Stmt:
     # Fetch the import
     components = get_import_path(node.from_expr, node.dots)
     path = "/".join(components)
-    # from "." case
-    if node.dots == 1 and not path:
-        assert isinstance(node.what, ast.IdExpr), f"not an identifier: {node.what}"
-        return self.visit_stmt(ast.ImportStmt(node.what, dots=1))
+    relative_from = node.dots > 0 and not node.from_expr
     import_file = self.ctx.cache.get_import_file(path, self.ctx.filename)
     if not import_file:
-        if node.dots == 0 and self.ctx.auto_python:
+        if relative_from:
+            return self.visit_stmt(
+                ast.ImportStmt(node.what, as_=node.as_ or node.what.value, dots=node.dots)
+            )
+        if node.dots == 0 and (self.ctx.auto_python or self.ctx.cache.options.autopy):
             assert node.from_expr
             python_name = code(node.from_expr)
             if node.what:
@@ -106,6 +107,8 @@ def typecheck_import(self: TypeVisitor, node: ast.ImportStmt) -> ast.Stmt:
             handled = False
     imported = utils.get_import_module(self.ctx, import_file.path)
     import_var = imported.import_var
+    if imported.ctx.module.module == cache.MODULE_MAIN and not self.ctx.is_stdlib_loading:
+        raise TypecheckError(node, f"cannot import main module '{import_file.module}'")
     if not imported.loaded_at_toplevel:
         handled = False
 
@@ -142,7 +145,23 @@ def typecheck_import(self: TypeVisitor, node: ast.ImportStmt) -> ast.Stmt:
         case _:  # from foo import bar
             assert isinstance(node.what, ast.IdExpr), "not a valid import what expression"
             # Make sure that we are importing an existing global symbol
-            if not (found := imported.ctx.get(node.what.value)):
+            found = (
+                imported.ctx.get(node.what.value)
+                if relative_from
+                else imported.ctx.find_at(node.what.value)
+            )
+            if (
+                not found
+                and relative_from
+                and self.ctx.cache.get_import_file(
+                    (path + "/" if path else "") + node.what.value, self.ctx.filename
+                )
+            ):
+                relative_import = ast.ImportStmt(
+                    node.what, as_=node.as_ or node.what.value, dots=node.dots
+                )
+                return self.visit_stmt(ast.SuiteStmt(result, relative_import))
+            if not found:
                 raise TypecheckError(
                     node.what,
                     f"cannot import name '{node.what.value}' from '{import_file.module}'",

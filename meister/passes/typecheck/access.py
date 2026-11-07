@@ -41,7 +41,10 @@ def typecheck_id(self: TypeVisitor, node: ast.IdExpr) -> ast.Expr:
     node.value = value.canonical
 
     # Set up type
-    node.type |= utils.instantiate(self.ctx, value.type)
+    value_type = utils.instantiate(self.ctx, value.type)
+    if node.value == ast.types.Stdlib.Type:
+        value_type = utils.instantiate_type_var(self.ctx, utils.get_metaclass_type(self.ctx))
+    node.type |= value_type
     if fn_type := node.type.func:
         # resolve overloads
         node.value = fn_type.func_name
@@ -144,12 +147,15 @@ def typecheck_dot(self: TypeVisitor, node: ast.DotExpr) -> ast.Expr:
         node.expr = final.expr
         node.member = final.member
     else:
+        if node.has(ast.Attr.ExprDoNotRealize):
+            final.set(ast.Attr.ExprDoNotRealize)
         return self.visit_expr(final)
 
     # Special case: obj.__class__
     if node.member == "__class__":
-        # TODO: prevent cls.__class__ and type(cls)
-        return self.visit_expr(ast.CallExpr(ast.IdExpr(ast.types.Stdlib.Type), items=[node.expr]))
+        return self.visit_expr(
+            ast.CallExpr(ast.IdExpr(ast.types.mangle(cls="type", func="__new__")), [node.expr])
+        )
 
     node.expr = self.visit_expr(node.expr)
     new_expr, found = access_attribute(self, node.expr, node.member, node.type, parent)
@@ -172,11 +178,14 @@ def access_attribute(
     typ: ast.types.Type | None = None,
     parent: ast.CallExpr | None = None,
 ) -> Tuple[ast.Expr | None, bool]:
-
+    if expr.type == ast.types.Stdlib.Optional and expr.type.has_unbounds(False):
+        return None, True
     has_side = utils.has_side_effect(expr)
 
     def wrap_side(value: ast.Expr) -> ast.Expr:
         wrapped = ast.StmtExpr(ast.ExprStmt(expr), expr=value) if has_side else value
+        if parent:
+            wrapped.set(ast.Attr.ExprDoNotRealize)
         return self.visit_expr(wrapped)
 
     extracted = utils.extract_type(self.ctx, expr)
@@ -225,6 +234,7 @@ def access_attribute(
     # Special case: cls.__id__
     if utils.is_type_expr(expr) and member == "__id__":
         if realized := infer.realize(self.ctx, utils.extract_type(self.ctx, expr)):
+            utils.get_class_realization(self.ctx, realized).value_accessed = True
             return wrap_side(ast.IntExpr(utils.get_class_realization(self.ctx, realized).id)), True
         return None, True
 
@@ -236,7 +246,8 @@ def access_attribute(
     methods = utils.find_method(self.ctx, expr_typ, member)
     if not methods:
         return get_class_member(self, expr, member, typ)
-    # If a method is ambiguous use dispatch
+    method_ast = methods[0].ast
+    is_property = method_ast.has(ast.Attr.Property)
     best_method = (
         get_dispatch(self, utils.get_root_name(self.ctx, methods[0]))
         if len(methods) > 1
@@ -245,48 +256,25 @@ def access_attribute(
     method_expr = ast.IdExpr(
         best_method.func_name, type=utils.instantiate(self.ctx, best_method, expr_typ)
     )
-    if utils.is_type_expr(expr):
-        # Static access: `cls.method`
+    if parent:
+        method_expr.set(ast.Attr.ExprDoNotRealize)
+    if utils.is_type_expr(expr) or method_ast.has(ast.Attr.StaticMethod):
+        if not parent and has_side:
+            method_expr = ast.CallExpr(
+                method_expr, [ast.EllipsisExpr(ast.EllipsisExpr.Kind.Partial)]
+            )
         return wrap_side(method_expr), True
-
-    assert expr.type
-    cls_data = utils.get_class(self.ctx, expr.type)
-    method_ast = best_method.ast
-    if (
-        # check if the method is virtual
-        cls_data
-        and cls_data.rtti
-        and (utils.get_unmangled_name(self.ctx, method_ast.name) in cls_data.virtuals)
-        and (not utils.is_dispatch(best_method))
-        and (not method_ast.has(ast.Attr.StaticMethod))
-        and (not method_ast.has(ast.Attr.Property))
-    ):
-        best_method = get_thunk(self, best_method)
-        method_expr = ast.IdExpr(
-            best_method.func_name, type=utils.instantiate(self.ctx, best_method, expr_typ)
-        )
-    if (
-        parent
-        and not method_ast.has(ast.Attr.StaticMethod)
-        and not method_ast.has(ast.Attr.Property)
-    ):
-        # Instance access: `obj.method` from the call
-        # Modify the call to push `self` to the front of the argument list.
-        # Avoids creating partial functions.
+    if parent and not is_property:
         parent.items.insert(0, ast.CallExpr.Arg(expr))
+        parent.set(ast.Attr.ExprVirtual, -1)
         return self.visit_expr(method_expr), True
-    else:
-        # Instance access: `obj.method`
-        # Transform y.method to a partial call `type(y).method(y, ...)`
-        method_args = []
-        # Do not add self if a method is marked with @staticmethod
-        if not method_ast.has(ast.Attr.StaticMethod):
-            method_args.append(expr)
-        # If a method is marked with @property, just call it directly
-        if not method_ast.has(ast.Attr.Property):
-            method_args.append(ast.EllipsisExpr(ast.EllipsisExpr.Kind.Partial))
-        result = ast.CallExpr(method_expr, items=method_args)
-        return self.visit_expr(result), True
+    method_args = [expr]
+    if not is_property:
+        method_args.append(ast.EllipsisExpr(ast.EllipsisExpr.Kind.Partial))
+    result = ast.CallExpr(method_expr, method_args)
+    if not is_property:
+        result.set(ast.Attr.ExprVirtual, -1)
+    return self.visit_expr(result), True
 
 
 def check_capture(self: TypeVisitor, value: Item):
@@ -523,6 +511,7 @@ def get_dispatch(self: TypeVisitor, fn: str) -> ast.types.Function:
     if parent_cls:
         node.set(ast.Attr.ParentClass, parent_cls)
     self.ctx.cache.reverse_identifier_lookup[name] = utils.get_unmangled_name(self.ctx, fn)
+    function.prepare_call_layout(self.ctx, node)
     base_type = function.get_func_type_base(self, 2)
     fn_type = ast.types.Function(base=base_type, ast=node)
     # Make sure that parent is set so that the parent type can be passed to the inner
@@ -532,63 +521,6 @@ def get_dispatch(self: TypeVisitor, fn: str) -> ast.types.Function:
     self.ctx.add_item(name, name, generalized)
     overloads.insert(0, name)
     self.ctx.cache.functions[name] = cache.FunctionData(root_name=fn, ast=node, type=generalized)
-    return generalized
-
-
-def get_thunk(self: TypeVisitor, fn: ast.types.Function) -> ast.types.Function:
-    """
-    Find or generate a thunk function for a given method.
-    @example
-    This is how dispatch looks like:
-    ```def foo:thunk(*args, **kwargs):
-    return foo(*args, **kwargs)```
-    """
-
-    fn_name = fn.ast.name
-    name = f"{fn_name}:thunk"
-    fn_data = utils.get_function(self.ctx, name)
-    if fn_data:
-        assert fn_data and fn_data.type
-        return fn_data.type
-
-    node = fn.ast.clone()
-    node.name = name
-    node.suite = ast.SuiteStmt(
-        ast.AssignStmt(
-            ast.IdExpr("F"),
-            rhs=ast.CallExpr(
-                ast.IdExpr(
-                    ast.types.mangle("std.internal.static", cls="function", func="realized")
-                ),
-                items=[ast.IdExpr(fn_name)] + [ast.IdExpr(param.name) for param in node.items],
-            ),
-        ),
-        ast.ReturnStmt(
-            expr=ast.CallExpr(
-                ast.CallExpr(
-                    ast.CallExpr(ast.IdExpr(ast.types.Stdlib.Type), items=[ast.IdExpr("F")]),
-                    items=[
-                        ast.CallExpr(
-                            ast.IdExpr(ast.types.mangle(cls="RTTIType", func="_find_thunk")),
-                            items=[ast.IdExpr("self"), ast.IdExpr("F")],
-                        )
-                    ],
-                ),
-                items=[ast.IdExpr(param.name) for param in node.items if param.is_value],
-            )
-        ),
-    )
-    node.set(ast.Attr.Inline)
-    node.set(ast.Attr.AutoGenerated)
-    node.done = True
-
-    self.ctx.cache.reverse_identifier_lookup[name] = utils.get_unmangled_name(self.ctx, fn_name)
-    generalized = fn.generalize(self.ctx.typecheck_level - 1)
-    generalized.ast = node
-    self.ctx.add_item(name, name, generalized)
-    self.ctx.cache.functions[name] = cache.FunctionData(
-        root_name=fn_name, ast=node, type=generalized
-    )
     return generalized
 
 
@@ -609,27 +541,6 @@ def get_class_member(
         if class_member := utils.find_member(self.ctx, class_type, member):
             if typ and class_member.type:
                 typ |= utils.instantiate(self.ctx, class_member.type, class_type)
-            cls_data = utils.get_class(self.ctx, class_type)
-            if class_member.base_class != class_type.name and cls_data and cls_data.rtti:
-                base_type = None
-                for base in utils.get_base_classes(self.ctx, class_type):
-                    base_class = base.cls
-                    if base_class and base_class.name == class_member.base_class:
-                        base_type = base
-                        break
-                assert base_type is not None, f"cannot find base type of {class_type!r}"
-                if not base_type.can_realize():
-                    return None, True  # delay!
-                realized_base = infer.realize(self.ctx, base_type)
-                assert realized_base
-                result = ast.DotExpr(
-                    ast.CallExpr(
-                        ast.IdExpr(ast.types.mangle(cls="RTTIType", func="_cast")),
-                        items=[expr, ast.IdExpr(realized_base.realized_name())],
-                    ),
-                    member=member,
-                )
-                return self.visit_expr(result), True
             if typ and not typ.can_realize() and class_member.type_expr:
                 with utils.with_class_generics(self.ctx, class_type):
                     type_expr = self.visit_expr(class_member.type_expr.clone())
@@ -673,11 +584,16 @@ def get_class_member(
                     assert generic.type.literal
                     return wrap_side(generic.type.literal.get_static_expr()), True
             else:
-                instantiated = utils.instantiate_type_var(self.ctx, generic.type)
+                t = (
+                    utils.instantiate(self.ctx, generic.type)
+                    if class_type == ast.types.Stdlib.UnrealizedType
+                    else generic.type
+                )
+                instantiated = utils.instantiate_type_var(self.ctx, t)
                 if typ:
                     typ |= instantiated
                 if infer.realize(self.ctx, instantiated):
-                    return wrap_side(ast.IdExpr(generic.type.realized_name())), True
+                    return wrap_side(ast.IdExpr(t.realized_name())), True
             return None, True
 
     # Case: transform `optional.member` to `unwrap(optional).member`
@@ -706,9 +622,12 @@ def get_class_member(
     unbound = utils.instantiate_unbound(self.ctx)
     unbound._static_kind = ast.types.Type.Behaviour.String
     method = utils.best_method(self.ctx, class_type, "__getattr__", [class_type, unbound])
-    if method and len(method.func_generics) == 1:
-        fn_generic = utils.extract_func_generic(method)
-        if fn_generic.static_kind is ast.types.Type.Behaviour.String:
+    if (
+        method
+        and sum(utils.get_unmangled_name(self.ctx, g.name) != "Self" for g in method.func_generics)
+        == 1
+    ):
+        if any(g.type.static_kind is ast.types.Type.Behaviour.String for g in method.func_generics):
             result = ast.CallExpr(
                 ast.DotExpr(expr, member="__getattr__"), items=[ast.StringExpr(member)]
             )

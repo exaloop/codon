@@ -29,6 +29,17 @@ MAX_REALIZATION_DEPTH: int = 200
 MAX_STATIC_ITER: int = 1024
 
 
+@dataclass
+class FrontendOptions:
+    """Ported frontend subset of codon/compiler/options.h::Options."""
+
+    jit: bool = False
+    pyext: bool = False
+    pynum: bool = True
+    autopy: bool = False
+    unordereddict: bool = False
+
+
 @dataclass(init=False)
 class Import:
     """Module (import) data."""
@@ -107,7 +118,7 @@ class ClassData:
         # Maps {base, function signature} to {thunk realization, thunk ID}.
         # Base can be the realization itself.
         # Order is important so map is used instead of unordered_map.
-        vtable: Dict[tuple[str, str], ast.types.Function]
+        vtable: Dict[int, ast.types.Function]
         # Realization ID
         id: int = 0
 
@@ -117,7 +128,7 @@ class ClassData:
             fields: List[tuple[str, ast.types.Type]] | None = None,
             ir: ast.ir.Type | None = None,
             bases: List[ast.types.Class] | None = None,
-            vtable: Dict[tuple[str, str], ast.types.Function] | None = None,
+            vtable: Dict[int, ast.types.Function] | None = None,
             id: int = 0,
         ):
             self.type = type
@@ -126,6 +137,8 @@ class ClassData:
             self.bases = [] if bases is None else bases
             self.vtable = {} if vtable is None else vtable
             self.id = id
+            self.value_accessed = False
+            self.value_methods = {}
 
     # Module information
     module: str = ""
@@ -144,8 +157,6 @@ class ClassData:
     # Realization lookup table that maps a realized class name to the corresponding
     # ClassRealization instance.
     realizations: Dict[str, ClassData.Realization]
-    # Set if a class is polymorphic and has RTTI.
-    rtti: bool = False
     # List of virtual method names
     virtuals: Set[str]
     # MRO
@@ -163,7 +174,6 @@ class ClassData:
         fields: List[ClassData.Field] | None = None,
         class_vars: Dict[str, str] | None = None,
         realizations: Dict[str, ClassData.Realization] | None = None,
-        rtti: bool = False,
         virtuals: Set[str] | None = None,
         mro: List[ast.types.Class] | None = None,
         descendants: Set[str] | None = None,
@@ -176,11 +186,13 @@ class ClassData:
         self.fields = [] if fields is None else fields
         self.class_vars = {} if class_vars is None else class_vars
         self.realizations = {} if realizations is None else realizations
-        self.rtti = rtti
         self.virtuals = set() if virtuals is None else virtuals
         self.mro = [] if mro is None else mro
         self.descendants = set() if descendants is None else descendants
         self.jit_cell = jit_cell
+
+    def has_rtti(self):
+        return len(self.mro) > 1 or self.ast.name == ast.types.Stdlib.Object
 
 
 @dataclass(init=False)
@@ -196,6 +208,8 @@ class FunctionData:
         ir: ast.ir.Function | None = None
         # Resolved captures
         captures: List[str]
+        # Super-dispatch targets are checked through their caller.
+        check_initialization: bool
 
         def __init__(
             self,
@@ -203,11 +217,13 @@ class FunctionData:
             ast: ast.FunctionStmt | None = None,
             ir: ast.ir.Function | None = None,
             captures: List[str] | None = None,
+            check_initialization: bool = False,
         ):
             self.type = type
             self.ast = ast
             self.ir = ir
             self.captures = [] if captures is None else captures
+            self.check_initialization = check_initialization
 
     # Module information
     module: str = ""
@@ -289,7 +305,9 @@ class Cache:
     # Class instance.
     classes: Dict[str, ClassData]
     class_realization_cnt: int = 0
-    thunk_ids: Dict[tuple[str, str], int]
+    thunk_ids: Dict[str, int]
+    super_calls: Dict[int, ast.types.Function]
+    super_call_signatures: Dict[int, ast.types.Function]
     # Function lookup table that maps a canonical function identifier to the
     # corresponding Function instance.
     functions: Dict[str, FunctionData]
@@ -303,16 +321,11 @@ class Cache:
     pending_realizations: Set[tuple[str, str]]
     custom_block_stmts: Dict[str, tuple[bool, Callable[[TypeContext, ast.Stmt], ast.Stmt]]]
     custom_expr_stmts: Dict[str, Callable[[TypeContext, ast.Expr | None], ast.Stmt]]
-    # Set if the Codon is running in JIT mode.
-    is_jit: bool = False
+    options: FrontendOptions
     jit_cell: int = 0
     generated_tuples: Set[int]
     generated_kw_tuples: Dict[str, int]
     generated_tuple_names: List[List[str]]
-    # Set if Codon operates in Python compatibility mode (e.g., with Python numerics)
-    python_compat: bool = False
-    # Set if Codon operates in Python extension mode
-    python_ext: bool = False
     py_module: ast.ir.PyModule | None = None
     _timings: Dict[str, float]
 
@@ -332,7 +345,7 @@ class Cache:
         globals: Dict[str, object] | None = None,
         classes: Dict[str, ClassData] | None = None,
         class_realization_cnt: int = 0,
-        thunk_ids: Dict[tuple[str, str], int] | None = None,
+        thunk_ids: Dict[str, int] | None = None,
         functions: Dict[str, FunctionData] | None = None,
         overloads: Dict[str, List[str]] | None = None,
         type_ctx: TypeContext | None = None,
@@ -345,9 +358,10 @@ class Cache:
         generated_tuples: Set[int] | None = None,
         generated_kw_tuples: Dict[str, int] | None = None,
         generated_tuple_names: List[List[str]] | None = None,
-        python_compat: bool = False,
+        python_compat: bool = True,
         python_ext: bool = False,
         py_module: ast.ir.PyModule | None = None,
+        options: FrontendOptions | None = None,
     ):
         from .passes.typecheck.ctx import TypeContext
 
@@ -368,6 +382,8 @@ class Cache:
         self.classes = {} if classes is None else classes
         self.class_realization_cnt = class_realization_cnt
         self.thunk_ids = {} if thunk_ids is None else thunk_ids
+        self.super_calls = {}
+        self.super_call_signatures = {}
         self.functions = {} if functions is None else functions
         self.overloads = {} if overloads is None else overloads
         self.type_ctx = type_ctx or TypeContext(self, ".root")
@@ -375,15 +391,13 @@ class Cache:
         self.pending_realizations = set() if pending_realizations is None else pending_realizations
         self.custom_block_stmts = {} if custom_block_stmts is None else custom_block_stmts
         self.custom_expr_stmts = {} if custom_expr_stmts is None else custom_expr_stmts
-        self.is_jit = is_jit
+        self.options = options or FrontendOptions(jit=is_jit, pyext=python_ext, pynum=python_compat)
         self.jit_cell = jit_cell
         self.generated_tuples = set() if generated_tuples is None else generated_tuples
         self.generated_kw_tuples = {} if generated_kw_tuples is None else generated_kw_tuples
         self.generated_tuple_names = (
             [[]] if generated_tuple_names is None else generated_tuple_names
         )
-        self.python_compat = python_compat
-        self.python_ext = python_ext
         self.py_module = py_module
         self._timings = {}
 
@@ -526,6 +540,16 @@ class Cache:
                     undo.undo()
                     return None
         if realized := realize(self.type_ctx, fn_type):
+            from .passes.typecheck.special import prepare_vtables
+
+            check_init = False
+            if realized.ast and self.rev(realized.ast.name) == "__init__":
+                self.functions[realized.ast.name].realizations[
+                    realized.realized_name()
+                ].check_initialization = True
+                check_init = True
+            if self.pending_realizations or check_init:
+                prepare_vtables(self.type_ctx)
             pending = self.pending_realizations.copy()
             for key in pending:
                 if template := self.functions[key[0]].ast:

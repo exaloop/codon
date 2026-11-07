@@ -30,7 +30,7 @@ class Bindings(ast.Node.Attribute):
         captures: Dict[str, Scope] | None = None,
         bindings: Dict[str, Binding] | None = None,
         local_renames: Dict[str, str] | None = None,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.captures = {} if captures is None else captures
@@ -124,6 +124,7 @@ class ScopeContext:
         yield
         setattr(self, name, old)
 
+
 def is_inside(inner, outer):
     return len(inner) >= len(outer) and inner[len(outer) - 1] == outer[-1]
 
@@ -213,6 +214,43 @@ class ScopingVisitor(ast.NodeVisitor):
         strings = []
         for item in node.strings:
             self.visit(item.expr)
+            if item.expr and "{" in item.format.spec:
+                # Nested fields become ordinary str.format arguments, matching unpackFString.
+                from ..parser import parser, pegen, tokenize
+
+                spec, format, arguments, start, idx = item.format.spec, "{", [item.expr], 0, 0
+                if item.format.conversion:
+                    format += "!" + item.format.conversion
+                format += ":"
+                while idx < len(spec):
+                    if spec[idx] != "{":
+                        idx += 1
+                        continue
+                    format += spec[start:idx] + "{"
+                    expr_start, depth = idx + 1, 1
+                    idx += 1
+                    while idx < len(spec) and depth:
+                        depth += (spec[idx] == "{") - (spec[idx] == "}")
+                        if depth:
+                            idx += 1
+                    text = "{" + spec[expr_start:idx] + "}"
+                    engine = parser.CodonParser(
+                        pegen.Tokenizer(tokenize.generate_tokens([text + "\n"]))
+                    )
+                    field = engine.fstring_replacement_field()
+                    if field is None:
+                        raise ScopeError(node, "invalid nested f-string field")
+                    self.visit(field.expr)
+                    arguments.append(field.expr)
+                    if field.format.conversion:
+                        format += "!" + field.format.conversion
+                    if field.format.spec:
+                        format += ":" + field.format.spec
+                    format += "}"
+                    start = idx = idx + 1
+                format += spec[start:] + "}"
+                item.expr = ast.CallExpr(ast.DotExpr(ast.StringExpr(format), "format"), arguments)
+                item.format.conversion = item.format.spec = ""
             if not item.prefix and strings and not strings[-1].prefix:
                 strings[-1].value += item.value
             else:
@@ -259,7 +297,12 @@ class ScopingVisitor(ast.NodeVisitor):
         self.visit(node.rhs)
         self.visit(node.type_expr)
         with self.ctx.substitute("assignment", node):
-            self.visit(node.lhs)
+            if not node.rhs and node.type_expr and not self.ctx.in_class:
+                # Annotation-only bindings remain uninitialized until an assignment
+                with self.conditional():
+                    self.visit(node.lhs)
+            else:
+                self.visit(node.lhs)
 
     def visit_IfStmt(self, node: ast.IfStmt):
         self.visit(node.cond)
@@ -271,10 +314,39 @@ class ScopingVisitor(ast.NodeVisitor):
     def visit_MatchStmt(self, node: ast.MatchStmt):
         self.visit(node.expr)
         for item in node.items:
-            self.visit(item.pattern)
-            self.visit(item.guard)
             with self.conditional(item.suite):
+                self.transform_pattern(item.pattern)
+                self.visit(item.guard)
                 self.visit(item.suite)
+
+    def transform_pattern(self, pattern):
+        """Scope pattern captures for both their guard and body."""
+        match pattern:
+            case ast.IdExpr(value="_"):
+                return
+            case ast.IdExpr():
+                with self.ctx.substitute("assignment", pattern):
+                    self.visit(pattern)
+            case ast.TupleExpr(items=items):
+                for item in items:
+                    self.transform_pattern(item)
+            case ast.BinaryExpr(op="|" | "||"):
+                self.transform_pattern(pattern.lexpr)
+                self.transform_pattern(pattern.rexpr)
+            case ast.AssignExpr():
+                self.transform_pattern(pattern.expr)
+                self.transform_pattern(pattern.var)
+            case ast.CallExpr():
+                self.visit(pattern.expr)
+                for arg in pattern.items:
+                    if arg.name:
+                        self.transform_pattern(arg.value)
+                    else:
+                        self.visit(arg.value)
+            case ast.StarExpr():
+                self.transform_pattern(pattern.expr)
+            case _:
+                self.visit(pattern)
 
     def visit_WhileStmt(self, node: ast.WhileStmt):
         seen = set()
@@ -399,6 +471,20 @@ class ScopingVisitor(ast.NodeVisitor):
             self.visit(base_class)
 
     def visit_FunctionStmt(self, node: ast.FunctionStmt):
+        if (
+            self.ctx.in_class
+            and not node.has(ast.Attr.StaticMethod)
+            and node.items
+            and node.items[0].name == "self"
+        ):
+            if not node.items[0].type:
+                node.items[0].type = ast.IdExpr("Self")
+            if (
+                isinstance(node.items[0].type, ast.IdExpr)
+                and node.items[0].type.value == "Self"
+                and not any(p.name == "Self" for p in node.items)
+            ):
+                node.add_param(ast.Param("Self", ast.IdExpr(ast.types.Stdlib.Type)))
         if not any(isinstance(d, ast.IdExpr) and d.value == "overload" for d in node.decorators):
             self.bind_name(node.name, node)
         inner = ScopeContext(
