@@ -5419,14 +5419,12 @@ class CodonParser(Parser):
             a = Codon.unwrap(a)
             tok = self._tokenizer.get_last_non_whitespace_token()
             end_lineno, end_col_offset = tok.end
-            return ast.StringExpr.String(
-                value=self.debug_field_text(left, debug_expr) if debug_expr else "",
-                expr=a,
-                format=ast.StringExpr.FormatSpec(
-                    conversion=conversion or "",
-                    spec=format or "",
-                ),
-                prefix="#f",
+            return self.make_fstring_field(
+                left,
+                a,
+                debug_expr,
+                conversion,
+                format,
                 lineno=start_lineno,
                 col_offset=start_col_offset,
                 end_lineno=end_lineno,
@@ -5455,208 +5453,26 @@ class CodonParser(Parser):
         conv = None
         return None
 
-    def fstring_full_format_spec(self) -> Optional[str]:
+    def fstring_full_format_spec(self) -> Optional[List]:
         # fstring_full_format_spec: ':' fstring_format_char*
         mark = self._mark()
         if (self.expect_literal(":")) and (spec := self._loop0_132(),):
-            return "".join(spec)
+            return spec
         self._reset(mark)
         spec = None
         return None
 
-    def fstring_format_char(self) -> Optional[str]:
-        # fstring_format_char: !'}' ANY_BUT_NEWLINE
+    def fstring_format_char(self):
+        # fstring_format_char: fstring_replacement_field | FSTRING_MIDDLE
         mark = self._mark()
         if field := self.fstring_replacement_field():
-            return self.field_source(field)
+            return field
         self._reset(mark)
-        if (self.negative_lookahead(self.expect_literal, "}")) and (a := self.any_but_newline()):
+        if a := self.fstring_middle():
             a = Codon.unwrap(a)
-            return a.string
+            return a
         self._reset(mark)
         a = None
-        return None
-
-    def fstring_format_spec(self) -> Optional[str]:
-        # fstring_format_spec: fstring_options? fstring_width_and_precision? fstring_type?
-        # nullable=True
-        mark = self._mark()
-        if (
-            (a := self.fstring_options(),)
-            and (b := self.fstring_width_and_precision(),)
-            and (c := self.fstring_type(),)
-        ):
-            return (a or "") + (b or "") + (c.string if c else "")
-        self._reset(mark)
-        a = None
-        b = None
-        c = None
-        return None
-
-    def fstring_options(self) -> Optional[str]:
-        # fstring_options: fstring_options_head? ['+' | '-'] "z"? "#"? "0"?
-        # nullable=True
-        mark = self._mark()
-        if (
-            (a := self.fstring_options_head(),)
-            and (b := self._tmp_133(),)
-            and (c := self.expect_literal("z"),)
-            and (d := self.expect_literal("#"),)
-            and (e := self.expect_literal("0"),)
-        ):
-            return (
-                (a or "")
-                + (b.string if b else "")
-                + (c.string if c else "")
-                + (d.string if d else "")
-                + (e.string if e else "")
-            )
-        self._reset(mark)
-        a = None
-        b = None
-        c = None
-        d = None
-        e = None
-        return None
-
-    def fstring_options_head(self) -> Optional[str]:
-        # fstring_options_head: ANY_BUT_NEWLINE? ('<' | '>' | '=' | '^')
-        mark = self._mark()
-        if (n := self.any_but_newline(),) and (o := self._tmp_134()):
-            o = Codon.unwrap(o)
-            return (n.string if n else "") + o.string
-        self._reset(mark)
-        n = None
-        o = None
-        return None
-
-    def fstring_width_and_precision(self) -> Optional[str]:
-        # fstring_width_and_precision: [NUMBER? fstring_grouping?] fstring_precision_with_grouping?
-        # nullable=True
-        mark = self._mark()
-        if (a := self._tmp_135(),) and (b := self.fstring_precision_with_grouping(),):
-            return (a or "") + (b or "")
-        self._reset(mark)
-        a = None
-        b = None
-        return None
-
-    def fstring_precision_with_grouping(self) -> Optional[str]:
-        # fstring_precision_with_grouping: '.' NUMBER? fstring_grouping? | '.' fstring_grouping
-        mark = self._mark()
-        if (
-            (a := self.expect_literal("."))
-            and (b := self.number(),)
-            and (c := self.fstring_grouping(),)
-        ):
-            a = Codon.unwrap(a)
-            return a.string + (b.string if b else "") + (c or "")
-        self._reset(mark)
-        a = None
-        b = None
-        c = None
-        if (a := self.expect_literal(".")) and (b := self.fstring_grouping()):
-            a = Codon.unwrap(a)
-            b = Codon.unwrap(b)
-            return a.string + b
-        self._reset(mark)
-        a = None
-        b = None
-        return None
-
-    def fstring_grouping(self) -> Optional[str]:
-        # fstring_grouping: ',' | "_"
-        mark = self._mark()
-        if a := self.expect_literal(","):
-            a = Codon.unwrap(a)
-            return a.string
-        self._reset(mark)
-        a = None
-        if a := self.expect_literal("_"):
-            a = Codon.unwrap(a)
-            return a.string
-        self._reset(mark)
-        a = None
-        return None
-
-    def fstring_type(self) -> Optional:
-        # fstring_type: "b" | "c" | "d" | "e" | "E" | "f" | "F" | "g" | "G" | "n" | "o" | "s" | "x" | "X" | '%'
-        mark = self._mark()
-        if literal := self.expect_literal("b"):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        if literal := self.expect_literal("c"):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        if literal := self.expect_literal("d"):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        if literal := self.expect_literal("e"):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        if literal := self.expect_literal("E"):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        if literal := self.expect_literal("f"):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        if literal := self.expect_literal("F"):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        if literal := self.expect_literal("g"):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        if literal := self.expect_literal("G"):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        if literal := self.expect_literal("n"):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        if literal := self.expect_literal("o"):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        if literal := self.expect_literal("s"):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        if literal := self.expect_literal("x"):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        if literal := self.expect_literal("X"):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        if literal := self.expect_literal("%"):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
         return None
 
     @memoize
@@ -6451,7 +6267,7 @@ class CodonParser(Parser):
         ):
             tok = self._tokenizer.get_last_non_whitespace_token()
             end_lineno, end_col_offset = tok.end
-            return ast.TupleExpr(
+            return ast.ListExpr(
                 items=a or [],
                 lineno=start_lineno,
                 col_offset=start_col_offset,
@@ -8382,7 +8198,7 @@ class CodonParser(Parser):
         return None
 
     def invalid_replacement_field(self) -> None:
-        # invalid_replacement_field: '{' '=' | '{' '!' | '{' ':' | '{' '}' | '{' !(yield_expr | star_expressions) | '{' (yield_expr | star_expressions) !('=' | '!' | ':' | '}') | '{' (yield_expr | star_expressions) '=' !('!' | ':' | '}') | '{' (yield_expr | star_expressions) '='? invalid_conversion_character | '{' (yield_expr | star_expressions) '='? ['!' NAME] !(':' | '}') | '{' (yield_expr | star_expressions) '='? ['!' NAME] ':' fstring_format_spec* !'}' | '{' (yield_expr | star_expressions) '='? ['!' NAME] !'}'
+        # invalid_replacement_field: '{' '=' | '{' '!' | '{' ':' | '{' '}' | '{' !(yield_expr | star_expressions) | '{' (yield_expr | star_expressions) !('=' | '!' | ':' | '}') | '{' (yield_expr | star_expressions) '=' !('!' | ':' | '}') | '{' (yield_expr | star_expressions) '='? invalid_conversion_character | '{' (yield_expr | star_expressions) '='? ['!' NAME] !(':' | '}') | '{' (yield_expr | star_expressions) '='? ['!' NAME] ':' fstring_format_char* !'}' | '{' (yield_expr | star_expressions) '='? ['!' NAME] !'}'
         mark = self._mark()
         if (self.expect_literal("{")) and (a := self.expect_literal("=")):
             a = Codon.unwrap(a)
@@ -10186,56 +10002,6 @@ class CodonParser(Parser):
         fstring_format_char = None
         return children
 
-    def _tmp_133(self) -> Optional:
-        # _tmp_133: '+' | '-'
-        mark = self._mark()
-        if literal := self.expect_literal("+"):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        if literal := self.expect_literal("-"):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        return None
-
-    def _tmp_134(self) -> Optional:
-        # _tmp_134: '<' | '>' | '=' | '^'
-        mark = self._mark()
-        if literal := self.expect_literal("<"):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        if literal := self.expect_literal(">"):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        if literal := self.expect_literal("="):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        if literal := self.expect_literal("^"):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        return None
-
-    def _tmp_135(self) -> Optional:
-        # _tmp_135: NUMBER? fstring_grouping?
-        mark = self._mark()
-        if (n := self.number(),) and (g := self.fstring_grouping(),):
-            return (n.string if n else "") + (g or "")
-        self._reset(mark)
-        n = None
-        g = None
-        return None
-
     def _loop1_136(self) -> List:
         # _loop1_136: (any_string)
         mark = self._mark()
@@ -11822,15 +11588,15 @@ class CodonParser(Parser):
         return None
 
     def _loop0_259(self) -> List:
-        # _loop0_259: fstring_format_spec
+        # _loop0_259: fstring_format_char
         mark = self._mark()
         children = []
-        while fstring_format_spec_ := self.fstring_format_spec():
-            fstring_format_spec = Codon.unwrap(fstring_format_spec_)
-            children.append(fstring_format_spec)
+        while fstring_format_char_ := self.fstring_format_char():
+            fstring_format_char = Codon.unwrap(fstring_format_char_)
+            children.append(fstring_format_char)
             mark = self._mark()
         self._reset(mark)
-        fstring_format_spec = None
+        fstring_format_char = None
         return children
 
     def _tmp_260(self) -> Optional:

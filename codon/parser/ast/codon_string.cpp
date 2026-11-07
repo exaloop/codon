@@ -374,6 +374,17 @@ Formatted formatAttributes(const ASTNode *node, int indent, int level) {
   std::vector<AttributeValue> values;
   for (auto it = node->attributes_begin(); it != node->attributes_end(); ++it) {
     if (auto *name = attributeName(*it)) {
+      if (*it == Attr::ClassDeduce) {
+        if (auto *fields = dynamic_cast<const ir::StringListAttribute *>(
+                node->getAttribute(*it))) {
+          // Deduction collects a set of names; its iteration order is not AST
+          // semantics.
+          auto names = fields->values;
+          std::sort(names.begin(), names.end());
+          values.push_back({name, formatValue(names, true, indent, level + 2)});
+          continue;
+        }
+      }
       values.push_back(
           {name, formatAttribute(node->getAttribute(*it), true, indent, level + 2)});
     }
@@ -542,6 +553,18 @@ Formatted formatValue(const StringExpr::FormatSpec &value, bool attributes, int 
       indent, level);
 }
 
+Formatted formatValue(Param::Kind value, bool, int, int) {
+  switch (value) {
+  case Param::Normal:
+    return {"Normal", true};
+  case Param::PositionalOnly:
+    return {"PositionalOnly", true};
+  case Param::KeywordOnly:
+    return {"KeywordOnly", true};
+  }
+  return {"", true};
+}
+
 Formatted formatValue(const Param &value, bool attributes, int indent, int level) {
   const int child = nestedLevel(indent, level);
   return formatStruct(
@@ -549,7 +572,8 @@ Formatted formatValue(const Param &value, bool attributes, int indent, int level
       {field("name", formatValue(value.name, attributes, indent, child)),
        field("type", formatValue(value.type, attributes, indent, child)),
        field("default", formatValue(value.defaultValue, attributes, indent, child)),
-       field("status", formatValue(value.status, attributes, indent, child))},
+       field("status", formatValue(value.status, attributes, indent, child)),
+       field("kind", formatValue(value.kind, attributes, indent, child))},
       indent, level);
 }
 

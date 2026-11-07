@@ -980,13 +980,13 @@ class LambdaExpr(Expr, ItemIterator):
     @li lambda a, b: a + b
     """
 
-    expr: Expr
     items: List[Param]
+    expr: Expr
 
     def __init__(self, expr: Expr, items: List[Param] | None = None, **kwargs):
         super().__init__(**kwargs)
-        self.expr = expr
         self.items = FunctionStmt.parse_params(items or [])
+        self.expr = expr
 
 
 @dataclass(init=False)
@@ -2250,6 +2250,9 @@ def dump(
             attrs = []
             allsimple = True
             for key, val in node.attributes.items():
+                if key is Attr.ClassDeduce and isinstance(val, list):
+                    # This attribute is collected from a set, not an ordered field list.
+                    val = sorted(val)
                 if isinstance(val, bool) and val:
                     attrs.append(key.name)
                 elif isinstance(val, dict):
@@ -2294,9 +2297,11 @@ def dump(
             for name, value in Codon.any_members(node):  # type: ignore
                 if name in ["attributes", "info", "done", "non_inferrable_generics", "call_layout"]:
                     continue
-                if isinstance(node, Param) and name == "kind":
-                    continue
-                if not types and name in ["type", "expected_type", "orig"]:
+                if (
+                    not types
+                    and isinstance(node, Expr)
+                    and name in ["type", "expected_type", "orig"]
+                ):
                     continue
                 value, simple = _format(value, level)
                 allsimple = allsimple and simple
@@ -2392,15 +2397,17 @@ def iter_child_nodes(node) -> Iterator[Node]:
                 return Codon.unwrap(o)  # type: ignore
         return a
 
-    for _, field in iter_fields(node):
+    def children(field):
         f = _get_node(field)
         if isinstance(f, Node):
             yield f
         elif Any.is_list(f):
             for item in cast(List[Any], f):
-                i = _get_node(item)
-                if isinstance(i, Node):
-                    yield i
+                # Chained comparisons store operands inside (operator, expression) pairs.
+                yield from children(item)
+
+    for _, field in iter_fields(node):
+        yield from children(field)
 
 
 class NodeVisitor:

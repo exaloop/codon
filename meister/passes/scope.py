@@ -220,63 +220,6 @@ class ScopingVisitor(ast.NodeVisitor):
         else:
             self.visit(node.rexpr)
 
-    def visit_StringExpr(self, node: ast.StringExpr):
-        """
-        Split a Python-like f-string into a list:
-        `f"foo {x+1} bar"` -> `("foo ", str(x+1), " bar")
-        Supports "{x=}" specifier (that prints the raw expression as well):
-        `f"{x+1=}"` -> `("x+1=", str(x+1))`
-        """
-        # Strings to be concatenated
-        strings = []
-        # Transform an F-string
-        for item in node.strings:
-            self.visit(item.expr)
-            if item.expr and "{" in item.format.spec:
-                # Nested fields become ordinary str.format arguments, matching unpackFString.
-                from ..parser import parser, pegen, tokenize
-
-                spec, format, arguments, start, idx = item.format.spec, "{", [item.expr], 0, 0
-                if item.format.conversion:
-                    format += "!" + item.format.conversion
-                format += ":"
-                while idx < len(spec):
-                    if spec[idx] != "{":
-                        idx += 1
-                        continue
-                    format += spec[start:idx] + "{"
-                    expr_start, depth = idx + 1, 1
-                    idx += 1
-                    while idx < len(spec) and depth:
-                        depth += (spec[idx] == "{") - (spec[idx] == "}")
-                        if depth:
-                            idx += 1
-                    text = "{" + spec[expr_start:idx] + "}"
-                    engine = parser.CodonParser(
-                        pegen.Tokenizer(tokenize.generate_tokens([text + "\n"]))
-                    )
-                    field = engine.fstring_replacement_field()
-                    if field is None:
-                        raise ScopeError(node, "invalid nested f-string field")
-                    self.visit(field.expr)
-                    arguments.append(field.expr)
-                    if field.format.conversion:
-                        format += "!" + field.format.conversion
-                    if field.format.spec:
-                        format += ":" + field.format.spec
-                    format += "}"
-                    start = idx = idx + 1
-                format += spec[start:] + "}"
-                item.expr = ast.CallExpr(ast.DotExpr(ast.StringExpr(format), "format"), arguments)
-                item.format.conversion = item.format.spec = ""
-            if not item.prefix and strings and not strings[-1].prefix:
-                strings[-1].value += item.value
-            else:
-                strings.append(item)
-        node.strings = strings
-        node.value = strings[0].value if len(strings) == 1 else ""
-        node.prefix = strings[0].prefix if len(strings) == 1 else ""
-
     def visit_AssignExpr(self, node: ast.AssignExpr):
         assert isinstance(node.var, ast.IdExpr), "only simple assignment expressions are supported"
         with self.ctx.substitute("temp_scope", False):

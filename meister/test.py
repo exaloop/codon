@@ -110,7 +110,7 @@ def split_test_file(path):
 
     for line_number, line in enumerate(lines):
         if line.startswith("#%%"):
-            if saw_marker and name != "__ignore__":
+            if saw_marker:
                 cases.append(TestCase(path, name, "".join(code), start_line))
             elif not saw_marker and code:
                 cases.append(TestCase(path, "", "".join(code), start_line))
@@ -123,7 +123,7 @@ def split_test_file(path):
         else:
             code.append(line + "\n")
 
-    if code and name != "__ignore__":
+    if code:
         cases.append(TestCase(path, name, "".join(code), start_line))
     return cases
 
@@ -142,11 +142,11 @@ def discover_tests(path):
 
 
 def run_python(case, typecheck):
-    from .passes.typecheck import typecheck_program
-
     recursion_limit = sys.getrecursionlimit()
     try:
         if typecheck:
+            from .passes.typecheck import typecheck_program
+
             # One Codon realization uses many Python visitor frames.
             sys.setrecursionlimit(max(recursion_limit, cache.MAX_REALIZATION_DEPTH * 100))
         cc = cache.Cache("codon")
@@ -371,7 +371,7 @@ def main(argv=None):
     if (root / "stdlib").is_dir():
         os.environ.setdefault("CODON_PATH", str(root / "stdlib"))
     argument_parser = argparse.ArgumentParser(
-        description="Compare Python and C++ Codon AST dumps after typechecking."
+        description="Compare Python and C++ Codon AST dumps after scoping or typechecking."
     )
     argument_parser.add_argument(
         "tests",
@@ -381,6 +381,9 @@ def main(argv=None):
         help="Codon test file or directory (default: tests/, falling back to test/)",
     )
     argument_parser.add_argument("--library", help="path to libcodonc")
+    argument_parser.add_argument(
+        "--scope-only", action="store_true", help="compare parsing/scoping without typechecking"
+    )
     argument_parser.add_argument(
         "--max-diffs", type=int, default=20, help="maximum mismatching cases to print"
     )
@@ -416,15 +419,25 @@ def main(argv=None):
     mismatched = 0
     rejected = 0
     printed = 0
-    print(f"Comparing {len(cases)} typechecked ASTs using {library_path}")
+    stage = "Scoped" if args.scope_only else "Typechecked"
+    typecheck = 0 if args.scope_only else 2
+    print(f"Comparing {len(cases)} {stage.lower()} ASTs using {library_path}")
 
     for case in cases:
-        python_result = run_python(case, typecheck=2)
-        native_result = native.run(case, typecheck=2)
+        python_result = run_python(case, typecheck=typecheck)
+        native_result = native.run(case, typecheck=typecheck)
 
         if python_result.output is not None and native_result.output is not None:
-            python_output = ignore_class_deduce(python_result.output)
-            native_output = ignore_class_deduce(native_result.output)
+            python_output = (
+                python_result.output
+                if args.scope_only
+                else ignore_class_deduce(python_result.output)
+            )
+            native_output = (
+                native_result.output
+                if args.scope_only
+                else ignore_class_deduce(native_result.output)
+            )
             if python_output == native_output:
                 matched += 1
                 print(f"MATCH {case.label}")
@@ -455,9 +468,7 @@ def main(argv=None):
             if args.stop_on_error:
                 break
 
-    print(
-        f"Typechecked ASTs: {matched} matched, {mismatched} mismatched, {rejected} rejected by both"
-    )
+    print(f"{stage} ASTs: {matched} matched, {mismatched} mismatched, {rejected} rejected by both")
     return 1 if mismatched else 0
 
 

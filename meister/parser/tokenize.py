@@ -1,6 +1,6 @@
-### File: token.py / tokenize.py (Python 3.11.11)
+### Codon tokenizer; f-string modes follow CPython 3.12 Parser/tokenizer.c.
 
-from ..bridge import ClassVar, Codon, Dict, Generator, List, Optional, Set, Tuple, static
+from ..bridge import ClassVar, Dict, Generator, List, Optional, Set, Tuple, static
 
 
 class Tokens:
@@ -83,6 +83,7 @@ class Tokens:
     NT_OFFSET = 256
 
     EXACT_TOKEN_TYPES = {
+        "!": EXCLAMATION,
         "!=": NOTEQUAL,
         "%": PERCENT,
         "%=": PERCENTEQUAL,
@@ -206,7 +207,6 @@ class TokenPatterns:
     single_quoted: Set[str]
     triple_quoted: Set[str]
     tabsize: int
-    prev_token: Optional[TokenInfo]
 
     def match_string(quote, number):
         def match(s, start=0):
@@ -391,9 +391,18 @@ class TokenPatterns:
             return special_end
         if initial == "'" or initial == '"':
             return TokenPatterns._scan_string(line, pos, allow_continuation)
-        if initial == "_" or initial.isalnum():
+        if initial == "_" or initial.isidentifier():
             end = pos + 1
-            while end < n and (line[end] == "_" or line[end].isalnum()):
+            while end < n:
+                char = line[end]
+                if not (
+                    "a" <= char <= "z"
+                    or "A" <= char <= "Z"
+                    or "0" <= char <= "9"
+                    or char == "_"
+                    or (ord(char) >= 128 and ("_" + char).isidentifier())
+                ):
+                    break
                 end += 1
             return end
         return -1
@@ -468,7 +477,6 @@ class TokenPatterns:
                 self.specials[initial] = []
             self.specials[initial].append(special)
         self.tabsize = 8
-        self.prev_token = None
 
 
 class TokenError(Exception):
@@ -497,149 +505,306 @@ token_patterns = TokenPatterns()
 
 def tokenize(readline):
     """
-    The tokenize() generator requires one argument, readline, which
-    must be a generator object which provides the same interface as the
-    readline method of built-in file objects. Each call to the function
-    should return one line of input as bytes.
+    Tokenize an iterable of physical source lines (strings, not bytes).
 
-    The generator produces 5-tuples with these members: the token type; the
+    The generator produces TokenInfo objects with these members: the token type; the
     token string; a 2-tuple (srow, scol) of ints specifying the row and
     column where the token begins in the source; a 2-tuple (erow, ecol) of
     ints specifying the row and column where the token ends in the source;
     and the line on which the token was found.  The line passed is the
     physical line.
     """
-    for token in _tokenize(iter(readline), token_patterns):
-        yield token
-        token_patterns.prev_token = token
+    yield from _tokenize(iter(readline), token_patterns)
 
 
 generate_tokens = tokenize
 
 
-def _tokenize(readline, token_patterns) -> Generator[TokenInfo]:
-    endprog = None
-    strstart = (0, 0)
-    str_prefix: Optional[TokenInfo] = None
+class _FStringMode:
+    # CPython's tokenizer_mode: literal text, regular expression code, or format text.
+    TEXT = 0
+    EXPR = 1
+    FORMAT = 2
 
-    # keywords that can came after a number without a space
-    # TODO: replace this with just NUMBER+NAME?
-    space_keywords = {"if", "else", "and", "or", "in", "is", "not"}
+    def __init__(self, kind, quote, raw, start, depth=0):
+        self.kind = kind
+        self.quote = quote
+        self.raw = raw
+        self.start = start
+        self.depth = depth
+        self.brackets = []
+        self.after_middle = False
 
-    def get_string(token, spos, lnum, pos, line) -> Generator[TokenInfo]:
-        nonlocal str_prefix
 
-        prefix = ""
-        if len(token) >= 6 and token[:3] == token[-3:]:
-            prefix = token[:3]
-        elif len(token) >= 2 and token[0] == token[-1]:
-            prefix = token[0]
+class _LiteralLexer:
+    """Streaming, non-recursive string lexer sharing Codon's ordinary token scanner.
 
-        if str_prefix and str_prefix.string.lower() in ["f", "fr", "rf"]:
-            yield TokenInfo(
-                Tokens.FSTRING_START,
-                str_prefix.string,
-                spos,
-                (spos[0], spos[1] + len(prefix)),
-                line,
+    Reference: CPython 3.12 Parser/tokenizer.c, tok_get_normal_mode and
+    tok_get_fstring_mode. No fragments are synthesized or tokenized again.
+    """
+
+    def __init__(self, readline, line, lnum, pos, patterns):
+        self.readline = readline
+        self.line = line
+        self.lnum = lnum
+        self.pos = pos
+        self.patterns = patterns
+        self.lines = [line]
+        self.first_line = lnum
+        self.modes = []
+        self.pending_token = None
+        self.number_end = (0, 0)
+        self.fstring_count = 0
+
+    def next_line(self):
+        line = next(self.readline, "")
+        if not line:
+            return False
+        self.line = line
+        self.lines.append(line)
+        self.lnum += 1
+        self.pos = 0
+        return True
+
+    def token(self, kind, value, start, end):
+        first = start[0] - self.first_line
+        last = end[0] - self.first_line
+        line = self.lines[first] if first == last else "".join(self.lines[first : last + 1])
+        return TokenInfo(kind, value, start, end, line)
+
+    def source(self, start, end):
+        first = start[0] - self.first_line
+        last = end[0] - self.first_line
+        if first == last:
+            return self.lines[first][start[1] : end[1]]
+        return (
+            self.lines[first][start[1] :]
+            + "".join(self.lines[first + 1 : last])
+            + self.lines[last][: end[1]]
+        )
+
+    def open_literal(self, prefix=None):
+        char = self.line[self.pos]
+        quote = char * 3 if self.line.startswith(char * 3, self.pos) else char
+        if prefix and prefix.string.lower() in {"f", "fr", "rf"}:
+            if self.fstring_count + 1 >= 150:
+                raise TokenError("too many nested f-strings", prefix.start)
+            self.pos += len(quote)
+            self.modes.append(
+                _FStringMode(_FStringMode.TEXT, quote, "r" in prefix.string.lower(), prefix.start)
             )
-            begin, end = len(prefix), len(token) - len(prefix)
+            self.fstring_count += 1
+            return self.token(
+                Tokens.FSTRING_START, prefix.string + quote, prefix.start, (self.lnum, self.pos)
+            )
+        string = self.scan_string(quote)
+        if prefix:
+            self.pending_token = string
+            return prefix
+        return string
 
-            def location(offset):
-                preceding = token[:offset]
-                rows = preceding.count("\n")
-                return (
-                    spos[0] + rows,
-                    len(preceding.rsplit("\n", 1)[-1]) if rows else spos[1] + offset,
-                )
+    def scan_string(self, quote):
+        start = (self.lnum, self.pos)
+        self.pos += len(quote)
+        while True:
+            if self.pos >= len(self.line):
+                if not self.next_line():
+                    raise TokenError("EOF in multi-line string", start)
+                continue
+            if self.line.startswith(quote, self.pos):
+                self.pos += len(quote)
+                end = (self.lnum, self.pos)
+                return self.token(Tokens.STRING, self.source(start, end), start, end)
+            char = self.line[self.pos]
+            if char in "\r\n" and len(quote) == 1:
+                raise TokenError("unterminated string literal", start)
+            if char == "\\":
+                self.pos += 1
+                if self.pos < len(self.line):
+                    if self.line.startswith("\r\n", self.pos):
+                        self.pos += 2
+                    else:
+                        self.pos += 1
+            else:
+                self.pos += 1
 
-            literal_start = begin
-            i = begin
-            while i < end:
-                char = token[i]
-                if char in "{}" and i + 1 < end and token[i + 1] == char:
-                    if literal_start < i:
-                        yield TokenInfo(
-                            Tokens.FSTRING_MIDDLE,
-                            token[literal_start:i],
-                            location(literal_start),
-                            location(i),
-                            line,
-                        )
-                    yield TokenInfo(Tokens.FSTRING_MIDDLE, char, location(i), location(i + 2), line)
-                    i += 2
-                    literal_start = i
-                    continue
-                if char == "}":
-                    raise TokenError("single '}' is not allowed in f-string", location(i))
-                if char != "{":
-                    i += 1
-                    continue
-                if literal_start < i:
-                    yield TokenInfo(
-                        Tokens.FSTRING_MIDDLE,
-                        token[literal_start:i],
-                        location(literal_start),
-                        location(i),
-                        line,
+    def scan_text(self, mode):
+        start = (self.lnum, self.pos)
+        pieces = []
+        piece_start = self.pos
+        while True:
+            if self.pos >= len(self.line):
+                pieces.append(self.line[piece_start:])
+                if not self.next_line():
+                    raise TokenError("unterminated f-string literal", mode.start)
+                piece_start = 0
+            char = self.line[self.pos]
+            boundary = (
+                char in "{}"
+                or self.line.startswith(mode.quote, self.pos)
+                or (char in "\r\n" and len(mode.quote) == 1)
+            )
+            if boundary:
+                value = "".join(pieces) + self.line[piece_start : self.pos]
+                # Doubled braces are escapes only in literal mode, not format specs.
+                if (
+                    mode.kind == _FStringMode.TEXT
+                    and char in "{}"
+                    and self.line.startswith(char * 2, self.pos)
+                ):
+                    self.pos += 1
+                    end = (self.lnum, self.pos)
+                    self.pos += 1
+                    mode.after_middle = False
+                    return self.token(Tokens.FSTRING_MIDDLE, value + char, start, end)
+                if value or (
+                    mode.kind == _FStringMode.FORMAT
+                    and (char != "{" or self.line.startswith("{{", self.pos))
+                    and not mode.after_middle
+                ):
+                    mode.after_middle = True
+                    return self.token(Tokens.FSTRING_MIDDLE, value, start, (self.lnum, self.pos))
+                if char == "{":
+                    if mode.depth >= 3:
+                        raise TokenError("f-string: expressions nested too deeply", start)
+                    mode.after_middle = False
+                    self.pos += 1
+                    self.modes.append(
+                        _FStringMode(_FStringMode.EXPR, mode.quote, mode.raw, start, mode.depth + 1)
                     )
-                start, depth = i, 1
-                i += 1
-                while i < end and depth:
-                    if token[i] == "{":
-                        depth += 1
-                    elif token[i] == "}":
-                        depth -= 1
-                    i += 1
-                if depth:
-                    raise TokenError("expecting '}' in f-string", location(start))
-                fragment = token[start:i]
-                tokens = list(_tokenize(iter(fragment.split("\n")), token_patterns))
-                while tokens and tokens[-1].type in {Tokens.ENDMARKER, Tokens.NEWLINE}:
-                    tokens.pop()
-                nesting = 0
-                base_line, base_col = location(start)
-                for t in tokens:
-                    if t.string in {"(", "[", "{"}:
-                        nesting += 1
-                    elif t.string in {")", "]", "}"}:
-                        nesting -= 1
-
-                    def mapped(position):
-                        return (
-                            base_line + position[0] - 1,
-                            position[1] + (base_col if position[0] == 1 else 0),
+                    return self.token(Tokens.OP, "{", start, (self.lnum, self.pos))
+                if char == "}":
+                    if mode.kind == _FStringMode.TEXT:
+                        raise TokenError("single '}' is not allowed in f-string", start)
+                    self.pos += 1
+                    self.modes.pop()
+                    return self.token(Tokens.OP, "}", start, (self.lnum, self.pos))
+                if char in "\r\n" and mode.kind == _FStringMode.FORMAT:
+                    # CPython resumes regular lexing for a newline terminating a
+                    # single-quoted format spec; the field's closing brace follows.
+                    mode.kind = _FStringMode.EXPR
+                    return self.scan_expr(mode)
+                if mode.kind == _FStringMode.FORMAT:
+                    raise TokenError("f-string: expecting '}'", start)
+                if char in "\r\n":
+                    raise TokenError("unterminated f-string literal", mode.start)
+                self.pos += len(mode.quote)
+                self.modes.pop()
+                self.fstring_count -= 1
+                return self.token(Tokens.FSTRING_END, mode.quote, start, (self.lnum, self.pos))
+            if char == "\\":
+                self.pos += 1
+                if self.pos < len(self.line):
+                    char = self.line[self.pos]
+                    if char in "{}":
+                        # A backslash never escapes a replacement-field brace.
+                        continue
+                    if not mode.raw and self.line.startswith("N{", self.pos):
+                        # Braces belonging to a named Unicode escape are literal.
+                        self.pos += 2
+                        while self.pos < len(self.line) and self.line[self.pos] != "}":
+                            self.pos += 1
+                        if self.pos >= len(self.line):
+                            raise TokenError("malformed Unicode escape", start)
+                        self.pos += 1
+                        mode.after_middle = False
+                        return self.token(
+                            Tokens.FSTRING_MIDDLE,
+                            "".join(pieces) + self.line[piece_start : self.pos],
+                            start,
+                            (self.lnum, self.pos),
                         )
+                    if self.line.startswith("\r\n", self.pos):
+                        self.pos += 2
+                    else:
+                        self.pos += 1
+            else:
+                self.pos += 1
 
-                    if t.string == ":=" and nesting == 1:
-                        yield TokenInfo(
-                            Tokens.OP,
-                            ":",
-                            mapped(t.start),
-                            mapped((t.start[0], t.start[1] + 1)),
-                            t.line,
-                        )
-                        t = TokenInfo(Tokens.OP, "=", (t.start[0], t.start[1] + 1), t.end, t.line)
-                    t.start, t.end = mapped(t.start), mapped(t.end)
-                    yield t
-                literal_start = i
-            if literal_start < end:
-                yield TokenInfo(
-                    Tokens.FSTRING_MIDDLE,
-                    token[literal_start:end],
-                    location(literal_start),
-                    location(end),
-                    line,
+    def scan_expr(self, mode):
+        while True:
+            if self.pos >= len(self.line):
+                if not self.next_line():
+                    raise TokenError("f-string: expecting '}'", mode.start)
+            while self.pos < len(self.line) and self.line[self.pos] in " \t\f":
+                self.pos += 1
+            if self.pos >= len(self.line):
+                continue
+            start = (self.lnum, self.pos)
+            char = self.line[self.pos]
+            if char == ":" and not mode.brackets:
+                mode.kind = _FStringMode.FORMAT
+                mode.after_middle = False
+                self.pos += 1
+                return self.token(Tokens.OP, ":", start, (self.lnum, self.pos))
+            if char == "}" and not mode.brackets:
+                self.pos += 1
+                self.modes.pop()
+                return self.token(Tokens.OP, "}", start, (self.lnum, self.pos))
+            if char in "\"'":
+                return self.open_literal()
+            span = self.patterns.pseudo_token_span(self.line, self.pos)
+            if not span:
+                if char == "\\":
+                    raise TokenError("unexpected character after line continuation", start)
+                self.pos += 1
+                return self.token(Tokens.ERRORTOKEN, char, start, (self.lnum, self.pos))
+            _, self.pos = span
+            end = (self.lnum, self.pos)
+            value = self.line[start[1] : self.pos]
+            if char in "\r\n":
+                return self.token(Tokens.NL, value, start, end)
+            if char == "#":
+                return self.token(Tokens.COMMENT, value, start, end)
+            if char == "\\":
+                continue
+            if "0" <= char <= "9" or (char == "." and value not in {".", "..."}):
+                self.number_end = end
+                return self.token(Tokens.NUMBER, value, start, end)
+            if char.isidentifier():
+                if self.pos < len(self.line) and self.line[self.pos] in "\"'":
+                    return self.open_literal(self.token(Tokens.STRING_PREFIX, value, start, end))
+                kind = Tokens.NAME
+                if self.number_end == start and value not in {
+                    "if",
+                    "else",
+                    "and",
+                    "or",
+                    "in",
+                    "is",
+                    "not",
+                }:
+                    kind = Tokens.NUMBER_SUFFIX
+                return self.token(kind, value, start, end)
+            if char in "([{":
+                if len(mode.brackets) >= 200:
+                    raise TokenError("too many nested parentheses", start)
+                mode.brackets.append(char)
+            elif char in ")]}":
+                if not mode.brackets or "([{".index(mode.brackets[-1]) != ")]}".index(char):
+                    raise TokenError("f-string: mismatched closing bracket", start)
+                mode.brackets.pop()
+            return self.token(Tokens.OP, value, start, end)
+
+    def scan(self, prefix):
+        yield self.open_literal(prefix)
+        while self.pending_token or self.modes:
+            if self.pending_token:
+                token = self.pending_token
+                self.pending_token = None
+            else:
+                mode = self.modes[-1]
+                token = (
+                    self.scan_expr(mode) if mode.kind == _FStringMode.EXPR else self.scan_text(mode)
                 )
-            yield TokenInfo(
-                Tokens.FSTRING_END, prefix, (lnum, pos - len(prefix)), (lnum, pos), line
-            )
-            str_prefix = None
-        else:
-            if str_prefix:
-                yield Codon.unwrap(str_prefix)
-                str_prefix = None
-            yield TokenInfo(Tokens.STRING, token, spos, (lnum, pos), line)
+            yield token
+
+
+def _tokenize(readline, token_patterns) -> Generator[TokenInfo]:
+    str_prefix: Optional[TokenInfo] = None
+    number_end = (0, 0)
+    # Keywords can immediately follow numbers without being Codon suffixes.
+    space_keywords = {"if", "else", "and", "or", "in", "is", "not"}
 
     lnum = parenlev = continued = 0
     raw_decorator = False
@@ -647,8 +812,6 @@ def _tokenize(readline, token_patterns) -> Generator[TokenInfo]:
     raw_def_indent = 0
     raw_block_indent = None
     numchars = "0123456789"
-    contstr, needcont = "", 0
-    contline = None
     indents = [0]
 
     last_line = b""
@@ -709,41 +872,7 @@ def _tokenize(readline, token_patterns) -> Generator[TokenInfo]:
             raw_def_indent = leading
             raw_block_pending = True
 
-        if contstr:  # continued string
-            if not line:
-                raise TokenError("EOF in multi-line string", strstart)
-            endmatch = endprog(line)
-            if endmatch:
-                pos = end = endmatch
-                if str_prefix:
-                    yield Codon.unwrap(str_prefix)
-                    str_prefix = None
-                yield TokenInfo(
-                    Tokens.STRING,
-                    contstr + line[:end],
-                    strstart,
-                    (lnum, end),
-                    contline + line,
-                )
-                contstr, needcont = "", 0
-                contline = None
-            elif needcont and line[-2:] != "\\\n" and line[-3:] != "\\\r\n":
-                yield TokenInfo(
-                    Tokens.ERRORTOKEN,
-                    contstr + line,
-                    strstart,
-                    (lnum, len(line)),
-                    contline,
-                )
-                contstr = ""
-                contline = None
-                continue
-            else:
-                contstr = contstr + line
-                contline = contline + line
-                continue
-
-        elif parenlev == 0 and not continued:  # new statement
+        if parenlev == 0 and not continued:  # new statement
             if not line:
                 break
             column = 0
@@ -802,6 +931,17 @@ def _tokenize(readline, token_patterns) -> Generator[TokenInfo]:
             continued = 0
 
         while pos < max:
+            while pos < max and line[pos] in " \t\f":
+                pos += 1
+            if pos == max:
+                break
+            if line[pos] in "\"'":
+                lexer = _LiteralLexer(readline, line, lnum, pos, token_patterns)
+                yield from lexer.scan(str_prefix)
+                str_prefix = None
+                line, lnum, pos = lexer.line, lexer.lnum, lexer.pos
+                max = len(line)
+                continue
             pseudospan = token_patterns.pseudo_token_span(line, pos)
             if pseudospan:  # scan for tokens
                 start, end = pseudospan
@@ -814,6 +954,7 @@ def _tokenize(readline, token_patterns) -> Generator[TokenInfo]:
                     initial in numchars  # ordinary number
                     or (initial == "." and token != "." and token != "...")
                 ):
+                    number_end = epos
                     yield TokenInfo(Tokens.NUMBER, token, spos, epos, line)
                 elif initial in "\r\n":
                     if parenlev > 0:
@@ -825,38 +966,11 @@ def _tokenize(readline, token_patterns) -> Generator[TokenInfo]:
                     assert not token.endswith("\n")
                     yield TokenInfo(Tokens.COMMENT, token, spos, epos, line)
 
-                elif token == "'''" or token == '"""':
-                    endprog = TokenPatterns.match_string(token[0], 3)
-                    endmatch = endprog(line, pos)
-                    if endmatch:  # all on one line
-                        pos = endmatch
-                        token = line[start:pos]
-                        yield from get_string(token, spos, lnum, pos, line)
-                    else:
-                        strstart = (lnum, start)  # multiple lines
-                        contstr = line[start:]
-                        contline = line
-                        break
-
-                # Note that single quote checking must come after
-                #  triple quote checking (above).
-                elif initial == '"' or initial == "'":
-                    if token[-1] == "\n":  # continued string
-                        strstart = (lnum, start)
-                        endprog = TokenPatterns.match_string(initial, 1)
-                        contstr, needcont = line[start:], 1
-                        contline = line
-                        break
-                    else:
-                        yield from get_string(token, spos, lnum, pos, line)
-
                 elif initial.isidentifier():  # ordinary name
                     if end < len(line) and (line[end] == '"' or line[end] == "'"):
                         str_prefix = TokenInfo(Tokens.STRING_PREFIX, token, spos, epos, line)
                     elif (
-                        token_patterns.prev_token
-                        and token_patterns.prev_token.end == (lnum, start)
-                        and token_patterns.prev_token.type == Tokens.NUMBER
+                        number_end == spos
                         # Support stuff like 1if(condition)else(value) (not a suffix!)
                         and token not in space_keywords
                     ):
@@ -872,6 +986,8 @@ def _tokenize(readline, token_patterns) -> Generator[TokenInfo]:
                         parenlev -= 1
                     yield TokenInfo(Tokens.OP, token, spos, epos, line)
             else:
+                if line[pos] == "\\":
+                    raise TokenError("unexpected character after line continuation", (lnum, pos))
                 yield TokenInfo(Tokens.ERRORTOKEN, line[pos], (lnum, pos), (lnum, pos + 1), line)
                 pos += 1
 
@@ -882,7 +998,7 @@ def _tokenize(readline, token_patterns) -> Generator[TokenInfo]:
             "",
             (lnum - 1, len(last_line)),
             (lnum - 1, len(last_line) + 1),
-            "",
+            last_line,
         )
     for _ in indents[1:]:  # pop remaining indent levels
         yield TokenInfo(Tokens.DEDENT, "", (lnum, 0), (lnum, 0), "")

@@ -174,6 +174,7 @@ class Tokenizer:
         self._index = 0
         self._verbose = verbose
         self._lines = {}
+        self._comments = {}
         self._path = path
         if ENABLE_VERBOSE and verbose:
             self.report(False, False)
@@ -199,10 +200,21 @@ class Tokenizer:
         """Return the next token *without* updating the index."""
         while self._index == len(self._tokens):
             tok = next(self._tokengen)
+            if tok.type == tokenize.Tokens.COMMENT:
+                self._comments[tok.start[0]] = tok
+            if not self._path:
+                # Cache physical lines even when they occur only in ignored tokens
+                # or in a multiline literal; debug fields need the original text.
+                if tok.start[0] == tok.end[0]:
+                    self._lines.setdefault(tok.start[0], tok.line)
+                else:
+                    lines = tok.line.split("\n")
+                    for offset, line in enumerate(lines):
+                        if offset < len(lines) - 1:
+                            line += "\n"
+                        if line:
+                            self._lines.setdefault(tok.start[0] + offset, line)
             if tok.type in (tokenize.Tokens.NL, tokenize.Tokens.COMMENT):
-                # TODO(Codon AST): preserve `## codon: key=value` comments as
-                # DirectiveStmt nodes. The copied tokenizer currently drops all
-                # comments before grammar rules can distinguish directives.
                 continue
             if tok.type == tokenize.Tokens.ERRORTOKEN and tok.string.isspace():
                 continue
@@ -213,8 +225,6 @@ class Tokenizer:
             ):
                 continue
             self._tokens.append(tok)
-            if not self._path and tok.start[0] not in self._lines:
-                self._lines[tok.start[0]] = tok.line
         return self._tokens[self._index]
 
     def diagnose(self) -> tokenize.TokenInfo:
@@ -581,7 +591,7 @@ class BaseParser:
 
     def expect_literal(self, literal: str) -> Optional[tokenize.TokenInfo]:
         tok = self._tokenizer.peek()
-        if tok.string == literal:
+        if tok.type != tokenize.Tokens.FSTRING_MIDDLE and tok.string == literal:
             return self._tokenizer.advance(tok)
         return None
 
@@ -1109,7 +1119,11 @@ class Parser(BaseParser):
         """Concatenate adjacent Codon StringExpr nodes."""
         strings = []
         for part in parts:
-            strings.extend(part.strings)
+            for item in part.strings:
+                if not item.prefix and strings and not strings[-1].prefix:
+                    strings[-1].value += item.value
+                else:
+                    strings.append(item)
         return ast.StringExpr(strings, **locations)
 
     def make_fstring(self, start, parts, **locations):
@@ -1117,22 +1131,49 @@ class Parser(BaseParser):
             for part in parts:
                 if part.expr is None:
                     part.value = unescape(part.value)
-        for part in parts:
-            if part.expr and part.value and not part.format.conversion and not part.format.spec:
-                part.format.conversion = "r"
-        return ast.StringExpr(parts, **locations)
+        return self.concatenate_strings([ast.StringExpr(parts)], **locations)
 
-    def field_source(self, field):
-        return self.source_between(
-            (field.info.line, field.info.col - 1), (field.info.end_line, field.info.end_col - 1)
-        )
+    def make_fstring_field(self, left, expr, debug, conversion, spec, **locations):
+        """Construct a field from parsed expressions and literal format-spec parts."""
+        parts = [
+            part.string if isinstance(part, tokenize.TokenInfo) else part for part in spec or []
+        ]
+        text = self.debug_field_text(left, debug) if debug else ""
+        if text and not conversion and not any(parts):
+            conversion = "r"
+        if all(isinstance(part, str) for part in parts):
+            format = ast.StringExpr.FormatSpec(conversion=conversion or "", spec="".join(parts))
+        else:
+            # Match Codon's dynamic-format AST without reparsing expressions in scoping.
+            format = "{" + ("!" + conversion if conversion else "") + ":"
+            args = [expr]
+            for part in parts:
+                if isinstance(part, str):
+                    format += part
+                else:
+                    args.append(part.expr)
+                    format += "{" + ("!" + part.format.conversion if part.format.conversion else "")
+                    format += (":" + part.format.spec if part.format.spec else "") + "}"
+            expr = ast.CallExpr(ast.DotExpr(ast.StringExpr(format + "}"), "format"), args)
+            format = ast.StringExpr.FormatSpec()
+        return ast.StringExpr.String(text, prefix="#f", expr=expr, format=format, **locations)
+
+    def fstring_source(self, start, end):
+        """CPython's debug-field metadata excludes comments, but keeps whitespace."""
+        parts = []
+        for line in range(start[0], end[0] + 1):
+            comment = self._tokenizer._comments.get(line)
+            if comment and start <= comment.start < end:
+                parts.append(self.source_between(start, comment.start))
+                start = comment.end
+        return "".join(parts) + self.source_between(start, end)
 
     def debug_field_text(self, left, debug):
-        text = self.source_between(left.end, debug.end)
-        suffix = self.source_between(
+        text = self.fstring_source(left.end, debug.end)
+        suffix = self.fstring_source(
             debug.end, self._tokenizer.get_last_non_whitespace_token().start
         )
-        return text + suffix[: len(suffix) - len(suffix.lstrip(" \t"))]
+        return text + suffix[: len(suffix) - len(suffix.lstrip(" \t\f\r\n"))]
 
     def check_fstring_conversion(self, mark: tokenize.TokenInfo, name: tokenize.TokenInfo) -> str:
         if mark.end != name.start:
@@ -1192,6 +1233,9 @@ class Parser(BaseParser):
             target.decorator = decorators[0] if decorators else None
         else:
             target.decorators = decorators
+            if isinstance(target, ast.ClassStmt):
+                # Class construction precedes decorator parsing; recompute this derived flag.
+                target.erase(ast.Attr.ClassDeduce)
         target.validate()
         return target
 

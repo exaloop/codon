@@ -974,46 +974,19 @@ fstring_mid[ast.StringExpr.String]:
     | t=FSTRING_MIDDLE { ast.StringExpr.String(value=t.string, LOCATIONS) }
 fstring_replacement_field[ast.StringExpr.String]:
     | left='{' a=(yield_expr | star_expressions) debug_expr="="? conversion=[fstring_conversion] format=[fstring_full_format_spec] '}' {
-        ast.StringExpr.String(
-            value=self.debug_field_text(left, debug_expr) if debug_expr else "",
-            expr=a,
-            format=ast.StringExpr.FormatSpec(
-                conversion=conversion or "",
-                spec=format or "",
-            ),
-            prefix="#f",
-            LOCATIONS,
-        )
+        self.make_fstring_field(left, a, debug_expr, conversion, format, LOCATIONS)
     }
     | invalid_replacement_field
 fstring_conversion[str]:
     | conv_token="!" conv=NAME { self.check_fstring_conversion(conv_token, conv) }
-fstring_full_format_spec[str]:
-    | ':' spec=fstring_format_char* { ''.join(spec) }
-fstring_format_char[str]:
-    | field=fstring_replacement_field { self.field_source(field) }
-    | !'}' a=ANY_BUT_NEWLINE { a.string }
+fstring_full_format_spec[List]:
+    | ':' spec=fstring_format_char* { spec }
+fstring_format_char:
+    | fstring_replacement_field
+    | FSTRING_MIDDLE
 fstring[ast.StringExpr]:
     | a=FSTRING_START b=fstring_mid* c=FSTRING_END { self.make_fstring(a, b, LOCATIONS) }
 
-fstring_format_spec[str]:
-    | a=[fstring_options] b=[fstring_width_and_precision] c=[fstring_type] {
-        (a or "") + (b or "") + (c.string if c else "")
-    }
-fstring_options[str]:
-    | a=[fstring_options_head] b=['+' | '-'] c=["z"] d=["#"] e=["0"] {
-        (a or "") + (b.string if b else "") + (c.string if c else "") + (d.string if d else "") + (e.string if e else "")
-    }
-fstring_options_head[str]: n=[ANY_BUT_NEWLINE] o=('<' | '>' | '=' | '^') { (n.string if n else "") + o.string }
-fstring_width_and_precision[str]:
-    | a=[n=[NUMBER] g=[fstring_grouping] {(n.string if n else "") + (g or "")}] b=[fstring_precision_with_grouping] {
-        (a or "") + (b or "")
-    }
-fstring_precision_with_grouping[str]:
-    | a='.' b=[NUMBER] c=[fstring_grouping] { a.string + (b.string if b else "") + (c or "")}
-    | a='.' b=fstring_grouping { a.string + b }
-fstring_grouping[str]: a=',' { a.string } | a="_" { a.string }
-fstring_type: "b" | "c" | "d" | "e" | "E" | "f" | "F" | "g" | "G" | "n" | "o" | "s" | "x" | "X" | '%'
 
 strings[ast.Expr] (memo): a=(any_string)+ { self.generate_ast_for_string(a, LOCATIONS) }
 
@@ -1155,7 +1128,7 @@ star_atom[ast.Expr]:
     | a=NAME { ast.IdExpr(value=a.string, LOCATIONS) }
     | '(' a=target_with_star_atom ')' { a }
     | '(' a=[star_targets_tuple_seq] ')' { ast.TupleExpr(items=a or [], LOCATIONS) }
-    | '[' a=[star_targets_list_seq] ']' { ast.TupleExpr(items=a or [], LOCATIONS) }
+    | '[' a=[star_targets_list_seq] ']' { ast.ListExpr(items=a or [], LOCATIONS) }
 
 single_target[ast.Expr]:
     | single_subscript_attribute_target
@@ -1695,7 +1668,7 @@ invalid_replacement_field[None]:
     | '{' (yield_expr | star_expressions) '='? ['!' NAME] !(':' | '}') {
         self.raise_syntax_error_on_next_token("f-string: expecting ':' or '}'")
     }
-    | '{' (yield_expr | star_expressions) '='? ['!' NAME] ':' fstring_format_spec* !'}' {
+    | '{' (yield_expr | star_expressions) '='? ['!' NAME] ':' fstring_format_char* !'}' {
         self.raise_syntax_error_on_next_token("f-string: expecting '}', or format specs")
     }
     | '{' (yield_expr | star_expressions) '='? ['!' NAME] !'}' {
