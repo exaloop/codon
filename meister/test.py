@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import traceback
+from contextlib import contextmanager
 from pathlib import Path
 
 if __package__:
@@ -65,6 +66,20 @@ class NativeCodon:
         self.free = self.library.codon_ast_dump_free
         self.free.argtypes = [ctypes.c_void_p]
         self.free.restype = None
+
+    def get_early_defines(self):
+        if not hasattr(self.library, "codon_ast_dump_defines"):
+            return None
+        get_defines = self.library.codon_ast_dump_defines
+        get_defines.argtypes = []
+        get_defines.restype = ctypes.c_void_p
+        result = get_defines()
+        try:
+            return dict(
+                line.split("=", 1) for line in ctypes.string_at(result).decode().splitlines()
+            )
+        finally:
+            self.free(result)
 
     def _consume(self, result):
         try:
@@ -141,7 +156,7 @@ def discover_tests(path):
     return cases
 
 
-def run_python(case, typecheck):
+def run_python(case, typecheck, early_defines=None):
     recursion_limit = sys.getrecursionlimit()
     try:
         if typecheck:
@@ -159,12 +174,9 @@ def run_python(case, typecheck):
                 cc,
                 node,
                 file=str(case.path),
-                early_defines={
-                    "__apple__": "1",
-                    "__py_extension__": "0",
-                    "__py_numerics__": "0",
-                    "__debug__": "1",
-                },
+                early_defines=(
+                    cc.options.get_early_defines() if early_defines is None else early_defines
+                ),
                 barebones=typecheck > 1,
             )
 
@@ -366,6 +378,32 @@ def ignore_class_deduce(output):
     return "".join(filtered)
 
 
+@contextmanager
+def use_build_stdlib(root, library_path):
+    """Give both frontends the source stdlib and its build-generated tables."""
+    stdlib = Path(os.environ.get("CODON_PATH", root / "stdlib"))
+    generated = library_path.parent / "stdlib"
+    if not (stdlib / "internal/core.codon").is_file() or not generated.is_dir():
+        yield
+        return
+    if (stdlib / "internal/numeric/generated/float_dtoa_tables.codon").is_file():
+        yield
+        return
+    with tempfile.TemporaryDirectory(prefix="meister-stdlib-") as directory:
+        merged = Path(directory) / "stdlib"
+        shutil.copytree(stdlib, merged)
+        shutil.copytree(generated, merged, dirs_exist_ok=True)
+        previous = os.environ.get("CODON_PATH")
+        os.environ["CODON_PATH"] = str(merged.resolve())
+        try:
+            yield
+        finally:
+            if previous is None:
+                os.environ.pop("CODON_PATH", None)
+            else:
+                os.environ["CODON_PATH"] = previous
+
+
 def main(argv=None):
     root = Path(__file__).resolve().parent.parent
     if (root / "stdlib").is_dir():
@@ -415,27 +453,34 @@ def main(argv=None):
     if not cases:
         argument_parser.error(f"no .codon tests found under {tests}")
 
+    with use_build_stdlib(root, library_path):
+        return compare_tests(args, cases, native, library_path)
+
+
+def compare_tests(args, cases, native, library_path):
     matched = 0
     mismatched = 0
     rejected = 0
     printed = 0
     stage = "Scoped" if args.scope_only else "Typechecked"
     typecheck = 0 if args.scope_only else 2
+    early_defines = native.get_early_defines() if typecheck else None
     print(f"Comparing {len(cases)} {stage.lower()} ASTs using {library_path}")
 
     for case in cases:
-        python_result = run_python(case, typecheck=typecheck)
+        python_result = run_python(case, typecheck=typecheck, early_defines=early_defines)
         native_result = native.run(case, typecheck=typecheck)
 
         if python_result.output is not None and native_result.output is not None:
+            raw_match = python_result.output == native_result.output
             python_output = (
                 python_result.output
-                if args.scope_only
+                if args.scope_only or raw_match
                 else ignore_class_deduce(python_result.output)
             )
             native_output = (
                 native_result.output
-                if args.scope_only
+                if args.scope_only or raw_match
                 else ignore_class_deduce(native_result.output)
             )
             if python_output == native_output:

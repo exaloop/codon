@@ -1690,7 +1690,6 @@ class FunctionStmt(Stmt, ItemIterator):
         self.async_ = async_
         self.non_inferrable_generics = None
         self.call_layout = None
-        self.validate()
 
     @staticmethod
     def parse_params(args):

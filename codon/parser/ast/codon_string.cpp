@@ -329,8 +329,10 @@ const char *attributeName(int key) {
     ATTRIBUTE_NAME(ExprTime);
     ATTRIBUTE_NAME(ExprDoNotRealize);
     ATTRIBUTE_NAME(ExprNoSpecial);
+    ATTRIBUTE_NAME(ExprVirtual);
     ATTRIBUTE_NAME(TryPyVar);
     ATTRIBUTE_NAME(LocalRenames);
+    ATTRIBUTE_NAME(MaybeLiteral);
 #undef ATTRIBUTE_NAME
   default:
     return nullptr;

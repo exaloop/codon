@@ -27,6 +27,10 @@ struct CodonAstDumpResult codon_ast_dump_file(const char *file,
                                               uint8_t include_attributes, int indent,
                                               int typecheck);
 
+/// Default compiler defines as key=value lines, in the typechecker's iteration order.
+/// The caller must release the returned string with codon_ast_dump_free().
+char *codon_ast_dump_defines(void);
+
 /// Release a string returned in CodonAstDumpResult.
 void codon_ast_dump_free(char *value);
 

@@ -48,11 +48,7 @@ CodonAstDumpResult parseScopeDump(const std::string &argv0, Parse &&parse,
     std::string str;
     if (typecheck) {
       auto abspath = (*parsed)->getSrcInfo().file;
-      std::unordered_map<std::string, std::string> earlyDefines{
-          {"__debug__", "1"},
-          {"__py_numerics__", "0"},
-          {"__py_extension__", "0"},
-          {"__apple__", "1"}};
+      auto earlyDefines = compiler->getEarlyDefines();
       auto node = codon::ast::TypecheckVisitor::apply(
           compiler->getCache(), *parsed, abspath,
           std::unordered_map<std::string, std::string>{}, earlyDefines, typecheck > 1);
@@ -105,6 +101,15 @@ CodonAstDumpResult codon_ast_dump_file(const char *file, uint8_t include_attribu
       filename,
       [&](codon::ast::Cache *cache) { return codon::ast::parseFile(cache, filename); },
       bool(include_attributes), indent, typecheck);
+}
+
+char *codon_ast_dump_defines(void) {
+  auto options = codon::Options::getDefault("");
+  codon::Compiler compiler(*options);
+  std::string result;
+  for (const auto &[name, value] : compiler.getEarlyDefines())
+    result += fmt::format("{}={}\n", name, value);
+  return copyString(result);
 }
 
 void codon_ast_dump_free(char *value) { std::free(value); }

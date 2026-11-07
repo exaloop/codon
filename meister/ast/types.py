@@ -1274,7 +1274,9 @@ class BoolLiteral(Literal):
         return self
 
     def to_string(self, mode: int):
-        return f"{self.value}" if mode < 2 else f"Literal[{self.value}]"
+        # Use 0/1 for now for compactness
+        # TODO: use True/False
+        return str(int(self.value)) if mode < 2 else f"Literal[{self.value}]"
 
     def get_static_expr(self) -> ast.Expr:
         return ast.BoolExpr(self.value)

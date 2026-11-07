@@ -33,6 +33,8 @@ MAX_STATIC_ITER: int = 1024
 class FrontendOptions:
     """Ported frontend subset of codon/compiler/options.h::Options."""
 
+    # true if compiling in debug mode
+    debug: bool = True
     # true if compiling in JIT mode
     jit: bool = False
     # true if compiling as a Python extension
@@ -43,6 +45,21 @@ class FrontendOptions:
     autopy: bool = False
     # true to use unordered dictionary implementation
     unordereddict: bool = False
+
+    def get_early_defines(self) -> Dict[str, str]:
+        import sys
+
+        return {
+            "__debug__": str(int(self.debug)),
+            "__py_numerics__": str(int(self.pynum)),
+            "__py_extension__": str(int(self.pyext)),
+            "__dict_unordered__": str(int(self.unordereddict)),
+            # codon/config/config.h
+            "__codon_version_major__": "0",
+            "__codon_version_minor__": "20",
+            "__codon_version_micro__": "6",
+            "__apple__": str(int(sys.platform == "darwin")),
+        }
 
 
 @dataclass(init=False)

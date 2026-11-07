@@ -538,7 +538,7 @@ def get_callee_fn(
         for param_idx, flag in enumerate(mask):
             if instantiated.ast.items[param_idx].is_value():
                 if flag == ast.types.Class.Flag.Included:
-                    instantiated[value_idx] |= captured[param_idx]
+                    instantiated.arg_type.generics[value_idx].type |= captured[param_idx]
                 value_idx += 1
         return instantiated, None
 

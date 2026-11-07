@@ -782,7 +782,7 @@ def typecheck_class(self: TypeVisitor, node: ast.ClassStmt) -> ast.Node:
             )
             self.ctx.add_always_visible(value, True)
             self.ctx.cache.type_ctx.add("int", value)
-            realized[0] |= ast.types.IntLiteral(64, cache=self.ctx.cache)
+            realized.generics[0].type |= utils.instantiate_static(self.ctx, 64)
             self.ctx.cache.class_realization_cnt += 1
             cls_data.realizations["Int[64]"] = cache.ClassData.Realization(
                 type=realized, id=self.ctx.cache.class_realization_cnt

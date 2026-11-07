@@ -1247,6 +1247,7 @@ class Parser(BaseParser):
 
     def make_function(self, name, params, generics, **locations):
         fn = ast.FunctionStmt(name, items=params, **locations)
+        fn.validate()
         for generic in generics:
             fn.add_param(generic)
         return fn
