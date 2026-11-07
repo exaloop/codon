@@ -1,0 +1,86 @@
+import numpy as np
+import sys
+import time
+import npbench_lib as kernel_module
+from C import GC_gcollect() -> None
+from C import GC_get_total_bytes() -> int
+from C import GC_get_heap_size() -> int
+from C import GC_get_free_bytes() -> int
+directory = sys.argv[1]
+samples = int(sys.argv[2])
+original_x1 = np.load(directory + '/input-x1.npy', dtype=np.float64, ndim=1)
+x1 = np.empty_like(original_x1)
+np.copyto(x1, original_x1)
+original_x2 = np.load(directory + '/input-x2.npy', dtype=np.float64, ndim=1)
+x2 = np.empty_like(original_x2)
+np.copyto(x2, original_x2)
+original_y_1 = np.load(directory + '/input-y_1.npy', dtype=np.float64, ndim=1)
+y_1 = np.empty_like(original_y_1)
+np.copyto(y_1, original_y_1)
+original_y_2 = np.load(directory + '/input-y_2.npy', dtype=np.float64, ndim=1)
+y_2 = np.empty_like(original_y_2)
+np.copyto(y_2, original_y_2)
+original_A = np.load(directory + '/input-A.npy', dtype=np.float64, ndim=2)
+A = np.empty_like(original_A)
+np.copyto(A, original_A)
+
+def emit(value, filename):
+    if value is None:
+        return
+    elif isinstance(value, tuple):
+        index = 0
+        for item in value:
+            emit(item, filename + '_' + str(index))
+            index += 1
+    else:
+        np.save(filename, np.asarray(value))
+
+@noinline
+def sample(x1, x2, y_1, y_2, A):
+    started = time.perf_counter()
+    result = kernel_module.mvt(x1, x2, y_1, y_2, A)
+    elapsed = time.perf_counter() - started
+    emit(x1, directory + '/output-x1')
+    emit(x2, directory + '/output-x2')
+    return elapsed
+
+if samples == 0:
+    GC_gcollect()
+    allocated_before = GC_get_total_bytes()
+    heap_before = GC_get_heap_size()
+    address_x1 = int(x1.data)
+    address_x2 = int(x2.data)
+    address_y_1 = int(y_1.data)
+    address_y_2 = int(y_2.data)
+    address_A = int(A.data)
+    for iteration in range(32):
+        np.copyto(x1, original_x1)
+        assert int(x1.data) == address_x1
+        np.copyto(x2, original_x2)
+        assert int(x2.data) == address_x2
+        np.copyto(y_1, original_y_1)
+        assert int(y_1.data) == address_y_1
+        np.copyto(y_2, original_y_2)
+        assert int(y_2.data) == address_y_2
+        np.copyto(A, original_A)
+        assert int(A.data) == address_A
+    allocated = GC_get_total_bytes() - allocated_before
+    heap_growth = GC_get_heap_size() - heap_before
+    print('BENCH_MEMORY', allocated, heap_growth)
+    assert allocated < 65536
+    assert heap_growth == 0
+else:
+    for iteration in range(samples + 1):
+        GC_gcollect()
+        if iteration > 0:
+            print('BENCH_GC', GC_get_heap_size(), GC_get_heap_size() - GC_get_free_bytes())
+        np.copyto(x1, original_x1)
+        np.copyto(x2, original_x2)
+        np.copyto(y_1, original_y_1)
+        np.copyto(y_2, original_y_2)
+        np.copyto(A, original_A)
+        elapsed = sample(x1, x2, y_1, y_2, A)
+        if iteration > 0:
+            print('BENCH_TIME', elapsed)
+    GC_gcollect()
+    print('BENCH_GC', GC_get_heap_size(), GC_get_heap_size() - GC_get_free_bytes())

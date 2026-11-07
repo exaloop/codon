@@ -1,0 +1,10 @@
+# Copyright 2021 ETH Zurich and the NPBench authors. All rights reserved.
+
+__CODON_RET__: Literal[bool] = True
+
+import numpy as np
+
+def k3mm(A: np.ndarray[float,2], B: np.ndarray[float,2], C: np.ndarray[float,2], D: np.ndarray[float,2]):
+
+    res = A @ B @ C @ D
+    if __CODON_RET__: return res

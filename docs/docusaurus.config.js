@@ -58,6 +58,7 @@ module.exports = async function config() {
         items: [
           {to: '/start/install/', label: 'Guides', position: 'left', activeBaseRegex: '^/(start/(?!changelog(?:/|$))|language/|integrations/|parallel/)'},
           {to: '/libraries/api/', label: 'API reference', position: 'left', activeBasePath: 'libraries/api'},
+          {to: '/benchmarks/', label: 'Benchmarks', position: 'left'},
           {to: '/start/changelog/', label: 'Releases', position: 'left'},
           {href: 'https://platform.exaloop.io', label: 'Exaloop', position: 'left'},
           {type: 'custom-githubStars', position: 'right'},
