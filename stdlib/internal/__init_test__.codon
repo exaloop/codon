@@ -20,7 +20,6 @@ from internal.types.collections.bytearray import *
 from internal.types.type import *
 from internal.types.tuple import *
 from internal.types.rtti import *
-from internal.types.rtti import *
 from internal.types.function import *
 from internal.types.union import *
 from internal.types.any import *

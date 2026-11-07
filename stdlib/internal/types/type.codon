@@ -51,14 +51,6 @@ class type:
     def _ref_size(T: type) -> int:
         pass
 
-    @__internal__
-    def _ref_alloc(T: type) -> T:
-        pass
-
-    @__internal__
-    def _ref_size(T: type) -> int:
-        pass
-
     def _ref_new(T: type) -> T:
         """
         Allocates a new reference (class) object.
