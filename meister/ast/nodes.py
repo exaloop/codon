@@ -102,6 +102,8 @@ class Node:
         def __init__(
             self, file: str = "", line: int = 0, col: int = 0, end_line: int = 0, end_col: int = 0
         ):
+            # Compiler filenames and type identifiers have process lifetime. Copies retain
+            # a pointer instead of allocating repeated copies of the same text.
             self.file = intern(file)
             self.line = line
             self.col = col
@@ -214,7 +216,6 @@ class Node:
         return result
 
     def clone(self, clean: bool = False):
-        """Deep copy a node."""
         memo = {}
         if clean:
             memo[Node._CODON_CLEAN] = True
@@ -256,6 +257,10 @@ class ItemIterator:
 
 @dataclass(init=False)
 class Expr(Node):
+    """
+    A Codon AST expression.
+    """
+
     # Type of the expression.
     type: types.Type | None = None
     # Flag that indicates if all types in an expression are inferred
@@ -371,6 +376,13 @@ class BoolExpr(Expr):
 
 @dataclass(init=False)
 class IntExpr(Expr):
+    """
+    Int expression (value.suffix).
+    @li 12
+    @li 13u
+    @li 000_010b
+    """
+
     # Expression value is stored as a string that is parsed during typechecking.
     value: str = ""
     # Number suffix (e.g. "u" for "123u").
@@ -428,6 +440,13 @@ class IntExpr(Expr):
 
 @dataclass(init=False)
 class FloatExpr(Expr):
+    """
+    Float expression (value.suffix).
+    @li 12.1
+    @li 13.15z
+    @li e-12
+    """
+
     # Expression value is stored as a string that is parsed during typechecking.
     value: str = ""
     # Number suffix (e.g. "u" for "123u").
@@ -474,6 +493,12 @@ class FloatExpr(Expr):
 
 @dataclass(init=False)
 class StringExpr(Expr):
+    """
+    String expression (prefix"value").
+    @li s'ACGT'
+    @li "fff"
+    """
+
     @dataclass
     class FormatSpec:
         text: str = ""
@@ -535,6 +560,10 @@ class StringExpr(Expr):
 
 @dataclass(init=False)
 class IdExpr(Expr):
+    """
+    Identifier expression (value).
+    """
+
     value: str = ""
 
     def __init__(self, value: str = "", **kwargs):
@@ -544,6 +573,11 @@ class IdExpr(Expr):
 
 @dataclass(init=False)
 class StarExpr(Expr):
+    """
+    Star (unpacking) expression (*what).
+    @li *args
+    """
+
     expr: Expr
 
     def __init__(self, expr: Expr, **kwargs):
@@ -553,6 +587,11 @@ class StarExpr(Expr):
 
 @dataclass(init=False)
 class KeywordStarExpr(Expr):
+    """
+    KeywordStar (unpacking) expression (**what).
+    @li **kwargs
+    """
+
     expr: Expr
 
     def __init__(self, expr: Expr, **kwargs):
@@ -562,6 +601,11 @@ class KeywordStarExpr(Expr):
 
 @dataclass(init=False)
 class TupleExpr(Expr, ItemIterator):
+    """
+    Tuple expression ((items...)).
+    @li (1, a)
+    """
+
     items: List[Expr]
 
     def __init__(self, items: List[Expr] | None = None, **kwargs):
@@ -571,22 +615,39 @@ class TupleExpr(Expr, ItemIterator):
 
 @dataclass(init=False)
 class ListExpr(TupleExpr):
+    """
+    List expression ([items...]).
+    @li [1, 2]
+    """
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
 
 @dataclass(init=False)
 class SetExpr(TupleExpr):
+    """
+    Set expression ({items...}).
+    @li {1, 2}
+    """
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
 
 @dataclass(init=False)
 class DictExpr(TupleExpr):
+    """
+    Dictionary expression ({(key: value)...}).
+    Each (key, value) pair is stored as a TupleExpr.
+    @li {'s': 1, 't': 2}
+    """
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         for item in self.items:
             match item:
+                # Dictionary entries include **mapping as well as key/value pairs.
                 case KeywordStarExpr() | TupleExpr(items=[_, _]):
                     pass
                 case _:
@@ -595,6 +656,12 @@ class DictExpr(TupleExpr):
 
 @dataclass(init=False)
 class GeneratorExpr(Expr):
+    """
+    Generator or comprehension expression [(expr (loops...))].
+    @li [i for i in j]
+    @li (f + 1 for j in k if j for f in j)
+    """
+
     class Kind(Enum):
         Generator = 0
         ListGenerator = 1
@@ -663,6 +730,11 @@ class GeneratorExpr(Expr):
 
 @dataclass(init=False)
 class IfExpr(Expr):
+    """
+    Conditional expression [cond if ifexpr else elsexpr].
+    @li 1 if a else 2
+    """
+
     cond: Expr
     ifexpr: Expr
     elsexpr: Expr
@@ -676,6 +748,11 @@ class IfExpr(Expr):
 
 @dataclass(init=False)
 class UnaryExpr(Expr):
+    """
+    Unary expression [op expr].
+    @li -56
+    """
+
     op: str
     expr: Expr
 
@@ -687,6 +764,12 @@ class UnaryExpr(Expr):
 
 @dataclass(init=False)
 class BinaryExpr(Expr):
+    """
+    Binary expression [lexpr op rexpr].
+    @li 1 + 2
+    @li 3 or 4
+    """
+
     lexpr: Expr
     op: str = ""
     rexpr: Expr
@@ -703,6 +786,11 @@ class BinaryExpr(Expr):
 
 @dataclass(init=False)
 class ChainBinaryExpr(Expr):
+    """
+    Chained binary expression.
+    @li 1 <= x <= 2
+    """
+
     exprs: List[tuple[str, Expr]]
 
     def __init__(self, exprs: List[tuple[str, Expr]] | None = None, **kwargs):
@@ -712,6 +800,12 @@ class ChainBinaryExpr(Expr):
 
 @dataclass(init=False)
 class PipeExpr(Expr, ItemIterator):
+    """
+    Pipe expression [(op expr)...].
+    op is either "" (only the first item), "|>" or "||>".
+    @li a |> b ||> c
+    """
+
     @dataclass(init=False)
     class Pipe(Node):
         op: str = ""
@@ -745,6 +839,11 @@ class PipeExpr(Expr, ItemIterator):
 
 @dataclass(init=False)
 class IndexExpr(Expr):
+    """
+    Index expression (expr[index]).
+    @li a[5]
+    """
+
     expr: Expr
     index: Expr
 
@@ -756,6 +855,11 @@ class IndexExpr(Expr):
 
 @dataclass(init=False)
 class CallExpr(Expr, ItemIterator):
+    """
+    Call expression (expr((name=value)...)).
+    @li a(1, b=2)
+    """
+
     @dataclass(init=False)
     class Arg(Node):
         name: str = ""
@@ -800,6 +904,11 @@ class CallExpr(Expr, ItemIterator):
 
 @dataclass(init=False)
 class DotExpr(Expr):
+    """
+    Dot (access) expression (expr.member).
+    @li a.b
+    """
+
     expr: Expr
     member: str = ""
 
@@ -811,6 +920,14 @@ class DotExpr(Expr):
 
 @dataclass(init=False)
 class SliceExpr(Expr):
+    """
+    Slice expression (st:stop:step).
+    @li 1:10:3
+    @li s::-1
+    @li :::
+    """
+
+    # Any of these can be nullptr to account for partial slices.
     start: Expr | None = None
     stop: Expr | None = None
     step: Expr | None = None
@@ -830,6 +947,11 @@ class SliceExpr(Expr):
 
 @dataclass(init=False)
 class EllipsisExpr(Expr):
+    """
+    Ellipsis expression.
+    @li ...
+    """
+
     class Kind(Enum):
         Pipe = 0
         Standalone = 1
@@ -853,6 +975,11 @@ class EllipsisExpr(Expr):
 
 @dataclass(init=False)
 class LambdaExpr(Expr, ItemIterator):
+    """
+    Lambda expression (lambda (vars)...: expr).
+    @li lambda a, b: a + b
+    """
+
     expr: Expr
     items: List[Param]
 
@@ -862,16 +989,24 @@ class LambdaExpr(Expr, ItemIterator):
         self.items = FunctionStmt.parse_params(items or [])
 
 
-# Yield (send to generator) expression
-# @li (yield)
 @dataclass(init=False)
 class YieldExpr(Expr):
+    """
+    Yield (send to generator) expression.
+    @li (yield)
+    """
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
 
 @dataclass(init=False)
 class AwaitExpr(Expr):
+    """
+    Await expression (await expr).
+    @li await a
+    """
+
     expr: Expr
     # True if a statement was transformed during type-checking stage
     # (to avoid setting up __await__ multiple times).
@@ -885,6 +1020,11 @@ class AwaitExpr(Expr):
 
 @dataclass(init=False)
 class AssignExpr(Expr):
+    """
+    Assignment (walrus) expression (var := expr).
+    @li a := 5 + 3
+    """
+
     var: Expr
     expr: Expr
 
@@ -896,6 +1036,12 @@ class AssignExpr(Expr):
 
 @dataclass(init=False)
 class RangeExpr(Expr):
+    """
+    Range expression (start ... end).
+    Used only in match-case statements.
+    @li 1 ... 2
+    """
+
     start: Expr
     stop: Expr
 
@@ -907,6 +1053,15 @@ class RangeExpr(Expr):
 
 @dataclass(init=False)
 class StmtExpr(Expr, ItemIterator):
+    """
+    The following nodes are created during typechecking.
+
+    Statement expression (stmts...; expr).
+    Statements are evaluated only if the expression is evaluated
+    (to support short-circuiting).
+    @li (a = 1; b = 2; a + b)
+    """
+
     items: List[Stmt]
     expr: Expr
 
@@ -921,6 +1076,11 @@ class StmtExpr(Expr, ItemIterator):
 
 @dataclass(init=False)
 class InstantiateExpr(Expr, ItemIterator):
+    """
+    Static tuple indexing expression (expr[index]).
+    @li (1, 2, 3)[2]
+    """
+
     expr: Expr
     items: List[Expr]
 
@@ -932,6 +1092,10 @@ class InstantiateExpr(Expr, ItemIterator):
 
 @dataclass(init=False)
 class Stmt(Node):
+    """
+    A Codon AST statement.
+    """
+
     # Flag that indicates if all types in a statement are inferred
     # (i.e. if a type-checking procedure was successful).
     done: bool = False
@@ -941,11 +1105,20 @@ class Stmt(Node):
         self.done = done
 
     def first_in_block(self) -> Stmt | None:
+        """
+        @return the first statement in a suite; if a statement is not a suite, returns the
+        statement itself
+        """
         return self
 
 
 @dataclass(init=False)
 class SuiteStmt(Stmt, ItemIterator):
+    """
+    Suite (block of statements) statement (stmt...).
+    @li a = 5; foo(1)
+    """
+
     items: List[Stmt]
 
     def __init__(self, *items: Stmt | None, **kwargs):
@@ -989,18 +1162,33 @@ class SuiteStmt(Stmt, ItemIterator):
 
 @dataclass(init=False)
 class BreakStmt(Stmt):
+    """
+    Break statement.
+    @li break
+    """
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
 
 @dataclass(init=False)
 class ContinueStmt(Stmt):
+    """
+    Continue statement.
+    @li continue
+    """
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
 
 @dataclass(init=False)
 class ExprStmt(Stmt):
+    """
+    Expression statement (expr).
+    @li 3 + foo()
+    """
+
     expr: Expr
 
     def __init__(self, expr: Expr, **kwargs):
@@ -1010,6 +1198,13 @@ class ExprStmt(Stmt):
 
 @dataclass(init=False)
 class AssignStmt(Stmt):
+    """
+    Assignment statement (lhs: type = rhs).
+    @li a = 5
+    @li a: Optional[int] = 5
+    @li a, b, c = 5, *z
+    """
+
     class Mode(Enum):
         Assign = 0
         Update = 1
@@ -1059,12 +1254,23 @@ class AssignStmt(Stmt):
 
 @dataclass(init=False)
 class DelStmt(ExprStmt):
+    """
+    Deletion statement (del expr).
+    @li del a
+    @li del a[5]
+    """
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
 
 @dataclass(init=False)
 class PrintStmt(Stmt):
+    """
+    Print statement (print expr).
+    @li print a, b
+    """
+
     items: List[Expr]
     # True if there is a dangling comma after print: print a,
     no_newline: bool = False
@@ -1080,18 +1286,36 @@ class PrintStmt(Stmt):
 
 @dataclass(init=False)
 class ReturnStmt(ExprStmt):
+    """
+    Return statement (return expr).
+    @li return
+    @li return a
+    """
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
 
 @dataclass(init=False)
 class YieldStmt(ExprStmt):
+    """
+    Yield statement (yield expr).
+    @li yield
+    @li yield a
+    """
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
 
 @dataclass(init=False)
 class AssertStmt(Stmt):
+    """
+    Assert statement (assert expr).
+    @li assert a
+    @li assert a, "Message"
+    """
+
     expr: Expr
     message: Expr | None = None
 
@@ -1103,6 +1327,13 @@ class AssertStmt(Stmt):
 
 @dataclass(init=False)
 class WhileStmt(Stmt):
+    """
+    While loop statement (while cond: suite; else: elseSuite).
+    @li while True: print
+    @li while True: break
+    else: print
+    """
+
     cond: Expr
     suite: SuiteStmt
     else_suite: SuiteStmt | None = None
@@ -1127,6 +1358,13 @@ class WhileStmt(Stmt):
 
 @dataclass(init=False)
 class ForStmt(Stmt):
+    """
+    For loop statement (for var in iter: suite; else elseSuite).
+    @li for a, b in c: print
+    @li for i in j: break
+    else: print
+    """
+
     var: Expr
     iter: Expr
     suite: SuiteStmt
@@ -1166,6 +1404,16 @@ class ForStmt(Stmt):
 
 @dataclass(init=False)
 class IfStmt(Stmt):
+    """
+    If block statement (if cond: suite; (elif cond: suite)...).
+    @li if a: foo()
+    @li if a: foo()
+    elif b: bar()
+    @li if a: foo()
+    elif b: bar()
+    else: baz()
+    """
+
     cond: Expr
     if_suite: SuiteStmt
     else_suite: SuiteStmt | None = None
@@ -1181,6 +1429,13 @@ class IfStmt(Stmt):
 
 @dataclass(init=False)
 class MatchStmt(Stmt, ItemIterator):
+    """
+    Match statement (match what: (case pattern: case)...).
+    @li match a:
+    case 1: print
+    case _: pass
+    """
+
     @dataclass(init=False)
     class Case(Node):
         pattern: Expr
@@ -1211,11 +1466,18 @@ class MatchStmt(Stmt, ItemIterator):
 @dataclass(init=False)
 class ImportStmt(Stmt):
     """
+    Import statement.
     This node describes various kinds of import statements:
     - from from import what (as as)
     - import what (as as)
     - from c import what(args...) (-> ret) (as as)
     - from .(dots...)from import what (as as)
+    @li import a
+    @li from b import a
+    @li from ...b import a as ai
+    @li from c import foo(int) -> int as bar
+    @li from python.numpy import array
+    @li from python import numpy.array(int) -> int as na
     """
 
     what: Expr | None = None
@@ -1279,8 +1541,19 @@ class ImportStmt(Stmt):
 
 @dataclass(init=False)
 class TryStmt(Stmt, ItemIterator):
+    """
+    Try-except statement (try: suite; (except var (as exc): suite)...; finally:
+    finally).
+    @li: try: a
+    except e: pass
+    except e as Exc: pass
+    except: pass
+    finally: print
+    """
+
     @dataclass(init=False)
     class Except(Stmt):
+        # empty string if an except is unnamed.
         var: str = ""
         exc: Expr | None
         suite: SuiteStmt
@@ -1319,6 +1592,11 @@ class TryStmt(Stmt, ItemIterator):
 
 @dataclass(init=False)
 class ThrowStmt(Stmt):
+    """
+    Throw statement (raise expr).
+    @li: raise a
+    """
+
     expr: Expr | None = None
     from_expr: Expr | None = None
     # True if a statement was transformed during type-checking stage
@@ -1340,6 +1618,11 @@ class ThrowStmt(Stmt):
 
 @dataclass(init=False)
 class GlobalStmt(Stmt):
+    """
+    Global variable statement (global var).
+    @li: global a
+    """
+
     var: str = ""
     non_local: bool = False
 
@@ -1351,6 +1634,12 @@ class GlobalStmt(Stmt):
 
 @dataclass(init=False)
 class FunctionStmt(Stmt, ItemIterator):
+    """
+    Function statement (@(attributes...) def name[funcs...](args...) -> ret: suite).
+    @li: @decorator
+    def foo[T=int, U: int](a, b: int = 0) -> list[T]: pass
+    """
+
     @dataclass(init=False)
     class CallLayout:
         """Argument structure computed once for the normalized declaration."""
@@ -1377,7 +1666,9 @@ class FunctionStmt(Stmt, ItemIterator):
     suite: SuiteStmt
     decorators: List[Expr]
     async_: bool = False
+    # Cache non-inferrable generics for speed.
     non_inferrable_generics: Set[str] | None
+    # Only canonical declarations have a layout; AST clones start without one.
     call_layout: FunctionStmt.CallLayout | None
 
     def __init__(
@@ -1403,7 +1694,9 @@ class FunctionStmt(Stmt, ItemIterator):
 
     @staticmethod
     def parse_params(args):
-        """Consume parameter separators, sharing validation with lambda constructors."""
+        """
+        Consume parameter separators, sharing their validation with lambda constructors.
+        """
         params = []
         slash = star = bare_star = keyword = False
         star_info = None
@@ -1522,9 +1815,13 @@ class FunctionStmt(Stmt, ItemIterator):
     def get_docstr(self) -> str:
         return get_docstring(self.suite)
 
-    # Check if a function can be called with the given arguments.
-    # See @c reorderNamedArgs for details.
     def get_non_inferrable_generics(self) -> Set[str]:
+        """
+        Search expression tree for a identifier
+
+        Check if a function can be called with the given arguments.
+        See @c reorderNamedArgs for details.
+        """
         if self.non_inferrable_generics is not None:
             return self.non_inferrable_generics
 
@@ -1568,6 +1865,14 @@ class FunctionStmt(Stmt, ItemIterator):
 
 @dataclass(init=False)
 class ClassStmt(Stmt, ItemIterator):
+    """
+    Class statement (@(attributes...) class name[generics...]: args... ; suite).
+    @li: @type
+    class F[T]:
+    m: T
+    def __new__() -> F[T]: ...
+    """
+
     name: str = ""
     items: List[Param]
     suite: SuiteStmt
@@ -1727,13 +2032,24 @@ class ClassStmt(Stmt, ItemIterator):
 
 @dataclass(init=False)
 class YieldFromStmt(ExprStmt):
+    """
+    Yield-from statement (yield from expr).
+    @li: yield from it
+    """
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
 
 @dataclass(init=False)
 class WithStmt(Stmt):
+    """
+    With statement (with (item as var)...: suite).
+    @li: with foo(), bar() as b: pass
+    """
+
     items: List[Expr]
+    # empty string if a corresponding item is unnamed
     vars: List[str]
     suite: SuiteStmt
     async_: bool = False
@@ -1756,6 +2072,11 @@ class WithStmt(Stmt):
 
 @dataclass(init=False)
 class CustomStmt(Stmt):
+    """
+    Custom block statement (foo: ...).
+    @li: pt_tree: pass
+    """
+
     keyword: str = ""
     expr: Expr | None = None
     suite: SuiteStmt
@@ -1786,6 +2107,13 @@ class DirectiveStmt(Stmt):
 
 @dataclass(init=False)
 class AssignMemberStmt(Stmt):
+    """
+    The following nodes are created during typechecking.
+
+    Member assignment statement (lhs.member = rhs).
+    @li: a.x = b
+    """
+
     lhs: Expr
     member: str
     rhs: Expr
@@ -1808,6 +2136,11 @@ class AssignMemberStmt(Stmt):
 
 @dataclass(init=False)
 class CommentStmt(Stmt):
+    """
+    Comment statement (# comment).
+    Currently used only for pretty-printing.
+    """
+
     comment: str = ""
 
     def __init__(self, comment: str = "", **kwargs):
@@ -1868,14 +2201,14 @@ def dump(
 ):
     """
     Return a formatted dump of the tree in node.  This is mainly useful for
-    debugging purposes.  If annotate_fields is true (by default),
-    the returned string will show the names and the values for fields.
-    If annotate_fields is false, the result string will be more compact by
-    omitting unambiguous field names.  Attributes such as line
-    numbers and column offsets are not dumped by default.  If this is wanted,
-    include_attributes can be set to true.  If indent is a non-negative
-    integer or string, then the tree will be pretty-printed with that indent
-    level. None (the default) selects the single line representation.
+        debugging purposes.  If annotate_fields is true (by default),
+        the returned string will show the names and the values for fields.
+        If annotate_fields is false, the result string will be more compact by
+        omitting unambiguous field names.  Attributes such as line
+        numbers and column offsets are not dumped by default.  If this is wanted,
+        include_attributes can be set to true.  If indent is a non-negative
+        integer or string, then the tree will be pretty-printed with that indent
+        level. None (the default) selects the single line representation.
     """
 
     from ..bridge import class_name
@@ -2049,7 +2382,7 @@ def iter_fields(node: Node) -> Iterator[Tuple[str, Any]]:
 def iter_child_nodes(node) -> Iterator[Node]:
     """
     Yield all direct child nodes of *node*, that is, all fields that are nodes
-    and all items of fields that are lists of nodes.
+        and all items of fields that are lists of nodes.
     """
 
     def _get_node(a: Any) -> Any:
@@ -2079,7 +2412,9 @@ class NodeVisitor:
         return visitor(node)
 
     def generic_visit(self, node):
-        """Called if no explicit visitor function exists for a node."""
+        """
+        Called if no explicit visitor function exists for a node.
+        """
 
         for child in iter_child_nodes(node):
             self.visit(child)

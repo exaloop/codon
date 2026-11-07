@@ -17,13 +17,16 @@ if TYPE_CHECKING:
 def typecheck_import(self: TypeVisitor, node: ast.ImportStmt) -> ast.Stmt:
     """
     Import and parse a new module into its own context.
-    Also handle special imports ( see @c transformSpecialImport ).
-    To simulate Python's dynamic import logic and import stuff only once,
-    each import statement is guarded as follows:
-    if not _import_N_done:
-    _import_N()
-    _import_N_done = True
-    See @c transformNewImport and below for more details.
+        Also handle special imports ( see @c transformSpecialImport ).
+        To simulate Python's dynamic import logic and import stuff only once,
+        each import statement is guarded as follows:
+        if not _import_N_done:
+        _import_N()
+        _import_N_done = True
+        See @c transformNewImport and below for more details.
+
+    Transform special `from C` and `from python` imports.
+    See @c transformCImport, @c transformCDLLImport and @c transformPythonImport
     """
 
     assert not self.ctx.in_class
@@ -107,6 +110,8 @@ def typecheck_import(self: TypeVisitor, node: ast.ImportStmt) -> ast.Stmt:
             handled = False
     imported = utils.get_import_module(self.ctx, import_file.path)
     import_var = imported.import_var
+    # The main module has no runtime import variable. Check its identity
+    # instead, so `from internal import gc` is not mistaken for a main-module import.
     if imported.ctx.module.module == cache.MODULE_MAIN and not self.ctx.is_stdlib_loading:
         raise TypecheckError(node, f"cannot import main module '{import_file.module}'")
     if not imported.loaded_at_toplevel:
@@ -157,6 +162,7 @@ def typecheck_import(self: TypeVisitor, node: ast.ImportStmt) -> ast.Stmt:
                     (path + "/" if path else "") + node.what.value, self.ctx.filename
                 )
             ):
+                # Support from . import int and similar commands
                 relative_import = ast.ImportStmt(
                     node.what, as_=node.as_ or node.what.value, dots=node.dots
                 )

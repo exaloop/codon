@@ -33,10 +33,15 @@ MAX_STATIC_ITER: int = 1024
 class FrontendOptions:
     """Ported frontend subset of codon/compiler/options.h::Options."""
 
+    # true if compiling in JIT mode
     jit: bool = False
+    # true if compiling as a Python extension
     pyext: bool = False
+    # true if compiling with Python (vs. C) numerical semantics
     pynum: bool = True
+    # true to enable automatic Python fallback of imports
     autopy: bool = False
+    # true to use unordered dictionary implementation
     unordereddict: bool = False
 
 
@@ -90,7 +95,6 @@ class Import:
 class ClassData:
     """Stores class data for each class (type) in the source code."""
 
-    # A class field (member).
     @dataclass
     class Field:
         # Field name.
@@ -209,6 +213,8 @@ class FunctionData:
         # Resolved captures
         captures: List[str]
         # Super-dispatch targets are checked through their caller.
+        # Whether this constructor requires an independent field-initialization check.
+        # Targets realized only for super() dispatch are checked through the caller.
         check_initialization: bool
 
         def __init__(
@@ -319,6 +325,7 @@ class Cache:
     codegen_ctx: object | None = None
     # Set of function realizations that are to be translated to IR.
     pending_realizations: Set[tuple[str, str]]
+    # Custom operators
     custom_block_stmts: Dict[str, tuple[bool, Callable[[TypeContext, ast.Stmt], ast.Stmt]]]
     custom_expr_stmts: Dict[str, Callable[[TypeContext, ast.Expr | None], ast.Stmt]]
     options: FrontendOptions
@@ -401,21 +408,27 @@ class Cache:
         self.py_module = py_module
         self._timings = {}
 
-    # Return a uniquely named temporary variable of a format
-    # "{sigil}_{prefix}{counter}". A sigil should be a non-lexable symbol.
     def get_temporary_var(self, prefix: str = "", sigil: str = "%") -> str:
+        """
+        Return a uniquely named temporary variable of a format
+        "{sigil}_{prefix}{counter}". A sigil should be a non-lexable symbol.
+        """
         self.var_count += 1
         name = f"{f'{sigil}_' if sigil else ''}{prefix}_{self.var_count}"
         return name
 
-    # Get the non-canonical version of a canonical name.
     def rev(self, value: str) -> str:
+        """
+        Get the non-canonical version of a canonical name.
+        """
         if item := self.reverse_identifier_lookup.get(value):
             return item
         assert False, f"'{value}' has no non-canonical name"
 
-    # Generate a unique SrcInfo for internally generated AST nodes.
     def generate_src_info(self, file="<generated>") -> ast.Node.SrcInfo:
+        """
+        Generate a unique SrcInfo for internally generated AST nodes.
+        """
         result = ast.Node.SrcInfo(
             file,
             self.generated_info_count,
@@ -425,8 +438,10 @@ class Cache:
         self.generated_info_count += 1
         return result
 
-    # Get file contents at the given location.
     def get_content(self, info: ast.Node.SrcInfo) -> str:
+        """
+        Get file contents at the given location.
+        """
         if not (imported := self.imports.get(info.file, None)):
             return ""
         content = imported.content[
@@ -441,17 +456,22 @@ class Cache:
     def get_class(self, typ: ast.types.Class) -> ClassData:
         return self.classes[typ.name]
 
-    # Find the canonical name of a class method.
     def get_method(self, typ: ast.types.Class, member: str) -> str:
+        """
+        Find the canonical name of a class method.
+        """
         if cls := self.get_class(typ):
             return cls.methods[member]
         assert False, f"cannot find '{member}' in '{typ.name}'"
 
-    # Realization API.
-    # Find a class with a given canonical name and return a matching types::ast.types.Type pointer
-    # or a nullptr if a class is not found.
-    # Returns an _uninstantiated_ type.
     def find_class(self, name: str) -> ast.types.Class | None:
+        """
+        Realization API.
+
+        Find a class with a given canonical name and return a matching types::Type pointer
+        or a nullptr if a class is not found.
+        Returns an _uninstantiated_ type.
+        """
         if self.type_ctx is None:
             return None
         if (item := self.type_ctx.get(name)) and item.is_type:
@@ -459,10 +479,12 @@ class Cache:
                 return cls[0].cls
         return None
 
-    # Find a function with a given canonical name and return a matching types::ast.types.Type
-    # pointer or a nullptr if a function is not found.
-    # Returns an _uninstantiated_ type.
     def find_function(self, name: str) -> ast.types.Function | None:
+        """
+        Find a function with a given canonical name and return a matching types::Type
+        pointer or a nullptr if a function is not found.
+        Returns an _uninstantiated_ type.
+        """
         if self.type_ctx is None:
             return None
         if self.type_ctx is None:
@@ -472,11 +494,13 @@ class Cache:
                 return item.type.func
         return None
 
-    # Find the class method in a given class type that best matches the given arguments.
-    # Returns an _uninstantiated_ type.
     def find_method(
         self, typ: ast.types.Class, member: str, args: List[ast.types.Type]
     ) -> ast.types.Function | None:
+        """
+        Find the class method in a given class type that best matches the given arguments.
+        Returns an _uninstantiated_ type.
+        """
         from .passes.typecheck.utils import best_method
 
         assert self.type_ctx
@@ -552,6 +576,7 @@ class Cache:
                 prepare_vtables(self.type_ctx)
             pending = self.pending_realizations.copy()
             for key in pending:
+                # copy it as it might be modified
                 if template := self.functions[key[0]].ast:
                     self.translate(template.clone())
             if isinstance(realized, ast.types.Function) and realized.ast:
@@ -826,6 +851,10 @@ class Filesystem:
 
     @staticmethod
     def executable_path(argv0: str) -> Path:
+        """
+        Detect an absolute path of the current executable (whose argv0 is known).
+        @return Absolute executable path or argv0 if one cannot be found.
+        """
         return Path(argv0).resolve(strict=False)
 
     def exists(self, path: Path):

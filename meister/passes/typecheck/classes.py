@@ -20,14 +20,20 @@ class InitializedFields:
     """Initialization facts for the tracked receiver on a modeled control-flow path."""
 
     def __init__(self, fields=None, aliases=None, reachable=True):
+        # Fields assigned on every reachable path merged into this state.
         self.fields = set() if fields is None else set(fields)
+        # Local names known to refer to the receiver, including supported wrappers.
         self.aliases = set() if aliases is None else set(aliases)
+        # Whether execution can continue along the current path.
         self.reachable = reachable
 
     def clone(self):
         return InitializedFields(self.fields, self.aliases, self.reachable)
 
     def intersect(self, other):
+        """
+        Keep only facts shared by continuing paths; terminated paths impose no facts.
+        """
         if not other.reachable:
             return
         if not self.reachable:
@@ -63,15 +69,35 @@ class ReboundLocalsVisitor(ast.NodeVisitor):
 
 
 class FieldInitializationVisitor(ast.NodeVisitor):
-    """Conservatively track field writes in a realized AST, following known helpers."""
+    """
+    Conservatively track field writes in a realized AST, following known helpers.
+
+    Conservatively track constructor field writes in a realized, typed AST.
+    Follow known helper bodies so delegated initialization is not spuriously rejected;
+    this analysis emits diagnostics only and does not insert runtime field guards.
+    """
 
     def __init__(self, ctx, receiver, active, summaries):
+        # Provides specialized helper bodies after call resolution.
+        # Concrete receiver realization used to resolve cooperative super() dispatch.
         self.ctx, self.receiver = ctx, receiver
+        # Shared recursion guard keyed by helper body and tracked parameter position.
+        # Reuse completed summaries across shared helper paths. A recursion guard alone
+        # does not prevent exponential work when both branches call the same next helper.
+        # The parameter index distinguishes writes to different receivers in one helper.
         self.active, self.summaries = active, summaries
+        # Facts at the current point in the body being analyzed.
         self.state = InitializedFields()
+        # Pending abrupt exits, intercepted by enclosing loops and finally blocks.
+        # Facts shared by potential exceptions in each enclosing protected region.
         self.exits, self.exceptions = [], []
 
     def visit(self, node):
+        """
+        Ignore expression effects on paths that have already terminated.
+
+        Stop traversing statements after an abrupt control-flow transfer.
+        """
         if node and self.state.reachable:
             return super().visit(node)
 
@@ -98,6 +124,11 @@ class FieldInitializationVisitor(ast.NodeVisitor):
                 self.exits.append((kind, state))
 
     def is_instance(self, expr):
+        """
+        Recognize receiver aliases through known casts and lowered super() wrappers.
+        Super.__getattr__ captures the receiver in a Partial's first bound argument;
+        its dispatcher extracts Super._obj before calling the base implementation.
+        """
         match expr:
             case ast.IdExpr(value=value):
                 return value in self.state.aliases
@@ -124,6 +155,11 @@ class FieldInitializationVisitor(ast.NodeVisitor):
         return False
 
     def analyze(self, fn, argument):
+        """
+        Summarize normal exits with the receiver bound to an AST parameter index.
+        Recursive re-entry contributes no new facts rather than assuming a write.
+        Publish a summary only after merging all exits, never from a partial traversal.
+        """
         if fn.async_ or fn.has(ast.Attr.IsGenerator):
             return InitializedFields()
         key = (id(fn), argument)
@@ -142,12 +178,21 @@ class FieldInitializationVisitor(ast.NodeVisitor):
         return self.state
 
     def visit_FunctionStmt(self, node):
+        """
+        Declaring a nested function does not execute its initialization helpers.
+        """
         pass
 
     def visit_ClassStmt(self, node):
+        """
+        Nested class bodies do not initialize the tracked receiver.
+        """
         pass
 
     def visit_AssignStmt(self, node):
+        """
+        Track local receiver aliases, discarding them when reassigned to other values.
+        """
         self.visit(node.rhs)
         if isinstance(node.lhs, ast.IdExpr) and node.rhs:
             if self.is_instance(node.rhs):
@@ -156,12 +201,19 @@ class FieldInitializationVisitor(ast.NodeVisitor):
                 self.state.aliases.discard(node.lhs.value)
 
     def visit_AssignMemberStmt(self, node):
+        """
+        Credit writes to the receiver only after evaluating their operands.
+        """
         self.visit(node.lhs)
         self.visit(node.rhs)
         if self.is_instance(node.lhs):
             self.state.fields.add(node.member)
 
     def visit_CallExpr(self, node):
+        """
+        Incorporate guaranteed writes from known helpers receiving the receiver.
+        Typed calls omit generic arguments, so match only value parameters in the AST.
+        """
         self.generic_visit(node)
         if not self.state.reachable:
             return
@@ -197,6 +249,7 @@ class FieldInitializationVisitor(ast.NodeVisitor):
             value = node.items[argument].value
             argument += 1
             if self.is_instance(value):
+                # Share cached summaries and the recursion guard, but keep helper dataflow local.
                 helper = FieldInitializationVisitor(
                     self.ctx, self.receiver, self.active, self.summaries
                 )
@@ -205,6 +258,9 @@ class FieldInitializationVisitor(ast.NodeVisitor):
                 self.state.reachable &= initialized.reachable
 
     def visit_IfStmt(self, node):
+        """
+        Merge branch facts without requiring initialization on terminated paths.
+        """
         self.visit(node.cond)
         incoming = self.state.clone()
         self.visit(node.if_suite)
@@ -214,6 +270,9 @@ class FieldInitializationVisitor(ast.NodeVisitor):
         self.state.intersect(first)
 
     def visit_IfExpr(self, node):
+        """
+        Conditional expressions may invoke different initialization helpers.
+        """
         self.visit(node.cond)
         incoming = self.state.clone()
         self.visit(node.ifexpr)
@@ -223,36 +282,57 @@ class FieldInitializationVisitor(ast.NodeVisitor):
         self.state.intersect(first)
 
     def visit_WhileStmt(self, node):
+        """
+        Collect body returns without assuming that the loop executes an iteration.
+        """
         self.forget_rebound_aliases(node)
         self.visit(node.cond)
         self.analyze_loop_body(node.suite)
 
     def visit_ForStmt(self, node):
+        """
+        Collect body returns while allowing an empty iterable to skip all writes.
+        """
         self.visit(node.iter)
         self.forget_rebound_aliases(node)
         self.record_exception()
         self.analyze_loop_body(node.suite)
 
     def visit_BreakStmt(self, node):
+        """
+        Exclude statements after a break from the current loop-body path.
+        """
         self.exits.append(("break", self.state.clone()))
         self.state.reachable = False
 
     def visit_ContinueStmt(self, node):
+        """
+        Exclude statements after a continue from the current loop-body path.
+        """
         self.exits.append(("continue", self.state.clone()))
         self.state.reachable = False
 
     def visit_ReturnStmt(self, node):
+        """
+        Save normal-return facts, including writes performed by the return expression.
+        """
         self.visit(node.expr)
         if self.state.reachable:
             self.exits.append(("return", self.state.clone()))
         self.state.reachable = False
 
     def visit_ThrowStmt(self, node):
+        """
+        Exceptional exits do not require a fully initialized returned instance.
+        """
         self.visit(node.expr)
         self.record_exception()
         self.state.reachable = False
 
     def visit_TryStmt(self, node):
+        """
+        Merge exception-site facts and apply finally to every pending exit kind.
+        """
         previous = len(self.exits)
         self.exceptions.append(InitializedFields(reachable=False))
         self.visit(node.suite)
@@ -289,7 +369,12 @@ class FieldInitializationVisitor(ast.NodeVisitor):
 
 
 def check_field_initialization(ctx, typ, fn):
-    """Reject fields not proven initialized at a realized constructor's normal exits."""
+    """
+    Reject fields not proven initialized at a realized __init__'s normal exits.
+    Tuple classes & internal classes are exempt.
+
+    Diagnose fields not initialized on every modeled normal constructor exit.
+    """
     if (
         not typ.func_parent
         or utils.get_unmangled_name(ctx, typ.func_name) != "__init__"
@@ -350,6 +435,7 @@ def typecheck_class(self: TypeVisitor, node: ast.ClassStmt) -> ast.Node:
         # Reference types are added to the context here.
         # Tuple types are added after class contents are parsed to prevent
         # recursive record types (note: these are allowed for reference types)
+        # timedItem->time = getTime();
         if not node.has(ast.Attr.Tuple):
             self.ctx.add(name, timed_item)
             self.ctx.add_always_visible(item)
@@ -374,12 +460,14 @@ def typecheck_class(self: TypeVisitor, node: ast.ClassStmt) -> ast.Node:
         args_to_parse = cls_data.ast.items
 
     cls_data = self.ctx.cache.classes.setdefault(canonical, cache.ClassData())
+    # Will all be filled later!
     class_stmts = []
     var_stmts = []
     fn_stmts = []
     add_later = []
     try:
         with self.ctx.within_base(canonical):
+            # Add the class base
             current_base = self.ctx.base
             current_base.type = class_type
 
@@ -524,6 +612,7 @@ def typecheck_class(self: TypeVisitor, node: ast.ClassStmt) -> ast.Node:
             if not node.has(ast.Attr.Extend):
                 parse_base_classes(self, node.base_classes, args, node, canonical, class_type)
 
+            # ASTs for member arguments to be used for populating magic methods
             member_args = []
             arg_bases = {field.name: field.base_class for field in cls_data.fields}
             for arg in args:
@@ -592,6 +681,8 @@ def typecheck_class(self: TypeVisitor, node: ast.ClassStmt) -> ast.Node:
                 )
                 if magics := node.get(ast.Attr.ClassMagic, list[str]):
                     assert type_expr
+                    # A custom allocator must not silently fall back
+                    # to the generated zero-argument allocator on an invalid call.
                     for magic in magics:
                         if magic == "new" and custom_new and not node.is_record():
                             continue
@@ -698,8 +789,10 @@ def typecheck_class(self: TypeVisitor, node: ast.ClassStmt) -> ast.Node:
             )
             infer.make_ir_type(self.ctx, realized)
     class_stmts.extend(fn_stmts)
+    # Transform class variables here to allow self-references
     for assignment in var_stmts:
         class_stmts.append(self.visit_stmt(assignment))
+    # Allocate singletons (e.g., enums) only after the class layout and methods exist.
     for stmt in enum_init:
         class_stmts.append(self.visit_stmt(stmt))
     return ast.SuiteStmt(*class_stmts)
@@ -712,7 +805,9 @@ def is_enum(ctx, typ):
 
 
 def prepare_enum(self, node, typ, values):
-    """Lower Enum declarations to reference classes and singleton globals."""
+    """
+    Lower Enum declarations to ordinary reference classes and singleton globals.
+    """
     if node.has(ast.Attr.Extend):
         return []
     enumeration = False
@@ -722,6 +817,9 @@ def prepare_enum(self, node, typ, values):
         )
         if not cls or not is_enum(self.ctx, cls):
             continue
+        # enum_extend_err: members already have ordinary classVars bindings;
+        # enum_test: memberless bases may also have ordinary typed ClassVars;
+        # only bindings holding instances of the enum are enumeration members.
         for name, var in utils.get_class(self.ctx, cls).class_vars.items():
             if not name.startswith("__") and self.ctx[var].type == cls.name:
                 raise TypecheckError(node, "cannot extend an enumeration with members")
@@ -744,6 +842,8 @@ def prepare_enum(self, node, typ, values):
         return ast.IdExpr(ast.types.mangle("std.enum", func=name))
 
     for param in node.items:
+        # enum_test: class-body references use raw values (B = A + 1), and each
+        # initializer runs once. Bindings are replaced by members later in visit(ClassStmt).
         if (
             not param.is_value()
             or not ast.ClassStmt.is_class_var(param)
@@ -948,6 +1048,7 @@ def parse_base_classes(
                 object_type = utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Object)
                 base_data.mro.append(object_type)
                 utils.get_class(self.ctx, object_type).descendants.add(base_type.name)
+                # Fix IR stuff [TODO: maybe move this to translate?!]
                 for realization in base_data.realizations.values():
                     realization.bases.append(object_type)
 
@@ -1305,13 +1406,13 @@ def codegen_magic(
         ret = ast.IdExpr(ast.types.Stdlib.String)
         stmts.append(ast.ReturnStmt(expr=ast.CallExpr(M(magic), [ast.IdExpr("self")])))
     elif magic == "add":
-        # def __add__(self: TypeVisitor, obj)
+        # def __add__(self, obj)
         fn_args.extend([ast.Param("self", type=type_expr.clone()), ast.Param("obj")])
         stmts.append(
             ast.ReturnStmt(expr=ast.CallExpr(M(magic), [ast.IdExpr("self"), ast.IdExpr("obj")]))
         )
     elif magic == "mul":
-        # def __mul__(self: TypeVisitor, i: Literal[int])
+        # def __mul__(self, i: Literal[int])
         fn_args.extend(
             [
                 ast.Param("self", type=type_expr.clone()),

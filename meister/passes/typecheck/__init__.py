@@ -30,8 +30,6 @@ from . import (
 class TypeVisitor(ast.NodeVisitor):
     """
     Visitor that infers expression types and performs type-guided transformations.
-
-    Note: this stage *modifies* the provided AST. Clone it before simplification
     """
 
     ctx: TypeContext
@@ -68,7 +66,12 @@ class TypeVisitor(ast.NodeVisitor):
         enforce_type: bool = False,
         simple_types: bool = False,
     ) -> ast.Expr:
+        """
+        Transform an expression node or a type expression node.
+        Special case: replace `None` with `NoneType`
+        """
         if enforce_type:
+            # In annotations, the builtin type describes arbitrary class values
             if (
                 isinstance(node, ast.IdExpr)
                 and node.value == ast.types.Stdlib.Type
@@ -445,6 +448,9 @@ def load_std_library(
 def typecheck_node(
     ctx: TypeContext, node: ast.Stmt, file: str = "<internal>", sweep_force_realize=True
 ) -> ast.Stmt | None:
+    """
+    Simplify an AST node. Assumes that the standard library is loaded.
+    """
     ctx.prepare_checkpoint()
     with ast.Node.creation_context(None):
         preamble = ast.SuiteStmt()

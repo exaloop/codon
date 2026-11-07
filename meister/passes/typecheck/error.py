@@ -15,11 +15,11 @@ if TYPE_CHECKING:
 def typecheck_assert(self: TypeVisitor, node: ast.AssertStmt) -> ast.Stmt:
     """
     Transform asserts.
-    @example
-    `assert foo()` -> `if not foo(): raise __internal__.seq_assert([file], [line], "")`
-    `assert foo(), msg` -> `if not foo(): raise __internal__.seq_assert([file], [line], str(msg))`
-    Use `seq_assert_test` instead of `seq_assert` and do not raise anything during unit
-    testing (i.e., when the enclosing function is marked with `@test`).
+        @example
+        `assert foo()` -> `if not foo(): raise __internal__.seq_assert([file], [line], "")`
+        `assert foo(), msg` -> `if not foo(): raise __internal__.seq_assert([file], [line], str(msg))`
+        Use `seq_assert_test` instead of `seq_assert` and do not raise anything during unit
+        testing (i.e., when the enclosing function is marked with `@test`).
     """
 
     message = ast.StringExpr("")
@@ -181,7 +181,13 @@ def typecheck_try(self: TypeVisitor, node: ast.TryStmt) -> ast.Stmt:
 
 
 def typecheck_throw(self, node):
-    """Stage raise operands in source order and initialize exception headers once."""
+    """
+    Stage raise operands in source order and initialize exception headers once.
+
+    Transform `raise` statements.
+    @example
+    `raise exc` -> ```raise BaseException.set_header(exc, "fn", "file", line, col)```
+    """
     if not node.expr:
         node.done = True
         return node
@@ -193,12 +199,18 @@ def typecheck_throw(self, node):
         and isinstance(head.expr, ast.IdExpr)
         and head.expr.value == setter
     )
+    # Cause staging can wrap the header in a StmtExpr. Recognize it on later passes
+    # so neither exception construction nor header initialization is repeated.
+    # Internal explicit rethrows also retain the original exception's metadata.
     if not node.has(ast.Attr.Internal) and not initialized:
         exception = node.expr
         cause = self.visit_expr(
             node.from_expr or ast.CallExpr(ast.IdExpr(ast.types.Stdlib.NoneType))
         )
         setup = []
+        # `raise Error from cause()` evaluates cause() before constructing Error().
+        # Save raw operands in source order before normalizing classes to instances;
+        # in particular, a failing cause expression must not run Error's constructor.
         if utils.is_type_expr(exception) and node.from_expr:
             en, cn = (
                 utils.get_temporary_var(self.ctx, "exception"),
@@ -229,7 +241,53 @@ def typecheck_throw(self, node):
 
 
 def typecheck_with(self, node):
-    """Save managers and exit callables separately from entry-result bindings."""
+    """
+    Save managers and exit callables separately from entry-result bindings.
+
+    Transform with statements, saving the manager and exit callable independently
+    of the entry-result binding.
+    @example
+    `with manager() as value: BODY` ->
+    ```python
+    tmp = manager()
+    exit_method = tmp.__exit__
+    entered = tmp.__enter__()
+    if BaseException._context_exit_is_legacy_none(exit_method, False):
+    try:
+    value = entered
+    BODY
+    finally:
+    exit_method()
+    else:
+    exceptional = False
+    try:
+    value = entered
+    BODY
+    except BaseException as error:
+    exceptional = True
+    if not BaseException._context_exit(exit_method, get_typeinfo(error),
+    error):
+    raise error  # Internal rethrow preserves the original metadata.
+    finally:
+    if not exceptional:
+    BaseException._context_exit(exit_method, None, None)
+    ```
+    _context_exit_is_legacy_none selects a cleanup branch statically; both alternatives
+    share BODY to avoid recursive duplication.
+
+    _context_exit supplies a None traceback, prefers a callable three-argument exit, and
+    otherwise calls the legacy zero-argument exit. Entry stays outside the try, while
+    target assignment stays inside. The flag prevents a second exit call if exceptional
+    cleanup suppresses or raises; finally handles normal completion and
+    return/break/continue.
+
+    For async with, save __aexit__, await __aenter__, pass True to the predicate, and
+    await either the legacy exit or _context_aexit.
+
+    Multiple managers nest this transformation so exits run in reverse entry order.
+    Without an as target, entry is evaluated without binding its result and the target
+    assignment is omitted.
+    """
     assert node.items, "stmt.items is empty"
     is_async, content = node.async_, []
     helper = lambda name: ast.IdExpr(
@@ -274,6 +332,8 @@ def typecheck_with(self, node):
                 body,
             )
         rethrow = ast.ThrowStmt(ast.IdExpr(exception))
+        # An awaited exit can suspend outside the original native catch frame. Rethrow
+        # the captured object rather than relying on the thread's active exception.
         rethrow.set(ast.Attr.Internal)
         handler = ast.TryStmt.Except(
             ast.IdExpr(ast.types.Stdlib.BaseException),

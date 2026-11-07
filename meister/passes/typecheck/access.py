@@ -20,7 +20,7 @@ def typecheck_id(self: TypeVisitor, node: ast.IdExpr) -> ast.Expr:
     If an identifier is a static variable, evaluate it and replace it with its value
     (e.g., change `N` to `IntExpr(16)`).
     If the identifier of a generic is fully qualified, use its qualified name
-    (e.g., replace `Ptr` with `Ptr[byte]`).
+    (e.g., replace `Ptr` with `Ptr[u8]`).
     """
 
     assert node.type
@@ -43,6 +43,8 @@ def typecheck_id(self: TypeVisitor, node: ast.IdExpr) -> ast.Expr:
     # Set up type
     value_type = utils.instantiate(self.ctx, value.type)
     if node.value == ast.types.Stdlib.Type:
+        # the builtin type object has no argument.
+        # type[T] remains the representation of a class value.
         value_type = utils.instantiate_type_var(self.ctx, utils.get_metaclass_type(self.ctx))
     node.type |= value_type
     if fn_type := node.type.func:
@@ -248,6 +250,7 @@ def access_attribute(
         return get_class_member(self, expr, member, typ)
     method_ast = methods[0].ast
     is_property = method_ast.has(ast.Attr.Property)
+    # If a method is ambiguous use dispatch
     best_method = (
         get_dispatch(self, utils.get_root_name(self.ctx, methods[0]))
         if len(methods) > 1
@@ -259,16 +262,25 @@ def access_attribute(
     if parent:
         method_expr.set(ast.Attr.ExprDoNotRealize)
     if utils.is_type_expr(expr) or method_ast.has(ast.Attr.StaticMethod):
+        # Static access: cls.method or obj.static_method.
+        # A saved lookup with side effects needs a runtime value,
+        # not an unresolved function identifier.
         if not parent and has_side:
             method_expr = ast.CallExpr(
                 method_expr, [ast.EllipsisExpr(ast.EllipsisExpr.Kind.Partial)]
             )
         return wrap_side(method_expr), True
+    # Instance access: `obj.method` from the call
+    # Modify the call to push `self` to the front of the argument list.
+    # Avoids creating partial functions.
     if parent and not is_property:
         parent.items.insert(0, ast.CallExpr.Arg(expr))
         parent.set(ast.Attr.ExprVirtual, -1)
         return self.visit_expr(method_expr), True
     method_args = [expr]
+    # Instance access: `obj.method`
+    # Transform y.method to a partial call `type(y).method(y, ...)`
+    # If a method is marked with @property, just call it directly
     if not is_property:
         method_args.append(ast.EllipsisExpr(ast.EllipsisExpr.Kind.Partial))
     result = ast.CallExpr(method_expr, method_args)
@@ -349,6 +361,9 @@ def check_capture(self: TypeVisitor, value: Item):
 
 
 def get_import(self: TypeVisitor, chain: List[str]) -> Tuple[int, Item | None]:
+    """
+    Check if a chain (a.b.c.d...) contains an import or a class prefix.
+    """
     from . import TypeVisitor
 
     # 1. Find the longest prefix that corresponds to the existing import

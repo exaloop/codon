@@ -99,9 +99,9 @@ class Stdlib:
 class Type:
     """
     An abstract type class that describes methods needed for the type inference.
+    (Hindley-Milner's Algorithm W inference; see https://github.com/tomprimozic/type-systems).
 
-    Implements Hindley-Milner's Algorithm W inference.
-    Heavily "inspired" by https://github.com/tomprimozic/type-systems
+    Type instances are mutable.
     """
 
     class Behaviour(Enum):
@@ -158,6 +158,9 @@ class Type:
             self.statics = [] if statics is None else statics
 
         def undo(self):
+            """
+            Undo a destructive unification.
+            """
             for value in reversed(self.linked):
                 if isinstance(value, Link):
                     value.kind = Link.Kind.Unbound
@@ -180,23 +183,27 @@ class Type:
         self.cache = cache
         self.info = info
 
-    # Unifies a given type with the current type.
-    # @param typ A given type.
-    # @param undo A reference to Unification structure to track the unification steps
-    # and allow later undoing of the unification procedure.
-    # @return Unification score: -1 for failure, anything >= 0 for success.
-    # Higher score translates to a "better" unification.
-    # ⚠️ Destructive operation if undo is not null!
-    # (both the current and a given type are modified).
     @abstractmethod
     def unify(self, what: Type, undo: Type.UnifyContext | None = None) -> int:
+        """
+        Unifies a given type with the current type.
+        @param typ A given type.
+        @param undo A reference to Unification structure to track the unification steps
+        and allow later undoing of the unification procedure.
+        @return Unification score: -1 for failure, anything >= 0 for success.
+        Higher score translates to a "better" unification.
+        ⚠️ Destructive operation if undo is not null!
+        (both the current and a given type are modified).
+        """
         pass
 
-    # Generalize all unbound types whose level is below the provided level.
-    # This method replaces all unbound types with a generic types (e.g. ?1 -> T1).
-    # Note that the generalized type keeps the unbound type's ID.
     @abstractmethod
     def generalize(self, level: int) -> Type:
+        """
+        Generalize all unbound types whose level is below the provided level.
+        This method replaces all unbound types with a generic types (e.g. ?1 -> T1).
+        Note that the generalized type keeps the unbound type's ID.
+        """
         pass
 
     @dataclass
@@ -229,26 +236,38 @@ class Type:
     # Get the final type (follow through all Link links).
     # For example, for (a->b->c->d) it returns d.
     def follow(self) -> Type:
+        """
+        Get the final type (follow through all LinkType links).
+        For example, for (a->b->c->d) it returns d.
+        """
         return self
 
-    # Check if type has unbound/generic types.
     @abstractmethod
     def has_unbounds(self, include_generics: bool) -> bool:
+        """
+        Check if type has unbound/generic types.
+        """
         return False
 
-    # Obtain the list of internal unbound types.
     @abstractmethod
     def get_unbounds(self, include_generics: bool) -> List[Link]:
+        """
+        Obtain the list of internal unbound types.
+        """
         pass
 
-    # True if a type is realizable.
     @abstractmethod
     def can_realize(self) -> bool:
+        """
+        True if a type is realizable.
+        """
         pass
 
-    # True if a type is completely instantiated (has no unbounds or generics).
     @abstractmethod
     def is_instantiated(self) -> bool:
+        """
+        True if a type is completely instantiated (has no unbounds or generics).
+        """
         pass
 
     def __repr__(self):
@@ -261,16 +280,20 @@ class Type:
     def __str__(self) -> str:
         return self.to_string(0)
 
-    # Pretty-print facility. mode is [0: pretty, 1: llvm, 2: debug]
     @abstractmethod
     def to_string(self, mode: int) -> str:
+        """
+        Pretty-print facility. mode is [0: pretty, 1: llvm, 2: debug]
+        """
         pass
 
-    # Print the realization string.
-    # Similar to toString, but does not print the data unnecessary for realization
-    # (e.g. the function return type).
     @abstractmethod
     def realized_name(self) -> str:
+        """
+        Print the realization string.
+        Similar to toString, but does not print the data unnecessary for realization
+        (e.g. the function return type).
+        """
         pass
 
     @property
@@ -430,8 +453,7 @@ class Link(Type):
     id: int = 0
     # The type-checking level of an unbound type.
     level: int = 0
-    # The type to which Link points to.
-    # nullptr if unknown (unbound or generic).
+    # The type to which Link points to. nullptr if unknown (unbound or generic).
     type: Type | None = None
     _static_kind: Type.Behaviour = Type.Behaviour.Runtime
     # Optional trait that unbound type requires prior to unification.
@@ -445,7 +467,6 @@ class Link(Type):
     # during function realization.
     pass_through: bool = False
 
-    # Convenience constructor for linked types.
     def __init__(
         self,
         kind: Link.Kind = Kind.Unbound,
@@ -474,9 +495,13 @@ class Link(Type):
             self.kind = Link.Kind.Link
         assert (self.type is not None) == (self.kind is Link.Kind.Link), "inconsistent link state"
 
-    # Checks if a current (unbound) type occurs within a given type.
-    # Needed to prevent a recursive unification (e.g. ?1 with list[?1]).
     def occurs(self, what: Type, undo: Type.UnifyContext | None):
+        """
+        Checks if a current (unbound) type occurs within a given type.
+        Needed to prevent a recursive unification (e.g. ?1 with list[?1]).
+        """
+        # Closure captures and function signatures share earlier types. Visit each node
+        # once per check, including its level adjustment, rather than expanding the DAG.
         visited = set()
 
         def check(typ):
@@ -507,6 +532,7 @@ class Link(Type):
         return check(what)
 
     def unify(self, what: Type, undo: Type.UnifyContext | None = None) -> int:
+        # Case 1: Just follow the link
         if self.kind is Link.Kind.Link and self.type:
             # Case: Just follow the link
             return self.type.unify(what, undo)
@@ -514,6 +540,7 @@ class Link(Type):
         if self._static_kind is not what.static_kind:
             if self._static_kind is Type.Behaviour.Runtime:
                 # other one is; move this to non-static equivalent
+                # Case 3: Unbound unification
                 if undo is not None:
                     undo.statics.append(self)
                     self._static_kind = what.static_kind
@@ -531,6 +558,8 @@ class Link(Type):
                 return 1
             if self.kind is Link.Kind.Generic:
                 return -1 if undo else 1
+            # Always merge a newer type into the older type (e.g. keep the types with
+            # lower IDs around).
             if self.id < what.id:
                 # Always merge a newer type into the older type
                 # (e.g. keep the types with lower id around).
@@ -546,6 +575,8 @@ class Link(Type):
         # Handle traits
         if self.trait and self.trait.unify(what, undo) == -1:
             return -1
+        # ⚠️ Unification: destructive part.
+        # Link current type to typ and ensure that this modification is recorded in undo.
         if undo:
             undo.linked.append(self)
             self.kind = Link.Kind.Link
@@ -586,6 +617,8 @@ class Link(Type):
                     cache=self.cache,
                     info=self.info,
                 )
+            # We need to preserve the pointers as something else might be pointing
+            # to this unbound.
             return self
         if self.kind is Link.Kind.Link and self.type:
             return self.type.generalize(level)
@@ -659,13 +692,21 @@ class Link(Type):
         if isinstance(link, Link):
             return link._static_kind
         else:
+            # >0 if a type is a static type (e.g. N in Int[N: int]); 0 otherwise.
             return link.static_kind
 
 
 @dataclass(init=False)
 class Generic:
+    """
+    A generic type declaration.
+    Each generic is defined by its unique ID.
+    """
+
     name: str
+    # Pointer to realized type (or generic LinkType).
     type: Type
+    # Unique generic ID.
     id: int = 0
     static_kind: Type.Behaviour = Type.Behaviour.Runtime
 
@@ -714,6 +755,10 @@ class Generic:
 
 @dataclass(init=False, eq=False)
 class Class(Type):
+    """
+    A generic class reference type. All Codon types inherit from this class.
+    """
+
     class Flag(Enum):
         Missing = 0
         Included = 1
@@ -724,6 +769,7 @@ class Class(Type):
     hidden_generics: List[Generic]
     is_tuple: bool = False
     _cached_name: str = ""
+    # Fully generalized concrete types should be reused.
     immutable: bool = False
 
     def __init__(
@@ -757,6 +803,8 @@ class Class(Type):
     def freeze(self):
         if self.immutable:
             return True
+        # Do not freeze mutable function signatures, unions, NTuple expansion, or
+        # stored templates.
         if type(self) is not Class or self.name in {Stdlib.UnrealizedType, "__NTuple__"}:
             return False
 
@@ -765,6 +813,7 @@ class Class(Type):
                 return False
             if generic.type.literal:
                 return True
+            # Links that point to frozen types are fixed in realize() during typechecking
             if generic.type.link:
                 return False
             child = generic.type.cls
@@ -778,6 +827,7 @@ class Class(Type):
     def canonical_optional(self):
         if self.name == Stdlib.Optional and len(self.generics) == 1 and self[0]:
             member = self[0].cls
+            # Preserve provisional args until inference resolves or defaults them.
             if (
                 member
                 and member.can_realize()
@@ -794,6 +844,7 @@ class Class(Type):
         if not what.cls:
             return -1
         what = what.require_cls
+        # A defaulted None also resolves the original optional slot.
         if (
             self.name == Stdlib.Optional
             and what.name == Stdlib.NoneType
@@ -806,6 +857,7 @@ class Class(Type):
         if self.name == what.name == Stdlib.UnrealizedType:
             if self[0] is what[0]:
                 return 0
+            # instantiate + unify!
             left = self[0].instantiate(0, Type.InstantiateContext(self.cache))
             right = what[0].instantiate(0, Type.InstantiateContext(self.cache))
             return left.unify(right, undo)
@@ -818,6 +870,7 @@ class Class(Type):
                 if count != what_i * len(what_t.generics):
                     return -1
                 for i in range(count):
+                    # Check generics.
                     if (part := self_t[i].unify(what_t[i], undo)) < 0:
                         return part
                     score += part
@@ -842,6 +895,7 @@ class Class(Type):
 
                 from ..passes.typecheck.utils import generate_tuple, instantiate
 
+                # If we are unifying NT[N, T] and T[X, X, ...], we assume that N is number of X's
                 ctx = self.cache.type_ctx
                 assert ctx
                 tuple_type = generate_tuple(ctx, 1)
@@ -876,6 +930,9 @@ class Class(Type):
             not self.generics and not self.hidden_generics and type(self) is Class
         ):
             return self
+        # A plain monomorphic leaf has no inference variables or generic slots to
+        # substitute. Derived function/union types must retain their own behavior.
+        # UnrealizedType needs this to avoid recursive references.
         if self.name == Stdlib.UnrealizedType and self.generics and self[0] and self[0].cls:
             return self
         return Class(
@@ -892,6 +949,7 @@ class Class(Type):
             not self.generics and not self.hidden_generics and type(self) is Class
         ):
             return self
+        # Share unrealized links as in generalize(), rather than copying their graphs.
         if self.name == Stdlib.UnrealizedType and self.generics and self[0] and self[0].cls:
             return self
         return Class(
@@ -1000,6 +1058,7 @@ class Class(Type):
             if mode == 2:
                 values += [f"-{g.to_string(mode)}" for g in self.hidden_generics if g.name]
             name = self.name
+            # Special formatting for Functions and Tuples
             if mode == 0:
                 name = self.cache.rev(name)
             result = name if not values else f"{name}[{','.join(values)}]"
@@ -1229,9 +1288,10 @@ class BoolLiteral(Literal):
 class Function(Class):
     """
     A generic type that represents a Codon function instantiation.
-    Handles Function[] class.
+    It inherits ClassType that realizes Function[...].
     """
 
+    # Canonical AST node.
     ast: ast.FunctionStmt
     # Function generics (e.g. T in def foo[T](...)).
     func_generics: List[Generic]
@@ -1331,6 +1391,7 @@ class Function(Class):
         return result
 
     def can_realize(self):
+        # Self must not defer __init__
         allow_passthrough = self.ast.has(ast.Attr.AllowPassThrough)
 
         def can_realize(typ):
@@ -1361,7 +1422,9 @@ class Function(Class):
         return generics and (not self.func_parent or can_realize(self.func_parent))
 
     def replace_arg_types(self, replacements):
-        """Replace non-null argument types without mutating shared argument tuples."""
+        """
+        Replace non-null argument types, preserving shared tuples and cached names.
+        """
         assert len(replacements) == len(self), "function argument count mismatch"
         args = Class(base=self.arg_type)
         args.generics = [copy.copy(g) for g in args.generics]
@@ -1432,6 +1495,7 @@ class Function(Class):
             )
         arguments = ",".join(arg_values)
         values = arguments if not generic_values else f"{arguments},{generic_values}"
+        # Important: return type does not have to be realized.
         parent = "" if self.func_parent is None else f"{self.func_parent.realized_name()}:"
         suffix = "" if not values else f"[{values}]"
         return f"{parent}{self.func_name}{suffix}"

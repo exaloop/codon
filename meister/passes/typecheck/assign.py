@@ -18,8 +18,8 @@ if TYPE_CHECKING:
 def typecheck_assignexpr(self: TypeVisitor, node: ast.AssignExpr) -> ast.Expr:
     """
     Transform walrus (assignment) expression.
-    @example
-    `(expr := var)` -> `var = expr; var`
+        @example
+        `(expr := var)` -> `var = expr; var`
     """
     assignment = ast.AssignStmt(node.var.clone(), rhs=node.expr)
     assignment.attributes = copy.deepcopy(node.attributes)
@@ -117,6 +117,7 @@ def unpack_assignment(self, lhs, rhs, is_loop_target=False):
     if not isinstance(lhs, (ast.TupleExpr, ast.ListExpr)):
         return ast.AssignStmt(lhs, rhs)
 
+    # Case: (a, b) = ... / [a, b] = ...
     left = list(lhs.items)
     # Prepare the right-side expression
     with self.ctx.substitute("node_stack", self.ctx.node_stack + [rhs]):
@@ -172,6 +173,7 @@ def unpack_assignment(self, lhs, rhs, is_loop_target=False):
         if idx < len(left):
             # StarExpr becomes SliceExpr (e.g., `b` in `(a, *b, c) = d` becomes
             # `list(d[1:-2])`)
+            # this slice is either [st:] or [st:-lhs_len + st + 1]
             stop = None if idx + 1 == len(left) else ast.IntExpr(-len(left) + idx + 1)
             value = ast.CallExpr(
                 ast.IdExpr(
@@ -299,6 +301,7 @@ def transform_assignment(
         return transform_update(self, update) or update  # delay on fail
 
     # Generate new canonical variable name for this assignment and add it to the context
+    # Construct collection literals with their declared union storage (union_*_layout).
     if type_expr and isinstance(stmt.rhs, (ast.ListExpr, ast.SetExpr, ast.DictExpr)):
         stmt.rhs.expected_type = utils.extract_type(self.ctx, type_expr)
     stmt.rhs = self.visit_expr(stmt.rhs, type_allowed=True) if stmt.rhs else None
@@ -343,6 +346,7 @@ def transform_assignment(
     self.ctx.add_always_visible(value)
 
     if assignment.rhs:  # not a declaration
+        # Inferred chain temporaries preserve compile-time comparison operands
         if stmt.has(ast.Attr.MaybeLiteral):
             if unbound := assignment.lhs.type.unbound:
                 unbound._static_kind = assignment.rhs.type.static_kind
@@ -356,7 +360,7 @@ def transform_assignment(
         # `a = foo(x, ...); a(1); a('s')`
         if not value.is_var():
             value.type = value.type.generalize(self.ctx.typecheck_level - 1)
-            # Fix capture_function_partial_proper_realize test
+            # See capture_function_partial_proper_realize test
             lhs.type = assignment.rhs.type = value.type
 
     # Mark declarations or generalized type/functions as done
@@ -412,8 +416,8 @@ def transform_update(self: TypeVisitor, stmt: ast.AssignStmt) -> ast.Stmt:
             self.ctx, utils.extract_type(self.ctx, stmt.type_expr), info=stmt.type_expr.info
         )
 
+    # Annotation-only updates refine the hoisted variable's type, not its value.
     if not stmt.rhs:
-        # Annotation-only updates refine the variable's type, not its value
         if infer.realize(self.ctx, stmt.lhs.type):
             stmt.done = True
         return stmt
@@ -442,6 +446,8 @@ def typecheck_assignmember(self: TypeVisitor, node: ast.AssignMemberStmt) -> ast
 
     from .classes import is_enum
 
+    # enum_reassign_err: use the existing member globals, without a second
+    # registry of enum names in the class cache.
     if is_enum(self.ctx, lhs_type) and not node.member.startswith("__"):
         var = utils.get_class(self.ctx, lhs_type).class_vars.get(node.member)
         if var and self.ctx[var].type == lhs_type.name:
@@ -470,8 +476,10 @@ def typecheck_assignmember(self: TypeVisitor, node: ast.AssignMemberStmt) -> ast
         assignment = ast.AssignMemberStmt(unwrapped, member=node.member, rhs=node.rhs)
         return self.visit_stmt(assignment)
 
-    # Case: __setattr__ support. Ensure that only Literal[str] arguments are accepted.
     if member is None and lhs_type == "pyobj":
+        # Case: transform `pyobj.member = value` to `pyobj._setattr("member", value)`.
+        # Mirrors the read path in @c getClassMember, deferring the attribute write to
+        # CPython at runtime.
         return self.visit_stmt(
             ast.ExprStmt(
                 ast.CallExpr(
@@ -480,6 +488,7 @@ def typecheck_assignmember(self: TypeVisitor, node: ast.AssignMemberStmt) -> ast
             )
         )
     if member is None:
+        # Case: __setattr__ support. Ensure that only Literal[str] arguments are accepted.
         static_name = utils.instantiate_unbound(self.ctx)
         static_name._static_kind = ast.types.Type.Behaviour.String
         value_type = utils.instantiate_unbound(self.ctx)
@@ -579,6 +588,7 @@ def transform_inplace_update(self: TypeVisitor, stmt: ast.AssignStmt):
                 return False, None
             else:
                 assert stmt.rhs.type and stmt.lhs.type
+                # Delay
                 stmt.rhs.type |= utils.instantiate_unbound(self.ctx)
                 stmt.lhs.type |= stmt.rhs.type
                 return True, None

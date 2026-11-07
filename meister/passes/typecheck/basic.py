@@ -13,7 +13,9 @@ if TYPE_CHECKING:
 
 
 def typecheck_none(self: TypeVisitor, node: ast.NoneExpr):
-    """Set type to `Optional[?]`"""
+    """
+    Set type to `Optional[?]`
+    """
     assert node.type
 
     node.type |= utils.instantiate(self.ctx, ast.types.Stdlib.Optional)
@@ -44,10 +46,12 @@ def typecheck_bool(self: TypeVisitor, node: ast.BoolExpr):
 def typecheck_int(self: TypeVisitor, node: ast.IntExpr):
     """
     Parse various integer representations depending on the integer suffix.
-    @example
-    `123u`   -> `UInt[64](123)`
-    `123i56` -> `Int[56](123)`
-    `123pf`  -> `int.__suffix_pf__(123)`
+        @example
+        `123u`   -> `UInt[64](123)`
+        `123i56` -> `Int[56](123)`
+        `123pf`  -> `int.__suffix_pf__(123)`
+
+    Set type to `int`
     """
     assert node.type
 
@@ -60,6 +64,8 @@ def typecheck_int(self: TypeVisitor, node: ast.IntExpr):
         holder = ast.IntExpr(node.get_value())
 
     width = None
+    # Handle fixed-width integers: suffixValue is a pointer to NN if the suffix
+    # is `uNNN` or `iNNN`.
     if len(suffix) > 1 and suffix[0] in ("u", "i") and suffix[1:].isdigit():
         try:
             width = int(suffix[1:])
@@ -101,8 +107,10 @@ def typecheck_int(self: TypeVisitor, node: ast.IntExpr):
 def typecheck_float(self: TypeVisitor, node: ast.FloatExpr):
     """
     Parse various float representations depending on the suffix.
-    @example
-      `123.4pf` -> `float.__suffix_pf__(123.4)`
+        @example
+          `123.4pf` -> `float.__suffix_pf__(123.4)`
+
+    Set type to `float`
     """
     assert node.type
 

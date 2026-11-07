@@ -15,12 +15,15 @@ if TYPE_CHECKING:
 
 
 def _parse_open_mp(code: str, info: ast.Node.SrcInfo) -> List[ast.CallExpr.Arg]:
-    """Parse the OpenMP clauses accepted by codon/parser/peg/openmp.peg.
-    Codex-generated."""
+    """
+    Parse the OpenMP clauses accepted by codon/parser/peg/openmp.peg.
+        Codex-generated.
+    """
 
     # TODO: use proper parser?
     import re
 
+    # Use the same failure-only diagnostics policy as the main grammar.
     source = code.strip()
     source = re.sub(r"^omp\b", "", source, count=1).lstrip()
     source = re.sub(r"^parallel\b", "", source, count=1).lstrip()
@@ -214,6 +217,8 @@ def typecheck_for(self: TypeVisitor, node: ast.ForStmt) -> ast.Stmt:
         unpacked = assign.unpack_assignment(self, node.var, temp, is_loop_target=True)
         node.var = temp
         node.suite = ast.SuiteStmt(unpacked, node.suite)
+    # Delay target unpacking until the yielded type is known. A compiler-owned
+    # tuple temporary needs neither a copy nor a runtime check for matching arity.
     var = cast(ast.IdExpr, node.var)
     assert var, f"corrupt for variable: {node.var}"
 

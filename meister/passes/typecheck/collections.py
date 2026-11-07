@@ -16,8 +16,8 @@ if TYPE_CHECKING:
 def typecheck_tuple(self: TypeVisitor, node: ast.TupleExpr) -> ast.Node:
     """
     Transform tuples.
-    @example
-    `(a1, ..., aN)` -> `Tuple.__new__(a1, ..., aN)`
+        @example
+        `(a1, ..., aN)` -> `Tuple.__new__(a1, ..., aN)`
     """
 
     result = self.visit_expr(
@@ -224,6 +224,8 @@ def transform_comprehension(
     `{a: 1, **d}` -> ```cont = Dict()
     cont.__setitem__((a, 1))
     for i in b.items(): cont.__setitem__((i[0], i[i]))```
+    Union parameters in expectedType fix storage; other parameters use common-type
+    inference. Dictionary keys and values are inferred independently.
     """
 
     def lowest_common_type(
@@ -238,14 +240,17 @@ def transform_comprehension(
         if not typ:
             return item_type
         elif (typ == ast.types.Stdlib.NoneType) != (item_type == ast.types.Stdlib.NoneType):
+            # NoneType introduces nullability without becoming the element type.
             member = item_type if typ == ast.types.Stdlib.NoneType else typ
             return (
                 member
                 if member == ast.types.Stdlib.Optional
                 else utils.instantiate(self.ctx, ast.types.Stdlib.Optional, [member])
             )
+        # Rule: int derives from float
         elif typ == "Int" and item_type == "float":
             return item_type
+        # Rule: T derives from Optional[T]
         elif typ.name != ast.types.Stdlib.Optional and item_type.name == ast.types.Stdlib.Optional:
             return utils.instantiate(
                 self.ctx, utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Optional), [typ]
@@ -256,12 +261,14 @@ def transform_comprehension(
                 utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Optional),
                 [item_type],
             )
+        # Rule: anything derives from pyobj
         elif typ != "pyobj" and item_type == "pyobj":
             return item_type
         elif typ.name != item_type.name:
             cls_data = utils.get_class(self.ctx, typ)
             item_cls_data = utils.get_class(self.ctx, item_type)
             if cls_data and item_cls_data:
+                # Rule: subclass derives from its base class
                 for collection_mro in cls_data.mro:
                     typ = utils.instantiate(
                         self.ctx, collection_mro, [g.type for g in typ.generics]
@@ -277,6 +284,7 @@ def transform_comprehension(
     is_dict = type_name == ast.types.Stdlib.Dict
     root = utils.get_stdlib_type(self.ctx, type_name)
     if is_dict:
+        # Dict is an alias: compare the resolved class, e.g. OrderedDict.
         root = utils.get_stdlib_type(self.ctx, root.name)
     element_types, declared_unions = [], []
     for idx in range(2 if is_dict else 1):
@@ -307,6 +315,8 @@ def transform_comprehension(
         if is_dict:
             item_type |= utils.instantiate(self.ctx, classes.generate_tuple(self.ctx, 2))
         for dict_idx in range(len(element_types)):
+            # A declared union fixes storage; only inferred slots participate in lctyp.
+            # Keep dict keys/values independent (union_collection_common_type).
             if declared_unions[dict_idx]:
                 continue
             member = item_type[dict_idx] if is_dict else item_type
@@ -322,13 +332,17 @@ def transform_comprehension(
     stmts = []
     var = ast.IdExpr(utils.get_temporary_var(self.ctx, "cont"))
     ctr_args = []
+    # Optimization: pre-allocate the list with the exact number of elements
     if type_name == ast.types.Stdlib.List and items:
         ctr_args.append(ast.CallExpr.Arg(ast.IntExpr(len(items))))
     ctr = ast.IdExpr(root.name if is_dict else type_name)
+    # Instantiate Dict's class template, not the alias.
     collection_template = utils.instantiate(self.ctx, root, element_types)
     ctr.type = utils.instantiate_type_var(self.ctx, collection_template)
     stmts.append(ast.AssignStmt(var.clone(), rhs=ast.CallExpr(ctr, items=ctr_args)))
     for item in items:
+        # Unpack star-expression by iterating over it
+        # `*star` -> `for i in star: cont.[fn](i)`
         if not is_dict and isinstance(item, ast.StarExpr):
             # `*star` -> `for i in star: cont.[fn](i)`
             loop_var = ast.IdExpr(utils.get_temporary_var(self.ctx, "i"))
@@ -345,7 +359,7 @@ def transform_comprehension(
                 )
             )
         elif is_dict and isinstance(item, ast.KeywordStarExpr):
-            # Same for **kwstars
+            # Expand kwstar-expression by iterating over it: see the example above
             loop_var = ast.IdExpr(utils.get_temporary_var(self.ctx, "it"))
             item.expr.set(ast.Attr.ExprStarSequenceItem)
             args = [

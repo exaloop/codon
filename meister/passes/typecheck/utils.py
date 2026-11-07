@@ -23,10 +23,10 @@ class PartialCallData:
     is_partial: bool = False
     # set if calling a partial type itself
     var: str = ""
-    # mask of known args
+    # mask of known arguments
     known: str = ""
-    args: ast.Expr | None = None
     # partial *args/**kwargs expressions
+    args: ast.Expr | None = None
     kw_args: ast.Expr | None = None
 
 
@@ -34,16 +34,18 @@ def best_method(
     ctx: TypeContext, typ: ast.types.Class, member: str, args
 ) -> ast.types.Function | None:
     """
-    Select the best method indicated of an object that matches the given arg
+    Select the best method indicated of an object that matches the given argument
     types. See @c findMatchingMethods for details.
     """
     call_args = []
     for arg in args:
         if isinstance(arg, ast.types.Type):
+            # dummy expression
             call_args.append(ast.CallExpr.Arg(value=ast.NoneExpr(type=arg)))
         elif isinstance(arg, ast.Expr):
             call_args.append(ast.CallExpr.Arg(value=arg))
         else:
+            # dummy expression
             call_args.append(ast.CallExpr.Arg(name=arg[0], value=ast.NoneExpr(type=arg[1])))
     methods = find_method(ctx, typ, member)
     if matches := matching_methods(ctx, typ, methods, call_args):
@@ -59,15 +61,17 @@ def matching_methods(
     partial: ast.types.Class | None = None,
 ) -> List[ast.types.Function]:
     """
-    Select the best method among the provided methods given the list of args.
+    Select the best method among the provided methods given the list of arguments.
     See @c reorderNamedArgs for details.
     """
 
-    # Pick the last method that accepts the given args
+    # Pick the last method that accepts the given arguments.
     results = []
     for method in methods:
         if not method:
             continue  # avoid overloads that have not been seen yet
+        # Captured/partial arguments need the full reorder path. Other calls can
+        # reject impossible shapes before allocating a type
         if not partial and not (typ and typ.partial) and not accepts_call_shape(ctx, method, args):
             continue
         fn = instantiate(ctx, method, typ).func
@@ -77,7 +81,10 @@ def matching_methods(
 
 
 def get_partial_arg_types(fn, partial):
-    """Types captured by a partial, indexed by AST parameter."""
+    """
+    Types captured by a partial, indexed by AST parameter (including generics).
+    The trailing *args tuple is separate from the fixed captured arguments.
+    """
     result = [None] * len(fn.ast.items)
     if partial:
         captured = iter(partial[1].require_cls)
@@ -108,10 +115,13 @@ def get_call_default(ctx, param):
 
 def get_call_arg_type(ctx, fn, param_idx, value_idx, actual):
     expected = fn[value_idx]
+    # Calls and callable constraints must select the same concrete union member.
     if (union := expected.union) and union.can_realize():
         signature = get_function(ctx, fn.func_name).type
         from ..scope import Bindings
 
+        # Check if there is a binding for this name to safeguard against cases
+        # where specialized arg is being reassigned to another type within union
         bindings = fn.ast.get(ast.Attr.Bindings, Bindings)
         binding = (
             bindings.bindings.get(
@@ -120,6 +130,7 @@ def get_call_arg_type(ctx, fn, param_idx, value_idx, actual):
             if bindings
             else None
         )
+        # Handle union specialization
         if (
             actual.can_realize()
             and signature[value_idx].union
@@ -137,7 +148,14 @@ _callable_probes = []
 
 
 def can_call(ctx, fn, args, partial=None, preserve_unions=None, undo=None, probing=False):
-    """Match the same slots, coercions and defaults as a real call."""
+    """
+    Match the same slots, coercions and defaults as a real call.
+
+    Match the same parameter slots as callReorderArguments(), applying the same
+    argument coercions as typecheckCallArgs().
+    Probes avoid transformations/instantiations.
+    preserveUnions is indexed by supplied arguments, not reordered parameters.
+    """
     from . import TypeVisitor
 
     if undo is None:
@@ -160,6 +178,7 @@ def can_call(ctx, fn, args, partial=None, preserve_unions=None, undo=None, probi
         def wrap(actual, expected):
             _, wrapped, conversion = can_wrap_expr(ctx, actual, expected, fn)
             if conversion is None and expected.is_runtime:
+                # special case: @no_argument_wrap prevents needed static wrapping
                 wrapped = get_underlying_static_type(ctx, actual)
             wrapped = wrapped or actual
             if wrapped.unify(expected, undo) < 0:
@@ -208,6 +227,7 @@ def can_call(ctx, fn, args, partial=None, preserve_unions=None, undo=None, probi
                     if si == kwstar:
                         names.append(args[index].name)
                 if param.type:
+                    # Typed variadics coerce each element before building their tuple.
                     annotation = extract_type(ctx, visitor.visit_expr(param.type.clone()))
                     for index, value in enumerate(values):
                         converted = wrap(value, annotation)
@@ -250,6 +270,7 @@ def can_call(ctx, fn, args, partial=None, preserve_unions=None, undo=None, probi
             if not wrap(actual, selected):
                 return -1
             if not probing and selected is not expected:
+                # The signature is private; preserve the call's union specialization.
                 replacements[vi - 1] = selected
                 if not fn.ast.ret and fn.ret_type.can_realize():
                     fn.generics[1].type = instantiate(
@@ -257,6 +278,7 @@ def can_call(ctx, fn, args, partial=None, preserve_unions=None, undo=None, probi
                     )
         if any(replacements):
             fn.replace_arg_types(replacements)
+        # Defaults are applied after argument inference, just as at real calls.
         if not probing and not is_partial:
             gi = 0
             for si, slot in enumerate(slots):
@@ -281,11 +303,17 @@ def match_callable(
     preserve_unions=None,
     instantiated=False,
 ):
-    """Shared entry for CallableTrait, adapters and static call probes."""
+    """
+    Shared entry for CallableTrait, Callable adapters, and static call probes.
+    """
     changes = undo if undo is not None else ast.types.Type.UnifyContext()
     if undo is None:
         _callable_probes.append(changes)
+    # Nested CallableTrait::unify calls carry the journal, but no matching options.
+    # Keep their probe mode here, without adding state to Unification or the context.
     probing = undo is None or any(journal is changes for journal in _callable_probes)
+    # Overload candidates are already private instantiations with receiver
+    # generics bound. The probe journal still undoes any argument bindings.
     try:
         cls = typ.cls
         if not cls or (
@@ -315,6 +343,7 @@ def match_callable(
                     return -1
             return score if not return_type or return_type.unify(fn.ret_type, changes) >= 0 else -1
         parameters = cls[0].require_cls
+        # Function pointers have a fixed ABI and no AST parameters/defaults to reorder.
         if len(parameters) != len(args):
             return -1
         for arg, expected in zip(args, parameters):
@@ -391,6 +420,8 @@ def can_wrap_expr(
         expr_type = extract_class_type(ctx, expr_type)
         if not expr_type:
             return False, None, None
+        # Any type with a zero-argument __iter__ can satisfy a Generator parameter through
+        # normal method lookup.
         if expected_class == ast.types.Stdlib.Generator and best_method(
             ctx, expr_type, "__iter__", []
         ):
@@ -411,6 +442,7 @@ def can_wrap_expr(
         wrapped_type = expr_type
 
     hints = {ast.types.Stdlib.Generator, ast.types.Stdlib.Float, ast.types.Stdlib.Optional, "pyobj"}
+    # argument type not yet known.
     if expr_class is None and expected_class and expected_class.name in hints:
         return False, None, None  # arg type not yet known.
 
@@ -469,6 +501,7 @@ def can_wrap_expr(
         and expr_class != expected_class.name
         and not is_ellipsis
     ):
+        # Select proper overload for type
         method = best_method(ctx, expr_class, "__iter__", [expr_class])
         if not method:
             # Do not wrap already wrapped vars
@@ -495,6 +528,7 @@ def can_wrap_expr(
         and expr_class
         and expr_class != ast.types.Stdlib.Optional
     ):
+        # Converting NoneType to Optional[T] constructs an absent value.
         if expr_class == ast.types.Stdlib.NoneType:
             wrapped_type = expected_class
 
@@ -532,6 +566,7 @@ def can_wrap_expr(
             )
         )
     ):
+        # unwrap optional
         expression_inner = expr_class[0]
         _, inner_type, inner_wrapper = can_wrap_expr(
             ctx, expression_inner, expected_class, callee, allow_unwrap, is_ellipsis
@@ -542,6 +577,7 @@ def can_wrap_expr(
             items=[inner_wrapper(value) if inner_wrapper else value],
         )
     elif expected_class and expected_class == "pyobj" and expr_class and expr_class != "pyobj":
+        # wrap to pyobj
         if not find_method(ctx, expr_class, "__to_py__"):
             return False, None, None
         wrapped_type = instantiate(ctx, expected_class)
@@ -556,6 +592,7 @@ def can_wrap_expr(
         and expr_class == "pyobj"
         and expected_class != "pyobj"
     ):
+        # unwrap pyobj
         if not find_method(ctx, expected_class, "__from_py__"):
             return False, None, None
         wrapped_type = instantiate(ctx, expected_class)
@@ -621,6 +658,7 @@ def can_wrap_expr(
             else:
                 assert False, f"bad type: {value_class!r}"
 
+            # One stored template can adapt to several input/return signatures.
             fn_name = f".proxy.{fn_name}.{expected_class.realized_name()}"
             if not ctx.get(fn_name):
                 proxy = ast.FunctionStmt(
@@ -646,6 +684,8 @@ def can_wrap_expr(
         and expr_type.func
         and not (expected_class and expected_class.name == ast.types.Stdlib.Function)
     ):
+        # Wrap raw Codon functions into Partial(...) call for easy realization.
+        # Special case: Codon functions are embedded (via lambda!)
         if expected_class:
             wrapped_type = instantiate(ctx, expected_class)
         # Create wrapper if needed
@@ -681,6 +721,7 @@ def can_wrap_expr(
         and expected_class
         and not expected_class.union
     ):
+        # Extract union types via Union._get
         if not (expected_class := infer.realize(ctx, expected_class)):
             return False, None, None
         expr_class = infer.realize(ctx, expr_class)
@@ -707,10 +748,9 @@ def can_wrap_expr(
                 ],
             )
     elif expr_class and expected_class and expected_class.union:
+        # Make union types via Union._new
         if not (expected_class := infer.realize(ctx, expected_class)):
             return False, None, None
-        # Wrap raw Seq functions into Partial(...) call for easy realization.
-        # Special case: Seq functions are embedded (via lambda!)
         if not (expected_class | expr_class):
             wrapped_type = expected_class
             wrapper = lambda value: ast.CallExpr(
@@ -818,6 +858,7 @@ def extract_named_tuple(ctx: TypeContext, expr: ast.Expr) -> List[Tuple[str, ast
 def get_class_fields(ctx: TypeContext, cls: ast.types.Class) -> List[cache.ClassData.Field]:
     cls_data = get_class(ctx, cls.name)
     fields = [] if not cls_data else list(cls_data.fields)
+    # Tuple has MAX_TUPLE fields; copy only the requested prefix, not the whole table.
     if cls.name == ast.types.Stdlib.Tuple:
         fields = fields[: len(cls.generics)]
     return fields
@@ -1029,22 +1070,31 @@ def add_class_generics(
 
 
 def instantiate_type_var(ctx: TypeContext, typ: ast.types.Type) -> ast.types.Type:
+    # A local variable named "type" must not replace the standard type constructor.
     return instantiate(ctx, get_stdlib_type(ctx, ast.types.Stdlib.Type), [typ])
 
 
 def get_metaclass_type(ctx):
-    """Concrete type metaclass, without the type[T] wrapper's generic."""
+    """
+    Create the concrete type metaclass without the type[T] wrapper's generic.
+    """
     typ = ast.types.Class(base=get_stdlib_type(ctx, ast.types.Stdlib.Type))
     typ.generics = []
     return typ
 
 
 def is_metaclass_type(typ):
+    """
+    Identify the concrete, zero-argument type metaclass.
+    """
     return bool(typ and typ == ast.types.Stdlib.Type and not typ.require_cls.generics)
 
 
 def get_self_type(ctx, typ):
     receiver = get_underlying_static_type(ctx, typ).cls
+    # python_pybridge: Function methods take a runtime function pointer. Binding
+    # Self to a compile-time FuncType would erase their self argument from CIR.
+    # TODO: why?!
     if receiver and receiver.func:
         return ast.types.Class(base=receiver)
     return receiver
@@ -1058,6 +1108,8 @@ def is_polymorphic(ctx, fn):
     cls = get_class(ctx, fn[0].require_cls)
     member = get_unmangled_name(ctx, fn.ast.name)
     virtual = member in cls.virtuals
+    # class_inherited_self: Self can bind the receiver to a subclass while
+    # the virtual method remains declared on its original base class.
     if any(get_unmangled_name(ctx, g.name) == "Self" for g in fn.func_generics):
         if parent := fn.ast.get(ast.Attr.ParentClass, str):
             virtual |= member in get_class(ctx, parent).virtuals
@@ -1176,7 +1228,7 @@ def instantiate[T: ast.types.Type](
 ) -> T:
     """
     Call `type->instantiate`.
-    Prepare the generic instantiation table with the given a generic param.
+    Prepare the generic instantiation table with the given a generic parameter.
     Example: when instantiating List[T].foo, generics=List[int].foo will ensure that
     T=int.
     """
@@ -1193,6 +1245,7 @@ def instantiate[T: ast.types.Type](
                 f"{get_user_facing_name(ctx, typ.name)}: "
                 f"expected {len(typ.generics)}, got {len(generics)}"
             )
+        # dummy generic type
         cls_type = ast.types.Class(cache=ctx.cache, name="")
         for idx, generic_type in enumerate(generics):
             generic = typ.generics[idx]
@@ -1211,6 +1264,8 @@ def instantiate[T: ast.types.Type](
                 continue
             if not ((link := generic.type.link) and link.kind is ast.types.Link.Kind.Generic):
                 instantiate_ctx.cache[generic.id] = generic.type
+        # Self binds to the static receiver, including non-polymorphic Tuple types.
+        # Other method generics may precede the implicit Self parameter.
         if fn := typ.func:
             for generic in fn.func_generics:
                 if get_unmangled_name(ctx, generic.name) == "Self":
@@ -1305,30 +1360,32 @@ def reorder_named_args(
 ):
     """
     Reorders a given vector or named args (consisting of names and the
-    corresponding types) according to the signature of a given function.
-    Returns the reordered vector and an associated reordering score (missing
-    default args' score is half of the present args).
-    Score is -1 if the given args cannot be reordered.
-    @param known Bitmask that indicated if an arg is already provided
-    (partial function) or not.
+        corresponding types) according to the signature of a given function.
+        Returns the reordered vector and an associated reordering score (missing
+        default args' score is half of the present args).
+        Score is -1 if the given args cannot be reordered.
+        @param known Bitmask that indicated if an arg is already provided
+        (partial function) or not.
 
-    See https://docs.python.org/3.6/reference/expressions.html#calls for details.
-    Final score:
-    - +1 for each matched arg
-    -  0 for *args/**kwargs/default args
-    - -1 for failed match
-    0. Find *args and **kwargs
-    True if there is a trailing ellipsis (full partial: fn(all_args, ...))
-    1. Assign positional args to slots
-    Each slot contains a list of arg's indices
-    keep the map---we need it sorted!
-    2. Assign named args to slots
-    3. Fill in *args, if present
-    4. Fill in **kwargs, if present
-    5. Fill in the default args
+        See https://docs.python.org/3.6/reference/expressions.html#calls for details.
+        Final score:
+        - +1 for each matched arg
+        -  0 for *args/**kwargs/default args
+        - -1 for failed match
+        0. Find *args and **kwargs
+        True if there is a trailing ellipsis (full partial: fn(all_args, ...))
+        1. Assign positional args to slots
+            Each slot contains a list of arg's indices
+            keep the map---we need it sorted!
+        2. Assign named args to slots
+        3. Fill in *args, if present
+        4. Fill in **kwargs, if present
+        5. Fill in the default args
     """
 
     score = 0
+    # Preserve argument ordering/scoring for ordinary calls and partials. Probe
+    # callers leave onError empty, avoiding diagnostic construction on rejection.
     partial = bool(
         args
         and (not args[-1].name)
@@ -1360,6 +1417,7 @@ def reorder_named_args(
             else:
                 extra.append(arg_idx)
         else:
+            # same last-value behavior as the original map
             named_args[arg.name] = arg_idx
     score += 2 * (len(slots) - len(fn.func_generics))
     for variadic_idx in [
@@ -1374,7 +1432,7 @@ def reorder_named_args(
         for name, idx in layout.keywords:
             if not known or known[idx] != ast.types.Class.Flag.Included:
                 slot_names[name] = idx
-        for name, arg_idx in sorted(named_args.items()):
+        for name, arg_idx in named_args.items():
             if name not in slot_names:
                 extra_named_args[name] = arg_idx
             elif not slots[slot_names[name]]:
@@ -1393,14 +1451,14 @@ def reorder_named_args(
     if star_idx != -1:
         slots[star_idx] = extra
     if extra_named_args and keyword_star_idx == -1:
-        invalid_name = min(extra_named_args)
+        invalid_name = next(iter(extra_named_args))
         value = args[extra_named_args[invalid_name]].value
         raise ReorderError(
             value.info if value else ctx.info,
             f"'{next(iter(extra_named_args))}' is an invalid keyword argument for {get_user_facing_name(ctx, fn.func_name)}()",
         )
     if keyword_star_idx != -1:
-        for name in sorted(extra_named_args):
+        for name in extra_named_args:
             slots[keyword_star_idx].append(extra_named_args[name])
     for idx, param in enumerate(fn.ast.items):
         if not slots[idx] and idx not in (star_idx, keyword_star_idx):
@@ -1423,6 +1481,8 @@ def reorder_named_args(
 
 def accepts_call_shape(ctx, fn, args):
     """Reject impossible arities before allocating a speculative instantiation."""
+    # Ellipsis/captured calls have additional slot rules. Leave them to the
+    # existing full matcher, without making a speculative arity decision here.
     if any(isinstance(arg.value, ast.EllipsisExpr) for arg in args):
         return True
     layout = fn.ast.call_layout

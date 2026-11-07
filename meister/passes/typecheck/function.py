@@ -16,7 +16,9 @@ if TYPE_CHECKING:
 
 
 def prepare_call_layout(ctx, node):
-    """Finalize argument structure after captures, names and defaults are normalized."""
+    """
+    Finalize the argument structure after captures, names, and defaults are normalized.
+    """
     assert node.call_layout is None, "function call layout was already initialized"
     layout = ast.FunctionStmt.CallLayout()
     layout.positional_limit = len(node.items)
@@ -227,7 +229,9 @@ def typecheck_yieldfrom(self: TypeVisitor, node: ast.YieldFromStmt) -> ast.Stmt:
 
 
 def typecheck_global(_: TypeVisitor, node: ast.GlobalStmt) -> ast.Node:
-    """Handled in scoping stage."""
+    """
+    Handled in scoping stage. Remove these upon completion.
+    """
     return ast.SuiteStmt()
 
 
@@ -265,6 +269,7 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
             elif attr_name == ast.types.mangle("std.internal.attributes", func="no_arg_reorder"):
                 node.set(ast.Attr.NoArgReorder)
             elif attr_name == ast.types.mangle(func="overload"):
+                # TODO: handle static inherits and auto-generated cases
                 node.set(ast.Attr.Overload)
             fn_attrs: dict[str, str] = node.get(ast.Attr.FunctionAttributes, dict[str, str], {})
             if not fn_attrs:
@@ -282,6 +287,7 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
                     node.set(ast.Attr.ForceRealize)
                 if inherited_attrs := attr_fn.ast.get(ast.Attr.FunctionAttributes, dict[str, str]):
                     fn_attrs.update(inherited_attrs)
+            # remove it from further consideration
             if is_attr:
                 decorators[-1] = None  # ignore it later on
         if not is_attr:
@@ -396,6 +402,7 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
     is_global = self.ctx.is_global
 
     with self.ctx.within_base(canonical):
+        # Set up the base
         fn_base = self.ctx.base
         fn_base.func = node
 
@@ -410,6 +417,8 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
 
             # Handle default values
             default = param.default
+            # Special case: all simple types and Nones are handled at call site
+            # (as they are not mutable).
             match default, param.type:
                 case None, _:
                     pass
@@ -477,7 +486,7 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
                 )
             )
 
-            # Add generics to the context
+            # Add generics & static types to the context
             if not param.is_value():
                 generic_type = utils.instantiate_unbound(self.ctx)
                 type_id = generic_type.id
@@ -552,6 +561,7 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
                 if not param.is_value():
                     continue
                 arg_generic = arg_tuple[arg_idx]
+                # Mark __init__ generics as AllowPassThrough
                 if (
                     parent_class
                     and param_idx == 0
@@ -595,6 +605,8 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
                 generic_types.append(ret_type)
 
         # Generalize generics and remove them from the context
+        # Callable factory constraints can link a method generic to a class generic
+        # (defaultdict.__new__). Generalizing the method must not mutate that outer slot.
         parent_generics = {u.id for u in parent_class.get_unbounds(True)} if parent_class else set()
         for generic_type in generic_types:
             for unbound in generic_type.get_unbounds(False):
@@ -690,6 +702,7 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
 
     # Expression to be used if function binding is modified by captures or decorators
     final = None
+    # Parse remaining decorators
     for decorator in decorators:
         if decorator:
             # Replace each decorator with `decorator(finalExpr)` in the reverse order

@@ -23,6 +23,11 @@ def vtable_signature(ctx, fn):
 
 
 def value_method_id(ctx, method):
+    """
+    Returns a stable value-adapter ID from the shared virtual-method ID registry.
+    @param method the adapter name, kept in a separate internal key namespace
+    @return the existing or newly allocated nonzero method ID
+    """
     return ctx.cache.thunk_ids.setdefault("$any." + method, len(ctx.cache.thunk_ids) + 1)
 
 
@@ -36,6 +41,8 @@ def prepare_vtables(ctx):
         return ast.NoneExpr(type=typ, done=True)
 
     def subtype(source, destination):
+        # virtual results are covariant;
+        # arguments flow in the opposite direction, from caller to implementation.
         if source.unify(destination, None) >= 0:
             return True
         cls, base = source.cls, destination.cls
@@ -49,11 +56,14 @@ def prepare_vtables(ctx):
 
     def adapt_target(signature, receiver, target):
         if not subtype(target.ret_type, signature.ret_type):
+            # return types are covariant (derived class can return an extended/derived type)
             raise TypecheckError(
                 signature.ast,
                 f"function {utils.get_unmangled_name(ctx, receiver.name)}."
                 f"{utils.get_unmangled_name(ctx, target.func_name)} returns {target.ret_type}, expected {signature.ret_type}",
             )
+        # dispatch_variance: a covariant result also needs a wrapper so the CIR call
+        # retains its declared return type; the wrapper performs the result upcast.
         compatible = (
             len(signature) == len(target)
             and signature.ret_type.realized_name() == target.ret_type.realized_name()
@@ -118,6 +128,10 @@ def prepare_vtables(ctx):
             typ = signature[idx]
             idx += 1
             typ = typ.literal.runtime_type if typ.literal else typ
+            # The signature stores variadic arguments in their packed runtime form.
+            # Reconstruct the source call for overload resolution: passing a pack as
+            # one argument would repack it on every virtual-realization iteration.
+            # Keep the signature itself packed for dispatch and adapter generation.
             if stars == 1:
                 args.extend(
                     ast.CallExpr.Arg(typed_argument(g.type)) for g in typ.require_cls.generics
@@ -182,6 +196,7 @@ def prepare_vtables(ctx):
     while added:
         added = False
         for _, cls in sorted(ctx.cache.classes.items()):
+            # Iterate all methods
             for member in sorted(cls.virtuals):
                 root = cls.methods.get(member)
                 if not root:
@@ -211,11 +226,14 @@ def prepare_vtables(ctx):
                                 args,
                                 False,
                             )
+                            # Every reachable receiver needs this thunk. Silently omitting it
+                            # accepts a program that can only fail in the runtime lookup trap.
                             if not target:
                                 raise TypecheckError(
                                     method.ast,
                                     f"no compatible virtual implementation of {key} for {receiver}",
                                 )
+                            # inherited overrides must not acquire the descendant's Self
                             if owner := target.ast.get(ast.Attr.ParentClass, str):
                                 for parent in utils.get_mro(ctx, receiver):
                                     if parent.require_cls.name == owner:
@@ -230,11 +248,13 @@ def prepare_vtables(ctx):
                                 method, receiver, resolved
                             )
                             added = True
+        # Realizing a target can register more super calls; process a snapshot.
         for identifier, signature in sorted(list(ctx.cache.super_calls.items())):
             lexical = signature[0].require_cls[0].require_cls
             member = utils.extract_func_generic(signature).require_str
             for realization in list(descendants(lexical, identifier)):
                 mro = utils.get_mro(ctx, realization.type)
+                # super continues after the lexical class in the runtime receiver's MRO.
                 anchor = next(
                     (
                         idx
@@ -329,6 +349,8 @@ def realize_value_methods(ctx, visitor):
             args = [ast.NoneExpr(type=pointer, done=True) for _ in range(count)]
             args.append(ast.IdExpr(key))
             contexts = {id(imp.ctx): imp.ctx for imp in ctx.cache.imports.values() if imp.ctx}
+            # TODO: generalize this to be able to typecheck any fn/code blocks with error
+            # recovery
             with ctx.binding_checkpoint_group(contexts.values()) as checkpoints:
                 incomplete = {
                     (name, key)
@@ -416,7 +438,15 @@ def generate_union_tag_ast(ctx: TypeContext, function: ast.types.Function):
 
 
 def generate_union_iterator_ast(ctx, fn):
-    """Acquire the active iterator eagerly and join its element types."""
+    """
+    Acquire the active iterator eagerly and join its element types.
+
+    Generate eager iterator acquisition for the active union alternative.
+    Join yielded element types rather than returning a union of generator objects,
+    so ordinary loops can consume heterogeneous iterable alternatives.
+    This dispatcher must not itself yield: iter(value) must run the active __iter__
+    immediately, including its side effects and exceptions, rather than at next().
+    """
     from . import TypeVisitor
 
     visitor = TypeVisitor(ctx)
@@ -434,9 +464,12 @@ def generate_union_iterator_ast(ctx, fn):
             if iterator.type != ast.types.Stdlib.Generator:
                 raise TypecheckError(ctx.info, "expected iterable expression")
             element = iterator.type.require_cls[0]
+            # Distinct containers with the same element type need no per-element union box.
             elements[element.realized_name()] = element
             iterable[tag] = True
         finally:
+            # Union[list[int], int] remains iterable when its list alternative is active.
+            # A missing method leaves this tag to the runtime TypeError fallback below.
             ctx.pop_block()
     element_type = (
         ast.InstantiateExpr(
@@ -472,7 +505,13 @@ def generate_union_iterator_ast(ctx, fn):
 
 
 def generate_union_binary_ast(ctx, fn):
-    """Dispatch native binary operators for each active pair, joining distinct results."""
+    """
+    Dispatch native binary operators for each active pair, joining distinct results.
+
+    Generate binary operator dispatch for the active pair of operand types.
+    Either operand may be concrete or a union; retain native results such as boolean
+    ndarrays, joining result types only when supported pairs return different types.
+    """
     from . import TypeVisitor, ops
 
     operation = utils.extract_func_generic(fn).str
@@ -490,6 +529,9 @@ def generate_union_binary_ast(ctx, fn):
                 ln, rn = utils.get_temporary_var(ctx, "left"), utils.get_temporary_var(ctx, "right")
                 ctx.add_item(ln, ln, lt)
                 ctx.add_item(rn, rn, rt)
+                # Probe magic-method availability without rejecting the whole union when a
+                # pair is unsupported. Such pairs use the runtime TypeError fallback below.
+                # Ordinary operator resolution also preserves reflected methods such as __rsub__.
                 compared = ops.transform_binary_magic(
                     visitor,
                     ast.BinaryExpr(
@@ -527,6 +569,8 @@ def generate_union_binary_ast(ctx, fn):
                     condition = ast.BinaryExpr(condition, "&&", matches) if condition else matches
                 values.append(value)
             candidates.append((condition, ast.BinaryExpr(values[0], operation, values[1])))
+    # Keep a shared native result type, such as ndarray[bool] for array comparisons.
+    # Arithmetic can return different dtypes across branches, requiring a result union.
     result_type = (
         ast.InstantiateExpr(
             ast.IdExpr(ast.types.Stdlib.Union), [ast.IdExpr(name) for name in sorted(results)]
@@ -541,12 +585,20 @@ def generate_union_binary_ast(ctx, fn):
                 ast.IdExpr(ast.types.mangle(cls="Union", func="_new")), [value, result_type.clone()]
             )
         suite.add(ast.IfStmt(condition, ast.ReturnStmt(expr=value)))
+    # The original generated-method stub reports unsupported active operand pairs.
     suite.add(fn.ast.suite.clone())
     return suite
 
 
 def generate_union_dispatch_ast(ctx, fn):
-    """Dispatch receiver and argument alternatives, preserving explicitly accepted unions."""
+    """
+    Dispatch receiver and argument alternatives, preserving explicitly accepted unions.
+
+    Generate attribute access or calls for a union receiver/callable.
+    Method lookup can return a union of bound callables. Selecting that callable alone
+    is insufficient for generic methods: their bodies also need the active types of
+    union-valued positional and keyword arguments, rather than the unions themselves.
+    """
     from . import TypeVisitor
 
     attr = utils.extract_func_generic(fn).str
@@ -563,6 +615,9 @@ def generate_union_dispatch_ast(ctx, fn):
         names = ctx.cache.generated_tuple_names[keywords[0].require_int]
         arguments.extend(zip(names, keywords[1].require_cls))
 
+    # Read saved argument packs so dispatch never repeats source argument effects.
+    # Null keeps the union intact for tag tests; the original type keeps it intact
+    # for union-typed parameters. Only a concrete member denotes a payload extraction.
     def argument_value(index, selected, args, kwargs):
         name, original = arguments[index]
         value = (
@@ -591,6 +646,12 @@ def generate_union_dispatch_ast(ctx, fn):
             [ast.IdExpr("union"), ast.IdExpr(typ.realized_name())],
         )
         if is_call:
+            # Splitting N int|str arguments creates 2^N branches even if their declared
+            # parameters already accept int|str. Probe the original argument types first
+            # and preserve a union only when every viable signature accepts it intact;
+            # otherwise its active member can affect overload selection or specialization.
+            # Preserve keyword names and omit unsupplied arguments so ordinary call
+            # matching still handles overloads, defaults and bound receiver arguments.
             signature_args = [
                 ast.CallExpr.Arg(ast.NoneExpr(type=actual), name=name) for name, actual in arguments
             ]
@@ -638,12 +699,17 @@ def generate_union_dispatch_ast(ctx, fn):
                             )
                     else:
                         selected[index] = original
+                        # Expand only arguments that need concrete dispatch. Explicitly accepted union
+                        # parameters stay intact; generic and member-specific signatures still select
+                        # a concrete call through runtime tag checks.
                         dispatch(index + 1, selected_condition)
                     return
                 probe = [
                     ast.CallExpr.Arg(ast.NoneExpr(type=value), name=name)
                     for (name, _), value in zip(arguments, selected)
                 ]
+                # Skip incompatible signatures before realizing their bodies. An unsupported
+                # active combination reaches the original runtime TypeError fallback instead.
                 if typ.partial:
                     function = utils.instantiate(ctx, typ.partial_func.generalize(0))
                     if utils.can_call(ctx, function, probe, typ.partial) < 0:
@@ -666,6 +732,8 @@ def generate_union_dispatch_ast(ctx, fn):
                         )
                         for i, value in enumerate(selected)
                     ]
+                    # Realize each viable call before joining branch results: the same generic
+                    # method may return int for one argument tag and str for another.
                     result = visitor.visit_expr(ast.CallExpr(ast.IdExpr(var), values)).type
                     assert result.can_realize(), f"cannot realize {result!r}"
                     results[result.realized_name()] = result
@@ -681,6 +749,7 @@ def generate_union_dispatch_ast(ctx, fn):
 
             dispatch(0, condition)
             continue
+        # Do full expression typechecking.
         ctx.add_block()
         try:
             name = utils.get_temporary_var(ctx, "union")
@@ -708,6 +777,7 @@ def generate_union_dispatch_ast(ctx, fn):
                 ast.IdExpr(ast.types.mangle(cls="Union", func="_new")), [value, wrapper]
             )
         suite.add(ast.IfStmt(condition, ast.ReturnStmt(expr=value)))
+    # Move the final check to the end
     suite.add(suite.items[0])
     suite.items[0] = None
     return suite
@@ -920,6 +990,8 @@ def transform_super(self: TypeVisitor) -> ast.Expr:
     self_type = fn_type[0].require_cls
     self_expr = ast.IdExpr(fn_type.ast.items[0].name, type=self_type)
     lexical = fn_type.func_parent.cls if fn_type.func_parent else self_type
+    # Self may specialize an inherited method for a derived receiver. super()
+    # must still start after the method's defining class, not after Self.
     type_expr = ast.IdExpr(lexical.name, type=utils.instantiate_type_var(self.ctx, lexical))
     return self.visit_expr(
         ast.CallExpr(
@@ -931,7 +1003,7 @@ def transform_super(self: TypeVisitor) -> ast.Expr:
 def transform_ptr(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr | None:
     """
     Typecheck __ptr__ method. This method creates a pointer to an object. Ensure that
-    the arg is a variable binding.
+    the argument is a variable binding.
     """
 
     arg = expr.items[0].value = self.visit_expr(expr.items[0].value)
@@ -1153,7 +1225,7 @@ def transform_has_attr(
 ) -> ast.Expr | None:
     """
     Transform hasattr method to a static boolean expression.
-    This method also supports additional arg types that are used to check
+    This method also supports additional argument types that are used to check
     for a matching overload (not available in Python).
     """
 
@@ -1209,6 +1281,8 @@ def transform_has_attr(
         assert 0 <= tuple_id < len(self.ctx.cache.generated_tuple_names)
         return self.visit_expr(ast.BoolExpr(attr in self.ctx.cache.generated_tuple_names[tuple_id]))
 
+    # enum_test: __members__ is an ordinary ClassVar, so hasattr must include
+    # class variables just as attribute lookup does (also through instances).
     exists = bool(
         utils.find_method(self.ctx, typ, attr)
         or utils.find_member(self.ctx, typ, attr)
@@ -1345,6 +1419,7 @@ def transform_type_fn(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr | None:
     value_type = value.type
     if value_type == ast.types.Stdlib.Optional and value_type.has_unbounds(False):
         return None
+    # Metaclass is type[] w/o parameters: type(type) is type
     if utils.is_type_expr(value) or value_type == ast.types.Stdlib.TypeWrap:
         value_type = utils.get_metaclass_type(self.ctx)
     expr.type |= utils.instantiate_type_var(self.ctx, value_type)
@@ -1447,6 +1522,7 @@ def transform_static_fn_can_call(self: TypeVisitor, expr: ast.CallExpr) -> ast.E
 
     call_args = []
     for name, arg_type in [*input_args, *keyword_args]:
+        # dummy expression
         call_args.append(ast.CallExpr.Arg(ast.NoneExpr(type=arg_type), name=name))
     if typ == ast.types.Stdlib.Function or typ.partial or typ == ast.types.Stdlib.TypeWrap:
         return self.visit_expr(ast.BoolExpr(utils.match_callable(self.ctx, typ, call_args) >= 0))
@@ -1768,6 +1844,10 @@ def generate_super_dispatch_ast(ctx, fn):
 
 
 def transform_static_platform(self, expr):
+    """
+    Transform staticlen method to a static integer expression. This method supports
+    only static strings and tuple types.
+    """
     import sys
 
     if unbound := expr.type.unbound:
@@ -1781,6 +1861,9 @@ def transform_static_platform(self, expr):
 
 
 def transform_static_contains(self, expr):
+    """
+    Transform static.contains method for literal strings.
+    """
     if unbound := expr.type.unbound:
         unbound._static_kind = ast.types.Type.Behaviour.Bool
     fn = expr.expr.type.require_func

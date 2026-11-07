@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 def typecheck_unary(self: TypeVisitor, node: ast.UnaryExpr) -> ast.Expr:
     """
     Replace unary operators with the appropriate magic calls.
-    Also evaluate static expressions. See @c evaluateStaticUnary for details.
+        Also evaluate static expressions. See @c evaluateStaticUnary for details.
     """
 
     node.expr = self.visit_expr(node.expr)
@@ -158,6 +158,8 @@ def typecheck_binary(self: TypeVisitor, node: ast.BinaryExpr) -> ast.Expr:
         # Case: normal magic methods
         pass
     elif node.lexpr.type == ast.types.Stdlib.Optional:
+        # Special case: handle optionals if everything else fails.
+        # Assumes that optionals have no relevant magics (except for __eq__)
         result = self.visit_expr(
             ast.BinaryExpr(
                 ast.CallExpr(ast.IdExpr(ast.types.Stdlib.OptionalUnwrap), items=[node.lexpr]),
@@ -167,6 +169,7 @@ def typecheck_binary(self: TypeVisitor, node: ast.BinaryExpr) -> ast.Expr:
             )
         )
     else:
+        # Nothing found: report an error
         raise TypecheckError(
             node,
             f"unsupported operand type(s) for {node.op}: '{node.lexpr.type}' and '{node.rexpr.type}'",
@@ -203,6 +206,7 @@ def typecheck_chainbinary(self: TypeVisitor, node: ast.ChainBinaryExpr) -> ast.N
             right = node.exprs[idx][1].clone()
         else:
             assignment = ast.AssignStmt(ast.IdExpr(prev), rhs=node.exprs[idx][1].clone())
+            # Chain temporaries must retain a static operand's literal type.
             assignment.set(ast.Attr.MaybeLiteral)
             right = ast.StmtExpr([assignment], expr=ast.IdExpr(prev))
         items.append(
@@ -417,6 +421,8 @@ def typecheck_index(self: TypeVisitor, node: ast.IndexExpr) -> ast.Expr:
         methods = utils.find_method(
             self.ctx, utils.extract_class_type(self.ctx, node.expr), "__getitem__"
         )
+        # enum_test / class_static_protocols: static __getitem__ is ordinary class
+        # subscription; instance __getitem__ methods still allow generic T[...].
         if any(method.ast.has(ast.Attr.StaticMethod) for method in methods):
             return self.visit_expr(
                 ast.CallExpr(ast.DotExpr(node.expr, "__getitem__"), [node.index])
@@ -455,6 +461,7 @@ def typecheck_instantiate(self: TypeVisitor, node: ast.InstantiateExpr) -> ast.N
     if root_type == ast.types.Stdlib.Optional and len(node.items) == 1:
         node.items[0] = self.visit_expr(node.items[0], enforce_type=True)
         member = utils.extract_type(self.ctx, node.items[0])
+        # Collapse Optional[Optional[...]] to Optional[] (handle NoneType as well).
         if member == ast.types.Stdlib.Optional or member == ast.types.Stdlib.NoneType:
             node.type |= node.items[0].type
             return node.items[0]
@@ -579,6 +586,8 @@ def typecheck_instantiate(self: TypeVisitor, node: ast.InstantiateExpr) -> ast.N
                 param_type |= typ[idx]
             node.type |= utils.instantiate_type_var(self.ctx, typ)
             # Replace realizable subscriptions, but keep trait instantiations provisional.
+            # If the type is realizable, use the realized name instead of instantiation
+            # (e.g. use Id("Ptr[u8]") instead of Instantiate(Ptr, {u8}))
             if (realized := infer.realize(self.ctx, node.type)) and result is None:
                 result = ast.IdExpr(
                     utils.extract_type(self.ctx, realized).realized_name(), type=realized, done=True
@@ -1029,6 +1038,9 @@ def transform_binary_magic(self: TypeVisitor, expr: ast.BinaryExpr) -> ast.Expr 
     magic, right_magic = get_magic(expr.op)
     lt, rt = expr.lexpr.type, expr.rexpr.type
     assert lt and rt
+    # Resolving only the receiver can leave a union argument inside concrete arithmetic
+    # (e.g. an array plus an int-or-complex scalar). Select both active types through
+    # a helper that evaluates operands once, in source order, before testing their tags.
     if lt.union or rt.union:
         return self.visit_expr(
             ast.CallExpr(
@@ -1077,6 +1089,11 @@ def transform_binary_magic(self: TypeVisitor, expr: ast.BinaryExpr) -> ast.Expr 
                     ),
                 )
             )
+        # Union candidate probing calls this helper directly, so Optional unwrapping
+        # cannot live only in visit(BinaryExpr): nullable integer alternatives would
+        # otherwise lose valid arithmetic. Try declared/reflected methods first to
+        # preserve Optional's own operations, including None-aware equality.
+        # TODO: refactor visit() not to error on bad call so that it can be reused.
         elif lt == ast.types.Stdlib.Optional:
             unwrapped = ast.BinaryExpr(
                 self.visit_expr(

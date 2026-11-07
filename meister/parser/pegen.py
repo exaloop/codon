@@ -55,6 +55,9 @@ class Comprehension:
 
 
 def unescape(string, utf8=True):
+    r"""
+    Unescape a C string (replace \\n with \n etc.).
+    """
     # C++ implementation: codon/parser/common.cpp:182
     # TODO: merge
     string = string.encode("utf-8")

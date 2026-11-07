@@ -13,15 +13,20 @@ if TYPE_CHECKING:
 
 
 def typecheck_range(_: TypeVisitor, node: ast.RangeExpr):
-    """Only allowed in @c MatchStmt"""
+    """
+    Only allowed in @c MatchStmt
+    """
     raise TypecheckError(node, "unexpected range expression")
 
 
 def typecheck_ifexpr(self: TypeVisitor, node: ast.IfExpr) -> ast.Expr:
     """
     Typecheck if expressions. Evaluate static if blocks if possible.
-    Also wrap conditional expressions to match each other. See @c wrapExpr for more
-    details.
+        Also wrap conditional expressions to match each other. See @c wrapExpr for more
+        details.
+
+    Call `ready` and `notReady` depending whether the provided static expression can be
+    evaluated or not.
     """
     node.cond.expected_type = utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Bool)
     node.cond = self.visit_expr(node.cond)
@@ -61,6 +66,7 @@ def typecheck_ifexpr(self: TypeVisitor, node: ast.IfExpr) -> ast.Expr:
         if branch.type and (literal := branch.type.literal):
             # Add wrappers and unify both sides
             branch.type = literal.runtime_type
+    # Select the same nullable target as explicit returns, then coerce each branch once.
     nullable = infer.join_nullable_types(self.ctx, node.ifexpr.type, node.elsexpr.type)
     _, node.elsexpr = utils.wrap_expr(
         self.ctx, node.elsexpr, nullable or node.ifexpr.type, allow_unwrap=False
@@ -121,6 +127,8 @@ def typecheck_if(self: TypeVisitor, node: ast.IfStmt) -> ast.Stmt:
                 renames = dict(node.if_suite.get(ast.Attr.LocalRenames, dict, {}))
                 source_name = utils.get_unmangled_name(self.ctx, original_name)
                 for alias, target in list(renames.items()):
+                    # Previous aliases of an Optional-unwrapped match subject must be
+                    # narrowed along with that subject before accessing subclass fields.
                     if target in {source_name, original_name}:
                         renames[alias] = name
                 renames[source_name] = name
@@ -221,7 +229,30 @@ def typecheck_match(self: TypeVisitor, node: ast.MatchStmt) -> ast.Stmt:
 
 
 def typecheck_pattern(self, var, pattern, suite):
-    """Lower match patterns, evaluating each field or index only once."""
+    """
+    Lower match patterns, evaluating each field or index only once.
+
+    Transform a match pattern into a series of if statements.
+    @example
+    `case True`          -> `if isinstance(var, bool): if var == True`
+    `case 1`             -> `if isinstance(var, "int"): if var == 1`
+    `case 1...3`         -> ```if isinstance(var, "int"):
+    if var >= 1: if var <= 3```
+    `case (1, pat)`      -> ```if isinstance(var, "Tuple"): if static.len(var) == 2:
+    if match(var[0], 1): if match(var[1], pat)```
+    `case [1, *_, pat]` -> ```if isinstance(var, "List"): if len(var) >= 2:
+    if match(var[0], 1): if match(var[-1], pat)```
+    `case 1 or pat`      -> `if match(var, 1): if match(var, pat)`
+    (note: pattern suite is cloned for each `or`)
+    `case (x := pat)`    -> `(x := var; if match(var, pat))`
+    `case x`             -> `(x := var)`
+    (only when `x` is not '_')
+    `case expr`          -> `if hasattr(typeof(var), "__match__"): if
+    var.__match__(value)`
+    (any expression that does not fit above patterns)
+    """
+    # Use stable identifiers for nested isinstance narrowing and evaluate each
+    # field/index only once.
     if not isinstance(var, ast.IdExpr):
         tmp = utils.get_temporary_var(self.ctx, "match")
         return ast.SuiteStmt(
@@ -230,16 +261,20 @@ def typecheck_pattern(self, var, pattern, suite):
         )
 
     def instance(value, typ):
+        # Convenience function to generate `isinstance(e, typ)` calls
         return ast.CallExpr(ast.IdExpr("isinstance"), [value.clone(), ast.IdExpr(typ)])
 
+    # See the above examples for transformation details
     match pattern:
         case ast.NoneExpr():
             return ast.IfStmt(ast.BinaryExpr(var, "is", pattern), suite)
+        # Bool and int patterns
         case ast.IntExpr() | ast.BoolExpr():
             typ = ast.types.Stdlib.Bool if isinstance(pattern, ast.BoolExpr) else "int"
             return ast.IfStmt(
                 instance(var, typ), ast.IfStmt(ast.BinaryExpr(var, "==", pattern), suite)
             )
+        # Range pattern
         case ast.RangeExpr(start=start, stop=stop):
             return ast.IfStmt(
                 instance(var, "int"),
@@ -256,6 +291,7 @@ def typecheck_pattern(self, var, pattern, suite):
                     isinstance(item.expr, ast.IdExpr) and item.expr.value == "_"
                 ):
                     raise TypecheckError(item, "only *_ is supported in sequence patterns")
+                # Keep ellipsis gaps and also accept the *_ spelling
                 if isinstance(item, (ast.EllipsisExpr, ast.StarExpr)):
                     if wildcard != size:
                         raise TypecheckError(item, "multiple ellipses in a pattern")
@@ -286,10 +322,13 @@ def typecheck_pattern(self, var, pattern, suite):
                 typecheck_pattern(self, var.clone(), pattern.lexpr, suite.clone()),
                 typecheck_pattern(self, var, pattern.rexpr, suite),
             )
+        # Wildcard pattern
         case ast.IdExpr(value="_"):
             return suite
         case ast.IdExpr():
             return ast.SuiteStmt(ast.AssignStmt(pattern, var), suite)
+        # Bound pattern
+        # Bind aliases after the subpattern succeeds, within its narrowed scope.
         case ast.AssignExpr():
             assert isinstance(pattern.var, ast.IdExpr), (
                 "only simple assignment expressions are supported"
@@ -302,11 +341,14 @@ def typecheck_pattern(self, var, pattern, suite):
             )
         case ast.CallExpr():
             head = self.visit_expr(pattern.expr.clone())
+            # Never evaluate a function-call pattern.
             if not utils.is_type_expr(head):
                 raise TypecheckError(pattern, "called match pattern must be a class")
             if not pattern.items or any(arg.name for arg in pattern.items):
                 for arg in reversed(pattern.items):
                     if not arg.name:
+                        # Keyword/empty class patterns inspect the existing object. Preserve the
+                        # existing value-pattern behavior for positional constructor expressions.
                         raise TypecheckError(arg.value, "expected a keyword class pattern")
                     attribute = utils.get_temporary_var(self.ctx, "match_attr")
                     suite = ast.IfStmt(
@@ -333,6 +375,8 @@ def typecheck_pattern(self, var, pattern, suite):
                         ),
                     )
                 temporary = utils.get_temporary_var(self.ctx, "match")
+                # Param.type and other AST fields are optional.
+                # Unwrap only a non-None optional and keep Any subjects on their RTTI path.
                 optional_suite = ast.SuiteStmt.wrap(suite.clone())
                 optional_suite.set(
                     ast.Attr.LocalRenames,
@@ -359,6 +403,7 @@ def typecheck_pattern(self, var, pattern, suite):
                 )
 
     pattern = self.visit_expr(pattern)
+    # transform to check for pattern errors
     if isinstance(pattern, ast.EllipsisExpr):
         pattern = ast.CallExpr(ast.IdExpr("ellipsis"))
 

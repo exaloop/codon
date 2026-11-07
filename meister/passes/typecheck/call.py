@@ -16,9 +16,9 @@ if TYPE_CHECKING:
 def typecheck_print(self: TypeVisitor, node: ast.PrintStmt) -> ast.Stmt:
     """
     Transform print statement.
-    @example
-    `print a, b` -> `print(a, b)`
-    `print a, b,` -> `print(a, b, end=' ')`
+        @example
+        `print a, b` -> `print(a, b)`
+        `print a, b,` -> `print(a, b, end=' ')`
     """
 
     args = [ast.CallExpr.Arg(e) for e in node.items]
@@ -224,6 +224,7 @@ def typecheck_call(self: TypeVisitor, node: ast.CallExpr) -> ast.Expr:
             ast.TupleExpr(new_args),
             partial.kw_args,
         )
+        # Emit the final call
         var_name = utils.get_temporary_var(self.ctx, "part")
         if partial.var:
             # Callee is already a partial call
@@ -242,6 +243,7 @@ def typecheck_call(self: TypeVisitor, node: ast.CallExpr) -> ast.Expr:
         return self.visit_expr(call)
     else:
         assert node.type
+        # Case: normal function call
         node.type |= callee_fn.ret_type
         if done:
             thunk = node.get(ast.Attr.ExprVirtual, int, -1)
@@ -484,6 +486,8 @@ def get_callee_fn(
         )
         inits = utils.find_method(self.ctx, class_type, "__init__")
         # Check if object.__init__ (which is a stub) is being used (no default __init__).
+        # A __new__ may return another type, in which case its
+        # result must not be initialized as T.
         if not (custom_new and not inits):
             init = ast.ExprStmt(ast.CallExpr(ast.DotExpr(var.clone(), "__init__"), args))
             # a factory may return another type, in which case its result must not be initialized as T
@@ -602,6 +606,7 @@ def call_reorder_arguments(
     if expr.has(ast.Attr.ExprOrderedCall):
         args = expr.items
     else:
+        # Handle reordered arguments
         _, (star_pos, kwstar_pos, slots, partial) = utils.reorder_named_args(
             self.ctx, callee_fn, expr.items, part.known
         )
@@ -662,18 +667,22 @@ def call_reorder_arguments(
                 and expr.items[slot[0]].value.has(ast.Attr.ExprKwStarArgument)
             ):
                 # Case: **kwargs. Build the named tuple that holds them all
-                new_names = {expr.items[idx].name for idx in slot}
+                new_keywords = {expr.items[idx].name: idx for idx in slot}
                 if part.known:
                     kwargs_expr = self.visit_expr(
                         ast.DotExpr(ast.IdExpr(part.var), member="kwargs")
                     )
                     for name, named_expr in utils.extract_named_tuple(self.ctx, kwargs_expr):
-                        if name not in new_names:
-                            new_names.add(name)
-                            kwstar_names.append(name)
+                        kwstar_names.append(name)
+                        if name in new_keywords:
+                            source_idx = new_keywords.pop(name)
+                            kwstar_args.append(expr.items[source_idx].value)
+                            add_reordered(source_idx)
+                        else:
                             kwstar_args.append(self.visit_expr(named_expr))
-                # kwargs names can be overriden later
                 for source_idx in slot:
+                    if expr.items[source_idx].name not in new_keywords:
+                        continue
                     source = expr.items[source_idx].value
                     kwstar_names.append(expr.items[source_idx].name)
                     kwstar_args.append(source)

@@ -10,7 +10,10 @@ from .ctx import Base, Item
 
 
 def join_nullable_types(ctx, left, right):
-    """Select a nullable target without committing unresolved payloads."""
+    """
+    Select a nullable target without committing unresolved payloads or coercing values.
+    Ordinary wrapping/unification still checks payload compatibility at each use.
+    """
     left = left.literal.runtime_type if left.literal else left
     right = right.literal.runtime_type if right.literal else right
     if right == ast.types.Stdlib.Optional:
@@ -55,6 +58,8 @@ def infer_types(
             ctx.substitute("return_early", False),
         ):
             result = ctx.cache.typecheck(result, ctx=ctx)
+            # Join reached returns before wrapping them; early unification with NoneType
+            # would prevent later value returns from establishing an optional.
             if base.infer_return_type and base.return_statements:
                 first = inferred = None
                 has_empty = has_unknown = False
@@ -70,6 +75,7 @@ def infer_types(
                             if inferred
                             else returned
                         )
+                # Bare returns retain their existing checks (return_none_err_1/2).
                 if inferred and (inferred != ast.types.Stdlib.NoneType or not has_unknown):
                     base.return_type |= first if has_empty else inferred
                     base.infer_return_type = False
@@ -280,6 +286,7 @@ def realize_type(ctx: TypeContext, typ: ast.types.Class) -> ast.types.Class | No
     item = Item(realized_name, base="", module=ctx.module_name, typ=generalized)
     if generalized != ast.types.Stdlib.Type or utils.is_metaclass_type(generalized):
         item.type = utils.instantiate_type_var(ctx, realized)
+    # The zero-argument metaclass must not replace the type[T] compiler template.
     if not utils.is_metaclass_type(typ):
         ctx.add_always_visible(item, True)
 
@@ -296,7 +303,7 @@ def realize_type(ctx: TypeContext, typ: ast.types.Class) -> ast.types.Class | No
 
     # Create LLVM stub
     ir_type = make_ir_type(ctx, realized)
-    # Realize fields
+    # These below needed for IR
     ir_field_types = []
     names = []
     member_info = {}
@@ -312,6 +319,7 @@ def realize_type(ctx: TypeContext, typ: ast.types.Class) -> ast.types.Class | No
         member_info[fields[idx].name] = field_type.info
 
     # IR attributes
+    # Set IR attributes
     if False:
         raise NotImplementedError
         if names and isinstance(ir_type, ast.ir.types.RefType):
@@ -475,6 +483,8 @@ def _realize_func_body(
             binding = bindings.bindings.get(name) if bindings else None
             declaration = declared.bindings.get(name) if declared else None
             if declaration or (binding and binding.is_nonlocal):
+                # Do not overwrite argument with a declaration if
+                # argument is captured by some local function.
                 prepend.append(ast.AssignStmt(ast.IdExpr(name), ast.IdExpr(name)))
                 if declaration:
                     if declaration.count > 0:
@@ -483,7 +493,9 @@ def _realize_func_body(
                                 ast.IdExpr(name + cache.VAR_USED_SUFFIX), ast.BoolExpr(False)
                             )
                         )
+                    # The suite must not introduce another, uninitialized parameter binding.
                     del declared.bindings[name]
+        # Entry bindings must be visible throughout the body, regardless of call time.
         for stmt in prepend:
             stmt.set(ast.Attr.ExprTime, fn_ast.suite.get(ast.Attr.ExprTime, int, 0))
             stmt.info = fn_ast.suite.info
@@ -504,6 +516,9 @@ def _realize_func_body(
                             if active.type is dependency:
                                 deferred = True
                                 caller_ctx.base.recursive_dependencies.add(dependency)
+            # Lambda typecheck failures are "ignored" as they are treated as statements,
+            # not functions.
+            # TODO: generalize this further.
             if not fn_ast.name.startswith("%_lambda") and not deferred:
                 # TODO: generalize this further.
                 assert base.suite

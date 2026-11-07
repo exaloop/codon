@@ -96,6 +96,13 @@ class Base:
 
     @dataclass
     class LoopData:
+        """
+        A stack of nested loops enclosing the current statement used for transforming
+        "break" statement in loop-else constructs. Each loop is defined by a "break"
+        variable created while parsing a loop-else construct. If a loop has no else
+        block, the corresponding loop variable is empty.
+        """
+
         break_var: str = ""
         # False if a loop has continue/break statement.
         # Used for flattening static loops.
@@ -111,9 +118,6 @@ class Base:
         self_name: str = ""
 
     # Canonical name of a function or a class that owns this base.
-    # Map of captured identifiers (i.e., identifiers not defined in a function).
-    # Captured (canonical) identifiers are mapped to the new canonical names
-    # (representing the canonical function argument names that are appended to the
     name: str = ""
     # Function type
     type: ast.types.Type | None = None
@@ -136,7 +140,9 @@ class Base:
     # block, the corresponding loop variable is empty.
     loops: List[LoopData]
     pending_defaults: Dict[int, Set[ast.types.Type]]
+    # Collect reached returns before committing to a result type or wrapping them.
     infer_return_type: bool
+    # Reached returns and whether each was originally bare, for nullable joining.
     return_statements: List[tuple[ast.ReturnStmt, bool]]
     recursive_dependencies: Set[ast.types.Type]
     NONE_ARGUMENT_DEFAULT_PRIORITY = -1
@@ -181,12 +187,19 @@ class Base:
 
 @dataclass(init=False)
 class TypeContext:
-    """Context class that tracks identifiers during the typechecking."""
+    """
+    Context class that tracks identifiers during the typechecking.
+    """
 
     _checkpoints = {}
 
     class BindingCheckpoint:
-        """Journal bindings changed during a speculative realization."""
+        """
+        Track bindings changed during a speculative realization.
+
+        Record only bindings changed during a speculative realization. Context stacks
+        and other inference state are saved separately by TypeContext.
+        """
 
         def __init__(self, ctx):
             self.ctx = ctx
@@ -273,6 +286,7 @@ class TypeContext:
     # Current base stack (the last enclosing base is the last base in the stack).
     bases: List[Base]
     # Current module. The default module is named `__main__`.
+    # Module information and its normalized identifier are assigned together.
     _module: cache.Import.File
     _module_identifier: str
     # Set if the standard library is currently being loaded.
@@ -329,8 +343,10 @@ class TypeContext:
         self.cache = cache
         self.filename = filename
         self.map = {} if map is None else map
+        # Add a top-level block to the stack.
         self.stack = [[]] if stack is None else stack
         self.flags = set() if flags is None else flags
+        # Always have srcInfo() around
         self.node_stack = [ast.NoneExpr()] if node_stack is None else node_stack
         self.bases = [Base()] if bases is None else bases
         self.module = module or Import.File(Import.File.Status.External)
@@ -479,6 +495,7 @@ class TypeContext:
             self.cache.type_ctx.add(item.canonical, item)
             if pop:
                 self.cache.type_ctx.stack[0].pop()
+            # Realizations etc.
             if item.canonical not in self.cache.reverse_identifier_lookup:
                 self.cache.reverse_identifier_lookup[item.canonical] = item.canonical
         return item
@@ -494,6 +511,9 @@ class TypeContext:
         return values[0] if values is not None else None
 
     def find_at(self, name: str, time: int = 0, in_base: str | None = None) -> Item | None:
+        """
+        Return a topmost object with a given identifier or None if it does not exist.
+        """
         values = self.map.get(name)
         if values:
             is_mangled = "." in name
@@ -569,6 +589,9 @@ class TypeContext:
 
     @property
     def is_conditional(self):
+        """
+        True if we are within a conditional block.
+        """
         return self.block_level > 0
 
     @property

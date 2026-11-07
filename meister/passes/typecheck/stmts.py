@@ -32,8 +32,11 @@ def typecheck_stmt(self: TypeVisitor, node: ast.StmtExpr) -> ast.Expr:
 
 
 def typecheck_suite(self: TypeVisitor, node: ast.SuiteStmt) -> ast.Stmt:
-    """Typecheck a list of statements."""
+    """
+    Typecheck a list of statements.
+    """
 
+    # for filtering out nullptr statements
     output = []
     if bindings := node.get(ast.Attr.Bindings, scope.Bindings):
         prepended = []

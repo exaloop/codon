@@ -42,7 +42,15 @@ class Bindings(ast.Node.Attribute):
 class ScopeContext:
     @dataclass
     class Block:
+        """
+        Holds the information about current scope.
+        A scope is defined as a stack of conditional blocks
+        (i.e., blocks that might not get executed during the runtime).
+        Used mainly to support Python's variable scoping rules.
+        """
+
         id: int
+        # Associated SuiteStmt
         suite: ast.Stmt | None = None
         # List of variables "seen" before their assignment within a loop.
         # Used to dominate variables that are updated within a loop.
@@ -70,9 +78,11 @@ class ScopeContext:
             self.access_checked = [] if access_checked is None else access_checked
 
     cache: Cache
+    # Current hierarchy of conditional blocks.
     scope: List[ScopeContext.Block]
     map: Dict[str, List[ScopeContext.Item]]
     captures: Dict[str, Bindings.Scope]
+    # for functions!
     child_captures: Dict[str, Bindings.Scope]
     first_seen: Dict[str, ast.Node]
     class_deduce: tuple[str, Set[str]]
@@ -211,7 +221,15 @@ class ScopingVisitor(ast.NodeVisitor):
             self.visit(node.rexpr)
 
     def visit_StringExpr(self, node: ast.StringExpr):
+        """
+        Split a Python-like f-string into a list:
+        `f"foo {x+1} bar"` -> `("foo ", str(x+1), " bar")
+        Supports "{x=}" specifier (that prints the raw expression as well):
+        `f"{x+1=}"` -> `("x+1=", str(x+1))`
+        """
+        # Strings to be concatenated
         strings = []
+        # Transform an F-string
         for item in node.strings:
             self.visit(item.expr)
             if item.expr and "{" in item.format.spec:
@@ -300,6 +318,8 @@ class ScopingVisitor(ast.NodeVisitor):
             if not node.rhs and node.type_expr and not self.ctx.in_class:
                 # Annotation-only bindings remain uninitialized until an assignment
                 with self.conditional():
+                    # Reuse conditional-binding used flags so annotation-only locals and globals
+                    # raise NameError when read before assignment. Class fields are checked later.
                     self.visit(node.lhs)
             else:
                 self.visit(node.lhs)
@@ -314,6 +334,7 @@ class ScopingVisitor(ast.NodeVisitor):
     def visit_MatchStmt(self, node: ast.MatchStmt):
         self.visit(node.expr)
         for item in node.items:
+            # match_capture_scope: captures define names for both the guard and body.
             with self.conditional(item.suite):
                 self.transform_pattern(item.pattern)
                 self.visit(item.guard)
@@ -383,6 +404,9 @@ class ScopingVisitor(ast.NodeVisitor):
             self.visit(node.else_suite)
 
     def visit_GlobalStmt(self, node: ast.GlobalStmt):
+        """
+        Process `global` statements.
+        """
         # No shadowing od global/nonlocal allowed
         if self.ctx.fn_scope is None:
             raise ScopeError(node, f"'{node.var}' outside a function")
@@ -478,6 +502,7 @@ class ScopingVisitor(ast.NodeVisitor):
             and node.items[0].name == "self"
         ):
             if not node.items[0].type:
+                # Append default generic Self
                 node.items[0].type = ast.IdExpr("Self")
             if (
                 isinstance(node.items[0].type, ast.IdExpr)
@@ -511,6 +536,7 @@ class ScopingVisitor(ast.NodeVisitor):
         attr = Bindings(captures=dict(inner.captures))
         for name, capture in inner.captures.items():
             self.ctx.child_captures.setdefault(name, capture)
+        # Recursive capture if used
         if len(inner.map.get(node.name, [])) == 1 and node.name in inner.first_seen:
             attr.captures[node.name] = Bindings.Scope.Read
         for name, values in inner.map.items():
@@ -526,7 +552,7 @@ class ScopingVisitor(ast.NodeVisitor):
     def bind_name(self, name: str, node: ast.Node, source: ast.Node | None = None):
         """
         node: current node (typically IdExpr)
-        source: originating node (e.g., AssignStmt); if None, same as node
+                source: originating node (e.g., AssignStmt); if None, same as node
         """
         if self.ctx.in_class:
             return False
@@ -600,9 +626,12 @@ class ScopingVisitor(ast.NodeVisitor):
                     # If the expression is not conditional, we can just do the check once
                     item.access_checked.append(self.ctx.get_scope())
 
-    # Get an item from the context. Perform domination analysis for accessing items
-    # defined in the conditional blocks (i.e., Python scoping).
     def dominate(self, name: str, allow_shadow: bool = True) -> ScopeContext.Item | None:
+        """
+        Get an item from the context. Perform domination analysis for accessing items
+        defined in the conditional blocks (i.e., Python scoping).
+        """
+
         def longest_common_prefix(a, b):
             common = min(len(a), len(b))
             while common > 0 and a[common - 1] != b[common - 1].id:
@@ -682,4 +711,5 @@ class ScopingVisitor(ast.NodeVisitor):
             ):
                 continue
             if not self.dominate(name):
+                # propagate!
                 self.ctx.captures.setdefault(name, capture)
