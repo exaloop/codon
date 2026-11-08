@@ -1,9 +1,0 @@
-# Copyright 2021 ETH Zurich and the NPBench authors. All rights reserved.
-
-__CODON_RET__: Literal[bool] = True
-
-import numpy as np
-
-def doitgen(NR: int, NQ: int, NP: int, A: np.ndarray[float,3], C4: np.ndarray[float,2]):
-
-    A[:] = np.reshape(np.reshape(A, (NR, NQ, 1, NP)) @ C4, (NR, NQ, NP))

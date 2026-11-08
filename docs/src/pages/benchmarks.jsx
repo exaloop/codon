@@ -107,6 +107,11 @@ function duration(seconds) {
   return `${number.format(seconds * 1000000)} us`;
 }
 
+function downloadName(benchmark, tool, worker = false) {
+  const extension = tool === 'cpp' ? 'cpp' : tool === 'codon' ? 'codon' : 'py';
+  return `${benchmark.id}-${tool}${worker ? '-worker' : ''}.${extension}`;
+}
+
 function loadSource(result) {
   const url = result.displaySourceUrl || result.sourceUrl;
   if (!sourceCache.has(url)) {
@@ -240,7 +245,7 @@ function Setup({benchmark, tool, result, data}) {
     {result.runtime && <><h3>Numerical libraries</h3><ul>{result.runtime.map((pool, index) => <li key={index}>{pool.internal_api} {pool.version}, {pool.num_threads} thread{pool.num_threads === 1 ? '' : 's'}<br /><code className={styles.wrapCode}>{pool.filepath}</code></li>)}</ul></>}
     {benchmark.suite === 'npbench' && native && <details className={styles.details}><summary>Memory observations</summary><p className={styles.small}>{result.memoryAudit}. Reset buffers retain their addresses; collection and reset are outside kernel timing.</p>{result.gc && <p className={styles.small}>Post-collection live growth: {number.format(result.gc.liveGrowthBytes / 1048576)} MiB. Full observations are retained in the raw report.</p>}</details>}
     {(result.adaptations || []).length > 0 && <><h3>Recorded adaptations</h3><ul>{result.adaptations.map(note => <li key={note}>{note}</li>)}</ul></>}
-    {result.workerUrl && <a href={result.workerUrl} download>Download the measurement harness (paths redacted)</a>}
+    {result.workerUrl && <a href={result.workerUrl} download={downloadName(benchmark, tool, true)}>Download the measurement harness (paths redacted)</a>}
   </div>;
 }
 
@@ -274,7 +279,7 @@ function SourcePane({benchmark, tool, view, setTool, setView, data}) {
       <div className={styles.sourceToolbar}><span>{result.displaySourceUrl ? 'Kernel excerpt' : 'Executed source'}</span><div className={styles.actions}>
         <span role="status">{copyState}</span>
         <button type="button" title="Copy displayed source" aria-label="Copy displayed source" onClick={copySource} disabled={loading || !source.text}><Icon icon={copyState === 'Copied' ? Check : Copy} /></button>
-        <a href={result.sourceUrl} download title={result.displaySourceUrl ? 'Download full executed library' : 'Download executed source'} aria-label="Download executed source"><Icon icon={Download} /></a>
+        <a href={result.sourceUrl} download={downloadName(benchmark, tool)} title={result.displaySourceUrl ? 'Download full executed library' : 'Download executed source'} aria-label="Download executed source"><Icon icon={Download} /></a>
       </div></div>
       <div className={styles.sourceFrame}>
         <div className={styles.code} aria-busy={loading}>
@@ -284,7 +289,7 @@ function SourcePane({benchmark, tool, view, setTool, setView, data}) {
         </div>
         {loading && <div className={styles.sourceLoading} role="status">Loading source...</div>}
       </div>
-      {result.displaySourceUrl && <p className={styles.sourceNote}>Excerpt from the executed native library. <a href={result.sourceUrl} download>Full library</a></p>}
+      {result.displaySourceUrl && <p className={styles.sourceNote}>Excerpt from the executed native library. <a href={result.sourceUrl} download={downloadName(benchmark, tool)}>Full library</a></p>}
     </div>
     <div className={styles.detailPanel} hidden={view !== 'setup'} role="tabpanel" aria-label={`${result.label} setup`}>
       <Setup benchmark={benchmark} tool={tool} result={result} data={data} />

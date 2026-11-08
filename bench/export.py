@@ -41,6 +41,65 @@ def write_json(filename, value):
     filename.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n")
 
 
+def deduplicate_sources(output, url_prefix="/benchmarks"):
+    output = output.resolve()
+    url_prefix = url_prefix.rstrip("/")
+    assert url_prefix.startswith("/") and not url_prefix.startswith("//")
+    datasets = []
+    assets = {}
+    references = []
+    originals = set()
+    for filename in sorted(output.rglob("results.json")):
+        data = json.loads(filename.read_text())
+        datasets.append((filename, data))
+        for case in data["cases"]:
+            for result in case["results"].values():
+                for field, hash_field in (("sourceUrl", "sourceSha256"),
+                                          ("workerUrl", "workerSha256"),
+                                          ("displaySourceUrl", None)):
+                    if field not in result:
+                        continue
+                    url = result[field]
+                    assert url.startswith(url_prefix + "/"), url
+                    source = (output / url[len(url_prefix) + 1:]).resolve()
+                    assert source.is_relative_to(output) and source.parent.name == "source", url
+                    content = source.read_bytes()
+                    digest = hashlib.sha256(content).hexdigest()
+                    if hash_field:
+                        assert digest == result[hash_field], url
+                    asset = assets.setdefault(digest, {"content": content, "suffixes": set()})
+                    assert asset["content"] == content, "Source hash collision"
+                    asset["suffixes"].add(source.suffix)
+                    references.append((result, field, digest))
+                    originals.add(source)
+    assert datasets, f"No benchmark datasets in {output}"
+    for source in output.rglob("source/*"):
+        if source.is_file() and re.fullmatch(r"[0-9a-f]{64}", source.stem):
+            assert source.resolve().is_relative_to(output), source
+            assert sha256(source) == source.stem, source
+            originals.add(source)
+    destinations = {}
+    for digest, asset in assets.items():
+        suffix = ".py" if ".py" in asset["suffixes"] else min(asset["suffixes"])
+        destination = output / "source" / f"{digest}{suffix}"
+        if destination.exists():
+            assert destination.read_bytes() == asset["content"], destination
+        destinations[digest] = destination
+    for digest, destination in destinations.items():
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if not destination.exists():
+            destination.write_bytes(assets[digest]["content"])
+    for result, field, digest in references:
+        result[field] = f"{url_prefix}/source/{destinations[digest].name}"
+    for filename, data in datasets:
+        write_json(filename, data)
+    redundant = originals - set(destinations.values())
+    for source in redundant:
+        source.unlink()
+    print(f"Stored {len(references)} source references in {len(assets)} unique files; "
+          f"removed {len(redundant)} old paths")
+
+
 def redact(value, work):
     if isinstance(value, dict):
         return {redact(key, work): redact(item, work) for key, item in value.items()}
@@ -204,6 +263,7 @@ def export(work, output, url_prefix="/benchmarks", report_file=None):
     write_json(output / "raw-results.json", redact(reports, work))
     shutil.copyfile(work / "npbench" / "LICENSE", output / "NPBench-LICENSE.txt")
     shutil.copyfile(ROOT / "bench" / "README.md", output / "reproduction.md")
+    deduplicate_sources(output, url_prefix)
     print(f"Exported {len(entries)} workloads to {output}")
 
 
@@ -213,7 +273,13 @@ def main():
     parser.add_argument("--output", type=Path, default=ROOT / "docs" / "data" / "benchmarks")
     parser.add_argument("--url-prefix", default="/benchmarks", help="Public asset directory for this machine's results")
     parser.add_argument("--report", type=Path, help="Export an isolated, completed NPBench L report to a separate staging directory")
+    parser.add_argument("--deduplicate", action="store_true", help="Share identical sources across already-exported datasets without rerunning benchmarks")
     args = parser.parse_args()
+    if args.deduplicate:
+        if args.report:
+            parser.error("--deduplicate cannot be combined with --report")
+        deduplicate_sources(args.output.absolute(), args.url_prefix)
+        return
     export(args.work.absolute(), args.output.absolute(), args.url_prefix, args.report)
 
 

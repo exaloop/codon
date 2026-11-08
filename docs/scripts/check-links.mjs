@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {existsSync, readFileSync, readdirSync, statSync, writeFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {createRequire} from 'node:module';
@@ -52,6 +53,25 @@ for (const entry of search) check(entry.url, '/libraries/api/');
 for (const redirect of redirects) {
   check(redirect.to, '/');
   for (const source of [redirect.from].flat()) check(source, '/');
+}
+
+const benchmarkSources = new Map();
+for (const filename of readdirSync(`${output}/benchmarks`, {recursive: true}).filter(name => /(^|\/)results\.json$/.test(name))) {
+  const data = JSON.parse(readFileSync(`${output}/benchmarks/${filename}`, 'utf8'));
+  for (const benchmark of data.cases) {
+    for (const result of Object.values(benchmark.results)) {
+      for (const [field, hashField] of [['sourceUrl', 'sourceSha256'], ['workerUrl', 'workerSha256'], ['displaySourceUrl', null]]) {
+        const url = result[field];
+        if (!url) continue;
+        check(url, '/benchmarks/');
+        if (!existsSync(`${output}${url}`)) continue;
+        const hash = createHash('sha256').update(readFileSync(`${output}${url}`)).digest('hex');
+        if (hashField && hash !== result[hashField]) failures.add(`${url} (source hash mismatch)`);
+        if (benchmarkSources.has(hash) && benchmarkSources.get(hash) !== url) failures.add(`${url} (duplicate of ${benchmarkSources.get(hash)}; run bench/export.py --deduplicate)`);
+        benchmarkSources.set(hash, url);
+      }
+    }
+  }
 }
 
 const report = {pages: pages.size, apiSymbols: search.length, checkedLinks: checked, failures: [...failures]};

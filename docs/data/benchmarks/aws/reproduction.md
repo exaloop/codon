@@ -243,6 +243,19 @@ Publish another machine into a separate directory and URL namespace:
     --output docs/data/benchmarks/aws --url-prefix /benchmarks/aws
 ```
 
+Each export stores identical source downloads, excerpts, and measurement harnesses
+once, using SHA-256 filenames. After adding or merging machine datasets, consolidate
+their shared sources from the publication root:
+
+```sh
+"$PYTHON" bench/export.py --deduplicate --output docs/data/benchmarks
+```
+
+This verifies source hashes before updating download URLs and removing redundant
+copies. Measurements, validation records, executed-source hashes, and raw reports
+are unchanged. Run `python -m unittest discover -s bench -p test_export.py` to test
+source consolidation.
+
 Keep the machine free of builds and other benchmark runs during measurement.
 The process timeout applies to a whole process, including warm-up and output
 serialization, not to an individual recorded sample. Timed-out or incomplete
