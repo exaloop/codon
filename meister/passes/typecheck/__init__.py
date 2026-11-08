@@ -38,7 +38,7 @@ class TypeVisitor(ast.NodeVisitor):
         self.ctx = ctx
 
     def visit_stmt(self, node: ast.Stmt) -> ast.Stmt:
-        if node.done:
+        if node is None or node.done:
             return node
 
         self.ctx.node_stack.append(node)
@@ -305,6 +305,7 @@ def typecheck_program(
     defines: Dict[str, str] | None = None,
     early_defines: Dict[str, str] | None = None,
     barebones: bool = False,
+    _preamble=None,
 ) -> ast.Stmt:
     """
     Simplify an AST node. Load standard library if needed.
@@ -323,7 +324,8 @@ def typecheck_program(
         raise NotImplementedError
         assert cache.module is not None, "cache's module is not set"
 
-    preamble = ast.SuiteStmt()
+    # An isolated test worker may resume from the stdlib-loading cut point.
+    preamble = ast.SuiteStmt() if _preamble is None else _preamble
 
     # Load standard library if it has not been loaded
     if STDLIB_IMPORT not in cache.imports:
@@ -439,7 +441,7 @@ def load_std_library(
     # 3. Load stdlib
     node = cache.parse(file=stdlib_path.path)
     assert isinstance(node, ast.Stmt)
-    cache.scope(node)
+    cache.scope(node, stdlib.global_shadows)
     if node := infer.infer_types(stdlib, node, True):
         preamble.items.append(node)
     stdlib.is_stdlib_loading = False

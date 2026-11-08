@@ -323,14 +323,22 @@ def realize_value_methods(ctx, visitor):
         )
     seen, added = set(), False
     while pending:
-        typ = pending.pop().require_cls
+        typ = utils.get_underlying_static_type(ctx, pending.pop()).require_cls
+        if typ.func:
+            typ = ast.types.Class(base=typ)
         key = typ.realized_name()
         if key in seen or typ == ast.types.Stdlib.Any:
             continue
         seen.add(key)
         realization = utils.get_class_realization(ctx, typ)
-        pending.extend(g.type for g in typ.generics if g.type and g.type.cls)
         pending.extend(field for _, field in realization.fields)
+        pending.extend(realization.bases)
+        if typ.name not in {ast.types.Stdlib.Int, ast.types.Stdlib.UnrealizedType}:
+            pending.extend(
+                utils.get_underlying_static_type(ctx, g.type)
+                for g in typ.generics
+                if g.type and g.type.cls
+            )
         for name in sorted(utils.get_class(ctx, typ).descendants):
             for _, child in sorted(utils.get_class(ctx, name).realizations.items()):
                 if any(base.realized_name() == key for base in child.bases):
@@ -367,9 +375,9 @@ def realize_value_methods(ctx, visitor):
                 except TypecheckError:
                     checkpoints.rollback()
                     for name, fn in ctx.cache.functions.items():
-                        for key, real in list(fn.realizations.items()):
-                            if not real.ir and (name, key) not in incomplete:
-                                del fn.realizations[key]
+                        for real_key, real in list(fn.realizations.items()):
+                            if not real.ir and (name, real_key) not in incomplete:
+                                del fn.realizations[real_key]
                     if not fallback:
                         raise
                     call = visitor.visit_expr(
@@ -399,7 +407,7 @@ def generate_function_call_internal_ast(function: ast.types.Function):
         items.append(ast.ExprStmt(ast.IndexExpr(ast.IdExpr(arg_name), index=ast.IntExpr(idx))))
         llvm_args.append(f"{{}} %{idx}")
     items.append(ast.ExprStmt(ast.IdExpr("TR")))
-    llvm_lines.append(f"%{arg_count} = call {{}} %self({', '.join(llvm_args)})")
+    llvm_lines.append(f"%{arg_count} = call {{}} %self({','.join(llvm_args)})")
     llvm_lines.append(f"ret {{}} %{arg_count}")
     items.insert(0, ast.ExprStmt(ast.StringExpr("\n".join(llvm_lines))))
     return ast.SuiteStmt(*items)
@@ -412,7 +420,7 @@ def generate_union_new_ast(function: ast.types.Function):
     return ast.SuiteStmt(
         ast.ReturnStmt(
             expr=ast.CallExpr(
-                ast.IdExpr(ast.types.mangle(cls="Union", func="_new")),
+                ast.DotExpr(ast.IdExpr(ast.types.Stdlib.Union), "_new"),
                 items=[ast.IdExpr(function.ast.items[0].name), ast.IdExpr(union.realized_name())],
             )
         )
@@ -898,9 +906,7 @@ def transform_named_tuple(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr:
             continue
         raise TypecheckError(expr, "namedtuple() takes 2 static arguments")
     params.extend(generics)
-    class_suite = ast.SuiteStmt(
-        ast.ClassStmt(name, items=params, base_classes=[ast.IdExpr("tuple")])
-    )
+    class_suite = ast.SuiteStmt(ast.ClassStmt(name, items=params, decorators=[ast.IdExpr("tuple")]))
     self.ctx.cache.scope(class_suite)
     class_suite = self.visit_stmt(class_suite)
     self.ctx.prepend_stmts[-1].append(class_suite)
@@ -1067,8 +1073,8 @@ def transform_is_instance(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr | N
     # again to realize it
     obj_arg = expr.items[0].value = self.visit_expr(expr.items[0].value)
     assert obj_arg.type
-    obj_type = obj_arg.type.require_cls
-    if not obj_type.can_realize():
+    obj_type = obj_arg.type.cls
+    if not obj_type or not obj_type.can_realize():
         return None
     obj_arg = expr.items[0].value = self.visit_expr(obj_arg)  # again to realize it
 
@@ -1076,7 +1082,7 @@ def transform_is_instance(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr | N
     type_expr = expr.items[1].value
     match type_expr:
         # Handle `isinstance(obj, (type1, type2, ...))`
-        case ast.CallExpr(orig_expr=ast.TupleExpr(items=items)):
+        case ast.CallExpr(orig=ast.TupleExpr(items=items)):
             result = self.visit_expr(ast.BoolExpr(False))
             for item in items:
                 result = self.visit_expr(
@@ -1126,7 +1132,7 @@ def transform_is_instance(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr | N
             return self.visit_expr(
                 ast.BinaryExpr(
                     ast.CallExpr(
-                        ast.IdExpr(ast.types.mangle(cls="Union", func="_get_tag")), [obj_arg]
+                        ast.DotExpr(ast.IdExpr(ast.types.Stdlib.Union), "_get_tag"), [obj_arg]
                     ),
                     "==",
                     ast.IntExpr(matching_tag),
@@ -1434,7 +1440,7 @@ def transform_realized_fn(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr | N
     fn_type = utils.extract_type(self.ctx, expr.items[0].value.type)
     if static := fn_type.str:
         # First arg can just be a literal string of function canonical name
-        value = self.ctx.get(static)
+        value = self.ctx.find_at(static)
         if value and value.func:
             fn_type = utils.instantiate(self.ctx, value.type)
     else:
@@ -1653,7 +1659,7 @@ def transform_static_vars(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr | N
 
 
 def transform_static_children(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr | None:
-    assert expr.type and expr.expr.type and expr.items[0].value.type
+    assert expr.type and expr.expr.type
     obj_type = utils.extract_func_generic(expr.expr.type).cls
     if not obj_type:
         return None
@@ -1685,8 +1691,8 @@ def transform_static_tuple_type(self: TypeVisitor, expr: ast.CallExpr) -> ast.Ex
     idx = utils.extract_func_generic(fn_type, 1).require_int
     fields = utils.get_class_fields(self.ctx, tuple_type)
     if idx < 0 or idx >= len(fields):
-        raise TypecheckError(expr, "invalid idx")
-    realized = infer.realize(self.ctx, utils.instantiate(self.ctx, fields[idx].type, [tuple_type]))
+        raise TypecheckError(expr, "invalid index")
+    realized = infer.realize(self.ctx, utils.instantiate(self.ctx, fields[idx].type, tuple_type))
     assert realized
     return self.visit_expr(ast.IdExpr(realized.realized_name()))
 
@@ -2148,7 +2154,7 @@ def populate_static_var_types_loop(
     else:
         realized = realized.require_cls
         for field_idx, field in enumerate(utils.get_class_fields(self.ctx, realized)):
-            field_type = utils.instantiate(self.ctx, field.type, [realized])
+            field_type = utils.instantiate(self.ctx, field.type, realized)
             field_type = infer.realize(self.ctx, field_type)
             assert field_type is not None, f"cannot realize '{field.type!r}'"
             stmts = []

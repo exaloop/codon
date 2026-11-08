@@ -396,7 +396,8 @@ class IntExpr(Expr):
         self.suffix = suffix
         self.int_value = None
         if isinstance(value, int):
-            self.int_value = value
+            # The numeric C++ constructor takes int64_t, including folded results.
+            self.int_value = (value + (1 << 63)) % (1 << 64) - (1 << 63)
             self.value = str(self.int_value)
         elif isinstance(value, str):
             self.int_value = None
@@ -1293,6 +1294,7 @@ class ReturnStmt(ExprStmt):
     """
 
     def __init__(self, **kwargs):
+        kwargs.setdefault("expr", None)
         super().__init__(**kwargs)
 
 
@@ -1305,6 +1307,7 @@ class YieldStmt(ExprStmt):
     """
 
     def __init__(self, **kwargs):
+        kwargs.setdefault("expr", None)
         super().__init__(**kwargs)
 
 
@@ -2214,20 +2217,48 @@ def dump(
     from .types import Type
 
     active = set()
+    formatted_exprs = {}
+    formatted_types = {}
 
     def _format(node, level=0):
+        if node is None:
+            return "", True
         if not isinstance(node, Expr):
             return _format_node(node, level)
         key = id(node)
         if key in active:
             return "", True
+        cache_key = (key, level if indent else 0)
+        cacheable = not active
+        if cacheable and cache_key in formatted_exprs:
+            return formatted_exprs[cache_key]
+        # C++ formats structural fields before formatExprNode guards metadata cycles.
+        # Keep orig traversal separate so shared expressions produce the same dump.
+        fields = {
+            name: _format(value, level + bool(indent))
+            for name, value in Codon.any_members(node)
+            if name
+            not in {
+                "type",
+                "expected_type",
+                "orig",
+                "attributes",
+                "info",
+                "done",
+                "non_inferrable_generics",
+                "call_layout",
+            }
+        }
         active.add(key)
         try:
-            return _format_node(node, level)
+            result = _format_node(node, level, fields)
+            if cacheable:
+                formatted_exprs[cache_key] = result
+            return result
         finally:
             active.remove(key)
 
-    def _format_node(node, level=0):
+    def _format_node(node, level=0, fields=None):
         if indent:
             level += 1
 
@@ -2274,7 +2305,10 @@ def dump(
             return "", True
 
         if isinstance(node, Type):
-            return node.to_string(mode=2), True
+            key = id(node)
+            if key not in formatted_types:
+                formatted_types[key] = node.to_string(mode=2)
+            return formatted_types[key], True
         elif isinstance(node, SuiteStmt):
             if not node.items:
                 return "", True
@@ -2302,7 +2336,9 @@ def dump(
                     and name in ["type", "expected_type", "orig"]
                 ):
                     continue
-                value, simple = _format(value, level)
+                value, simple = (
+                    fields[name] if fields is not None and name in fields else _format(value, level)
+                )
                 allsimple = allsimple and simple
                 if annotate_fields and value:
                     args.append(f"{name}={value}")
@@ -2376,7 +2412,8 @@ def iter_fields(node: Node) -> Iterator[Tuple[str, Any]]:
     """
 
     for name, value in Codon.any_members(node):  # type: ignore
-        if name in {"non_inferrable_generics", "call_layout"}:
+        # C++ callback visitors traverse syntax children, not transformation history.
+        if name in {"orig", "non_inferrable_generics", "call_layout"}:
             continue
         n = value
         if isinstance(n, Node) or Any.is_tuple(n) or Any.is_list(n) or Any.is_optional(n):  # type: ignore

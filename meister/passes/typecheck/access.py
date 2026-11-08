@@ -200,7 +200,7 @@ def access_attribute(
     if expr.type and (partial := expr.type.partial) and member == "__name__":
         return wrap_side(ast.StringExpr(str(partial))), True
 
-    expr_typ = utils.extract_class_type(self.ctx, expr)
+    expr_typ = extracted.cls
 
     # Special case: fn.__llvm_name__ or obj.__llvm_name__
     if member == "__llvm_name__":
@@ -435,7 +435,7 @@ def get_import(self: TypeVisitor, chain: List[str]) -> Tuple[int, Item | None]:
             break
 
         # Resolve the identifier from the import
-        if import_item := self.ctx.get("Import"):
+        if import_item := self.ctx.find_at("Import"):
             import_type = utils.extract_class_type(self.ctx, import_item.type)
             if utils.find_member(self.ctx, import_type, key):
                 return import_end, import_value
@@ -626,7 +626,7 @@ def get_class_member(
 
     # Case: NamedTuple support
     if class_type == ast.types.Stdlib.NamedTuple:
-        tuple_id = class_type.require_int
+        tuple_id = class_type[0].require_int
         assert 0 <= tuple_id < len(self.ctx.cache.generated_tuple_names)
         for idx, name in enumerate(self.ctx.cache.generated_tuple_names[tuple_id]):
             if name == member:
@@ -650,7 +650,7 @@ def get_class_member(
 
     # Case: name has an alternative identifier with more precise type. Use it.
     if isinstance(expr, ast.IdExpr):
-        if (value := self.ctx.get(expr.value)) and value.alternative:
+        if (value := self.ctx.find_at(expr.value)) and value.alternative:
             result = ast.DotExpr(ast.IdExpr(value.alternative.canonical), member=member)
             return self.visit_expr(result), True
 

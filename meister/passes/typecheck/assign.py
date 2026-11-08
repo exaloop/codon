@@ -49,7 +49,7 @@ def typecheck_assign(self: TypeVisitor, node: ast.AssignStmt) -> ast.Stmt:
         must_update = True
 
     result = transform_assignment(self, node, must_update)
-    if node.lhs.has(ast.Attr.ExprDominatedUsed) and node.rhs:
+    if node.lhs.has(ast.Attr.ExprDominatedUsed):
         # If this is dominated, set __used__ if needed
         node.lhs.erase(ast.Attr.ExprDominatedUsed)
         assert isinstance(node.lhs, ast.IdExpr), "dominated bad assignment"
@@ -87,7 +87,7 @@ def typecheck_del(self: TypeVisitor, node: ast.DelStmt) -> ast.Node:
             result = self.visit_stmt(assignment)
 
             # Allow deletion *only* if the binding is dominated
-            if not self.ctx.get(name):
+            if not self.ctx.find_at(name):
                 raise TypecheckError(node.expr, f"name '{name}' is not defined")
             # TODO: check if variable can be deleted (e.g., can you delete a variable in
             # outside scope?!)
@@ -124,6 +124,7 @@ def unpack_assignment(self, lhs, rhs, is_loop_target=False):
         block, assignments = ast.SuiteStmt(), ast.SuiteStmt()
         # Consume each nested unpacking source once, including generators
         has_star = any(isinstance(item, ast.StarExpr) for item in left)
+        tmp = ast.IdExpr(utils.get_temporary_var(self.ctx, "assign"))
         known_shape = (
             type(rhs) is ast.TupleExpr
             and not any(isinstance(item, ast.StarExpr) for item in rhs.items)
@@ -134,7 +135,6 @@ def unpack_assignment(self, lhs, rhs, is_loop_target=False):
             count = len(utils.get_class_fields(self.ctx, rhs.type.require_cls))
             direct = count >= len(left) - 1 if has_star else count == len(left)
         if not direct:
-            tmp = ast.IdExpr(utils.get_temporary_var(self.ctx, "assign"))
             src = rhs.clone()
             if not known_shape:
                 src = ast.CallExpr(
@@ -279,8 +279,8 @@ def transform_assignment(
     type_expr = self.visit_expr(stmt.type_expr, enforce_type=True) if stmt.type_expr else None
     if type_expr and utils.extract_type(self.ctx, type_expr) == ast.types.Stdlib.ThreadLocal:
         is_thread_local = True
-        if isinstance(type_expr, ast.IndexExpr):
-            type_expr = self.visit_expr(type_expr.index, enforce_type=True)
+        if isinstance(stmt.type_expr, ast.IndexExpr):
+            type_expr = self.visit_expr(stmt.type_expr.index, enforce_type=True)
         else:
             type_expr = None
 
@@ -322,7 +322,7 @@ def transform_assignment(
     if (
         assignment.rhs is None
         and assignment.type_expr is None
-        and self.ctx.get(ast.types.Stdlib.NoneType)
+        and self.ctx.find_at(ast.types.Stdlib.NoneType)
     ):
         # All declarations that are not handled are to be marked with NoneType later on
         # (useful for dangling declarations that are not initialized afterwards due to static check)
@@ -441,7 +441,7 @@ def typecheck_assignmember(self: TypeVisitor, node: ast.AssignMemberStmt) -> ast
     """
 
     node.lhs = self.visit_expr(node.lhs)
-    if (lhs_type := utils.extract_class_type(self.ctx, node.lhs)) is None:
+    if (lhs_type := utils.extract_type(self.ctx, node.lhs).cls) is None:
         return node  # delay
 
     from .classes import is_enum
@@ -523,7 +523,8 @@ def typecheck_assignmember(self: TypeVisitor, node: ast.AssignMemberStmt) -> ast
         )
     field_type = utils.instantiate(self.ctx, member.type, lhs_type, node.lhs.info)
     if not field_type.can_realize() and member.type_expr:
-        member_type = self.visit_expr(member.type_expr.clone(clean=True))
+        with utils.with_class_generics(self.ctx, lhs_type):
+            member_type = self.visit_expr(member.type_expr.clone(clean=True))
         field_type |= utils.extract_type(self.ctx, member_type)
 
     can_wrap, node.rhs = utils.wrap_expr(self.ctx, node.rhs, field_type)
@@ -568,7 +569,7 @@ def transform_inplace_update(self: TypeVisitor, stmt: ast.AssignStmt):
                 rhs=stmt.rhs,
             )
             return True, self.visit_stmt(transformed)
-        case _, ast.BinaryExpr(in_place=True) as binary if not stmt.is_atomic_update():
+        case _, ast.BinaryExpr(in_place=True) as binary:
             # Case: in-place updates (e.g., `a += b`).
             # They are stored as `Update(a, Binary(a + b, inPlace=true))`
             binary.lexpr, binary.rexpr = (
@@ -585,33 +586,34 @@ def transform_inplace_update(self: TypeVisitor, stmt: ast.AssignStmt):
                     stmt.rhs.type |= replacement.type
                     transformed = self.visit_stmt(ast.ExprStmt(replacement))
                     return True, transformed
-                return False, None
+                if not stmt.is_atomic_update():
+                    return False, None
+                # If atomic, call normal magic and then use __atomic_xchg__ below.
             else:
                 assert stmt.rhs.type and stmt.lhs.type
                 # Delay
                 stmt.rhs.type |= utils.instantiate_unbound(self.ctx)
                 stmt.lhs.type |= stmt.rhs.type
                 return True, None
+    lhs_type = utils.extract_type(self.ctx, stmt.lhs).cls
+    match stmt.lhs, stmt.rhs:
         case ast.IdExpr(value=name), ast.CallExpr(
             expr=ast.IdExpr(value="min" | "max" as fn_name),
-            items=[ast.CallExpr.Arg(value=ast.IdExpr(value=arg_name)), other],
-        ) if (
-            stmt.is_atomic_update() and (item := self.ctx.get(arg_name)) and item.canonical == name
-        ):
+            items=[first, other],
+        ) if stmt.is_atomic_update():
             # Case: atomic min/max operations.
             # Note: check only `a = min(a, b)`; does NOT check `a = min(b, a)`
-
-            # `type(a).__atomic_min__(__ptr__(a), b)`
-            lhs_type = utils.extract_class_type(self.ctx, stmt.lhs)
-            pointer = utils.instantiate(
-                self.ctx,
-                utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Ptr),
-                [lhs_type],
-                stmt.lhs.info,
-            )
-            other.value = self.visit_expr(other.value)
-            assert other.value.type
-            if rhs_type := other.value.type.cls:
+            first.value = self.visit_expr(first.value)
+            if isinstance(first.value, ast.IdExpr) and first.value.value == name:
+                # `type(a).__atomic_min__(__ptr__(a), b)`
+                pointer = utils.instantiate(
+                    self.ctx,
+                    utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Ptr),
+                    [lhs_type],
+                    stmt.lhs.info,
+                )
+                other.value = self.visit_expr(other.value)
+                rhs_type = utils.extract_type(self.ctx, other.value).cls
                 if method := utils.best_method(
                     self.ctx, lhs_type, f"__atomic_{fn_name}__", [pointer, rhs_type]
                 ):
@@ -622,30 +624,26 @@ def transform_inplace_update(self: TypeVisitor, stmt: ast.AssignStmt):
                         )
                     )
                     return True, self.visit_stmt(transformed)
-            return False, None
-        case _ if stmt.is_atomic_update():
-            # Case: atomic assignments
-            lhs_type = utils.extract_class_type(self.ctx, stmt.lhs)
-            assert stmt.rhs
-            stmt.rhs = self.visit_expr(stmt.rhs)
-            assert stmt.rhs.type
-            rhs_type = stmt.rhs.type.cls
-            if lhs_type and rhs_type:
-                pointer = utils.instantiate(
-                    self.ctx,
-                    utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Ptr),
-                    [lhs_type],
-                    stmt.lhs.info,
-                )
-                # `type(a).__atomic_xchg__(__ptr__(a), b)`
-                if method := utils.best_method(
-                    self.ctx, lhs_type, "__atomic_xchg__", [pointer, rhs_type]
-                ):
-                    transformed = ast.ExprStmt(
-                        ast.CallExpr(
-                            ast.IdExpr(method.func_name),
-                            items=[ast.CallExpr(ast.IdExpr("__ptr__"), items=[stmt.lhs]), stmt.rhs],
-                        )
+    # Case: atomic assignments
+    if stmt.is_atomic_update() and lhs_type:
+        stmt.rhs = self.visit_expr(stmt.rhs)
+        assert stmt.rhs.type
+        if rhs_type := stmt.rhs.type.cls:
+            pointer = utils.instantiate(
+                self.ctx,
+                utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Ptr),
+                [lhs_type],
+                stmt.lhs.info,
+            )
+            # `type(a).__atomic_xchg__(__ptr__(a), b)`
+            if method := utils.best_method(
+                self.ctx, lhs_type, "__atomic_xchg__", [pointer, rhs_type]
+            ):
+                transformed = ast.ExprStmt(
+                    ast.CallExpr(
+                        ast.IdExpr(method.func_name),
+                        items=[ast.CallExpr(ast.IdExpr("__ptr__"), items=[stmt.lhs]), stmt.rhs],
                     )
-                    return True, self.visit_stmt(transformed)
+                )
+                return True, self.visit_stmt(transformed)
     return False, None

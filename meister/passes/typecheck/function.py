@@ -48,20 +48,20 @@ def typecheck_lambda(self: TypeVisitor, node: ast.LambdaExpr) -> ast.Expr:
     The unbound type will be deduced from return/yield statements.
     """
 
+    name = utils.get_temporary_var(self.ctx, "lambda")
     fn = ast.FunctionStmt(
-        name=utils.get_temporary_var(self.ctx, "lambda"),
-        items=[param.clone() for param in node.items],
+        name,
+        items=[copy.copy(param) for param in node.items],
         suite=ast.ReturnStmt(expr=node.expr),
     )
     # TODO: just copy BindingsAttribute from expr instead?
     self.ctx.cache.scope(ast.SuiteStmt(fn))
     fn.set(ast.Attr.ExprTime, self.ctx.time)  # to handle captures properly
     fn = self.visit_stmt(fn)
-    assert isinstance(fn, ast.FunctionStmt)
     if bindings := node.get(ast.Attr.Bindings, Bindings):
         fn.set(ast.Attr.Bindings, copy.deepcopy(bindings))
     self.ctx.prepend_stmts[-1].append(fn)
-    return self.visit_expr(ast.IdExpr(fn.name))
+    return self.visit_expr(ast.IdExpr(name))
 
 
 def typecheck_yieldexpr(self: TypeVisitor, node: ast.YieldExpr) -> ast.Expr:
@@ -138,15 +138,14 @@ def typecheck_return(self: TypeVisitor, node: ast.ReturnStmt) -> ast.Stmt:
     if not self.ctx.in_function:
         raise TypecheckError(node, "'return' outside function")
 
-    base = self.ctx.base
-    assert base.func and base.return_type
+    assert self.ctx.base.func and self.ctx.base.return_type
 
-    is_async = base.func.async_
+    is_async = self.ctx.base.func.async_
     bare = node.expr is None
-    if node.expr is None and base.func.has(ast.Attr.IsGenerator):
+    if node.expr is None and self.ctx.base.func.has(ast.Attr.IsGenerator):
         node.done = True
     else:
-        if base.func.has(ast.Attr.IsGenerator):
+        if self.ctx.base.func.has(ast.Attr.IsGenerator):
             raise TypecheckError(node, "returning values from generators not yet supported")
         if node.expr is None:
             node.expr = ast.CallExpr(ast.IdExpr(ast.types.Stdlib.NoneType))
@@ -154,16 +153,16 @@ def typecheck_return(self: TypeVisitor, node: ast.ReturnStmt) -> ast.Stmt:
         was_realizable = node.expr.type.can_realize()
 
         # Wrap expression to match the return type
-        if not base.infer_return_type and not base.return_type.unbound:
-            can_wrap, node.expr = utils.wrap_expr(self.ctx, node.expr, base.return_type)
+        if not self.ctx.base.infer_return_type and not self.ctx.base.return_type.unbound:
+            can_wrap, node.expr = utils.wrap_expr(self.ctx, node.expr, self.ctx.base.return_type)
             if not can_wrap:
                 return node
 
         assert node.expr.type
         fn_type = node.expr.type.func
-        ret_type = base.return_type.cls
+        ret_type = self.ctx.base.return_type.cls
         # Special case: partialize functions if we are returning them
-        if fn_type and not (ret_type and base.return_type == ast.types.Stdlib.Function):
+        if fn_type and not (ret_type and self.ctx.base.return_type == ast.types.Stdlib.Function):
             partial = ast.CallExpr(
                 ast.IdExpr(fn_type.ast.name),
                 items=[ast.EllipsisExpr(ast.EllipsisExpr.Kind.Partial)],
@@ -171,19 +170,19 @@ def typecheck_return(self: TypeVisitor, node: ast.ReturnStmt) -> ast.Stmt:
             node.expr = self.visit_expr(partial)
 
         assert node.expr.type
-        if base.return_type.is_runtime and node.expr.type.literal:
+        if self.ctx.base.return_type.is_runtime and node.expr.type.literal:
             node.expr.type = node.expr.type.literal.runtime_type
         if is_async:
-            base.return_type |= utils.instantiate(
+            self.ctx.base.return_type |= utils.instantiate(
                 self.ctx,
                 utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Coroutine),
                 [node.expr.type],
             )
-        elif base.infer_return_type:
-            if not any(stmt is node for stmt, _ in base.return_statements):
-                base.return_statements.append((node, bare))
+        elif self.ctx.base.infer_return_type:
+            if not any(stmt is node for stmt, _ in self.ctx.base.return_statements):
+                self.ctx.base.return_statements.append((node, bare))
         else:
-            base.return_type |= node.expr.type
+            self.ctx.base.return_type |= node.expr.type
         if not was_realizable and node.expr.type.can_realize():
             self.ctx.changed_nodes += 1
 
@@ -192,7 +191,7 @@ def typecheck_return(self: TypeVisitor, node: ast.ReturnStmt) -> ast.Stmt:
         # Useful with static if statements.
         self.ctx.return_early = True
 
-    if not base.infer_return_type and (node.expr is None or node.expr.done):
+    if not self.ctx.base.infer_return_type and (node.expr is None or node.expr.done):
         node.done = True
     return node
 
@@ -202,14 +201,15 @@ def typecheck_yield(self: TypeVisitor, node: ast.YieldStmt) -> ast.Stmt:
     if not self.ctx.in_function:
         raise TypecheckError(node, "'yield' outside function")
 
-    base = self.ctx.base
-    assert base.return_type and base.func
+    assert self.ctx.base.return_type and self.ctx.base.func
     expression = node.expr or ast.CallExpr(ast.IdExpr(ast.types.Stdlib.NoneType))
     node.expr = self.visit_expr(expression)
     assert node.expr.type
-    base.return_type |= utils.instantiate(
+    self.ctx.base.return_type |= utils.instantiate(
         self.ctx,
-        utils.get_stdlib_type(self.ctx, "AsyncGenerator" if base.func.async_ else "Generator"),
+        utils.get_stdlib_type(
+            self.ctx, "AsyncGenerator" if self.ctx.base.func.async_ else "Generator"
+        ),
         [node.expr.type],
     )
     if node.expr.done:
@@ -451,6 +451,8 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
 
                     # TODO: fix this, do not copy whole context, use substitute
                     new_context = copy.copy(self.ctx)
+                    # The temporary C++ visitor owns a separate preamble.
+                    new_context.preamble = ast.SuiteStmt()
                     new_context.bases.pop()
                     if is_class_member:
                         del new_context.bases[1:]
@@ -514,7 +516,7 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
                             assert trait_expr.type
                             generic_type.trait = (
                                 trait_expr.type.link.trait
-                                if trait_expr.type.link
+                                if trait_expr.type.link and trait_expr.type.link.trait
                                 else ast.types.TypeTrait(trait_expr.type)
                             )
                     generic_item = self.ctx.add_item(var_name, param_name, generic_type)

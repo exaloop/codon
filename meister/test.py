@@ -20,11 +20,12 @@ else:
 
 
 class TestCase:
-    def __init__(self, path, name="", code=None, line=0):
+    def __init__(self, path, name="", code=None, line=0, barebones=False):
         self.path = path
         self.name = name
         self.code = code
         self.line = line
+        self.barebones = barebones
 
     @property
     def label(self):
@@ -102,12 +103,12 @@ class NativeCodon:
             if result.error:
                 self.free(result.error)
 
-    def run(self, case, typecheck: int = 0):
+    def run(self, case, typecheck: int = 0, indent=2):
         filename = os.fsencode(case.path)
         if case.code is None:
-            return self._consume(self.dump_file(filename, True, 2, typecheck))
+            return self._consume(self.dump_file(filename, True, indent, typecheck))
         return self._consume(
-            self.dump_code(case.code.encode("utf-8"), filename, case.line, True, 2, typecheck)
+            self.dump_code(case.code.encode("utf-8"), filename, case.line, True, indent, typecheck)
         )
 
 
@@ -122,16 +123,19 @@ def split_test_file(path):
     name = ""
     start_line = 0
     saw_marker = False
+    barebones = False
 
     for line_number, line in enumerate(lines):
         if line.startswith("#%%"):
             if saw_marker:
-                cases.append(TestCase(path, name, "".join(code), start_line))
+                cases.append(TestCase(path, name, "".join(code), start_line, barebones))
             elif not saw_marker and code:
                 cases.append(TestCase(path, "", "".join(code), start_line))
 
             metadata = line[4:].split(",")
             name = metadata[0] if metadata else ""
+            # C++: test/main.cpp:405 selects the stdlib from this marker.
+            barebones = len(metadata) > 1 and metadata[1] == "barebones"
             code = [line + "\n"]
             start_line = line_number
             saw_marker = True
@@ -139,7 +143,7 @@ def split_test_file(path):
             code.append(line + "\n")
 
     if code:
-        cases.append(TestCase(path, name, "".join(code), start_line))
+        cases.append(TestCase(path, name, "".join(code), start_line, barebones))
     return cases
 
 
@@ -156,7 +160,7 @@ def discover_tests(path):
     return cases
 
 
-def run_python(case, typecheck, early_defines=None):
+def run_python(case, typecheck, early_defines=None, indent=2, prepared=None):
     recursion_limit = sys.getrecursionlimit()
     try:
         if typecheck:
@@ -164,11 +168,11 @@ def run_python(case, typecheck, early_defines=None):
 
             # One Codon realization uses many Python visitor frames.
             sys.setrecursionlimit(max(recursion_limit, cache.MAX_REALIZATION_DEPTH * 100))
-        cc = cache.Cache("codon")
+        cc = cache.Cache("codon") if prepared is None else prepared[0]
         if case.code is None:
             node = parser.parse(file=str(case.path))
         else:
-            node = parser.parse(file=None, code=case.code)
+            node = parser.parse(file=str(case.path), code=case.code, line_offset=case.line)
         if typecheck:
             node = typecheck_program(
                 cc,
@@ -178,16 +182,20 @@ def run_python(case, typecheck, early_defines=None):
                     cc.options.get_early_defines() if early_defines is None else early_defines
                 ),
                 barebones=typecheck > 1,
+                _preamble=None if prepared is None else prepared[1],
             )
 
-            out = ast.dump(node, indent=2, include_attributes=True, types=True) + "\n"
+            out = ast.dump(node, indent=indent, include_attributes=True, types=True) + "\n"
             for _, fn_data in sorted(cc.functions.items()):
                 for _, r in sorted(fn_data.realizations.items()):
                     if r.ast:
-                        out += ast.dump(r.ast, indent=2, include_attributes=True, types=True) + "\n"
+                        out += (
+                            ast.dump(r.ast, indent=indent, include_attributes=True, types=True)
+                            + "\n"
+                        )
         else:
             node = cc.scope(node)
-            out = ast.dump(node, indent=2, include_attributes=True)
+            out = ast.dump(node, indent=indent, include_attributes=True)
         return Result(out)
     except Exception as error:
         msg = ""
@@ -203,6 +211,54 @@ def default_test_path(root):
         if path.exists():
             return path
     return root / "tests"
+
+
+def prepare_python(typecheck, early_defines):
+    from .passes.typecheck import load_std_library
+
+    cc = cache.Cache("codon")
+    preamble = ast.SuiteStmt()
+    recursion_limit = sys.getrecursionlimit()
+    try:
+        sys.setrecursionlimit(max(recursion_limit, cache.MAX_REALIZATION_DEPTH * 100))
+        load_std_library(
+            cc, preamble, early_defines or cc.options.get_early_defines(), typecheck > 1
+        )
+    finally:
+        sys.setrecursionlimit(recursion_limit)
+    return cc, preamble
+
+
+def _isolated_case(connection, prepared, case, native, typecheck, early_defines, indent):
+    try:
+        connection.send(run_python(case, typecheck, early_defines, indent, prepared))
+        connection.send(native.run(case, typecheck, indent))
+    finally:
+        connection.close()
+
+
+def run_isolated_case(prepared, case, native, typecheck, early_defines, indent):
+    import multiprocessing
+
+    ctx = multiprocessing.get_context("fork")
+    receiver, sender = ctx.Pipe(duplex=False)
+    process = ctx.Process(
+        target=_isolated_case,
+        args=(sender, prepared, case, native, typecheck, early_defines, indent),
+    )
+    process.start()
+    sender.close()
+    results = []
+    try:
+        results.append(receiver.recv())
+        results.append(receiver.recv())
+    except EOFError:
+        pass
+    finally:
+        receiver.close()
+        process.join()
+    failure = Result(error=f"test worker exited unexpectedly (status {process.exitcode})")
+    return tuple(results + [failure] * (2 - len(results)))
 
 
 def library_candidates(root):
@@ -342,6 +398,25 @@ def launch_code_diff(case, python_output, native_output):
 
 
 def show_diff(case, python_output, native_output, mode, max_lines):
+    if mode == "first":
+        size = min(len(python_output), len(native_output))
+        offset = 0
+        for offset in range(0, size, 65536):
+            left = native_output[offset : offset + 65536]
+            right = python_output[offset : offset + 65536]
+            if left != right:
+                offset += next(
+                    (i for i, (a, b) in enumerate(zip(left, right)) if a != b),
+                    min(len(left), len(right)),
+                )
+                break
+        else:
+            offset = size
+        start, end = max(0, offset - 180), offset + 360
+        print(f"First AST difference at character {offset}")
+        print(f"  C++: {native_output[start:end]!r}")
+        print(f"  Python: {python_output[start:end]!r}")
+        return
     if mode == "code":
         if launch_code_diff(case, python_output, native_output):
             return
@@ -389,19 +464,24 @@ def use_build_stdlib(root, library_path):
     if (stdlib / "internal/numeric/generated/float_dtoa_tables.codon").is_file():
         yield
         return
-    with tempfile.TemporaryDirectory(prefix="meister-stdlib-") as directory:
-        merged = Path(directory) / "stdlib"
+    directory = Path(tempfile.mkdtemp(prefix="meister-stdlib-"))
+    owner_pid = os.getpid()
+    previous = os.environ.get("CODON_PATH")
+    try:
+        merged = directory / "stdlib"
         shutil.copytree(stdlib, merged)
         shutil.copytree(generated, merged, dirs_exist_ok=True)
-        previous = os.environ.get("CODON_PATH")
         os.environ["CODON_PATH"] = str(merged.resolve())
-        try:
-            yield
-        finally:
+        yield
+    finally:
+        # An inherited generator can be finalized in a forked test worker. Only
+        # its owner may restore the environment or remove the shared snapshot.
+        if os.getpid() == owner_pid:
             if previous is None:
                 os.environ.pop("CODON_PATH", None)
             else:
                 os.environ["CODON_PATH"] = previous
+            shutil.rmtree(directory)
 
 
 def main(argv=None):
@@ -432,13 +512,29 @@ def main(argv=None):
         "--diff",
         "--diff-mode",
         dest="diff_mode",
-        choices=("side-by-side", "code", "unified"),
+        choices=("side-by-side", "code", "unified", "first"),
         default="side-by-side",
         help="diff display (default: side-by-side)",
     )
     argument_parser.add_argument("--verbose", action="store_true")
+    argument_parser.add_argument(
+        "--barebones", action="store_true", help="force the barebones stdlib for all cases"
+    )
+    argument_parser.add_argument(
+        "--strict", action="store_true", help="compare all AST fields without normalization"
+    )
+    argument_parser.add_argument(
+        "--indent", type=int, default=2, help="AST dump indentation (0 for compact dumps)"
+    )
+    argument_parser.add_argument(
+        "--reuse-stdlib",
+        action="store_true",
+        help="fork isolated workers from a preloaded Python stdlib (requires --indent 0)",
+    )
     argument_parser.add_argument("--stop-on-error", action="store_true")
     args = argument_parser.parse_args(argv)
+    if args.reuse_stdlib and (args.indent or args.scope_only or not hasattr(os, "fork")):
+        argument_parser.error("--reuse-stdlib requires --indent 0, typechecking and fork support")
 
     tests = args.tests.resolve()
     if not tests.exists():
@@ -463,24 +559,38 @@ def compare_tests(args, cases, native, library_path):
     rejected = 0
     printed = 0
     stage = "Scoped" if args.scope_only else "Typechecked"
-    typecheck = 0 if args.scope_only else 2
-    early_defines = native.get_early_defines() if typecheck else None
+    early_defines = native.get_early_defines() if not args.scope_only else None
     print(f"Comparing {len(cases)} {stage.lower()} ASTs using {library_path}")
+    prepared = {}
 
     for case in cases:
-        python_result = run_python(case, typecheck=typecheck, early_defines=early_defines)
-        native_result = native.run(case, typecheck=typecheck)
+        typecheck = 0 if args.scope_only else 2 if args.barebones or case.barebones else 1
+        if args.reuse_stdlib:
+            if typecheck not in prepared:
+                prepared[typecheck] = prepare_python(typecheck, early_defines)
+            python_result, native_result = run_isolated_case(
+                prepared[typecheck], case, native, typecheck, early_defines, args.indent
+            )
+        else:
+            python_result = run_python(
+                case, typecheck=typecheck, early_defines=early_defines, indent=args.indent
+            )
+            native_result = native.run(case, typecheck=typecheck, indent=args.indent)
+
+        if args.verbose and (python_result.error or native_result.error):
+            print(f"  C++: {(native_result.error or 'produced an AST').splitlines()[0]}")
+            print(f"  Python: {(python_result.error or 'produced an AST').splitlines()[0]}")
 
         if python_result.output is not None and native_result.output is not None:
             raw_match = python_result.output == native_result.output
             python_output = (
                 python_result.output
-                if args.scope_only or raw_match
+                if args.scope_only or args.strict or raw_match
                 else ignore_class_deduce(python_result.output)
             )
             native_output = (
                 native_result.output
-                if args.scope_only or raw_match
+                if args.scope_only or args.strict or raw_match
                 else ignore_class_deduce(native_result.output)
             )
             if python_output == native_output:
@@ -500,7 +610,11 @@ def compare_tests(args, cases, native, library_path):
                     printed += 1
                 if args.stop_on_error:
                     break
-        elif python_result.error is not None and native_result.error is not None:
+        elif (
+            python_result.error is not None
+            and native_result.error is not None
+            and not native_result.error.startswith("test worker exited unexpectedly")
+        ):
             rejected += 1
             print(f"MATCH-ERROR {case.label}")
         else:

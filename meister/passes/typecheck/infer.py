@@ -41,6 +41,7 @@ def infer_types(
     base = ctx.base
     base.iteration = 1
     while True:
+        base = ctx.base  # TODO: why?
         if base.iteration >= 1000:
             source = "toplevel" if not base.name else utils.get_unmangled_name(ctx, base.name)
             raise TypecheckError(
@@ -58,6 +59,8 @@ def infer_types(
             ctx.substitute("return_early", False),
         ):
             result = ctx.cache.typecheck(result, ctx=ctx)
+            # Speculative overload rollback can replace the context's Base objects.
+            base = ctx.base
             # Join reached returns before wrapping them; early unification with NoneType
             # would prevent later value returns from establishing an optional.
             if base.infer_return_type and base.return_statements:
@@ -82,7 +85,7 @@ def infer_types(
                     base.return_statements.clear()
                     ctx.changed_nodes += 1
             changed_nodes = ctx.changed_nodes
-        if base.iteration == 1 and is_toplevel:
+        if ctx.base.iteration == 1 and is_toplevel:
             # Realize all @force_realize functions
             # Copy keys to avoid modifications during the iteration (#768)
             fns = sorted(ctx.cache.functions.keys())
@@ -101,6 +104,7 @@ def infer_types(
                     assert fn_data.type.can_realize(), f"cannot realize {fn_name}"
                     realize(ctx, utils.instantiate(ctx, fn_data.type))
                     assert fn_data.realizations, f"cannot realize {fn_name}"
+        base = ctx.base
         if result.done:
             break
         if changed_nodes:
@@ -273,8 +277,8 @@ def realize_type(ctx: TypeContext, typ: ast.types.Class) -> ast.types.Class | No
         for generic in realized.generics:
             if not generic.type or not realize(ctx, generic.type):
                 return None
-            if isinstance(generic.type, ast.types.Function):
-                return_type = generic.type.ret_type
+            if fn := generic.type.func:
+                return_type = fn.ret_type
                 if return_type and not return_type.can_realize():
                     return None
 
@@ -343,7 +347,7 @@ def realize_func(
 
     old_ctx, ctx = ctx, imported.ctx
     ctx.prepare_checkpoint()
-    try:
+    with ctx.substitute("preamble", old_ctx.preamble):
         if len(ctx.bases) > cache.MAX_REALIZATION_DEPTH:
             raise TypecheckError(
                 ctx.node_stack[-1],
@@ -369,8 +373,6 @@ def realize_func(
                     return _realize_func_body(ctx, typ, force, fn_data, existing, False, old_ctx)
         finally:
             ctx.pop_block()
-    finally:
-        ctx = old_ctx
 
 
 def _realize_func_body(
@@ -385,11 +387,10 @@ def _realize_func_body(
     from ..scope import Bindings
     from . import special
 
-    for generic in typ.generics:
-        if generic.type:
-            # Types might change after realization, fix it
-            if isinstance(generic.type, ast.types.Class):
-                realize_type(ctx, generic.type)
+    # Types might change after realization, fix it.
+    for arg in typ:
+        if cls := arg.cls:
+            realize_type(ctx, cls)
 
     # Clone the generic AST that is to be realized
     fn_ast = typ.ast.clone(clean=True)
@@ -412,7 +413,7 @@ def _realize_func_body(
         assert isinstance(bindings, scope.Bindings)
         for captured, capture_type in sorted(bindings.captures.items()):
             if capture_type is Bindings.Scope.Global:
-                captured_item = ctx.get(captured)
+                captured_item = ctx.find_at(captured)
                 if not captured_item:
                     raise TypecheckError(fn_ast, f"name '{captured}' is not defined")
                 if not captured_item.is_global():
@@ -428,7 +429,7 @@ def _realize_func_body(
         if param.is_value():
             arg_type = typ[arg_idx]
             arg_idx += 1
-            is_static = bool(param.type) and bool(ast.get_static_generic(param.type))
+            is_static = ast.get_static_generic(param.type) is not ast.types.Type.Behaviour.Runtime
             if not is_static and (literal := arg_type.literal):
                 arg_type = literal.runtime_type
             unmangled = unmangled.removeprefix("$")
@@ -465,7 +466,7 @@ def _realize_func_body(
     fn_data.realizations[key] = realization
     if bindings:
         for captured in sorted(bindings.captures):
-            captured_item = ctx.get(captured)
+            captured_item = ctx.find_at(captured)
             realization.captures.append("" if not captured_item else captured_item.canonical)
     # Realizations should always be visible, so add them to the toplevel
     ctx.add_always_visible(Item(key, base="", module=ctx.module_name, typ=typ), True)
@@ -502,6 +503,7 @@ def _realize_func_body(
         fn_ast.suite.items[0:0] = prepend
         with ctx.substitute("block_level", 0):
             inferred = infer_types(ctx, base.suite)
+        base = ctx.base
         if not inferred:
             fn_data.realizations.pop(key, None)
             dependencies = base.recursive_dependencies
@@ -588,7 +590,7 @@ def make_ir_type(ctx: TypeContext, typ: ast.types.Class) -> ast.ir.Type:
         realized = realize(ctx, typ)
         assert realized
         typ = realized
-        realized_name = typ.realized_name()
+        realized_name = ast.types.Class.realized_name(typ)
         cls_data = utils.get_class(ctx, typ)
         assert cls_data
     realization = cls_data.realizations[realized_name]
@@ -604,7 +606,7 @@ def make_ir_type(ctx: TypeContext, typ: ast.types.Class) -> ast.ir.Type:
         assert cls, f"{typ} not realized"
         cls_data = utils.get_class(ctx, cls)
         assert cls_data
-        name = cls.realized_name()
+        name = ast.types.Class.realized_name(cls)
         handle = cls_data.realizations[name].ir
         assert handle, f"no LLVM type for {cls}"
         return handle
@@ -621,8 +623,59 @@ def make_ir_type(ctx: TypeContext, typ: ast.types.Class) -> ast.ir.Type:
             else:
                 type_arguments.append(force_find_ir_type(generic.type))
 
+    # Keep makeIRType's typechecking diagnostics even while IR creation is stubbed.
+    # TODO: remove once translate ported
+    if typ == ast.types.Stdlib.Vec:
+        count = static_arguments[0].require_int
+        if count <= 0 or count > 0xFFFFFFFF:
+            raise TypecheckError(ctx.info, "SIMD vector width must be positive and fit in 32 bits")
+        if typ[0].require_cls.name not in {
+            ast.types.Stdlib.Int,
+            ast.types.Stdlib.UInt,
+            ast.types.Stdlib.Float,
+            "float32",
+            ast.types.Stdlib.Float16,
+            "bfloat16",
+            "float128",
+        }:
+            raise TypecheckError(
+                ctx.info, "SIMD element type must be an integer or floating-point type"
+            )
+
     # Get the IR type
     handle = ast.ir.Type()
+    # Record layout creation still realizes fields in C++, even though the Python
+    # port only creates an IR stub. Keep that inference work and its diagnostics.
+    # TODO: remove once translate ported
+    if typ.is_tuple and typ.name not in {
+        ast.types.Stdlib.Bool,
+        ast.types.Stdlib.Float,
+        "float32",
+        ast.types.Stdlib.Float16,
+        "bfloat16",
+        "float128",
+        ast.types.Stdlib.String,
+        "bytes",
+        ast.types.Stdlib.Int,
+        ast.types.Stdlib.UInt,
+        ast.types.Stdlib.Ptr,
+        ast.types.Stdlib.Generator,
+        "AsyncGenerator",
+        ast.types.Stdlib.Coroutine,
+        ast.types.Stdlib.Optional,
+        ast.types.Stdlib.NoneType,
+        ast.types.Stdlib.Union,
+        ast.types.Stdlib.Function,
+        ast.types.Stdlib.Vec,
+    }:
+        for idx, field_type in enumerate(utils.get_class_field_types(ctx, typ)):
+            if not realize(ctx, field_type):
+                raise TypecheckError(
+                    ctx.info,
+                    f"type of attribute '{cls_data.fields[idx].name}' of object "
+                    f"'{typ}' cannot be inferred",
+                )
+            make_ir_type(ctx, field_type.require_cls)
     if False:
         raise NotImplementedError
         module = ctx.cache.module
@@ -711,6 +764,16 @@ def make_ir_type(ctx: TypeContext, typ: ast.types.Class) -> ast.ir.Type:
                 handle.set_polymorphic()
         handle.info = typ.info
         handle.ast_type = typ
+    # Runtime descriptors realize MRO entries and generic parameter types too.
+    # Keep those side effects even without emitting the descriptor itself.
+    for base in realization.bases:
+        realized_base = realize(ctx, base)
+        assert realized_base
+        make_ir_type(ctx, realized_base.require_cls)
+    if typ.name not in {ast.types.Stdlib.UnrealizedType, ast.types.Stdlib.Int}:
+        for generic in typ.generics:
+            parameter = utils.get_underlying_static_type(ctx, generic.type)
+            make_ir_type(ctx, parameter.require_cls)
     realization.ir = handle
     return handle
 
@@ -743,11 +806,12 @@ def make_ir_function(
     if parent_name and not realization.ast.has(ast.Attr.Method):
         # Hack for non-generic methods
         parent = ctx[parent_name].type
+    if parent and parent.is_instantiated() and parent.can_realize():
+        parent = utils.extract_class_type(ctx, parent)
+        realize(ctx, parent)
+        make_ir_type(ctx, parent)
     if False:
         raise NotImplementedError
-        if parent and parent.is_instantiated() and parent.can_realize():
-            parent_class = realize(ctx, utils.extract_class_type(ctx, parent))
-            function.set_parent_type(make_ir_type(ctx, parent_class))
         function.set_global()
 
     # Mark this realization as pending (i.e., realized but not translated)
@@ -769,6 +833,7 @@ def make_ir_function(
     if is_c_vararg:
         arg_types.pop()
         names.pop()
+    make_ir_type(ctx, realization.type.ret_type.require_cls)
     if False:
         raise NotImplementedError
         ir_type = module.unsafe_get_func_type(

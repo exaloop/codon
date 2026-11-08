@@ -3,11 +3,23 @@ from . import parser, pegen, tokenize
 
 
 def parse(
-    file: str | None = None, code: str | None = None, verbose=False, rule: str = "start"
+    file: str | None = None,
+    code: str | None = None,
+    verbose=False,
+    rule: str = "start",
+    line_offset=0,
 ) -> ast.Node:
-    assert (file is not None) ^ (code is not None), "bad arguments"
+    assert file is not None or code is not None, "bad arguments"
+
+    def offset_tokens(tokens):
+        for token in tokens:
+            token.start = (token.start[0] + line_offset, token.start[1])
+            token.end = (token.end[0] + line_offset, token.end[1])
+            yield token
 
     def helper(gen):
+        if line_offset:
+            gen = offset_tokens(gen)
         tokenizer = pegen.Tokenizer(gen, verbose=verbose)
         engine = parser.CodonParser(tokenizer, verbose=verbose)
         tree = engine.parse(rule)
@@ -15,7 +27,7 @@ def parse(
         return tree
 
     with ast.Node.creation_context(ast.Node.SrcInfo(file or "")):
-        if file:
+        if code is None:
             with open(file) as f:
                 gen = tokenize.generate_tokens(f)
                 return helper(gen)

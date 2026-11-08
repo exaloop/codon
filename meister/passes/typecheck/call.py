@@ -702,7 +702,7 @@ def call_reorder_arguments(
                     # Case 3: Local name capture
                     added = False
                     if partial:
-                        value = self.ctx.get(real_name[1:])
+                        value = self.ctx.find_at(real_name[1:])
                         if value and value.func and value.func.func_name == callee_fn.ast.name:
                             # Special case: fn(fn=fn)
                             # Delay this one.

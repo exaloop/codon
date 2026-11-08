@@ -362,9 +362,9 @@ def transform_static_loop_call(
     self: TypeVisitor,
     var: ast.Expr,
     iterator: ast.Expr,
-    wrapper: Callable[[ast.Stmt], ast.Stmt],
+    wrapper: Callable[[ast.Stmt], ast.Node],
     allow_non_heterogenous: bool = False,
-) -> tuple[bool, bool, ast.Stmt | None, list[ast.Stmt]]:
+) -> tuple[bool, bool, ast.Stmt | None, List[ast.Node]]:
     if not iterator.cls:
         return True, True, None, []
 

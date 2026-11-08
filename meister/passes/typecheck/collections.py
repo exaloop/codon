@@ -5,9 +5,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ... import ast
-from ...bridge import List
+from ...bridge import List, cast
 from ...error import TypecheckError
-from . import classes, infer, utils
+from . import classes, infer, loops, utils
 
 if TYPE_CHECKING:
     from . import TypeVisitor
@@ -96,14 +96,18 @@ def typecheck_generator(self: TypeVisitor, node: ast.GeneratorExpr) -> ast.Node:
     if optimize:
         # Turn off this optimization for static items
         match self.visit_expr(final.iter.clone()):
-            case ast.CallExpr(ast.IdExpr(value=name)) if not name.startswith("std.internal.static"):
+            case ast.CallExpr(expr=ast.IdExpr(value=name)) if name.startswith(
+                "std.internal.static"
+            ):
                 optimize = False
     var = ast.IdExpr(utils.get_temporary_var(self.ctx, "gen"))
     expr = node.final_expr()
     assert expr
 
     def set_final_expr(node, expr):
-        node.iter_blocks(expr_fn=lambda _: ast.ExprStmt(expr))
+        with ast.Node.creation_context(None):
+            stmt = ast.ExprStmt(expr)
+        node.iter_blocks(expr_fn=lambda _: stmt)
 
     if node.kind is ast.GeneratorExpr.Kind.ListGenerator:
         # List comprehensions
@@ -131,18 +135,18 @@ def typecheck_generator(self: TypeVisitor, node: ast.GeneratorExpr) -> ast.Node:
                 ast.CallExpr(
                     ast.IdExpr("hasattr"), items=[final.iter.clone(), ast.StringExpr("__len__")]
                 ),
-                ifexpr=ast.StmtExpr(opt.items, expr=var.clone()),
-                elsexpr=ast.StmtExpr(plain.items, expr=var),
+                ifexpr=ast.StmtExpr(opt, expr=var.clone()),
+                elsexpr=ast.StmtExpr(plain, expr=var),
             )
         else:
-            result = ast.StmtExpr(plain.items, expr=var)
+            result = ast.StmtExpr(plain, expr=var)
         return self.visit_expr(result)
 
     if node.kind is ast.GeneratorExpr.Kind.SetGenerator:
         # Set comprehensions
         head = ast.AssignStmt(var.clone(), rhs=ast.CallExpr(ast.IdExpr(ast.types.Stdlib.Set)))
         set_final_expr(node, ast.CallExpr(ast.DotExpr(var.clone(), member="add"), items=[expr]))
-        return self.visit_expr(ast.StmtExpr([head, node.loops], expr=var))
+        return self.visit_expr(ast.StmtExpr(ast.SuiteStmt(head, node.loops), expr=var))
     elif node.kind is ast.GeneratorExpr.Kind.DictGenerator:
         # Dictionary comprehensions
         head = ast.AssignStmt(var.clone(), rhs=ast.CallExpr(ast.IdExpr(ast.types.Stdlib.Dict)))
@@ -152,7 +156,7 @@ def typecheck_generator(self: TypeVisitor, node: ast.GeneratorExpr) -> ast.Node:
                 ast.DotExpr(var.clone(), member="__setitem__"), items=[ast.StarExpr(expr=expr)]
             ),
         )
-        return self.visit_expr(ast.StmtExpr([head, node.loops], expr=var))
+        return self.visit_expr(ast.StmtExpr(ast.SuiteStmt(head, node.loops), expr=var))
     elif node.kind is ast.GeneratorExpr.Kind.TupleGenerator:
         assert node.loop_count() == 1, "invalid tuple generator"
         generator_node = self.visit_expr(final.iter)
@@ -160,22 +164,29 @@ def typecheck_generator(self: TypeVisitor, node: ast.GeneratorExpr) -> ast.Node:
         if not generator_node.type.can_realize():
             return node  # Wait until the iterator can be realized
 
+        block = ast.SuiteStmt()
         # `tuple = tuple_generator`
         tuple_name = utils.get_temporary_var(self.ctx, "tuple")
-        block = ast.SuiteStmt(ast.AssignStmt(ast.IdExpr(tuple_name), rhs=generator_node))
-
-        # assert generator_node.type
-        assert expr
-        static_items: List[ast.Expr] = [
-            ast.StmtExpr(
-                ast.AssignStmt(
-                    final.var.clone(), ast.IndexExpr(generator_node.clone(), index=ast.IntExpr(idx))
-                ),
-                expr=expr.clone(),
+        block.add(ast.AssignStmt(ast.IdExpr(tuple_name), rhs=generator_node))
+        for_stmt = final.clone()
+        ok, delay, preamble, static_items = loops.transform_static_loop_call(
+            self,
+            for_stmt.var,
+            generator_node,
+            lambda wrap: ast.StmtExpr(wrap.clone(), expr=expr.clone()),
+            allow_non_heterogenous=True,
+        )
+        if not ok:
+            raise TypecheckError(
+                generator_node, f"iterable must be a tuple, not '{generator_node.type}'"
             )
-            for idx in range(len(generator_node.type.require_cls))
-        ]
-        return self.visit_expr(ast.StmtExpr(block.items, expr=ast.TupleExpr(static_items)))
+        if delay:
+            return node
+        if preamble:
+            block.add(preamble)
+        return self.visit_expr(
+            ast.StmtExpr(block, expr=ast.TupleExpr([cast(ast.Expr, item) for item in static_items]))
+        )
     else:
         new_loops = self.visit_stmt(node.loops)  # assume: internal data will be changed
         assert isinstance(new_loops, ast.ForStmt)
@@ -270,15 +281,11 @@ def transform_comprehension(
             if cls_data and item_cls_data:
                 # Rule: subclass derives from its base class
                 for collection_mro in cls_data.mro:
-                    typ = utils.instantiate(
-                        self.ctx, collection_mro, [g.type for g in typ.generics]
-                    )
+                    common = utils.instantiate(self.ctx, collection_mro, typ)
                     for item_mro in item_cls_data.mro:
-                        candidate = utils.instantiate(
-                            self.ctx, item_mro, [g.type for g in item_type.generics]
-                        )
-                        if typ.unify(candidate) >= 0:
-                            return typ
+                        candidate = utils.instantiate(self.ctx, item_mro, item_type)
+                        if common.unify(candidate) >= 0:
+                            return common
         return None
 
     is_dict = type_name == ast.types.Stdlib.Dict

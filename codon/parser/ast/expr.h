@@ -67,8 +67,10 @@ struct Expr : public AcceptorExtend<Expr, ASTNode> {
   void setDone() { done = true; }
   Expr *getOrigExpr() const { return origExpr; }
   void setOrigExpr(Expr *orig) { origExpr = orig; }
-  types::Type *getExpectedType() const { return expectedType; }
-  void setExpectedType(types::Type *e) { expectedType = e; }
+  types::Type *getExpectedType() const { return expectedType.get(); }
+  void setExpectedType(types::Type *e) {
+    expectedType = e ? e->shared_from_this() : nullptr;
+  }
 
   static const char NodeId;
   virtual std::string toPythonString(bool attributes = false, int indent = -1,
@@ -89,8 +91,8 @@ private:
   bool done;
   /// Original (pre-transformation) expression
   Expr *origExpr;
-  /// Expected type of the expression. nullptr by default.
-  types::Type *expectedType;
+  /// Expected type of the expression. Retained for original literals after rewriting.
+  types::TypePtr expectedType;
 };
 
 /// Function signature parameter helper node (name: type = defaultValue).

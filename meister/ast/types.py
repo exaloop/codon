@@ -403,7 +403,8 @@ class Type:
 
     @property
     def partial(self) -> Class | None:
-        return None
+        cls = self.cls
+        return cls.partial if cls else None
 
     def __eq__(self, value):
         if isinstance(value, str):
@@ -635,6 +636,9 @@ class Link(Type):
             link.id = ctx.next_unbound()
             link.level = level
             link.trait = None if self.trait is None else self.trait.instantiate(level, ctx)
+            link.default_type = (
+                None if self.default_type is None else self.default_type.instantiate(level, ctx)
+            )
             ctx.cache[self.id] = link
         return ctx.cache[self.id]
 
@@ -864,23 +868,28 @@ class Class(Type):
         score = 3
         if self.name == what.name == "__NTuple__":
             self_n, what_n = self[0], what[0]
-            self_t, what_t = self[1].require_cls, what[1].require_cls
-            if (self_i := self_n.int) and (what_i := what_n.int):
+            self_i, what_i = self_n.int, what_n.int
+            if self_i is not None and what_i is not None:
+                self_t, what_t = self[1].require_cls, what[1].require_cls
                 count = self_i * len(self_t.generics)
                 if count != what_i * len(what_t.generics):
                     return -1
                 for i in range(count):
                     # Check generics.
-                    if (part := self_t[i].unify(what_t[i], undo)) < 0:
+                    if (
+                        part := self_t[i % len(self_t.generics)].unify(
+                            what_t[i % len(what_t.generics)], undo
+                        )
+                    ) < 0:
                         return part
                     score += part
                 return score
         elif what.name == "__NTuple__":
             return what.unify(self, undo)
         elif self.name == "__NTuple__" and what.name == Stdlib.Tuple:
-            self_n, self_t = self[0].require_cls, self[1].require_cls
-            if isinstance(self_n, IntLiteral):
-                count = self_n.value
+            self_n = self[0]
+            if (count := self_n.int) is not None:
+                self_t = self[1].require_cls
                 if count * len(self_t.generics) != len(what.generics):
                     return -1
                 for idx in range(len(self_t.generics) * count):
@@ -983,7 +992,7 @@ class Class(Type):
         if self.name == Stdlib.Type and not self.has_unbounds(include_generics=False):
             return True
         if self.name == Stdlib.UnrealizedType:
-            return bool(isinstance(self[0], Class))
+            return bool(self[0].cls)
         return all(
             generic.type.can_realize()
             for generic in [*self.generics, *self.hidden_generics]
@@ -992,7 +1001,7 @@ class Class(Type):
 
     def is_instantiated(self):
         if self.name == Stdlib.UnrealizedType:
-            return bool(isinstance(self[0], Class))
+            return bool(self[0].cls)
         return all(
             generic.type.is_instantiated()
             for generic in [*self.generics, *self.hidden_generics]
@@ -1073,7 +1082,7 @@ class Class(Type):
             result = self.to_string(1)
         else:
             values = []
-            if self.name == Stdlib.Union and isinstance(self[0], Class):
+            if self.name == Stdlib.Union and self[0].cls:
                 values = [
                     "|".join(sorted({g.realized_name() for g in self[0].require_cls.generics}))
                 ]
@@ -1163,7 +1172,7 @@ class IntLiteral(Literal):
         super().__init__(**kwargs)
         self.name = Stdlib.Int
         self._cached_name = "Int[64]"
-        self.value = value
+        self.value = (value + (1 << 63)) % (1 << 64) - (1 << 63)
 
     def unify(self, what: Type, undo: Type.UnifyContext | None = None) -> int:
         if isinstance(what, IntLiteral):
@@ -1533,6 +1542,14 @@ class Union(Class):
         self.name = Stdlib.Union
         self.is_tuple = True
 
+    def generalize(self, level: int):
+        return Union(generics=super().generalize(level).generics, cache=self.cache, info=self.info)
+
+    def instantiate(self, level: int, ctx: Type.InstantiateContext):
+        return Union(
+            generics=super().instantiate(level, ctx).generics, cache=self.cache, info=self.info
+        )
+
     def unify(self, what: Type, undo: Type.UnifyContext | None = None) -> int:
         if isinstance(what, Union):
             if not self.can_realize() or not what.can_realize():
@@ -1555,8 +1572,6 @@ class Union(Class):
 
     def to_string(self, mode: int) -> str:
         if mode == 2 or not self.generics or not self[0].cls:
-            return super().to_string(mode)
-        if not isinstance(self[0], Class):
             return super().to_string(mode)
         values = sorted({g.to_string(mode) for g in self[0].require_cls.generics})
         joined = "|".join(values)
@@ -1630,9 +1645,16 @@ class CallableTrait(Trait):
         if link := what.link:
             if link.kind is Link.Kind.Link:
                 return self.unify(link.type, undo)
-            if link.kind is Link.Kind.Generic:
-                return -1
-            return link.unify(self, undo)
+            if link.kind is Link.Kind.Unbound:
+                if link.trait:
+                    if not isinstance(link.trait, CallableTrait) or len(link.trait.args) != len(
+                        self.args
+                    ):
+                        return -1
+                    for arg, other in zip(self.args, link.trait.args):
+                        if arg.unify(other, undo) == -1:
+                            return -1
+                return 1
         return -1
 
     def generalize(self, level: int):
@@ -1662,10 +1684,10 @@ class TypeTrait(Trait):
     def unify(self, what: Type, undo: Type.UnifyContext | None = None) -> int:
         if self.type is None:
             return -1
-        if isinstance(what, Class):
+        if what.cls:
             # does not make sense otherwise and results in infinite cycles
             return what.unify(self.type, undo)
-        if isinstance(what, Link) and what.kind == Link.Kind.Unbound:
+        if what.unbound:
             return 0
         return -1
 
@@ -1680,5 +1702,6 @@ class TypeTrait(Trait):
         return ret
 
     def to_string(self, mode: int):
-        name = self.type.name if isinstance(self.type, Class) else "-"
+        cls = self.type.cls
+        name = cls.name if cls else "-"
         return f"Trait[{name}]"

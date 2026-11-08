@@ -532,13 +532,15 @@ class ScopingVisitor(ast.NodeVisitor):
         if value := self.dominate(name):
             self.fix_conditional(name, value)
 
-    def update_name(self, name: str, node: ast.Node | None, has_used_var: bool):
+    def update_name(
+        self, name: str, node: ast.Node | None, has_used_var: bool, report_errors=True
+    ):
         if node:
             if attr := node.get(ast.Attr.Bindings, Bindings):
                 attr.bindings.pop(name, None)
             node.attributes.pop(ast.Attr.ExprDominatedUsed, None)
             node.set(ast.Attr.ExprDominatedUsed if has_used_var else ast.Attr.ExprDominated)
-        if isinstance(node, (ast.FunctionStmt, ast.ClassStmt)):
+        if report_errors and isinstance(node, (ast.FunctionStmt, ast.ClassStmt)):
             raise ScopeError(node, f"cannot bind '{name}' to a class or a function")
 
     def fix_conditional(self, name: str, item: ScopeContext.Item):
@@ -569,7 +571,9 @@ class ScopingVisitor(ast.NodeVisitor):
                     # If the expression is not conditional, we can just do the check once
                     item.access_checked.append(self.ctx.get_scope())
 
-    def dominate(self, name: str, allow_shadow: bool = True) -> ScopeContext.Item | None:
+    def dominate(
+        self, name: str, allow_shadow: bool = True, report_errors=True
+    ) -> ScopeContext.Item | None:
         """
         Get an item from the context. Perform domination analysis for accessing items
         defined in the conditional blocks (i.e., Python scoping).
@@ -628,7 +632,7 @@ class ScopingVisitor(ast.NodeVisitor):
         for idx, item in enumerate(values):
             if idx == last_good_idx:
                 break
-            self.update_name(name, item.binding, has_used_var)
+            self.update_name(name, item.binding, has_used_var, report_errors)
             # The current scope is potentially reachable by multiple bindings that are
             # not dominated by a common binding. Create such binding in the scope that
             # dominates (covers) all of them.

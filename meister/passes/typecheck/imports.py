@@ -45,9 +45,8 @@ def typecheck_import(self: TypeVisitor, node: ast.ImportStmt) -> ast.Stmt:
             return transform_cdll_import(
                 self, what.expr, what.member, node.args, node.ret, node.as_, not node.is_c_var()
             )
-        case ast.ImportStmt(from_expr=ast.IdExpr(value="python")):
-            assert node.what
-            return transform_python_import(self, node.what, node.args, node.ret, node.as_)
+        case ast.ImportStmt(from_expr=ast.IdExpr(value="python"), what=ast.Expr() as what):
+            return transform_python_import(self, what, node.args, node.ret, node.as_)
         case _:
             pass
 

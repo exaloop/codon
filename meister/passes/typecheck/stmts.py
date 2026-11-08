@@ -62,8 +62,9 @@ def typecheck_suite(self: TypeVisitor, node: ast.SuiteStmt) -> ast.Stmt:
             transformed = self.visit_stmt(statement)
             if isinstance(transformed, ast.SuiteStmt):
                 for nested in transformed.items:
-                    done = done and nested.done
-                    output.append(nested)
+                    if nested:
+                        done = done and nested.done
+                        output.append(nested)
             elif isinstance(transformed, ast.Stmt):
                 done = done and transformed.done
                 output.append(transformed)

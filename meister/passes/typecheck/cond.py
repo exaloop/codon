@@ -105,17 +105,29 @@ def typecheck_if(self: TypeVisitor, node: ast.IfStmt) -> ast.Stmt:
     See @c wrapExpr for more details.
     """
 
+    # Call normalization removes generic arguments; retain the isinstance target.
+    # TODO: translation glitch?
+    typ_arg = (
+        node.cond.items[1].value
+        if isinstance(node.cond, ast.CallExpr) and len(node.cond.items) > 1
+        else None
+    )
     node.cond.expected_type = utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Bool)
     node.cond = self.visit_expr(node.cond)
 
     match node.cond:
         case ast.CallExpr(
-            expr=ast.IdExpr(type=ast.types.Function(ast=ast.FunctionStmt(name=fn_name))),
-            items=[ast.CallExpr.Arg(value=ast.IdExpr(value=name)) as obj_arg, typ_arg],
-        ) if fn_name.startswith(
-            (
-                ast.types.mangle(cls="RTTIType", func="_isinstance"),
-                ast.types.mangle(cls="Any", func="_isinstance"),
+            expr=ast.IdExpr() as fn_expr,
+            items=[ast.CallExpr.Arg(value=ast.IdExpr(value=name)) as obj_arg, *_],
+        ) if (
+            typ_arg
+            and fn_expr.type
+            and (fn := fn_expr.type.func)
+            and fn.func_name.startswith(
+                (
+                    ast.types.mangle(cls="RTTIType", func="_isinstance"),
+                    ast.types.mangle(cls="Any", func="_isinstance"),
+                )
             )
         ):
             # isinstance(a, T) ->
@@ -133,7 +145,7 @@ def typecheck_if(self: TypeVisitor, node: ast.IfStmt) -> ast.Stmt:
                         renames[alias] = name
                 renames[source_name] = name
                 node.if_suite.set(ast.Attr.LocalRenames, renames)
-            getter = fn_name.replace("_isinstance", "_getinstance")
+            getter = fn.func_name.replace("_isinstance", "_getinstance")
             result = self.visit_stmt(
                 ast.SuiteStmt(
                     ast.AssignStmt(ast.IdExpr(condition_name), rhs=node.cond),
@@ -142,9 +154,11 @@ def typecheck_if(self: TypeVisitor, node: ast.IfStmt) -> ast.Stmt:
                         if_suite=ast.SuiteStmt(
                             ast.AssignStmt(
                                 ast.IdExpr(name),
-                                rhs=ast.CallExpr(ast.IdExpr(getter), items=[obj_arg, typ_arg]),
+                                rhs=ast.CallExpr(
+                                    ast.IdExpr(getter), items=[obj_arg.value, typ_arg]
+                                ),
                             ),
-                            *([] if not node.if_suite else node.if_suite.items),
+                            node.if_suite,
                         ),
                         else_suite=node.else_suite,
                     ),

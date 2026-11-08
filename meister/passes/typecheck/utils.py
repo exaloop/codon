@@ -660,15 +660,17 @@ def can_wrap_expr(
 
             # One stored template can adapt to several input/return signatures.
             fn_name = f".proxy.{fn_name}.{expected_class.realized_name()}"
-            if not ctx.get(fn_name):
+            if not ctx.find_at(fn_name):
                 proxy = ast.FunctionStmt(
                     fn_name,
                     items=[
                         ast.Param("data", type=data_type),
                         ast.Param("args", type=ast.IdExpr(callable_args.realized_name())),
                     ],
-                    suite=ast.ReturnStmt(
-                        expr=ast.CallExpr(ret_fn, items=[ast.StarExpr(ast.IdExpr("args"))])
+                    suite=ast.SuiteStmt(
+                        ast.ReturnStmt(
+                            expr=ast.CallExpr(ret_fn, items=[ast.StarExpr(ast.IdExpr("args"))])
+                        )
                     ),
                 )
                 TypeVisitor(ctx).visit_stmt(proxy)
@@ -794,11 +796,13 @@ def can_wrap_expr(
                             type_expr = ast.InstantiateExpr(
                                 ast.IdExpr(ast.types.Stdlib.Optional), items=[type_expr]
                             )
-                        return ast.CallExpr(
-                            ast.IdExpr(
-                                ast.types.mangle("std.internal.types.rtti", func="force_cast")
-                            ),
-                            items=[value, type_expr],
+                        return TypeVisitor(ctx).visit_expr(
+                            ast.CallExpr(
+                                ast.IdExpr(
+                                    ast.types.mangle("std.internal.types.rtti", func="force_cast")
+                                ),
+                                items=[value, type_expr],
+                            )
                         )
 
                     wrapper = cast_base
@@ -953,7 +957,7 @@ def get_class_realization(ctx: TypeContext, typ: ast.types.Type) -> cache.ClassD
     assert cls_data, "bad class"
     cls_obj = typ.require_cls
     realization = cls_data.realizations.get(cls_obj.realized_name())
-    assert realization, f"bad class realization: {typ!r}"
+    assert realization, f"bad class realization: {typ.to_string(2)}"
     return realization
 
 
@@ -968,13 +972,8 @@ def is_type_expr(expr: ast.Expr | None):
 
 
 def is_function_expr(expr: ast.Expr | None, fn_name: str = ""):
-    match expr:
-        case ast.Expr(type=ast.types.Function(ast=ast.FunctionStmt(name))):
-            return name == fn_name if fn_name else True
-        case ast.Expr(type=ast.types.Function()):
-            return not fn_name
-        case _:
-            return False
+    fn = expr.type.func if expr and expr.type else None
+    return bool(fn and (not fn_name or fn.func_name == fn_name))
 
 
 def get_import_module(ctx: TypeContext, name: str) -> cache.Import:
@@ -1510,8 +1509,8 @@ def is_canonical_name(name: str):
 
 
 def extract_function(typ: ast.types.Type) -> ast.types.Function | None:
-    if isinstance(typ, ast.types.Function):
-        return typ
+    if fn := typ.func:
+        return fn
     if partial := typ.partial:
         return partial.partial_func
     return None

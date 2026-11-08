@@ -700,8 +700,8 @@ class Cache:
             visitor.process_child_captures()
             if dominate_all:
                 for name in ctx.map:
-                    visitor.dominate(name)
-            if globals:
+                    visitor.dominate(name, report_errors=False)
+            if globals is not None:
                 for name, values in ctx.map.items():
                     if (count := sum(1 for v in values if not v.ignore)) > 1:
                         globals[name] = count

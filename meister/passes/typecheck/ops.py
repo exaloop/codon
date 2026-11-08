@@ -175,7 +175,8 @@ def typecheck_binary(self: TypeVisitor, node: ast.BinaryExpr) -> ast.Expr:
             f"unsupported operand type(s) for {node.op}: '{node.lexpr.type}' and '{node.rexpr.type}'",
         )
 
-    assert result
+    if result is None:
+        return node
     if static_type:
         result.type = static_type
     return result
@@ -243,14 +244,17 @@ def find_ellipsis(self: TypeVisitor, expr: ast.Expr):
     """
 
     if not isinstance(expr, ast.CallExpr):
-        return
+        return []
     for arg_idx, arg in enumerate(expr.items):
         arg_expr = arg.value
         if isinstance(arg_expr, ast.EllipsisExpr):
             if arg_expr.is_pipe():
-                yield (arg_idx, expr)
+                return [(arg_idx, expr)]
         elif isinstance(arg_expr, ast.CallExpr):
-            yield from find_ellipsis(self, arg_expr)
+            if layers := find_ellipsis(self, arg_expr):
+                layers.append((arg_idx, expr))
+                return layers
+    return []
 
 
 def typecheck_pipe(self: TypeVisitor, node: ast.PipeExpr) -> ast.Expr:
@@ -337,7 +341,7 @@ def typecheck_pipe(self: TypeVisitor, node: ast.PipeExpr) -> ast.Expr:
         # input type to the next stage
         if enclosing_stmtexpr:
             enclosing_stmtexpr[-1].expr = core
-        layers = list(find_ellipsis(self, core))
+        layers = find_ellipsis(self, core)
         assert layers, "can't find the ellipsis"
         if len(layers) > 1:
             # Prepend layers

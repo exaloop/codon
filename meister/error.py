@@ -104,6 +104,7 @@ class ParserError(Exception):
             self.errors = ParserErrors() if errors is None else errors
         Exception.__init__(self, self.errors.message)
 
+
 class ScopeError(ast.NodeError):
     pass
 
@@ -111,9 +112,14 @@ class ScopeError(ast.NodeError):
 class TypecheckError(ParserError):
     def __init__(self, info=None, msg="", trace=None):
         if isinstance(msg, str):
-            super().__init__(errors=ParserErrors(ErrorMessage(msg, info)))
+            super().__init__(
+                errors=ParserErrors()
+                if trace and not msg and info is None
+                else ParserErrors(ErrorMessage(msg, info))
+            )
         else:
             super().__init__(msg)
         if trace:
             for e in trace:
                 self.errors.add_error(e)
+            self.args = (self.errors.message,)

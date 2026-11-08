@@ -523,8 +523,8 @@ def typecheck_class(self: TypeVisitor, node: ast.ClassStmt) -> ast.Node:
                             arg.type = arg.type
                             trait_type = utils.extract_type(self.ctx, arg.type.items[0])
                             generic_type.trait = (
-                                trait_type
-                                if isinstance(trait_type, ast.types.TypeTrait)
+                                trait_type.link.trait
+                                if trait_type.link and trait_type.link.trait
                                 else ast.types.TypeTrait(trait_type)
                             )
                         generic_item = self.ctx.add_item(arg.name, var_name, generic_type)
@@ -696,8 +696,11 @@ def typecheck_class(self: TypeVisitor, node: ast.ClassStmt) -> ast.Node:
                 if isinstance(stmt, ast.FunctionStmt):
                     for idx, decorator in enumerate(stmt.decorators):
                         match decorator:
-                            case ast.DotExpr(ast.IdExpr(value=name), member="setter") if (
-                                name == stmt.name and sum(p.is_value() for p in stmt.items) == 2
+                            case ast.DotExpr(
+                                expr=ast.IdExpr(value=setter_name), member="setter"
+                            ) if (
+                                setter_name == stmt.name
+                                and sum(p.is_value() for p in stmt.items) == 2
                             ):
                                 # Handle @setter setters
                                 stmt.name = f"{cache.FN_SETTER_SUFFIX}{stmt.name}"
@@ -723,14 +726,14 @@ def typecheck_class(self: TypeVisitor, node: ast.ClassStmt) -> ast.Node:
                 "__tuplesize__",
                 "__repr_default__",
             }
-            for name in sorted(cls_data.methods):
+            for method in sorted(cls_data.methods):
                 # Current class
                 for mro_idx in range(1, len(cls_data.mro)):
                     base_name = cls_data.mro[mro_idx].name
                     base_class = utils.get_class(self.ctx, base_name)
                     assert base_class
-                    if name in base_class.methods and name not in not_virtual:
-                        cls_data.virtuals.add(name)
+                    if method in base_class.methods and method not in not_virtual:
+                        cls_data.virtuals.add(method)
                 # Parent class
                 for virtual_name in sorted(cls_data.virtuals):
                     for mro_idx in range(1, len(cls_data.mro)):
