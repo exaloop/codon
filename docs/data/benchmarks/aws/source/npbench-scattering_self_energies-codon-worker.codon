@@ -1,0 +1,89 @@
+import numpy as np
+import sys
+import time
+import npbench_lib as kernel_module
+from C import GC_gcollect() -> None
+from C import GC_get_total_bytes() -> int
+from C import GC_get_heap_size() -> int
+from C import GC_get_free_bytes() -> int
+directory = sys.argv[1]
+samples = int(sys.argv[2])
+original_neigh_idx = np.load(directory + '/input-neigh_idx.npy', dtype=np.int32, ndim=2)
+neigh_idx = np.empty_like(original_neigh_idx)
+np.copyto(neigh_idx, original_neigh_idx)
+original_dH = np.load(directory + '/input-dH.npy', dtype=np.complex128, ndim=5)
+dH = np.empty_like(original_dH)
+np.copyto(dH, original_dH)
+original_G = np.load(directory + '/input-G.npy', dtype=np.complex128, ndim=5)
+G = np.empty_like(original_G)
+np.copyto(G, original_G)
+original_D = np.load(directory + '/input-D.npy', dtype=np.complex128, ndim=6)
+D = np.empty_like(original_D)
+np.copyto(D, original_D)
+original_Sigma = np.load(directory + '/input-Sigma.npy', dtype=np.complex128, ndim=5)
+Sigma = np.empty_like(original_Sigma)
+np.copyto(Sigma, original_Sigma)
+with open('/proc/self/smaps_rollup') as memory_status:
+    for record in memory_status:
+        if record.startswith('AnonHugePages:'):
+            print('BENCH_HUGEPAGES_KIB', int(record.split()[1]))
+
+def emit(value, filename):
+    if value is None:
+        return
+    elif isinstance(value, tuple):
+        index = 0
+        for item in value:
+            emit(item, filename + '_' + str(index))
+            index += 1
+    else:
+        np.save(filename, np.asarray(value))
+
+@noinline
+def sample(neigh_idx, dH, G, D, Sigma):
+    started = time.perf_counter()
+    result = kernel_module.scattering_self_energies(neigh_idx, dH, G, D, Sigma)
+    elapsed = time.perf_counter() - started
+    emit(Sigma, directory + '/output-Sigma')
+    return elapsed
+
+if samples == 0:
+    GC_gcollect()
+    allocated_before = GC_get_total_bytes()
+    heap_before = GC_get_heap_size()
+    address_neigh_idx = int(neigh_idx.data)
+    address_dH = int(dH.data)
+    address_G = int(G.data)
+    address_D = int(D.data)
+    address_Sigma = int(Sigma.data)
+    for iteration in range(32):
+        np.copyto(neigh_idx, original_neigh_idx)
+        assert int(neigh_idx.data) == address_neigh_idx
+        np.copyto(dH, original_dH)
+        assert int(dH.data) == address_dH
+        np.copyto(G, original_G)
+        assert int(G.data) == address_G
+        np.copyto(D, original_D)
+        assert int(D.data) == address_D
+        np.copyto(Sigma, original_Sigma)
+        assert int(Sigma.data) == address_Sigma
+    allocated = GC_get_total_bytes() - allocated_before
+    heap_growth = GC_get_heap_size() - heap_before
+    print('BENCH_MEMORY', allocated, heap_growth)
+    assert allocated < 65536
+    assert heap_growth == 0
+else:
+    for iteration in range(samples + 1):
+        GC_gcollect()
+        if iteration > 0:
+            print('BENCH_GC', GC_get_heap_size(), GC_get_heap_size() - GC_get_free_bytes())
+        np.copyto(neigh_idx, original_neigh_idx)
+        np.copyto(dH, original_dH)
+        np.copyto(G, original_G)
+        np.copyto(D, original_D)
+        np.copyto(Sigma, original_Sigma)
+        elapsed = sample(neigh_idx, dH, G, D, Sigma)
+        if iteration > 0:
+            print('BENCH_TIME', elapsed)
+    GC_gcollect()
+    print('BENCH_GC', GC_get_heap_size(), GC_get_heap_size() - GC_get_free_bytes())

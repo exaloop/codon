@@ -2,7 +2,7 @@ import numpy as np
 import numba as nb
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def kernel(M, float_n, data):
 
     # mean = np.mean(data, axis=0)

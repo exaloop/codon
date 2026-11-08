@@ -3,7 +3,7 @@ import numba as nb
 
 
 # Deep learning convolutional operator (stride = 1)
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def conv2d(input, weights):
     K = weights.shape[0]  # Assuming square kernel
     N = input.shape[0]
@@ -34,6 +34,6 @@ def conv2d(input, weights):
     return output
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def conv2d_bias(input, weights, bias):
     return conv2d(input, weights) + bias

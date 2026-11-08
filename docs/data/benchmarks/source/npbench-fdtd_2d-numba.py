@@ -2,7 +2,7 @@ import numpy as np
 import numba as nb
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def kernel(TMAX, ex, ey, hz, _fict_):
 
     for t in range(TMAX):

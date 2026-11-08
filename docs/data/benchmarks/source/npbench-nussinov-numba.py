@@ -2,7 +2,7 @@ import numpy as np
 import numba as nb
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def match(b1, b2):
     if b1 + b2 == 3:
         return 1
@@ -10,7 +10,7 @@ def match(b1, b2):
         return 0
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def kernel(N, seq):
 
     table = np.zeros((N, N), np.int32)

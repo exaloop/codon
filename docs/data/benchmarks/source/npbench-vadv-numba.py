@@ -7,7 +7,7 @@ BET_P = 0.5
 
 
 # Adapted from https://github.com/GridTools/gt4py/blob/1caca893034a18d5df1522ed251486659f846589/tests/test_integration/stencil_definitions.py#L111
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def vadv(utens_stage, u_stage, wcon, u_pos, utens, dtr_stage):
     I, J, K = utens_stage.shape[0], utens_stage.shape[1], utens_stage.shape[2]
     # ccol = np.ndarray((I, J, K), dtype=utens_stage.dtype)

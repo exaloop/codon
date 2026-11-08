@@ -17,9 +17,19 @@ TITLES = {
     "float": "Floating-point objects", "go": "Go simulation", "mandelbrot": "Mandelbrot",
     "nbody": "N-body simulation", "set_partition": "Set partitions",
     "spectral_norm": "Spectral norm", "primes": "Prime counting",
-    "sum": "Integer summation", "taq": "Financial tick analysis", "word_count": "Word count",
+    "taq": "Financial tick analysis", "word_count": "Word count",
 }
 LABELS = {"codon": "Codon", "python": "CPython", "pypy": "PyPy", "cpp": "Clang C++", "numba": "Numba"}
+PYPERFORMANCE = {"binary_trees", "chaos", "fannkuch", "float", "go", "nbody", "spectral_norm"}
+
+
+def published_suite(suite, name):
+    if suite == "applications":
+        if name == "sum":
+            return None
+        if name in PYPERFORMANCE:
+            return "pyperformance"
+    return suite
 
 
 def sha256(filename):
@@ -72,34 +82,59 @@ def parallel_threads(text, default):
     return max(counts) if counts else None
 
 
-def export(work, output):
+def comparable_environment(environment):
+    return dict(environment, blas=sorted(environment["blas"], key=lambda library: json.dumps(library, sort_keys=True)))
+
+
+def export(work, output, url_prefix="/benchmarks", report_file=None):
+    url_prefix = url_prefix.rstrip("/")
+    assert url_prefix.startswith("/") and not url_prefix.startswith("//")
     reports = {}
-    for suite, directory, count in (("applications", "applications-final", 13), ("npbench", "npbench-final", 53)):
-        report = json.loads((work / directory / "report.json").read_text())
+    inputs = (("npbench", report_file, None),) if report_file else (
+        ("applications", work / "applications-final" / "report.json", 12),
+        ("npbench", work / "npbench-final" / "report.json", 53))
+    for suite, filename, count in inputs:
+        report = json.loads(filename.read_text())
         assert report["status"] == "complete", f"{suite} is not complete"
-        assert len(report["cases"]) == count
+        assert report["cases"]
+        assert all(case["suite"] == suite for case in report["cases"])
+        assert count is None or sum(published_suite(suite, case["id"]) is not None for case in report["cases"]) == count
         assert report["samples"] >= 3
         assert not report.get("quick", False)
         assert suite != "npbench" or report["preset"] == "L"
         for filename, expected in report["environment"]["fingerprints"].items():
             assert sha256(ROOT / filename) == expected, filename
         reports[suite] = report
-    assert reports["applications"]["environment"] == reports["npbench"]["environment"], "Different measurement environments"
+    if "applications" in reports:
+        assert comparable_environment(reports["applications"]["environment"]) == comparable_environment(reports["npbench"]["environment"]), "Different measurement environments"
+    timeouts = {report.get("processTimeoutSeconds", 900) for report in reports.values()}
+    assert len(timeouts) == 1, "Different process timeout limits"
+    if report_file and (output / "results.json").exists():
+        existing = json.loads((output / "results.json").read_text())
+        assert {case["id"] for case in existing["cases"]} == {
+            f"npbench-{case['id']}" for case in reports["npbench"]["cases"]
+        }, "Export isolated reports into a separate staging directory"
     output.mkdir(parents=True, exist_ok=True)
     source_directory = output / "source"
     source_directory.mkdir(exist_ok=True)
     entries = []
     for suite, report in reports.items():
         for case in report["cases"]:
+            group = published_suite(suite, case["id"])
+            if group is None:
+                continue
             identifier = f"{suite}-{case['id']}"
-            entry = dict(id=identifier, name=case["id"], suite=suite,
+            entry = dict(id=identifier, name=case["id"], suite=group,
                          title=case.get("title", TITLES.get(case["id"], case["id"])),
+                         measurementDate=report["environment"]["date"],
                          parameters=case.get("parameters", {}), arguments=case.get("arguments", []),
                          preset=case.get("preset", "Full"), policy=report["policy"], results={})
             for backend, result in case.get("results", {}).items():
+                if result.get("referenceOnly"):
+                    continue
                 published = {key: value for key, value in result.items() if key in (
                     "status", "reason", "phase", "samples", "median", "validation", "gc",
-                    "memoryAudit", "runtime", "adaptations", "compileCommand", "timeoutSeconds")}
+                    "memoryAudit", "runtime", "adaptations", "compileCommand", "timeoutSeconds", "hugePagesKiB", "fastmath", "fastmathDispatchers")}
                 published["label"] = LABELS[backend]
                 if result["status"] == "ok":
                     assert result["validation"]["status"] == "passed", identifier
@@ -130,9 +165,14 @@ def export(work, output):
                         published["parallelThreads"] = threads
                         entry["threadingNote"] = (f"Codon uses {threads} OpenMP threads (explicit in the source); other runtimes use one."
                                                   if threads > 1 else "Codon's parallel loop is configured with one OpenMP thread in this run.")
+                    if case["id"] == "mandelbrot" and report.get("gpuMandelbrot"):
+                        assert "@par(gpu=True" in text
+                        published["execution"] = "gpu"
+                        entry["acceleratorNote"] = (f"Codon uses the {report['environment']['gpu'].split(',')[0]} GPU via @par(gpu=True); "
+                                                    "other runtimes use the CPU. The application timer includes GPU transfer and launch overhead.")
                 download = source_directory / filename
                 download.write_text(text if text.endswith("\n") else text + "\n")
-                published["sourceUrl"] = f"/benchmarks/source/{filename}"
+                published["sourceUrl"] = f"{url_prefix}/source/{filename}"
                 published["sourceSha256"] = sha256(download)
                 published["executedSourceSha256"] = expected_code
                 if not text.endswith("\n"):
@@ -142,11 +182,11 @@ def export(work, output):
                     excerpt = focused_source(text, case["id"])
                     excerpt_name = f"{identifier}-{backend}-excerpt.codon"
                     (source_directory / excerpt_name).write_text(excerpt)
-                    published["displaySourceUrl"] = f"/benchmarks/source/{excerpt_name}"
+                    published["displaySourceUrl"] = f"{url_prefix}/source/{excerpt_name}"
                 if suite == "npbench":
                     worker_name = f"{identifier}-{backend}-worker{source.suffix}"
                     (source_directory / worker_name).write_text(redact(source.read_text(), work))
-                    published["workerUrl"] = f"/benchmarks/source/{worker_name}"
+                    published["workerUrl"] = f"{url_prefix}/source/{worker_name}"
                     published["workerSha256"] = sha256(source_directory / worker_name)
                     published["executedWorkerSha256"] = result["sourceSha256"]
                 entry["results"][backend] = published
@@ -154,10 +194,11 @@ def export(work, output):
                 entry["reason"] = case["reason"]
             entry["inputs"] = case.get("inputs", {})
             entries.append(entry)
-    environment = reports["applications"]["environment"]
+    environment = next(iter(reports.values()))["environment"]
     payload = dict(schemaVersion=1, date=environment["date"], environment=environment,
-                   datasets=reports["applications"]["datasets"], cases=entries,
-                   sampleCount=reports["applications"]["samples"], processTimeoutSeconds=900,
+                   datasets=reports.get("applications", {}).get("datasets", {}), cases=entries,
+                   assetBase=url_prefix,
+                   sampleCount=next(iter(reports.values()))["samples"], processTimeoutSeconds=timeouts.pop(),
                    versions={key: environment[key] for key in ("codon", "python", "pypy", "clang", "numpy", "numba", "scipy")})
     write_json(output / "results.json", redact(payload, work))
     write_json(output / "raw-results.json", redact(reports, work))
@@ -170,8 +211,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--work", type=Path, default=ROOT / "build" / "benchmarks-20261106")
     parser.add_argument("--output", type=Path, default=ROOT / "docs" / "data" / "benchmarks")
+    parser.add_argument("--url-prefix", default="/benchmarks", help="Public asset directory for this machine's results")
+    parser.add_argument("--report", type=Path, help="Export an isolated, completed NPBench L report to a separate staging directory")
     args = parser.parse_args()
-    export(args.work.absolute(), args.output.absolute())
+    export(args.work.absolute(), args.output.absolute(), args.url_prefix, args.report)
 
 
 if __name__ == "__main__":

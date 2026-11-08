@@ -2,7 +2,7 @@ import numpy as np
 import numba as nb
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def kernel(A, b):
 
     x = np.zeros_like(b)

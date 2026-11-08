@@ -2,7 +2,7 @@ import numpy as np
 import numba as nb
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def kernel(alpha, beta, C, A, B):
 
     temp2 = np.empty((C.shape[1], ), dtype=C.dtype)

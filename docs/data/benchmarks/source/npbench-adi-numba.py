@@ -4,7 +4,7 @@ import numpy as np
 import numba as nb
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def kernel(TSTEPS, N, u):
 
     v = np.empty(u.shape, dtype=u.dtype)

@@ -2,13 +2,13 @@ import numpy as np
 import numba as nb
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def relu(x):
     return np.maximum(x, 0)
 
 
 # Numerically-stable version of softmax
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def softmax(x):
     new_shape = (x.shape[0], 1)
     # tmp_max = np.max(x, axis=-1, keepdims=True)
@@ -22,7 +22,7 @@ def softmax(x):
 
 
 # 3-layer MLP
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def mlp(input, w1, b1, w2, b2, w3, b3):
     x = relu(input @ w1 + b1)
     x = relu(x @ w2 + b2)

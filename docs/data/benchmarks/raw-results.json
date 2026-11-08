@@ -1703,135 +1703,6 @@
         "complete": true
       },
       {
-        "id": "sum",
-        "suite": "applications",
-        "arguments": [],
-        "results": {
-          "codon": {
-            "status": "ok",
-            "source": "$BENCH_WORK/applications-final/sum/codon/worker.codon",
-            "original": "bench/codon/sum.py",
-            "sourceSha256": "db7c67c9a22bc5b57df737936f939bf420a67d8e9d30a275531c722d9fd2b77c",
-            "adaptations": [
-              "Uses a monotonic high-resolution wall timer."
-            ],
-            "compileCommand": [
-              "$CODON_ROOT/build/codon",
-              "build",
-              "-release",
-              "$BENCH_WORK/applications-final/sum/codon/worker.codon",
-              "-o",
-              "$BENCH_WORK/applications-final/sum/codon/worker"
-            ],
-            "compile": {
-              "status": "ok",
-              "returncode": 0,
-              "wallSeconds": 2.423894749954343
-            },
-            "executableSha256": "316bbb8e921281a5527055a9847d305dc2444feb6e1d4ea1f2689eef21aa8434",
-            "command": [
-              "$BENCH_WORK/applications-final/sum/codon/worker"
-            ],
-            "outputs": [
-              [
-                "Sum of 50000000 numbers is :  1249999975000000"
-              ],
-              [
-                "Sum of 50000000 numbers is :  1249999975000000"
-              ],
-              [
-                "Sum of 50000000 numbers is :  1249999975000000"
-              ],
-              [
-                "Sum of 50000000 numbers is :  1249999975000000"
-              ]
-            ],
-            "samples": [
-              9.499490261077881e-06,
-              1.391582190990448e-05,
-              9.916722774505615e-06
-            ],
-            "median": 9.916722774505615e-06,
-            "validation": {
-              "status": "passed"
-            }
-          },
-          "python": {
-            "status": "ok",
-            "source": "$BENCH_WORK/applications-final/sum/python/worker.py",
-            "original": "bench/codon/sum.py",
-            "sourceSha256": "db7c67c9a22bc5b57df737936f939bf420a67d8e9d30a275531c722d9fd2b77c",
-            "adaptations": [
-              "Uses a monotonic high-resolution wall timer."
-            ],
-            "command": [
-              "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/applications-final/sum/python/worker.py"
-            ],
-            "outputs": [
-              [
-                "Sum of 50000000 numbers is :  1249999975000000"
-              ],
-              [
-                "Sum of 50000000 numbers is :  1249999975000000"
-              ],
-              [
-                "Sum of 50000000 numbers is :  1249999975000000"
-              ],
-              [
-                "Sum of 50000000 numbers is :  1249999975000000"
-              ]
-            ],
-            "samples": [
-              3.226106916088611,
-              3.215006750077009,
-              3.214621082879603
-            ],
-            "median": 3.215006750077009,
-            "validation": {
-              "status": "passed"
-            }
-          },
-          "pypy": {
-            "status": "ok",
-            "source": "$BENCH_WORK/applications-final/sum/pypy/worker.py",
-            "original": "bench/codon/sum.py",
-            "sourceSha256": "db7c67c9a22bc5b57df737936f939bf420a67d8e9d30a275531c722d9fd2b77c",
-            "adaptations": [
-              "Uses a monotonic high-resolution wall timer."
-            ],
-            "command": [
-              "$BENCH_WORK/toolchains/pypy3.12-v8.0.1-macos_arm64/bin/pypy3",
-              "$BENCH_WORK/applications-final/sum/pypy/worker.py"
-            ],
-            "outputs": [
-              [
-                "Sum of 50000000 numbers is :  1249999975000000"
-              ],
-              [
-                "Sum of 50000000 numbers is :  1249999975000000"
-              ],
-              [
-                "Sum of 50000000 numbers is :  1249999975000000"
-              ],
-              [
-                "Sum of 50000000 numbers is :  1249999975000000"
-              ]
-            ],
-            "samples": [
-              0.10535041708499193,
-              0.10564825031906366,
-              0.10298237483948469
-            ],
-            "median": 0.10535041708499193,
-            "validation": {
-              "status": "passed"
-            }
-          }
-        },
-        "complete": true
-      },
-      {
         "id": "taq",
         "suite": "applications",
         "arguments": [
@@ -5846,23 +5717,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/adi/numba/worker.py",
-            "sourceSha256": "859e2029c02a2b21445e260183eaba5d69166058ed899edf4c09bf46000137ca",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/adi/numba/worker.py",
+            "sourceSha256": "df7066cc2c786bb58345cb498dd0bb5b7e03cb17ee7186f2f1c6976067de2bb8",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/adi/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/adi/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/adi/numba/kernel.py",
-            "codeSha256": "b263f3417fb1232b67cc522335d24e5850b385e130ae7d99694241d6f74f3d89",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/adi/numba/kernel.py",
+            "codeSha256": "c8b89e171c4811134fabb573c65b12b2221825283b62e6082d8b7e63942859b0",
             "returncode": 0,
-            "wallSeconds": 2.441017000004649,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 2.460569083224982,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"kernel\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "kernel": false
+            },
             "samples": [
-              0.09958554105833173,
-              0.0947301248088479,
-              0.09197479207068682
+              0.09996141586452723,
+              0.10183850023895502,
+              0.10065499972552061
             ],
-            "median": 0.0947301248088479,
+            "median": 0.10065499972552061,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -5873,7 +5751,7 @@
               "errors": {
                 "output-u.npy": {
                   "pointwise": true,
-                  "relativeNorm": 4.40514758322004e-10
+                  "relativeNorm": 0.0
                 }
               },
               "dtypes": {
@@ -5882,7 +5760,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -6106,23 +5985,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/arc_distance/numba/worker.py",
-            "sourceSha256": "1f62275664783104ab28173e21f6d1d60c1388bb4ddcc96871590c64eb904e61",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/arc_distance/numba/worker.py",
+            "sourceSha256": "64b75e5596dc62f4afccb226ddc9ef79c387df62863576d0348fc155147d5e94",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/arc_distance/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/arc_distance/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/arc_distance/numba/kernel.py",
-            "codeSha256": "b16860ec1d173cd9c7116686510e4c433fe1b9796cf4d5ced38f40ba2b3f301a",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/arc_distance/numba/kernel.py",
+            "codeSha256": "4cf1271a0f54812195f2f6acdf427b7c5e37a1a4691c0b7f85048e93eccb90ca",
             "returncode": 0,
-            "wallSeconds": 1.8741497499868274,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 2.0051582087762654,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"arc_distance\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "arc_distance": false
+            },
             "samples": [
-              0.29384500021114945,
-              0.29212329210713506,
-              0.29285729117691517
+              0.29494141740724444,
+              0.29462712490931153,
+              0.2949022091925144
             ],
-            "median": 0.29285729117691517,
+            "median": 0.2949022091925144,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -6133,7 +6019,7 @@
               "errors": {
                 "output-return.npy": {
                   "pointwise": true,
-                  "relativeNorm": 5.0043420219054165e-17
+                  "relativeNorm": 0.0
                 }
               },
               "dtypes": {
@@ -6142,7 +6028,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -6349,23 +6236,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/azimint_naive/numba/worker.py",
-            "sourceSha256": "79b6e5ae4c09fdde82154212758739d4a5d329bae59a1067a3c8b80ea7b5d5bb",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/azimint_naive/numba/worker.py",
+            "sourceSha256": "fea1a2efec9410a7d9989826ad424ae9b42a3164c9beb20cbc560dec3cd33cf1",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/azimint_naive/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/azimint_naive/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/azimint_naive/numba/kernel.py",
-            "codeSha256": "a43fa83789a1590a626e566ffd09c953927063fd5a762e670c1c39246031dba2",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/azimint_naive/numba/kernel.py",
+            "codeSha256": "d9362d99994d832db1384ef095e3c69b9ea8d374e67617ccadbc122cc7f4e547",
             "returncode": 0,
-            "wallSeconds": 195.85005708411336,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 199.57053912477568,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"azimint_naive\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "azimint_naive": false
+            },
             "samples": [
-              48.96842074999586,
-              48.33428924996406,
-              48.533932708669454
+              49.97939508408308,
+              49.17503112507984,
+              50.22563279187307
             ],
-            "median": 48.533932708669454,
+            "median": 49.97939508408308,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -6376,7 +6270,7 @@
               "errors": {
                 "output-return.npy": {
                   "pointwise": true,
-                  "relativeNorm": 6.985403482108239e-16
+                  "relativeNorm": 5.48129833318572e-15
                 }
               },
               "dtypes": {
@@ -6385,7 +6279,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -6473,61 +6368,65 @@
           "output_args": []
         },
         "moduleDirectory": "$BENCH_WORK/npbench/npbench/benchmarks/azimint_hist",
-        "directory": "$BENCH_WORK/npbench-final/azimint_hist",
+        "directory": "$BENCH_WORK/azimint-hist-uniform-complete-L-20261108/azimint_hist",
+        "numbaFastmath": "disabled",
         "results": {
           "codon": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/azimint_hist/codon/worker.codon",
-            "sourceSha256": "700605e63172e1c141a1d5013e9994286f7b0ad276c5224f966cf48593c23164",
+            "source": "$BENCH_WORK/azimint-hist-uniform-no-fastmath-L-20261108/uniform/azimint_hist/codon/worker.codon",
+            "sourceSha256": "2209604218aba8f81331d4c3a3e1a8aaeebecbc502b790c7c151c767061b97b3",
             "compileCommand": [
               "$CODON_ROOT/build/codon",
               "build",
               "-release",
-              "$BENCH_WORK/npbench-final/azimint_hist/codon/worker.codon",
+              "$BENCH_WORK/azimint-hist-uniform-no-fastmath-L-20261108/uniform/azimint_hist/codon/worker.codon",
               "-o",
-              "$BENCH_WORK/npbench-final/azimint_hist/codon/worker",
+              "$BENCH_WORK/azimint-hist-uniform-no-fastmath-L-20261108/uniform/azimint_hist/codon/worker",
               "--linker-flags=-framework Accelerate"
             ],
             "compile": {
               "status": "ok",
               "returncode": 0,
-              "wallSeconds": 10.12755391607061
+              "wallSeconds": 8.87897437531501
             },
-            "executableSha256": "8424c302af28d0bfb640169b305f597037fc5a083f425ebf2b3cfe6ca4af5330",
+            "executableSha256": "c7e93d662065b7a0de9f1a54aed013a0eac9a2dcb18b0ecdcfb0b6e76b69eb3d",
             "command": [
-              "$BENCH_WORK/npbench-final/azimint_hist/codon/worker"
+              "$BENCH_WORK/azimint-hist-uniform-no-fastmath-L-20261108/uniform/azimint_hist/codon/worker"
             ],
-            "code": "$BENCH_WORK/npbench-final/azimint_hist/codon/npbench_lib.codon",
-            "codeSha256": "6b0c992b3de29be70196216b4bebfdedf1a1ae61041653d82706f279248fc284",
+            "code": "$BENCH_WORK/azimint-hist-uniform-no-fastmath-L-20261108/uniform/azimint_hist/codon/npbench_lib.codon",
+            "codeSha256": "af2cfb66378018712f2ba4c0b90ee91da7cd2658ce53abca86719171283504e4",
+            "adaptations": [
+              "Uses the archived Numba weighted-histogram helpers, without Numba imports or decorators."
+            ],
             "returncode": 0,
-            "wallSeconds": 1.9844068330712616,
+            "wallSeconds": 1.3776174169033766,
             "memoryAudit": "BENCH_MEMORY 0 0",
             "samples": [
-              0.41961599979549646,
-              0.41728091705590487,
-              0.4263442503288388
+              0.28276241663843393,
+              0.2830800423398614,
+              0.28292854130268097
             ],
-            "median": 0.41961599979549646,
+            "median": 0.28292854130268097,
             "gc": {
               "heapAndLiveBytes": [
                 [
-                  2571927552,
-                  2352787456
+                  2168029184,
+                  1816387584
                 ],
                 [
-                  2571927552,
-                  2352746496
+                  2134474752,
+                  1816383488
                 ],
                 [
-                  2571927552,
-                  2352746496
+                  1917599744,
+                  1816383488
                 ],
                 [
-                  2571927552,
-                  2352746496
+                  1884045312,
+                  1816383488
                 ]
               ],
-              "liveGrowthBytes": -40960,
+              "liveGrowthBytes": -4096,
               "budgetBytes": 32000000
             },
             "validation": {
@@ -6548,27 +6447,53 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "validationAgainstOriginalNumpy": {
+              "status": "passed",
+              "elements": 1000,
+              "rtol": 1e-05,
+              "atol": 1e-08,
+              "normLimit": 1e-05,
+              "errors": {
+                "output-return.npy": {
+                  "pointwise": true,
+                  "relativeNorm": 5.523294484743268e-15
+                }
+              },
+              "dtypes": {
+                "output-return.npy": {
+                  "reference": "float64",
+                  "actual": "float64"
+                }
+              }
+            },
+            "carriedFromReport": "$BENCH_WORK/azimint-hist-uniform-no-fastmath-L-20261108/uniform/report.json",
+            "measurementDate": "2026-11-08",
+            "measurementRun": "uniform-histogram-no-fastmath-20261108"
           },
           "python": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/azimint_hist/python/worker.py",
-            "sourceSha256": "6fb6285ea839b91f86bb765d01bd9d3fdd2e588f1176996ca5d2418ac2e33164",
+            "source": "$BENCH_WORK/azimint-hist-uniform-complete-L-20261108/azimint_hist/python/worker.py",
+            "sourceSha256": "b1c0f04e98653b1d2d2fcba22db7dd2f5cb4f27ad02ddc151dce3337efe87358",
+            "code": "$BENCH_WORK/azimint-hist-uniform-complete-L-20261108/azimint_hist/python/kernel.py",
+            "codeSha256": "af2cfb66378018712f2ba4c0b90ee91da7cd2658ce53abca86719171283504e4",
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/azimint_hist/python/worker.py"
+              "$BENCH_WORK/azimint-hist-uniform-complete-L-20261108/azimint_hist/python/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/azimint_hist/python/kernel.py",
-            "codeSha256": "682b3658fa7fc81ab3546c8b6f671cfdaffca2ede3216878658eef143660a22d",
+            "adaptations": [
+              "Uses the same portable weighted-histogram helpers as Codon and Numba; the Python loop is interpreted."
+            ],
+            "measurementDate": "2026-11-08",
             "returncode": 0,
-            "wallSeconds": 2.3633808330632746,
+            "wallSeconds": 75.23277837503701,
             "memoryAudit": "BENCH_MEMORY_RSS 0",
             "samples": [
-              0.5214241659268737,
-              0.5194173334166408,
-              0.5378674161620438
+              18.657575708348304,
+              18.586323665920645,
+              18.574829041026533
             ],
-            "median": 0.5214241659268737,
+            "median": 18.586323665920645,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -6588,29 +6513,8 @@
                   "actual": "float64"
                 }
               }
-            }
-          },
-          "numba": {
-            "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/azimint_hist/numba/worker.py",
-            "sourceSha256": "d63588be6f22697b0a0f45c944913f99122b1b4d40fcf49451fbf3bb7e5e413f",
-            "command": [
-              "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/azimint_hist/numba/worker.py"
-            ],
-            "code": "$BENCH_WORK/npbench-final/azimint_hist/numba/kernel.py",
-            "codeSha256": "75bb42edb46235ea8ad9b4b2785c8ff5d5d6a8f06e1e158d49220784104fffbd",
-            "returncode": 0,
-            "wallSeconds": 1.9149761670269072,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
-            "samples": [
-              0.13675804156810045,
-              0.13657316705211997,
-              0.13661404186859727
-            ],
-            "median": 0.13661404186859727,
-            "runtime": [],
-            "validation": {
+            },
+            "validationAgainstOriginalNumpy": {
               "status": "passed",
               "elements": 1000,
               "rtol": 1e-05,
@@ -6628,10 +6532,149 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "uniform-histogram-no-fastmath-20261108"
+          },
+          "numba": {
+            "status": "ok",
+            "source": "$BENCH_WORK/azimint-hist-uniform-no-fastmath-L-20261108/uniform/azimint_hist/numba/worker.py",
+            "sourceSha256": "5a9503ae32cdc9eda1f7915f31f53b348c273c1276bb9d8aeeeab6ba998f0773",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
+            "command": [
+              "$BENCH_WORK/venv/bin/python",
+              "$BENCH_WORK/azimint-hist-uniform-no-fastmath-L-20261108/uniform/azimint_hist/numba/worker.py"
+            ],
+            "code": "$BENCH_WORK/azimint-hist-uniform-no-fastmath-L-20261108/uniform/azimint_hist/numba/kernel.py",
+            "codeSha256": "30a4c7784e88d5947072796f77fb74d31b1f545842a5ebe64c66de8dcb3aa807",
+            "returncode": 0,
+            "wallSeconds": 2.5002230829559267,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"azimint_hist\": false, \"compute_bin\": false, \"get_bin_edges\": false, \"histogram\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "azimint_hist": false,
+              "compute_bin": false,
+              "get_bin_edges": false,
+              "histogram": false
+            },
+            "samples": [
+              0.21896487521007657,
+              0.22323958296328783,
+              0.21061783283948898
+            ],
+            "median": 0.21896487521007657,
+            "runtime": [],
+            "validation": {
+              "status": "passed",
+              "elements": 1000,
+              "rtol": 1e-05,
+              "atol": 1e-08,
+              "normLimit": 1e-05,
+              "errors": {
+                "output-return.npy": {
+                  "pointwise": true,
+                  "relativeNorm": 0.0
+                }
+              },
+              "dtypes": {
+                "output-return.npy": {
+                  "reference": "float64",
+                  "actual": "float64"
+                }
+              }
+            },
+            "validationAgainstOriginalNumpy": {
+              "status": "passed",
+              "elements": 1000,
+              "rtol": 1e-05,
+              "atol": 1e-08,
+              "normLimit": 1e-05,
+              "errors": {
+                "output-return.npy": {
+                  "pointwise": true,
+                  "relativeNorm": 5.523294484743268e-15
+                }
+              },
+              "dtypes": {
+                "output-return.npy": {
+                  "reference": "float64",
+                  "actual": "float64"
+                }
+              }
+            },
+            "carriedFromReport": "$BENCH_WORK/azimint-hist-uniform-no-fastmath-L-20261108/uniform/report.json",
+            "measurementDate": "2026-11-08",
+            "measurementRun": "uniform-histogram-no-fastmath-20261108"
           }
         },
-        "complete": true
+        "complete": true,
+        "environment": {
+          "date": "2026-11-08",
+          "machine": "arm64",
+          "platform": "darwin",
+          "codon": "0.20.6",
+          "npbenchCommit": "f2d7f27d87ba4881991e62c18a607aa6ba52b260",
+          "python": "3.15.2",
+          "numpy": "2.5.4",
+          "numba": "0.68.1",
+          "scipy": "1.18.1",
+          "pypy": "Python 3.12.15 (d90944c94ad6, Oct 13 2026, 21:21:03)\n[PyPy 8.0.1 with GCC Apple LLVM 16.0.0 (clang-1600.0.26.6)]",
+          "clang": "clang version 23.1.5 (https://github.com/llvm/llvm-project 392dfff97d29b59d77e5cac6d4b6ef2585fe7117)\nTarget: arm64-apple-darwin25.6.0\nThread model: posix\nInstalledDir: $BENCH_WORK/toolchains/LLVM-23.1.5-macOS-ARM64/bin",
+          "blas": [],
+          "threads": 1,
+          "os": "26.6.2",
+          "cpu": "Apple M1 Max",
+          "memoryBytes": 68719476736,
+          "logicalCpus": 10,
+          "macosBuild": "25G83",
+          "sdk": "14.5",
+          "runtimeLibraries": [
+            "build/libcodonrt.dylib",
+            "build/libomp.dylib",
+            "Apple Accelerate"
+          ],
+          "codonCommit": "8ae46096545463f8eba1352a689403371f0e9f7f",
+          "codonSourceDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "fingerprints": {
+            "build/codon": "9f9f0f37c208a9c76e63fedf9858e139018753d9186d678079624316052e3cbf",
+            "build/libcodonc.dylib": "c27ef7e16047a538bc1f3e420f9bfa4b70f2ba41ff475697e7128a29213b9017",
+            "build/libcodonrt.dylib": "0b37c8d20f56e08f5e18d411c3d710ae231ecac6eea1fdf9ee1287c2ea1e63f1",
+            "build/libomp.dylib": "ea02061f04733372e7278fc87cd910e7855c1721e2b6187148eac403facc100e",
+            "bench/refresh.py": "c005fce47056771a927af7b3fe527847a7516d97f881aebb86a1dca4ece43e31",
+            "bench/codon/binary_trees.py": "bd162f270580171cf6d35daf4c53378b63571bc0b1c65aa51b414a2d83adb17e",
+            "bench/codon/chaos.py": "d412da468d8d41c5d6b3429028de85270c0482c382086ab622944dfd198497f0",
+            "bench/codon/fannkuch.py": "84ae6cd2d2c0a80999a00fbaeeca789df1cc9ebef5acb81228d3c563a2c1edfe",
+            "bench/codon/float.py": "9048d147ef211e0ccdde178b05f22f2e9a894ce6a525afc37ef6ff1c2e85c173",
+            "bench/codon/go.py": "35b9089fddc7bc85448478fcfce766fe49f3452f4f07d2fbc78a25d106295e1f",
+            "bench/codon/mandelbrot.py": "32f389d6ec0d9f79ae81d6b29562726201ad1e5a78702c3feb1835dac8004e77",
+            "bench/codon/nbody.py": "e391030a30e25bdcbd8ba6b5e8532154c255cd69e722233009693f87f5e8006d",
+            "bench/codon/primes.py": "3b31986f8d2d9e30dfa5d76350e554b234114d329e13393d24f245d135fb4310",
+            "bench/codon/set_partition.py": "613ef399703dfdabef82c8ef4f3b8a851fd740926ff5225b0da4829715d0be49",
+            "bench/codon/spectral_norm.py": "1877aa28e65ec64b694bd8898f31cec091eed2c4f060b1a4638f5555f61d510a",
+            "bench/codon/sum.py": "dd36126daae0548c29ee6b28d1e9732eb5e0b83f7148d57d067a1182ec2e98aa",
+            "bench/codon/taq.py": "b82285eb55c9243898b765ae9b686dbb4d14cc2ec626b3b77453a929bdb020af",
+            "bench/codon/word_count.py": "783c5625a72623c1b2856ccbe8ec8241f0a807937ac0334d3942ca67b1d5272f",
+            "bench/codon/binary_trees.codon": "4b7620a3d7136153c7ba38ee6a3bcae3a30d484aaab82cc69c5d8b40527acaa7",
+            "bench/codon/chaos.codon": "e04a995d988704a5b84eb24c8b65cb630e11f6015b08d35d0b34530e58e0168a",
+            "bench/codon/fannkuch.codon": "d4d0f581d9ebfd5285523c3037c7ea8bcdc6b4cf2dddfbb95404a910adcfaa9a",
+            "bench/codon/go.codon": "a43841a1723f5425a32372b0785f9a6e8fdc1f6a54aabc7fde7d38d67357dc09",
+            "bench/codon/mandelbrot.codon": "1fdb1a8a13196ef9ed1eb3832da5f82ea2d16814ad0f50ebb1d61d81f90e048d",
+            "bench/codon/npbench.codon": "532ca7c51bb0430f04e176280ffcabf5ea5b1e89aa72918dcf535923a46ac05d",
+            "bench/codon/npbench_lib.codon": "87127fc0f43ee5a0a6013c98d25a810395ce01d0e5550f1547f9c52ad45520d6",
+            "bench/codon/primes.codon": "32366f93d58c686bb4781fea893d655e565fe056ac65dfe04edd2dd2c695d885",
+            "bench/codon/binary_trees.cpp": "828fed0cf32c2a3084f2c26bd19b8a672fd8d12cbd7ead4a76d82e55a19f4b10",
+            "bench/codon/nbody.cpp": "03015a5d744fcbfd232a5e59fe66dec3d8445828e94f9cd8f0be130119dae3e2",
+            "bench/codon/set_partition.cpp": "f7ffdfe333d1800c537a5e06259693ceca4e819f33de4d0806235002d28f17cd",
+            "bench/codon/taq.cpp": "85a6bb3e7f25aaf50279df5d6bb303c33ed90bfaa0a617be7bbcd56dc771b2b0",
+            "bench/codon/word_count.cpp": "95fb1a3edb4ad2cbf4137d7e0460265bb1d5a8a1551bb498316042cc15a4e3d7",
+            "build/benchmarks-20261106-aws/compare-uniform-histogram-20261108.py": "b3a4d61e6b66b0fb1db21ea25ecf34469b1a06b9e4309a5ed63d27fe8cf6522c",
+            "build/benchmarks-20261106/azimint-hist-shared-L-20261108/azimint_hist/codon/npbench_lib.codon": "af2cfb66378018712f2ba4c0b90ee91da7cd2658ce53abca86719171283504e4",
+            "build/benchmarks-20261106-aws/complete-uniform-histogram-20261108.py": "02fb23910504345d8fd21b2679e0a4d811083e54b2d230ea570aaf90d1d754ed"
+          }
+        },
+        "processTimeoutSeconds": 900,
+        "measurementRun": "uniform-histogram-no-fastmath-20261108"
       },
       {
         "id": "atax",
@@ -6833,23 +6876,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/atax/numba/worker.py",
-            "sourceSha256": "f46c3e3c2321abf82cff2f487616844178957b67e05f256b7dab868b5c3d7c8c",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/atax/numba/worker.py",
+            "sourceSha256": "05902a798d953558f6195004e6071a72c707fcbb8b598547815c86d41d53d212",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/atax/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/atax/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/atax/numba/kernel.py",
-            "codeSha256": "1a6d0bfaa4f4063a3c799cab6e634bcf6f9d3d2f0223b1310306648ab33bf30e",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/atax/numba/kernel.py",
+            "codeSha256": "3cbc3c1180f9f599a9ecfcee8873c7eb30410014dfb8c7fcc9c9d75ae875fdb5",
             "returncode": 0,
-            "wallSeconds": 3.0689706671983004,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 2.9029499576427042,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"kernel\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "kernel": false
+            },
             "samples": [
-              0.2625973750837147,
-              0.25674629118293524,
-              0.2776532503776252
+              0.2586627500131726,
+              0.2587892906740308,
+              0.25876091700047255
             ],
-            "median": 0.2625973750837147,
+            "median": 0.25876091700047255,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -6869,7 +6919,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -7103,23 +7154,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/bicg/numba/worker.py",
-            "sourceSha256": "89e228dc0962f3be698a09644fdab24c78f6a66e7c4a7f0b282b0a19e3f90806",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/bicg/numba/worker.py",
+            "sourceSha256": "f57f3e32dab318a282b4b2209d233ca72aef6e40086bc5b622415272efb95e28",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/bicg/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/bicg/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/bicg/numba/kernel.py",
-            "codeSha256": "320f343a27b6f95380932d954f401976be7848df4267b10fbb3d3a92b95a2b8d",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/bicg/numba/kernel.py",
+            "codeSha256": "287af312f55e9c454eae5302a141100b019352dad57f671c260f5dda8fb20078",
             "returncode": 0,
-            "wallSeconds": 2.9147110832855105,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 3.013249750249088,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"kernel\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "kernel": false
+            },
             "samples": [
-              0.23752195807173848,
-              0.2444577910937369,
-              0.23913091700524092
+              0.23946758266538382,
+              0.24215441709384322,
+              0.3331726659089327
             ],
-            "median": 0.23913091700524092,
+            "median": 0.24215441709384322,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -7147,7 +7205,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -7462,23 +7521,32 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/cavity_flow/numba/worker.py",
-            "sourceSha256": "10dfe9f9a7b1e3a9287970dd9a4b85ba64089355456061199a5bdec4101c288e",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/cavity_flow/numba/worker.py",
+            "sourceSha256": "e3e1e09bf98a9b99201602656e0636d5856588042db6d8444a14ba64c4e8cbb5",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/cavity_flow/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/cavity_flow/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/cavity_flow/numba/kernel.py",
-            "codeSha256": "82dde2831f5b46dd9605e04e337d9f3db36207f898c271ce054ff188848e93d4",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/cavity_flow/numba/kernel.py",
+            "codeSha256": "0d8a028b2fedb98e192f80dc6011e629936584106b91dc64219f16097f5a2ec8",
             "returncode": 0,
-            "wallSeconds": 4.986701916903257,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 5.1714004166424274,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"build_up_b\": false, \"cavity_flow\": false, \"pressure_poisson\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "build_up_b": false,
+              "cavity_flow": false,
+              "pressure_poisson": false
+            },
             "samples": [
-              0.3376569580286741,
-              0.3337812917307019,
-              0.336213749833405
+              0.34810329182073474,
+              0.3477766248397529,
+              0.3476414578035474
             ],
-            "median": 0.336213749833405,
+            "median": 0.3477766248397529,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -7489,15 +7557,15 @@
               "errors": {
                 "output-p.npy": {
                   "pointwise": true,
-                  "relativeNorm": 8.381525222808417e-16
+                  "relativeNorm": 0.0
                 },
                 "output-u.npy": {
                   "pointwise": true,
-                  "relativeNorm": 2.851942415842676e-17
+                  "relativeNorm": 0.0
                 },
                 "output-v.npy": {
                   "pointwise": true,
-                  "relativeNorm": 9.42582029949655e-16
+                  "relativeNorm": 0.0
                 }
               },
               "dtypes": {
@@ -7514,7 +7582,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -7821,23 +7890,32 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/channel_flow/numba/worker.py",
-            "sourceSha256": "53d947a0a46bc0e50d8d24a06ade6b06c57d9c3cfee9304350bb5fb2b407109c",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/channel_flow/numba/worker.py",
+            "sourceSha256": "ec5422daa74ec5f6b82de3a9c05fe5ac0954ef5e3746ec2427405247dd845973",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/channel_flow/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/channel_flow/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/channel_flow/numba/kernel.py",
-            "codeSha256": "0759b7ccf34f72532f899618124706bcdc135a0abc74e1ef6ef8013d6d28791c",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/channel_flow/numba/kernel.py",
+            "codeSha256": "d299f01fa2cbf337ba48964a8e237c1c070cd3d19eaa63920c65c6cd102125a2",
             "returncode": 0,
-            "wallSeconds": 18.838362958747894,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 20.226765541825444,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"build_up_b\": false, \"channel_flow\": false, \"pressure_poisson_periodic\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "build_up_b": false,
+              "channel_flow": false,
+              "pressure_poisson_periodic": false
+            },
             "samples": [
-              3.251422333996743,
-              3.245001500006765,
-              3.2398335416801274
+              3.5580387501977384,
+              3.5807024580426514,
+              3.552607166580856
             ],
-            "median": 3.245001500006765,
+            "median": 3.5580387501977384,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -7852,7 +7930,7 @@
                 },
                 "output-u.npy": {
                   "pointwise": true,
-                  "relativeNorm": 6.869956314223636e-17
+                  "relativeNorm": 0.0
                 },
                 "output-v.npy": {
                   "pointwise": true,
@@ -7873,7 +7951,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -8061,23 +8140,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/cholesky/numba/worker.py",
-            "sourceSha256": "60b8a88786eb1e76cf6c2bc47fb8fbf6836ae89119587be9afd72793b9079584",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/cholesky/numba/worker.py",
+            "sourceSha256": "821d37f4fcd4eed01259b5aa04a84646662bfb2a279a97732dd4b4a736cf0d34",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/cholesky/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/cholesky/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/cholesky/numba/kernel.py",
-            "codeSha256": "a0c0330105967bb95e5c93f5335d4dd3e49c37a866a9eec5baff9faac03f09b9",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/cholesky/numba/kernel.py",
+            "codeSha256": "ff7e7ecfab23f58fa7ac6c2d01ceb0b044fc8b8d9e424a1c5371d8616b4542e8",
             "returncode": 0,
-            "wallSeconds": 0.5893833329901099,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 0.6494944170117378,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"kernel\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "kernel": false
+            },
             "samples": [
-              0.02732562506571412,
-              0.027180999983102083,
-              0.02715287497267127
+              0.027365750167518854,
+              0.027275791857391596,
+              0.02750870818272233
             ],
-            "median": 0.027180999983102083,
+            "median": 0.027365750167518854,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -8097,7 +8183,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -8267,23 +8354,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/cholesky2/numba/worker.py",
-            "sourceSha256": "543bf5200195c010bd33907fd4ff4e63249c108c5872b8c21964c69a836bc25d",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/cholesky2/numba/worker.py",
+            "sourceSha256": "155558f5563e6d243a9433ba7f9f48733da7cc85eed4749a7d1159b3a204ad11",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/cholesky2/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/cholesky2/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/cholesky2/numba/kernel.py",
-            "codeSha256": "feaecf4229875892dd1ceecc41d8e893ca8fc86142e2d169786d33bcfe7b317d",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/cholesky2/numba/kernel.py",
+            "codeSha256": "dffbc09e8ad584fb456c4590b014c0904c8e57af0a3419fb7a30db75b8741e44",
             "returncode": 0,
-            "wallSeconds": 14.967155708931386,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 14.640977084171027,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"kernel\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "kernel": false
+            },
             "samples": [
-              2.827176332939416,
-              3.213928041048348,
-              2.903889250010252
+              2.8159818747080863,
+              2.8157432093285024,
+              2.8148199166171253
             ],
-            "median": 2.903889250010252,
+            "median": 2.8157432093285024,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -8303,7 +8397,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -8524,23 +8619,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/compute/numba/worker.py",
-            "sourceSha256": "c7919a1437fa36f3090644c33d06e7905850d9316a6f3b37cd36aebb8b7fe9a0",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/compute/numba/worker.py",
+            "sourceSha256": "aa851bdf1e9e2b13b49437b70ec9dd3b01640a3d4a6a9484fc2d67690d056ab9",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/compute/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/compute/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/compute/numba/kernel.py",
-            "codeSha256": "6e66495246528fbd4384dccf63fe696215c778299bc0b01dd57530f56154a616",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/compute/numba/kernel.py",
+            "codeSha256": "2a190705b162230377a2be353d6638a90bf4054c497c53b7b91875224b2555c3",
             "returncode": 0,
-            "wallSeconds": 4.11062170797959,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 3.824898582883179,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"compute\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "compute": false
+            },
             "samples": [
-              0.17049620812758803,
-              0.1682115001603961,
-              0.16754904203116894
+              0.17522675031796098,
+              0.17502749990671873,
+              0.1733537083491683
             ],
-            "median": 0.1682115001603961,
+            "median": 0.17502749990671873,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -8560,7 +8662,8 @@
                   "actual": "int64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -8820,23 +8923,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/contour_integral/numba/worker.py",
-            "sourceSha256": "de7fb0be5a588d0d904a62ba68f65a9c7f7c383ac5172f3a9a6139999f4f06f7",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/contour_integral/numba/worker.py",
+            "sourceSha256": "e2881da623bde3f8f9b48d98d661ab9255c760721bc47e145860c8eb534da104",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/contour_integral/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/contour_integral/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/contour_integral/numba/kernel.py",
-            "codeSha256": "a51ddcfce65ae9fad793a1f0ddb913d9b6c0dc134c7d8c2d0c071834736d9e7f",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/contour_integral/numba/kernel.py",
+            "codeSha256": "565a1e1700a7c8e3f9c051a52a2d45cd431f89ff1dabc9848f5a6257bcacffaa",
             "returncode": 0,
-            "wallSeconds": 7.248696666676551,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 7.721511249896139,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"contour_integral\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "contour_integral": false
+            },
             "samples": [
-              1.1041097091510892,
-              1.1104642092250288,
-              1.0928815412335098
+              1.2328468332998455,
+              1.22360720904544,
+              1.3034719577990472
             ],
-            "median": 1.1041097091510892,
+            "median": 1.2328468332998455,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -8847,11 +8957,11 @@
               "errors": {
                 "output-return_0.npy": {
                   "pointwise": true,
-                  "relativeNorm": 1.7910825734498182e-12
+                  "relativeNorm": 5.840474188916211e-13
                 },
                 "output-return_1.npy": {
                   "pointwise": true,
-                  "relativeNorm": 1.67156930431973e-12
+                  "relativeNorm": 6.382535607784382e-13
                 }
               },
               "dtypes": {
@@ -8864,7 +8974,8 @@
                   "actual": "complex128"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -9111,23 +9222,31 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/conv2d_bias/numba/worker.py",
-            "sourceSha256": "609287bf18146fc54dadfc2f2052a3dc04d145c2eb9440fc25fc72f55b1d80cd",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/conv2d_bias/numba/worker.py",
+            "sourceSha256": "2bdf1beef293d07644f4b882e4c2a5dfeb7deaef17305f945c77cbb95067cd5a",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/conv2d_bias/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/conv2d_bias/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/conv2d_bias/numba/kernel.py",
-            "codeSha256": "be33f6d2a3240627b69381ed52db898527353a1b92cb9075b032109e77eff106",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/conv2d_bias/numba/kernel.py",
+            "codeSha256": "ceaa4ae5f22102c84bb10f928fa7b6fa46b3f81fbe0a29a04dfa7e9098651a6a",
             "returncode": 0,
-            "wallSeconds": 6.996841249987483,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 7.3019085000269115,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"conv2d\": false, \"conv2d_bias\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "conv2d": false,
+              "conv2d_bias": false
+            },
             "samples": [
-              0.9408910418860614,
-              0.9530995828099549,
-              0.9564424576237798
+              0.9401756660081446,
+              0.9426272502169013,
+              0.9466946669854224
             ],
-            "median": 0.9530995828099549,
+            "median": 0.9426272502169013,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -9147,7 +9266,8 @@
                   "actual": "float32"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -9348,23 +9468,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/correlation/numba/worker.py",
-            "sourceSha256": "67d8159d6e494913eae5378124dc5394a94483e8e7df94cd2c3cdba4e3467731",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/correlation/numba/worker.py",
+            "sourceSha256": "e861dc67364253c36d5e0dedc8cd76f050835a779471bf6d1ea92de6a2d2c456",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/correlation/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/correlation/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/correlation/numba/kernel.py",
-            "codeSha256": "a44fa8eecb2f0f898fac5da4f6129fc358dd64fac83657a63a13618bdaab9c76",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/correlation/numba/kernel.py",
+            "codeSha256": "d4d5812dc0b4b80f97aca226e281b0b28e83b117a7aed8cf244aa5f8462a801f",
             "returncode": 0,
-            "wallSeconds": 68.13161670882255,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 70.4000669172965,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"kernel\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "kernel": false
+            },
             "samples": [
-              16.543358041904867,
-              16.543094833381474,
-              16.541290250141174
+              17.044721957761794,
+              17.296464750077575,
+              16.586860125418752
             ],
-            "median": 16.543094833381474,
+            "median": 17.044721957761794,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -9375,7 +9502,7 @@
               "errors": {
                 "output-return.npy": {
                   "pointwise": true,
-                  "relativeNorm": 1.0457458725315997e-16
+                  "relativeNorm": 6.378500613402836e-19
                 }
               },
               "dtypes": {
@@ -9384,7 +9511,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -9585,23 +9713,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/covariance/numba/worker.py",
-            "sourceSha256": "4c16e6009b860736bf2f60a1a14bdbc235a9cee1a74e518cc9f63cfb8ca21371",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/covariance/numba/worker.py",
+            "sourceSha256": "16a3e5a5fe8d48a915ab43af5747b2fe3065508301ccf125576ab2fc370294b9",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/covariance/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/covariance/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/covariance/numba/kernel.py",
-            "codeSha256": "1a06e4513e933eb1bdeb414d3d36959fe7943c7d8364d993ac457a91ab711804",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/covariance/numba/kernel.py",
+            "codeSha256": "a7b8cac2470929d0d272aa57ea44875e092ca7de9139b620fc0368c3bb8782cb",
             "returncode": 0,
-            "wallSeconds": 68.07852783286944,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 68.98387412494048,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"kernel\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "kernel": false
+            },
             "samples": [
-              16.56091249966994,
-              16.5823643328622,
-              16.577210625167936
+              17.65604504197836,
+              16.47119566705078,
+              16.436367250047624
             ],
-            "median": 16.577210625167936,
+            "median": 16.47119566705078,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -9612,7 +9747,7 @@
               "errors": {
                 "output-return.npy": {
                   "pointwise": true,
-                  "relativeNorm": 1.5303294674930338e-16
+                  "relativeNorm": 1.6374487670240432e-19
                 }
               },
               "dtypes": {
@@ -9621,7 +9756,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -9806,23 +9942,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/crc16/numba/worker.py",
-            "sourceSha256": "fc78181f427f8faa95d883876109f900c44149f9c5a493a99c58126b52b29a5f",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/crc16/numba/worker.py",
+            "sourceSha256": "3ce6925c81c6b077cd0d23b711fcbe2a7cb8a3e1f0d10b351d057cfd2f9e56d0",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/crc16/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/crc16/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/crc16/numba/kernel.py",
-            "codeSha256": "c46d580df593990b8668968406f3c8f1542d1444789734865fff15acae0b6451",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/crc16/numba/kernel.py",
+            "codeSha256": "fb719338bc80811b6e720f4cab59ec4cb8008ceb7a20ea48538b7bf041fd94a5",
             "returncode": 0,
-            "wallSeconds": 0.4067728747613728,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 0.4414361668750644,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"crc16\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "crc16": false
+            },
             "samples": [
-              0.0015909578651189804,
-              0.0015767919830977917,
-              0.0015955828130245209
+              0.00159166706725955,
+              0.0016120001673698425,
+              0.001590833067893982
             ],
-            "median": 0.0015909578651189804,
+            "median": 0.00159166706725955,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -9842,7 +9985,8 @@
                   "actual": "int64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -10039,23 +10183,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/deriche/numba/worker.py",
-            "sourceSha256": "322f2444cac6d61835c92f5e4745d2af93680cf62fa1646c4522cd047668431f",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/deriche/numba/worker.py",
+            "sourceSha256": "8cfd5c89f2eeb77f755972885612febbd8c2a50987f24b82ccf930e08f7ffdf1",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/deriche/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/deriche/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/deriche/numba/kernel.py",
-            "codeSha256": "ba53e99380dad9b63a7fc9c25a9c2e74826d5f0e08a345cf864032b0d98b5219",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/deriche/numba/kernel.py",
+            "codeSha256": "946f33f1ebabe8772712f6ec1ae824531e586e914a7d81271ceefd891ecdb3d1",
             "returncode": 0,
-            "wallSeconds": 4.325348665937781,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 4.715189625043422,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"kernel\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "kernel": false
+            },
             "samples": [
-              0.439127582591027,
-              0.4469052921049297,
-              0.43902712501585484
+              0.47400245908647776,
+              0.4616336668841541,
+              0.45334237487986684
             ],
-            "median": 0.439127582591027,
+            "median": 0.4616336668841541,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -10066,7 +10217,7 @@
               "errors": {
                 "output-return.npy": {
                   "pointwise": true,
-                  "relativeNorm": 5.711962425452811e-16
+                  "relativeNorm": 0.0
                 }
               },
               "dtypes": {
@@ -10075,7 +10226,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -10302,23 +10454,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/doitgen/numba/worker.py",
-            "sourceSha256": "798b720b10544dfd5e8b0183f378f540ba598c7e282e97d5e30e275793657914",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/doitgen/numba/worker.py",
+            "sourceSha256": "2f63c6a7fbc565b28b8e542ca73c334d9718a3d14e51a9b95c2a76742300405a",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/doitgen/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/doitgen/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/doitgen/numba/kernel.py",
-            "codeSha256": "345f46e8592045f6c2d70e4dbb8a0ff971b827f77d1fb6b2fbddb52ba6f0fe08",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/doitgen/numba/kernel.py",
+            "codeSha256": "5bfbaedbbd779b4fe5e129d590a7811d1d2c68b9df32f1cca58a75fd600df4bc",
             "returncode": 0,
-            "wallSeconds": 9.285108250100166,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 9.323525249958038,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"kernel\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "kernel": false
+            },
             "samples": [
-              1.9380802912637591,
-              1.9371581668965518,
-              1.9390012500807643
+              1.9089489160105586,
+              1.9120339578948915,
+              2.044945125002414
             ],
-            "median": 1.9380802912637591,
+            "median": 1.9120339578948915,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -10338,7 +10497,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -10525,23 +10685,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/durbin/numba/worker.py",
-            "sourceSha256": "e1c672e216caa9eed567f83e500326c198bb269b048a214017d9543eddbf0c1a",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/durbin/numba/worker.py",
+            "sourceSha256": "457d541cc5d83e39d378b22229f8a6e889b07d69ea401ab229cd782175e2d115",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/durbin/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/durbin/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/durbin/numba/kernel.py",
-            "codeSha256": "f2e99abdae17764bb9c237e0b84541398531ffca522a7e42ba208843a9fbcdce",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/durbin/numba/kernel.py",
+            "codeSha256": "bd3fa90d6383bb3a862b6c59b60b012ec60e3dc4c149ae39fae4ce1a854b9c5f",
             "returncode": 0,
-            "wallSeconds": 2.3707222496159375,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 2.4477364160120487,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"kernel\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "kernel": false
+            },
             "samples": [
-              0.2643368747085333,
-              0.2639883332885802,
-              0.26423904206603765
+              0.26230412535369396,
+              0.2617133748717606,
+              0.26177541725337505
             ],
-            "median": 0.26423904206603765,
+            "median": 0.26177541725337505,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -10552,7 +10719,7 @@
               "errors": {
                 "output-return.npy": {
                   "pointwise": true,
-                  "relativeNorm": 1.0314220369884367e-06
+                  "relativeNorm": 0.0
                 }
               },
               "dtypes": {
@@ -10561,7 +10728,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -10840,23 +11008,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/fdtd_2d/numba/worker.py",
-            "sourceSha256": "6446c709d86cea86c4dd3b209549a716c513aca5b276debed09ac5540ec89da8",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/fdtd_2d/numba/worker.py",
+            "sourceSha256": "e6d7f370ac76bac8d0d79f872a0f23089d7a0f721abd3ff1de8ea8d2ea306ae5",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/fdtd_2d/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/fdtd_2d/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/fdtd_2d/numba/kernel.py",
-            "codeSha256": "2fa4bf3e5abcc20f0b56f0e8b28f5bde9bfa7820ad4d7821aa0193102aaa5016",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/fdtd_2d/numba/kernel.py",
+            "codeSha256": "cc788125a7dae6ee356adcd2c86afef3b714bb8755348e145e2cbc10f1c31d45",
             "returncode": 0,
-            "wallSeconds": 5.350794749800116,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 5.598279458004981,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"kernel\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "kernel": false
+            },
             "samples": [
-              0.8471633330918849,
-              0.8434474999085069,
-              0.8531347499229014
+              0.8688417500816286,
+              0.8906025839969516,
+              0.866582415997982
             ],
-            "median": 0.8471633330918849,
+            "median": 0.8688417500816286,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -10867,15 +11042,15 @@
               "errors": {
                 "output-ex.npy": {
                   "pointwise": true,
-                  "relativeNorm": 1.2851015931500457e-15
+                  "relativeNorm": 0.0
                 },
                 "output-ey.npy": {
                   "pointwise": true,
-                  "relativeNorm": 1.4596515727353867e-15
+                  "relativeNorm": 0.0
                 },
                 "output-hz.npy": {
                   "pointwise": true,
-                  "relativeNorm": 1.9826857682840747e-15
+                  "relativeNorm": 0.0
                 }
               },
               "dtypes": {
@@ -10892,7 +11067,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -11080,23 +11256,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/floyd_warshall/numba/worker.py",
-            "sourceSha256": "dae18c9436d8c91c064efb245e917fb6cf8226f0c8b2676d1c101ffc5d04e429",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/floyd_warshall/numba/worker.py",
+            "sourceSha256": "c37ad5708239cfcb34dca628ef53cdf7d6c820f0084e8bfadf01b059b00539c6",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/floyd_warshall/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/floyd_warshall/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/floyd_warshall/numba/kernel.py",
-            "codeSha256": "72b1d84bb79b6a4632c1fe65781fc29a3f9c6d615e336be8590c467dad6b69b5",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/floyd_warshall/numba/kernel.py",
+            "codeSha256": "7d840d7cd4106b984bc5f0eb1fcc189837a3ea40be39502155f34977148fc848",
             "returncode": 0,
-            "wallSeconds": 4.0005701668560505,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 4.0067277499474585,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"kernel\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "kernel": false
+            },
             "samples": [
-              0.6874960409477353,
-              0.6855310420505702,
-              0.6889375420287251
+              0.6761366673745215,
+              0.6806429582647979,
+              0.6777175408788025
             ],
-            "median": 0.6874960409477353,
+            "median": 0.6777175408788025,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -11116,7 +11299,8 @@
                   "actual": "int32"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -11354,23 +11538,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/gemm/numba/worker.py",
-            "sourceSha256": "359376d04556b828fdb86343d717c6b110038334002c63a91fe8ac665097cdca",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/gemm/numba/worker.py",
+            "sourceSha256": "9756d730d3f7c04e81e002560f39e5f73791ae6bb12a46879f573d8796b66ea4",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/gemm/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/gemm/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/gemm/numba/kernel.py",
-            "codeSha256": "dea29711688d6381e9f276634bd52646b5b95cdec6b6bc670c5f1b20f9bfbf27",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/gemm/numba/kernel.py",
+            "codeSha256": "5021d9142cec4245156ffb17be575558e5b0b082f762f92d60418d3f695016fb",
             "returncode": 0,
-            "wallSeconds": 16.041777540929615,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 16.039209000300616,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"kernel\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "kernel": false
+            },
             "samples": [
-              3.372025875374675,
-              3.3764137499965727,
-              3.3686373750679195
+              3.3699159999378026,
+              3.36148687498644,
+              3.3816245407797396
             ],
-            "median": 3.372025875374675,
+            "median": 3.3699159999378026,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -11381,7 +11572,7 @@
               "errors": {
                 "output-C.npy": {
                   "pointwise": true,
-                  "relativeNorm": 1.8467000368666563e-18
+                  "relativeNorm": 0.0
                 }
               },
               "dtypes": {
@@ -11390,7 +11581,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -11726,23 +11918,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/gemver/numba/worker.py",
-            "sourceSha256": "8079bddd80b869685ace3aee4cdae4bd979504567809607cd1d02f2ec25dd87b",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/gemver/numba/worker.py",
+            "sourceSha256": "32fd37fec5b6ab7b043842ce3ecba311e28642a32008402f89097b349fc1abd1",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/gemver/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/gemver/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/gemver/numba/kernel.py",
-            "codeSha256": "e51b52d9e6dd8abcdeb99a1f4faec8f8bcdad32be1ea4d65458af8df793903c5",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/gemver/numba/kernel.py",
+            "codeSha256": "248e62b04572f7f79c7597caf88350c2328afdf9e41daeb10521fd2a303c04da",
             "returncode": 0,
-            "wallSeconds": 2.8391847922466695,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 2.9377640830352902,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"kernel\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "kernel": false
+            },
             "samples": [
-              0.17657795827835798,
-              0.1800684998743236,
-              0.17186049977317452
+              0.1714407503604889,
+              0.1742505831643939,
+              0.17325970903038979
             ],
-            "median": 0.17657795827835798,
+            "median": 0.17325970903038979,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -11778,7 +11977,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -12001,23 +12201,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/gesummv/numba/worker.py",
-            "sourceSha256": "3688a328d65e22deebe737ec0bc738aee16014594e8cbddd37c8d7afd25c3d5b",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/gesummv/numba/worker.py",
+            "sourceSha256": "054362994c5528853ed7ec6f925c8a1d000268527d0a2acca0d1a8e23e48d3b2",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/gesummv/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/gesummv/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/gesummv/numba/kernel.py",
-            "codeSha256": "99ffd705cdde09a87c29fca82b43019ebd3a960e6e5df8d18880183b9faaf89e",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/gesummv/numba/kernel.py",
+            "codeSha256": "77d99e464c25a33a1bf14e2921aeda6afceb8e43fc1f705b9a5e62bf7846ab1b",
             "returncode": 0,
-            "wallSeconds": 2.365818834397942,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 2.479965209029615,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"kernel\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "kernel": false
+            },
             "samples": [
-              0.15726216696202755,
-              0.15627641743049026,
-              0.15025800000876188
+              0.15669920900836587,
+              0.2409329591318965,
+              0.1654262081719935
             ],
-            "median": 0.15627641743049026,
+            "median": 0.1654262081719935,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -12037,7 +12244,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -12223,23 +12431,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/go_fast/numba/worker.py",
-            "sourceSha256": "fbfe9efd3c7b42e13d0bd33620e51f57e7bf9819f6f9f741daf7211209b6f577",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/go_fast/numba/worker.py",
+            "sourceSha256": "fc37285f215a3c1157137eab96e42f8b7b8074342117642f189a3bd6d8803200",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/go_fast/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/go_fast/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/go_fast/numba/kernel.py",
-            "codeSha256": "fdf3029c0b5245876258f876746877ea454710cadda5e292d2f1fc06ca72637d",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/go_fast/numba/kernel.py",
+            "codeSha256": "e1fc8e4a795d9aa5e63524ae80feac6cd6efee78bd32945ffb2afb8f1d02ee0f",
             "returncode": 0,
-            "wallSeconds": 3.685043124947697,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 3.878451499622315,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"go_fast\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "go_fast": false
+            },
             "samples": [
-              0.08996475022286177,
-              0.08914808370172977,
-              0.08844529232010245
+              0.13551308307796717,
+              0.1295032501220703,
+              0.13184450007975101
             ],
-            "median": 0.08914808370172977,
+            "median": 0.13184450007975101,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -12250,7 +12465,7 @@
               "errors": {
                 "output-return.npy": {
                   "pointwise": true,
-                  "relativeNorm": 4.182365686265926e-15
+                  "relativeNorm": 0.0
                 }
               },
               "dtypes": {
@@ -12259,7 +12474,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -12453,23 +12669,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/gramschmidt/numba/worker.py",
-            "sourceSha256": "a61613e077ee8a95f652b851a54cf59fa24a7f327fe6293b16549597127165e9",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/gramschmidt/numba/worker.py",
+            "sourceSha256": "2b00a8890b2e7682e1cc8ae427caca8f9d3cafeb205f55443fe5449d49914c0c",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/gramschmidt/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/gramschmidt/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/gramschmidt/numba/kernel.py",
-            "codeSha256": "7143d00f382d7c4f90d5cfeb84e223e3f318e06e2170f805e30f03847f5142e9",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/gramschmidt/numba/kernel.py",
+            "codeSha256": "c6d25fe5e6c0624b03380f33ec71f1d8b22f84f885bd6dbacc9ff43c3561fcd0",
             "returncode": 0,
-            "wallSeconds": 2.300378166139126,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 2.5201415829360485,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"kernel\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "kernel": false
+            },
             "samples": [
-              0.21290099993348122,
-              0.2124478747136891,
-              0.2130536250770092
+              0.2214299999177456,
+              0.21876195771619678,
+              0.21838208427652717
             ],
-            "median": 0.21290099993348122,
+            "median": 0.21876195771619678,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -12480,7 +12703,7 @@
               "errors": {
                 "output-A.npy": {
                   "pointwise": true,
-                  "relativeNorm": 1.5794412046302278e-15
+                  "relativeNorm": 1.5743772763863507e-15
                 }
               },
               "dtypes": {
@@ -12489,7 +12712,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -12720,23 +12944,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/hdiff/numba/worker.py",
-            "sourceSha256": "ccc71d200dab8660a4c137d211c1b427aab2de75120a9e76b2f592b011292ed3",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/hdiff/numba/worker.py",
+            "sourceSha256": "b8c859c8d5c51d1fe5b948206473542d7c57dcdd04384928cdc4da078a27b8fa",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/hdiff/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/hdiff/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/hdiff/numba/kernel.py",
-            "codeSha256": "8cd922b87fb2822df74f77c31c52e9db795baf1ad16d4838f5867892dc3938b3",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/hdiff/numba/kernel.py",
+            "codeSha256": "08528e6e63f7651ed2cb780ee1923f09eebac4bf869526716fb7933ad17a26f5",
             "returncode": 0,
-            "wallSeconds": 5.261851333081722,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 5.310589542146772,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"hdiff\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "hdiff": false
+            },
             "samples": [
-              0.4326567091047764,
-              0.43232816690579057,
-              0.4334698338061571
+              0.43333012517541647,
+              0.43948179204016924,
+              0.4414395419880748
             ],
-            "median": 0.4326567091047764,
+            "median": 0.43948179204016924,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -12747,7 +12978,7 @@
               "errors": {
                 "output-out_field.npy": {
                   "pointwise": true,
-                  "relativeNorm": 1.5192888803659957e-16
+                  "relativeNorm": 0.0
                 }
               },
               "dtypes": {
@@ -12756,7 +12987,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -12986,23 +13218,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/heat_3d/numba/worker.py",
-            "sourceSha256": "7cb070b849532e6655fe5e0eeffbf8db8bd7fbab3c4c65b26b507f311906d4c0",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/heat_3d/numba/worker.py",
+            "sourceSha256": "c92e3b6245cd7023ff871287334e4b657370052ca6f6135f96af53ae9d511ba3",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/heat_3d/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/heat_3d/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/heat_3d/numba/kernel.py",
-            "codeSha256": "b6868bd402464c4ab05d3590069cac189499e187f10719a5d69a69790a8824bc",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/heat_3d/numba/kernel.py",
+            "codeSha256": "d3797e9b8623bd2f579e3653eee7431ad50642ae7063305aada4f39a89077d83",
             "returncode": 0,
-            "wallSeconds": 4.2684059999883175,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 4.6723332912661135,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"kernel\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "kernel": false
+            },
             "samples": [
-              0.5367214158177376,
-              0.5356974173337221,
-              0.5360908750444651
+              0.5735547910444438,
+              0.5743857081979513,
+              0.5757324588485062
             ],
-            "median": 0.5360908750444651,
+            "median": 0.5743857081979513,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -13013,11 +13252,11 @@
               "errors": {
                 "output-A.npy": {
                   "pointwise": true,
-                  "relativeNorm": 6.76297968314467e-17
+                  "relativeNorm": 0.0
                 },
                 "output-B.npy": {
                   "pointwise": true,
-                  "relativeNorm": 8.36925089643896e-17
+                  "relativeNorm": 0.0
                 }
               },
               "dtypes": {
@@ -13030,7 +13269,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -13256,23 +13496,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/jacobi_1d/numba/worker.py",
-            "sourceSha256": "22af2ce41dc4f13ecef07b14bf6a1117d4145853b2af5c8bffbfa1d543515ec0",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/jacobi_1d/numba/worker.py",
+            "sourceSha256": "5d004031033f4281cc195bba600c6d56a8b6329d6993351816a6fd725259947c",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/jacobi_1d/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/jacobi_1d/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/jacobi_1d/numba/kernel.py",
-            "codeSha256": "06e6b625790db5b0ee0296f51a2288be3d765410835ed2fab67df723dfd4b9af",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/jacobi_1d/numba/kernel.py",
+            "codeSha256": "f561e8cf31a437101a44a147ec9b0ba9f4a33538f5ba9d1041dd1d6baa088511",
             "returncode": 0,
-            "wallSeconds": 3.566944583784789,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 3.7590792500413954,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"kernel\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "kernel": false
+            },
             "samples": [
-              0.5713360421359539,
-              0.5711182910017669,
-              0.5716710826382041
+              0.5817473749630153,
+              0.5832507498562336,
+              0.5876088752411306
             ],
-            "median": 0.5713360421359539,
+            "median": 0.5832507498562336,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -13300,7 +13547,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -13528,23 +13776,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/jacobi_2d/numba/worker.py",
-            "sourceSha256": "5a56e21d697ed542824485f753e0fccfdae2633ebca38f31998c510638586384",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/jacobi_2d/numba/worker.py",
+            "sourceSha256": "8fe6df910164df21de3aac7d159a3fae40b76b9df68cef6fe5c4806d9efd0ab5",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/jacobi_2d/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/jacobi_2d/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/jacobi_2d/numba/kernel.py",
-            "codeSha256": "9521671413393fc50a89e8ef33bfd5cfa45196b2f7caa107dc9024ed862bc86c",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/jacobi_2d/numba/kernel.py",
+            "codeSha256": "c451ef034315780cd3558df8eb6add6424d1c1d745940c7102b336d4a76606cd",
             "returncode": 0,
-            "wallSeconds": 3.757115750107914,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 3.9973939172923565,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"kernel\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "kernel": false
+            },
             "samples": [
-              0.4988531246781349,
-              0.49879445834085345,
-              0.4987410409376025
+              0.5027794581837952,
+              0.5030082077719271,
+              0.5043611661531031
             ],
-            "median": 0.49879445834085345,
+            "median": 0.5030082077719271,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -13555,11 +13810,11 @@
               "errors": {
                 "output-A.npy": {
                   "pointwise": true,
-                  "relativeNorm": 7.483771932277515e-15
+                  "relativeNorm": 0.0
                 },
                 "output-B.npy": {
                   "pointwise": true,
-                  "relativeNorm": 7.467500843423296e-15
+                  "relativeNorm": 0.0
                 }
               },
               "dtypes": {
@@ -13572,7 +13827,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -13830,23 +14086,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/k2mm/numba/worker.py",
-            "sourceSha256": "6040943051b1337c3eeade72bc3ff741e3c98318d71bbef91ef0a51b672756d0",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/k2mm/numba/worker.py",
+            "sourceSha256": "b7594406c04e34390014972a28787267e514b216051546f262f98f3e5982de0b",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/k2mm/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/k2mm/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/k2mm/numba/kernel.py",
-            "codeSha256": "86a67d6325f55f92ddb2e3376e7f7ac22faa658d6df9cd7c051205a09d69fe64",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/k2mm/numba/kernel.py",
+            "codeSha256": "8791b1775967c90b9dc016441102f6bb4d1bc32ab2cc75a7571e9859f29baa80",
             "returncode": 0,
-            "wallSeconds": 20.749598250258714,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 20.980714458040893,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"kernel\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "kernel": false
+            },
             "samples": [
-              4.543742749840021,
-              4.4744237079285085,
-              4.4821561658754945
+              4.543842332903296,
+              4.620169084053487,
+              4.542816000059247
             ],
-            "median": 4.4821561658754945,
+            "median": 4.543842332903296,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -13866,7 +14129,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -14118,23 +14382,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/k3mm/numba/worker.py",
-            "sourceSha256": "06a5a083a3c1ca3f8ae926738f10d13377a8e29baedea47a779d50a0f2ee7e30",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/k3mm/numba/worker.py",
+            "sourceSha256": "8ab08007283e1070de0d45d892601541fe861dde59381576d9aa6967aaa2d1b9",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/k3mm/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/k3mm/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/k3mm/numba/kernel.py",
-            "codeSha256": "a2a467e2a3d6d40b04a845f905dbb11280a345565321925656572386f98f0f72",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/k3mm/numba/kernel.py",
+            "codeSha256": "a07e94d0eebdb45aabd26d52f1394631e14eacce71cae0af8beec84c0e0d8bb0",
             "returncode": 0,
-            "wallSeconds": 25.604708000086248,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 25.41219379194081,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"kernel\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "kernel": false
+            },
             "samples": [
-              6.03424808382988,
-              6.1003543748520315,
-              6.112519625108689
+              6.071609916631132,
+              6.002327041700482,
+              5.969939042348415
             ],
-            "median": 6.1003543748520315,
+            "median": 6.002327041700482,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -14154,7 +14425,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -14502,23 +14774,33 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/lenet/numba/worker.py",
-            "sourceSha256": "311ef1df7eb1a510826c6db0536e4b83c67cc64e9939bdcaf58be8134b4e5c64",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/lenet/numba/worker.py",
+            "sourceSha256": "bd0c2b9a5112bc2184471ab4c7446abc15aa0094269840e39f19ebf2249981cc",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/lenet/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/lenet/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/lenet/numba/kernel.py",
-            "codeSha256": "45b143070ebe73698e94723d40408b1273f20c6050e8304b6483e3936585ea02",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/lenet/numba/kernel.py",
+            "codeSha256": "4f6de1b59754e25f95356dd124ec6c1f3ed0aaf0b3ba3b6a48f02a2987b87030",
             "returncode": 0,
-            "wallSeconds": 7.375656999647617,
-            "memoryAudit": "BENCH_MEMORY_RSS 16384",
+            "wallSeconds": 7.32200395828113,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"conv2d\": false, \"lenet5\": false, \"maxpool2d\": false, \"relu\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "conv2d": false,
+              "lenet5": false,
+              "maxpool2d": false,
+              "relu": false
+            },
             "samples": [
-              0.6026694579049945,
-              0.6011927919462323,
-              0.604592917021364
+              0.5921308333054185,
+              0.6013622498139739,
+              0.5970452502369881
             ],
-            "median": 0.6026694579049945,
+            "median": 0.5970452502369881,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -14538,7 +14820,8 @@
                   "actual": "float32"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -14726,23 +15009,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/lu/numba/worker.py",
-            "sourceSha256": "f3a8ca9f9a2cd09fcfc00032d2ae984d40e85bd59da2dbaa3afd2da94409d472",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/lu/numba/worker.py",
+            "sourceSha256": "2e317c42e1a29429a88d7dcfb3cc0e7f8efe39074c765f9c8fa5649267734a53",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/lu/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/lu/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/lu/numba/kernel.py",
-            "codeSha256": "ba60aff495b54b60ec48f3c329766fb741042683279e0a076f177068ea856210",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/lu/numba/kernel.py",
+            "codeSha256": "e1643190bd02ce6df6983b1ca901de22cd2f7257fdc7ccdc6684f349621d0b7d",
             "returncode": 0,
-            "wallSeconds": 0.8353842906653881,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 0.896441166754812,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"kernel\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "kernel": false
+            },
             "samples": [
-              0.08047516690567136,
-              0.08052458381280303,
-              0.08018595771864057
+              0.08082649996504188,
+              0.08066645776852965,
+              0.080657958984375
             ],
-            "median": 0.08047516690567136,
+            "median": 0.08066645776852965,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -14762,7 +15052,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -14963,23 +15254,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/ludcmp/numba/worker.py",
-            "sourceSha256": "c73e557a5fc2f0c8091e10bc67525a58a92e659645489adb0faa7e47910ef887",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/ludcmp/numba/worker.py",
+            "sourceSha256": "b93f81af2d2c8be5198443736dfeb5ce443cb83b3bedf04e3040c599afd6df0e",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/ludcmp/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/ludcmp/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/ludcmp/numba/kernel.py",
-            "codeSha256": "fdb73641a9f3f3fc5c0dd887ca4c2310fb70d862c3afe553b8d127da836550a1",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/ludcmp/numba/kernel.py",
+            "codeSha256": "8dd706126c2bdb2a6652e865676e4f4cd1ac71725afed9501aaaf1903d99abd1",
             "returncode": 0,
-            "wallSeconds": 0.9496822501532733,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 0.9614218748174608,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"kernel\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "kernel": false
+            },
             "samples": [
-              0.06581037491559982,
-              0.06610024999827147,
-              0.06576520903035998
+              0.06611991580575705,
+              0.06629458302631974,
+              0.06624612491577864
             ],
-            "median": 0.06581037491559982,
+            "median": 0.06624612491577864,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -14999,7 +15297,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -15220,25 +15519,34 @@
           },
           "numba": {
             "status": "invalid",
-            "source": "$BENCH_WORK/npbench-final/mandelbrot1/numba/worker.py",
-            "sourceSha256": "e03844d0484a870e0b6df7ec1b9c10ff6e209f5534ccbac91f7cf6eaddf318ab",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/mandelbrot1/numba/worker.py",
+            "sourceSha256": "8d7daebcb722cea02da08ba5cf44bc99c4fa1cbec488c8e33d287b5513c1770c",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/mandelbrot1/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/mandelbrot1/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/mandelbrot1/numba/kernel.py",
-            "codeSha256": "19a4024f15db2358cefcf803c1f23371285483de5c2f7f8056502bdb23697863",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/mandelbrot1/numba/kernel.py",
+            "codeSha256": "4324bb20e6aa6dcf898c4de6b5209cdee63500fb3dbd63b4b4f337a3969c04e2",
             "returncode": 0,
-            "wallSeconds": 2.446497041732073,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 2.7564659588970244,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"linspace\": false, \"mandelbrot\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "linspace": false,
+              "mandelbrot": false
+            },
             "samples": [
-              0.35207912465557456,
-              0.34968616580590606,
-              0.34951275028288364
+              0.40283879078924656,
+              0.4027009583078325,
+              0.40372337494045496
             ],
-            "median": 0.34968616580590606,
+            "median": 0.40283879078924656,
             "runtime": [],
-            "reason": "output-return_0.npy: relative norm 0.0169659 exceeds 0.001"
+            "reason": "output-return_0.npy: relative norm 0.00122209 exceeds 0.001",
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -15485,23 +15793,32 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/mandelbrot2/numba/worker.py",
-            "sourceSha256": "e43cc6e465e61f4295b325573ae46f55e0431331d3b15d0108c9e24b3879da3a",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/mandelbrot2/numba/worker.py",
+            "sourceSha256": "939c6e9f8f33557e936f10a8b4477c1b2c848319ca7014bf1354b2fa34c7cc93",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/mandelbrot2/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/mandelbrot2/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/mandelbrot2/numba/kernel.py",
-            "codeSha256": "1d43ffd55cf7113291142343564176d45bbe6f21433188971df026e84edf29f8",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/mandelbrot2/numba/kernel.py",
+            "codeSha256": "9d9002cbd899bdcdffab6cc21a0c07124634e539051e57fec7ccf56404976008",
             "returncode": 0,
-            "wallSeconds": 1.9740698747336864,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 2.007495957892388,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"linspace\": false, \"mandelbrot\": false, \"mgrid\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "linspace": false,
+              "mandelbrot": false,
+              "mgrid": false
+            },
             "samples": [
-              0.15917333401739597,
-              0.15774341626092792,
-              0.1585627500899136
+              0.1651736251078546,
+              0.16902345838025212,
+              0.16782474983483553
             ],
-            "median": 0.1585627500899136,
+            "median": 0.16782474983483553,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -15512,7 +15829,7 @@
               "errors": {
                 "output-return_0.npy": {
                   "pointwise": true,
-                  "relativeNorm": 8.704174887551067e-09
+                  "relativeNorm": 2.302019862405398e-09
                 },
                 "output-return_1.npy": {
                   "pointwise": true,
@@ -15529,7 +15846,8 @@
                   "actual": "int64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -15556,7 +15874,7 @@
             ],
             "bytes": 96,
             "payloadOffset": 128,
-            "sha256": "8d69ce599fe5cd2cc2db1843b9f296767f333dcd9d5d49a2f2b8bb25db0e7fb5"
+            "sha256": "a3cf52253366e6e7f21d2779289d42a839f1eee36cebfd8685996c8a5d520e6b"
           },
           "w1": {
             "dtype": "float32",
@@ -15701,61 +16019,139 @@
           "output_args": []
         },
         "moduleDirectory": "$BENCH_WORK/npbench/npbench/benchmarks/deep_learning/mlp",
-        "directory": "$BENCH_WORK/npbench-final/mlp",
+        "inputSeed": 42,
+        "previousInputs": {
+          "input": {
+            "dtype": "float32",
+            "ndim": 2,
+            "shape": [
+              8,
+              3
+            ],
+            "bytes": 96,
+            "payloadOffset": 128,
+            "sha256": "8d69ce599fe5cd2cc2db1843b9f296767f333dcd9d5d49a2f2b8bb25db0e7fb5"
+          },
+          "w1": {
+            "dtype": "float32",
+            "ndim": 2,
+            "shape": [
+              3,
+              30000
+            ],
+            "bytes": 360000,
+            "payloadOffset": 128,
+            "sha256": "68a65d9d4ae7f63df79618aed8e43e8a3a09854391496930c50c7eb8fd38e871"
+          },
+          "b1": {
+            "dtype": "float32",
+            "ndim": 1,
+            "shape": [
+              30000
+            ],
+            "bytes": 120000,
+            "payloadOffset": 128,
+            "sha256": "a90040eef24d949cabccaf56cc51c223038e4a0a7f40f12132059870023e704f"
+          },
+          "w2": {
+            "dtype": "float32",
+            "ndim": 2,
+            "shape": [
+              30000,
+              30000
+            ],
+            "bytes": 3600000000,
+            "payloadOffset": 128,
+            "sha256": "a6ad452a526cf39d83ae173e8d540ff1d12d56cef5d0bf748b687a34c41b832b"
+          },
+          "b2": {
+            "dtype": "float32",
+            "ndim": 1,
+            "shape": [
+              30000
+            ],
+            "bytes": 120000,
+            "payloadOffset": 128,
+            "sha256": "cb9c817549293c3c5531b0ec0fcc2ec35a382674c8b209873888a96d6b3fdd50"
+          },
+          "w3": {
+            "dtype": "float32",
+            "ndim": 2,
+            "shape": [
+              30000,
+              30000
+            ],
+            "bytes": 3600000000,
+            "payloadOffset": 128,
+            "sha256": "75f1f7cda30aa8e0767d67b2b5b2268d01db9d30aa1506bff9d17d68369a40cf"
+          },
+          "b3": {
+            "dtype": "float32",
+            "ndim": 1,
+            "shape": [
+              30000
+            ],
+            "bytes": 120000,
+            "payloadOffset": 128,
+            "sha256": "8641096126a207fa22d9dd66bf0bddc7c76be77219eb9708ca941795c81b970e"
+          }
+        },
+        "directory": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/mlp",
+        "numbaFastmath": "disabled",
         "results": {
           "codon": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/mlp/codon/worker.codon",
-            "sourceSha256": "438c5a02dc27cd8892aa6249344ca4a799ce12b0adf9d4b1fc2d9d0a2e9feb18",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/mlp/codon/worker.codon",
+            "sourceSha256": "5905dff1b50342063d5317ef0f5f78a39a735b4e8559148cb5879d4b8fef5d69",
             "compileCommand": [
               "$CODON_ROOT/build/codon",
               "build",
               "-release",
-              "$BENCH_WORK/npbench-final/mlp/codon/worker.codon",
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/mlp/codon/worker.codon",
               "-o",
-              "$BENCH_WORK/npbench-final/mlp/codon/worker",
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/mlp/codon/worker",
               "--linker-flags=-framework Accelerate"
             ],
             "compile": {
               "status": "ok",
               "returncode": 0,
-              "wallSeconds": 10.64145762519911
+              "wallSeconds": 11.476487583946437
             },
-            "executableSha256": "8a97799ed5a1b8aa072627e63186f62270023669f1159d5b00b4741ffd74061a",
+            "executableSha256": "4c74020cb22f2d227a47de9ace7a39af2be3ec916dd88a175c959797011102c5",
             "command": [
-              "$BENCH_WORK/npbench-final/mlp/codon/worker"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/mlp/codon/worker"
             ],
-            "code": "$BENCH_WORK/npbench-final/mlp/codon/npbench_lib.codon",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/mlp/codon/npbench_lib.codon",
             "codeSha256": "6b0c992b3de29be70196216b4bebfdedf1a1ae61041653d82706f279248fc284",
             "returncode": 0,
-            "wallSeconds": 7.265730415936559,
+            "wallSeconds": 7.39873916702345,
             "memoryAudit": "BENCH_MEMORY 0 0",
             "samples": [
-              1.0751209175214171,
-              1.0488968752324581,
-              1.0545062506571412
+              1.083780750632286,
+              1.0856727920472622,
+              1.093206875026226
             ],
-            "median": 1.0545062506571412,
+            "median": 1.0856727920472622,
             "gc": {
               "heapAndLiveBytes": [
                 [
-                  23062020096,
-                  22984007680
+                  23059660800,
+                  22984011776
                 ],
                 [
-                  23028465664,
+                  23026089984,
+                  22983045120
+                ],
+                [
+                  23015555072,
+                  22983045120
+                ],
+                [
+                  23004577792,
                   22983049216
-                ],
-                [
-                  23017783296,
-                  22984011776
-                ],
-                [
-                  23006756864,
-                  22984011776
                 ]
               ],
-              "liveGrowthBytes": 4096,
+              "liveGrowthBytes": -962560,
               "budgetBytes": 360036004
             },
             "validation": {
@@ -15776,27 +16172,28 @@
                   "actual": "float32"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           },
           "python": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/mlp/python/worker.py",
-            "sourceSha256": "2be93782fd8d7b4cd51633fe6a8e92c6ab6ce31d709c9371acb6ec6d90927f54",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/mlp/python/worker.py",
+            "sourceSha256": "c1c7495c93e90751d7d4b0d0b9a7c85f9913cf56cb3e1a0b7501c9a789919849",
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/mlp/python/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/mlp/python/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/mlp/python/kernel.py",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/mlp/python/kernel.py",
             "codeSha256": "011f61c685cc762428ca99b93be2c9722845b5cc00216f5b8983812c3ec86496",
             "returncode": 0,
-            "wallSeconds": 6.519849834032357,
+            "wallSeconds": 7.065140957944095,
             "memoryAudit": "BENCH_MEMORY_RSS 0",
             "samples": [
-              1.0203244998119771,
-              1.00850920798257,
-              1.0558330840431154
+              1.2796224998310208,
+              1.1926329997368157,
+              1.1455421252176166
             ],
-            "median": 1.0203244998119771,
+            "median": 1.1926329997368157,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -15816,30 +16213,38 @@
                   "actual": "float32"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/mlp/numba/worker.py",
-            "sourceSha256": "bdc2c7fd652feb39a42278a5b570d8494a70fed5e2c4730a7cec89de5ee5e038",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/mlp/numba/worker.py",
+            "sourceSha256": "bb33fd034195c02b52990f7fa40a7f0ada63357d3c3c2b131fece79d0035123e",
             "adaptations": [
-              "Corrects the upstream softmax maximum axis to prevent overflow; matches NumPy's row-wise maximum."
+              "Corrects the upstream softmax maximum axis to prevent overflow; matches NumPy's row-wise maximum.",
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
             ],
+            "fastmath": false,
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/mlp/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/mlp/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/mlp/numba/kernel.py",
-            "codeSha256": "1b38dfe05814869653c0a17001a9e1b500b1870473b82dde27d82cca6e1c6bdc",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/mlp/numba/kernel.py",
+            "codeSha256": "fef1cad5857b1f4faab33f715af0799e32417e8bb24fadc392fdce2d05709e49",
             "returncode": 0,
-            "wallSeconds": 8.942672749981284,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 8.749108124990016,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"mlp\": false, \"relu\": false, \"softmax\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "mlp": false,
+              "relu": false,
+              "softmax": false
+            },
             "samples": [
-              1.1986095416359603,
-              1.108436791691929,
-              1.076161874923855
+              1.087479124777019,
+              1.092951999977231,
+              1.0921966657042503
             ],
-            "median": 1.108436791691929,
+            "median": 1.0921966657042503,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -15859,10 +16264,12 @@
                   "actual": "float32"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
-        "complete": true
+        "complete": true,
+        "measurementRun": "numba-no-fastmath-20261108"
       },
       {
         "id": "mvt",
@@ -16116,23 +16523,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/mvt/numba/worker.py",
-            "sourceSha256": "8b666b5cf43a562f55b57c93f7d8eb2a2bf4e776e4ae7634545a3800c59769ad",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/mvt/numba/worker.py",
+            "sourceSha256": "3d0dcdbccc5d54306cc0c37b090d814723606b0a7e484fce7a397dbbb2362087",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/mvt/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/mvt/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/mvt/numba/kernel.py",
-            "codeSha256": "1bfe3bfcdf791bda62c520917f63f6296236ec7b220e575bb9cc5d490ae8daa8",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/mvt/numba/kernel.py",
+            "codeSha256": "408bcfd6cc6663a63ea3a3cd16cbe450bc782b3527ea62bb0bfcfee53d3a62c7",
             "returncode": 0,
-            "wallSeconds": 2.836398833896965,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 2.772179374936968,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"kernel\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "kernel": false
+            },
             "samples": [
-              0.2405692501924932,
-              0.23533308366313577,
-              0.2478036661632359
+              0.22944362508133054,
+              0.22966408263891935,
+              0.22922570770606399
             ],
-            "median": 0.2405692501924932,
+            "median": 0.22944362508133054,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -16160,7 +16574,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -16434,23 +16849,32 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/nbody/numba/worker.py",
-            "sourceSha256": "dde6641fe5afb81f627dd438327ddd75afb25d4a3f8f0847aa06afbdb519381c",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/nbody/numba/worker.py",
+            "sourceSha256": "26ba52d2231653a055636ae49464a10526afd5e7022d37052de50c93639e623a",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/nbody/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/nbody/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/nbody/numba/kernel.py",
-            "codeSha256": "ec722be941901d04d58890cf5aa64a10a67330cc1b75cd978a326d81c2f93146",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/nbody/numba/kernel.py",
+            "codeSha256": "a08b4f6bf48a120d80cc8982b75714adef8ec7dd5afb0344eb5625d529078dbd",
             "returncode": 0,
-            "wallSeconds": 4.649337790906429,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 5.104941874742508,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"getAcc\": false, \"getEnergy\": false, \"nbody\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "getAcc": false,
+              "getEnergy": false,
+              "nbody": false
+            },
             "samples": [
-              0.11347537487745285,
-              0.11356608429923654,
-              0.11332249967381358
+              0.19292366690933704,
+              0.1957449996843934,
+              0.19648041715845466
             ],
-            "median": 0.11347537487745285,
+            "median": 0.1957449996843934,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -16461,11 +16885,11 @@
               "errors": {
                 "output-return_0.npy": {
                   "pointwise": false,
-                  "relativeNorm": 0.07844149268722025
+                  "relativeNorm": 0.061644001279571994
                 },
                 "output-return_1.npy": {
                   "pointwise": false,
-                  "relativeNorm": 0.04428644449791431
+                  "relativeNorm": 0.03876556816125215
                 }
               },
               "dtypes": {
@@ -16478,7 +16902,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -16667,23 +17092,31 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/nussinov/numba/worker.py",
-            "sourceSha256": "5aa08ef076f53614bb179bf92137f0358784d4549e635d206ecabdb13f3c9a04",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/nussinov/numba/worker.py",
+            "sourceSha256": "13e4f3ecab26a5201cd873e83f566e292f396064b0bf76def32457ad42dea405",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/nussinov/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/nussinov/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/nussinov/numba/kernel.py",
-            "codeSha256": "7f61d9b4ff0053468a94ae9f96de9b831a3bd6097b170f7724a98b335deb4ef2",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/nussinov/numba/kernel.py",
+            "codeSha256": "102f205b46b689a3992203462ae25e7954717ccff17af03f7e112ae63000c133",
             "returncode": 0,
-            "wallSeconds": 0.5729401670396328,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 0.624371959362179,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"kernel\": false, \"match\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "kernel": false,
+              "match": false
+            },
             "samples": [
-              0.0015185833908617496,
-              0.001525083091109991,
-              0.001584374811500311
+              0.001514124684035778,
+              0.0015189172700047493,
+              0.001521499827504158
             ],
-            "median": 0.001525083091109991,
+            "median": 0.0015189172700047493,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -16703,7 +17136,8 @@
                   "actual": "int32"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -16963,23 +17397,33 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/resnet/numba/worker.py",
-            "sourceSha256": "e3a30f21b90db7ed8f66c81d40b84099cf8b8ad46c7e023abd76f359267a9a6b",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/resnet/numba/worker.py",
+            "sourceSha256": "f32bab1cc9c270b68d172c56b87f881335db33b1be8fa95b6a050d76634fb6b5",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/resnet/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/resnet/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/resnet/numba/kernel.py",
-            "codeSha256": "fdaf55f491e7c6d373f0092ac15495ee0aefc461df2d8290493196a6aaabdd29",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/resnet/numba/kernel.py",
+            "codeSha256": "3664e644f6995db1b7cb216ff37ecf87d75d39be43b2bc1c39073916f3e66303",
             "returncode": 0,
-            "wallSeconds": 16.595003833062947,
-            "memoryAudit": "BENCH_MEMORY_RSS 16384",
+            "wallSeconds": 16.882102207746357,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"batchnorm2d\": false, \"conv2d\": false, \"relu\": false, \"resnet_basicblock\": false}\nBENCH_MEMORY_RSS 16384",
+            "fastmathDispatchers": {
+              "batchnorm2d": false,
+              "conv2d": false,
+              "relu": false,
+              "resnet_basicblock": false
+            },
             "samples": [
-              1.625628207810223,
-              1.6133909579366446,
-              1.6105873337946832
+              1.6178702912293375,
+              1.6121843750588596,
+              1.6153820841573179
             ],
-            "median": 1.6133909579366446,
+            "median": 1.6153820841573179,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -16999,7 +17443,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -17298,23 +17743,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/scattering_self_energies/numba/worker.py",
-            "sourceSha256": "0ed8655939ce1260c675dacdc3638e9e864ee7c6ee8b7e115fed5dd001fe2931",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/scattering_self_energies/numba/worker.py",
+            "sourceSha256": "689d204f9e81d8cb59b17645f9baa342b004b74974218567b6582c4b0028b401",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/scattering_self_energies/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/scattering_self_energies/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/scattering_self_energies/numba/kernel.py",
-            "codeSha256": "8ae08424e4eba7f056dab04f0bd3a63091d6e4409ea79ef756f1b4c7e7a744c1",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/scattering_self_energies/numba/kernel.py",
+            "codeSha256": "024dea207a152705e8e36e6faf9d06d294701b058d880ccc7178fd143c28ccd9",
             "returncode": 0,
-            "wallSeconds": 2.249654374551028,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 2.3907147916033864,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"scattering_self_energies\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "scattering_self_energies": false
+            },
             "samples": [
-              0.02862641680985689,
-              0.028978124726563692,
-              0.028826292138546705
+              0.029913833364844322,
+              0.029530375264585018,
+              0.029564250260591507
             ],
-            "median": 0.028826292138546705,
+            "median": 0.029564250260591507,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -17325,7 +17777,7 @@
               "errors": {
                 "output-Sigma.npy": {
                   "pointwise": true,
-                  "relativeNorm": 7.187059103099651e-17
+                  "relativeNorm": 6.902896295002234e-17
                 }
               },
               "dtypes": {
@@ -17334,7 +17786,8 @@
                   "actual": "complex128"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -17535,23 +17988,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/seidel_2d/numba/worker.py",
-            "sourceSha256": "f0c6becb3871369db252c98ec25248ef8f3d23da9eca45447d4d446a5b391f78",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/seidel_2d/numba/worker.py",
+            "sourceSha256": "2fe7ff87a92d56db714e8c7e279bebe99c1d847ca30e73a366cfa91094523017",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/seidel_2d/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/seidel_2d/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/seidel_2d/numba/kernel.py",
-            "codeSha256": "b20910d4be3ba846f3f285517e09426b80c85ea9ee545b832b116c7ab529efe6",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/seidel_2d/numba/kernel.py",
+            "codeSha256": "3e55133456ec68bf4c695a46f8ceaca075ed08590059def65f540bc8ebd0bb1a",
             "returncode": 0,
-            "wallSeconds": 1.3281325842253864,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 1.455654582940042,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"kernel\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "kernel": false
+            },
             "samples": [
-              0.006600082851946354,
-              0.006582124624401331,
-              0.0066559999249875546
+              0.009625084232538939,
+              0.009566833265125751,
+              0.009479749947786331
             ],
-            "median": 0.006600082851946354,
+            "median": 0.009566833265125751,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -17562,7 +18022,7 @@
               "errors": {
                 "output-A.npy": {
                   "pointwise": true,
-                  "relativeNorm": 2.0212940567998447e-15
+                  "relativeNorm": 0.0
                 }
               },
               "dtypes": {
@@ -17571,7 +18031,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -17753,23 +18214,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/softmax/numba/worker.py",
-            "sourceSha256": "c1cb89d50a2466bbf4489e1b58b71db1c37b2d8dec60865dbbc6a3efba590fa5",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/softmax/numba/worker.py",
+            "sourceSha256": "5212665d9b56bcd266e9ecf2029b2554ae949b90521f56980ed5a0676c239266",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/softmax/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/softmax/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/softmax/numba/kernel.py",
-            "codeSha256": "80ad340ff21442dfafea4f731cadd55c09726a3fd597dfeea6f3bde6c261bf60",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/softmax/numba/kernel.py",
+            "codeSha256": "3bb49c2f9d615cfce1922ce973c39df5d5cff2c67889d4244cb3a42675a3a2a0",
             "returncode": 0,
-            "wallSeconds": 12.544606499839574,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 15.271443041972816,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"softmax\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "softmax": false
+            },
             "samples": [
-              2.1380406669341028,
-              2.2011925419792533,
-              2.1574631249532104
+              2.785526250023395,
+              2.794728333130479,
+              2.7742843753658235
             ],
-            "median": 2.1574631249532104,
+            "median": 2.785526250023395,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -17789,7 +18257,8 @@
                   "actual": "float32"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -18025,23 +18494,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/spmv/numba/worker.py",
-            "sourceSha256": "1d85c81ae7d589273a13d4bcc0975cb667d5dd4848978e05d30526c2f8b07add",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/spmv/numba/worker.py",
+            "sourceSha256": "6c5a4b301958ea933fc01bc78ed06165a554646ed7b44b0fed7b9aa1c30a48cb",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/spmv/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/spmv/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/spmv/numba/kernel.py",
-            "codeSha256": "03abe73aa38b4218f9b5984b55d17af16702b82e03cf9d85b2828d55c6af549d",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/spmv/numba/kernel.py",
+            "codeSha256": "dd82dd80c18b5e85a16c7846e8c777ff4085cf7e4889427483337a09fbe03e11",
             "returncode": 0,
-            "wallSeconds": 0.5822605420835316,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 0.6106087910011411,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"spmv\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "spmv": false
+            },
             "samples": [
-              0.0154573330655694,
-              0.01596087496727705,
-              0.015340708661824465
+              0.014361541252583265,
+              0.014303999952971935,
+              0.01398137491196394
             ],
-            "median": 0.0154573330655694,
+            "median": 0.014303999952971935,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -18061,7 +18537,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -18280,23 +18757,31 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/stockham_fft/numba/worker.py",
-            "sourceSha256": "1c1e715cdc3e8830f20b17cf05dc51501eb9303f23f2f6c127a46b402bebd6bb",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/stockham_fft/numba/worker.py",
+            "sourceSha256": "5d8a9c3006124839591243dd25073cd20db752735532887cc6581a620253526a",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/stockham_fft/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/stockham_fft/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/stockham_fft/numba/kernel.py",
-            "codeSha256": "4c5fad45f70de2bd0add2f7174d2a0d3d4bc668273e94ead6bb0412443ff9f10",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/stockham_fft/numba/kernel.py",
+            "codeSha256": "9622c65f044055de7687ae39c6e4b201900177f9cfe8e868ef45c7dbe817daef",
             "returncode": 0,
-            "wallSeconds": 6.038685499690473,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 5.653468375094235,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"mgrid\": false, \"stockham_fft\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "mgrid": false,
+              "stockham_fft": false
+            },
             "samples": [
-              0.4456825419329107,
-              0.44580766605213284,
-              0.4446541671641171
+              0.544018791988492,
+              0.5293073332868516,
+              0.5286986660212278
             ],
-            "median": 0.4456825419329107,
+            "median": 0.5293073332868516,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -18307,7 +18792,7 @@
               "errors": {
                 "output-y.npy": {
                   "pointwise": true,
-                  "relativeNorm": 1.743292174037753e-16
+                  "relativeNorm": 1.8329180627805378e-16
                 }
               },
               "dtypes": {
@@ -18316,7 +18801,8 @@
                   "actual": "complex128"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -18548,23 +19034,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/symm/numba/worker.py",
-            "sourceSha256": "ec3c897873caaf3bd36f34ec31911c704835511f28994086c841f1658ed9485d",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/symm/numba/worker.py",
+            "sourceSha256": "446b265e11a2078b678dd37e29cfe83e5a7cd4e517e692c8e049d5a464d2744c",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/symm/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/symm/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/symm/numba/kernel.py",
-            "codeSha256": "ea91d6c9814f8ed9a155bdc5981d37ae027da12c84e32683a172c9cbcf1c2cd6",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/symm/numba/kernel.py",
+            "codeSha256": "b492cbd179eecaa9d51adccd9680032267a431bc96ffbc2708933e9872f97d7f",
             "returncode": 0,
-            "wallSeconds": 1.76563270855695,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 1.9743504580110312,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"kernel\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "kernel": false
+            },
             "samples": [
-              0.08984283311292529,
-              0.0896090418100357,
-              0.08937900001183152
+              0.08978008292615414,
+              0.08942362479865551,
+              0.08856079168617725
             ],
-            "median": 0.0896090418100357,
+            "median": 0.08942362479865551,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -18575,7 +19068,7 @@
               "errors": {
                 "output-C.npy": {
                   "pointwise": true,
-                  "relativeNorm": 1.1537389018430791e-16
+                  "relativeNorm": 9.994142547722528e-17
                 }
               },
               "dtypes": {
@@ -18584,7 +19077,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -18816,23 +19310,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/syr2k/numba/worker.py",
-            "sourceSha256": "4af7f2203cc81f00987912c55c546810c3f5c832926214d1ff3c8277fec9aa52",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/syr2k/numba/worker.py",
+            "sourceSha256": "5b2bdf9c06a80783ee7cecdad26bd6088f605d19f527e745f3def74797c6e216",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/syr2k/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/syr2k/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/syr2k/numba/kernel.py",
-            "codeSha256": "2adf7cf6ea6b4b0f6d6f61e60c3ddb307083aa92155de46668867ef06f894353",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/syr2k/numba/kernel.py",
+            "codeSha256": "2e8b78a05ac95698985e07c2fa4a0cc40488b48d7e64b9b77ded711ccaeb1e5d",
             "returncode": 0,
-            "wallSeconds": 1.484364541247487,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 1.5754917077720165,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"kernel\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "kernel": false
+            },
             "samples": [
-              0.040326999966055155,
-              0.04050445882603526,
-              0.04061583383008838
+              0.04280120832845569,
+              0.04243924980983138,
+              0.04270695801824331
             ],
-            "median": 0.04050445882603526,
+            "median": 0.04270695801824331,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -18843,7 +19344,7 @@
               "errors": {
                 "output-C.npy": {
                   "pointwise": true,
-                  "relativeNorm": 9.542572155742805e-17
+                  "relativeNorm": 0.0
                 }
               },
               "dtypes": {
@@ -18852,7 +19353,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -19070,23 +19572,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/syrk/numba/worker.py",
-            "sourceSha256": "d0d4e68817980c24093ef6c211cea0beeabe272f3e7245fab807bd0fa5e111a6",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/syrk/numba/worker.py",
+            "sourceSha256": "239220f7fbc6599b7f49d31124c7326124c47475ea00c50d9529609720ffaf25",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/syrk/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/syrk/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/syrk/numba/kernel.py",
-            "codeSha256": "07900588fd217f34db9d543456ea2b20b5ea829d1bcf46233808044133f217ff",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/syrk/numba/kernel.py",
+            "codeSha256": "d96967f49e512b5dcff62a6e60de82185c243f42d040f16af4948f450d8a092c",
             "returncode": 0,
-            "wallSeconds": 1.6997341248206794,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 1.7756222910247743,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"kernel\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "kernel": false
+            },
             "samples": [
-              0.09567829081788659,
-              0.0961818341165781,
-              0.0951827079989016
+              0.09601924987509847,
+              0.09540208289399743,
+              0.0960123329423368
             ],
-            "median": 0.09567829081788659,
+            "median": 0.0960123329423368,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -19106,7 +19615,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -19320,23 +19830,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/trisolv/numba/worker.py",
-            "sourceSha256": "a4304dcd332dff6f8cc236ea787c674054dd96bcb2f5317697b9edd91cf9c350",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/trisolv/numba/worker.py",
+            "sourceSha256": "fd505c91b4900552e5c8b8bdd0a4bf55453672907b37fb9b09ba9af27a496fac",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/trisolv/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/trisolv/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/trisolv/numba/kernel.py",
-            "codeSha256": "3d99f7c11d254293ddadcc6ee62865b15d4df8149d4abd16ca65f95e0baf9f8d",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/trisolv/numba/kernel.py",
+            "codeSha256": "2dddade616d5df6290334708051bacea227ebc7ca5c6a2fd90ae81304d625f6f",
             "returncode": 0,
-            "wallSeconds": 1.1027041249908507,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 1.1298080827109516,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"kernel\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "kernel": false
+            },
             "samples": [
-              0.025475500151515007,
-              0.025629292242228985,
-              0.030687584076076746
+              0.04443712532520294,
+              0.025958749931305647,
+              0.025934041943401098
             ],
-            "median": 0.025629292242228985,
+            "median": 0.025958749931305647,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -19356,7 +19873,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -19569,23 +20087,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/trmm/numba/worker.py",
-            "sourceSha256": "4b3ebe94b71e5c810f07cb6d8ed2bd64a0b2247dffb73bf23816a4df4b39c755",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/trmm/numba/worker.py",
+            "sourceSha256": "76ca9bec173498524b799de233bb6196c3850b4e7c08734b81aeba0415bff94a",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/trmm/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/trmm/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/trmm/numba/kernel.py",
-            "codeSha256": "0f24174edd9a613a14bbae246cd4871443c5ea4d92db2132eaddee4b0a88cb99",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/trmm/numba/kernel.py",
+            "codeSha256": "3db2123cdafc4a22715cfcc0ebd182c88db51ed322108140df4a7314dec62cdf",
             "returncode": 0,
-            "wallSeconds": 1.1861026249825954,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 1.185653084423393,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"kernel\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "kernel": false
+            },
             "samples": [
-              0.1649575000628829,
-              0.1430847500450909,
-              0.14375516632571816
+              0.14747404074296355,
+              0.14664866589009762,
+              0.14533416740596294
             ],
-            "median": 0.14375516632571816,
+            "median": 0.14664866589009762,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -19605,7 +20130,8 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
@@ -19871,23 +20397,30 @@
           },
           "numba": {
             "status": "ok",
-            "source": "$BENCH_WORK/npbench-final/vadv/numba/worker.py",
-            "sourceSha256": "295198a3740feab9cc6d0e3bb9020724d4eeb1a35189c7ffa2469e9a2c4b426a",
+            "source": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/vadv/numba/worker.py",
+            "sourceSha256": "3b47634fd4cd89af0e711e5dc60b59c4f7e37a29b12994eb175ad846fe654d48",
+            "fastmath": false,
+            "adaptations": [
+              "Disables fast-math in Numba kernels and helpers; preserves the original algorithm."
+            ],
             "command": [
               "$BENCH_WORK/venv/bin/python",
-              "$BENCH_WORK/npbench-final/vadv/numba/worker.py"
+              "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/vadv/numba/worker.py"
             ],
-            "code": "$BENCH_WORK/npbench-final/vadv/numba/kernel.py",
-            "codeSha256": "ae7e8d082db4aff17edb0b2aef1e8f50e5168e913449af8b3c22010281960f2c",
+            "code": "$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/vadv/numba/kernel.py",
+            "codeSha256": "32256eebb039c0139562fb8f0aedf86ee8f3e4ac9d4c532f7ce0f590f1f5f88c",
             "returncode": 0,
-            "wallSeconds": 6.168409707956016,
-            "memoryAudit": "BENCH_MEMORY_RSS 0",
+            "wallSeconds": 6.3308625421486795,
+            "memoryAudit": "BENCH_NUMBA_FASTMATH {\"vadv\": false}\nBENCH_MEMORY_RSS 0",
+            "fastmathDispatchers": {
+              "vadv": false
+            },
             "samples": [
-              0.2903923341073096,
-              0.29112954204902053,
-              0.34322633408010006
+              0.38096254132688046,
+              0.3081257496960461,
+              0.3040591669268906
             ],
-            "median": 0.29112954204902053,
+            "median": 0.3081257496960461,
             "runtime": [],
             "validation": {
               "status": "passed",
@@ -19898,7 +20431,7 @@
               "errors": {
                 "output-utens_stage.npy": {
                   "pointwise": true,
-                  "relativeNorm": 1.875331561759781e-13
+                  "relativeNorm": 0.0
                 }
               },
               "dtypes": {
@@ -19907,11 +20440,173 @@
                   "actual": "float64"
                 }
               }
-            }
+            },
+            "measurementRun": "numba-no-fastmath-20261108"
           }
         },
         "complete": true
       }
-    ]
+    ],
+    "measurementRuns": {
+      "numba-no-fastmath-20261108": {
+        "status": "complete",
+        "preset": "L",
+        "samples": 3,
+        "processTimeoutSeconds": 900,
+        "numbaFastmath": "disabled",
+        "numbaOnly": true,
+        "refreshCases": [
+          "mlp"
+        ],
+        "environment": {
+          "date": "2026-11-08",
+          "machine": "arm64",
+          "platform": "darwin",
+          "codon": "0.20.6",
+          "npbenchCommit": "f2d7f27d87ba4881991e62c18a607aa6ba52b260",
+          "python": "3.15.2",
+          "numpy": "2.5.4",
+          "numba": "0.68.1",
+          "scipy": "1.18.1",
+          "pypy": "Python 3.12.15 (d90944c94ad6, Oct 13 2026, 21:21:03)\n[PyPy 8.0.1 with GCC Apple LLVM 16.0.0 (clang-1600.0.26.6)]",
+          "clang": "clang version 23.1.5 (https://github.com/llvm/llvm-project 392dfff97d29b59d77e5cac6d4b6ef2585fe7117)\nTarget: arm64-apple-darwin25.6.0\nThread model: posix\nInstalledDir: $BENCH_WORK/toolchains/LLVM-23.1.5-macOS-ARM64/bin",
+          "blas": [],
+          "threads": 1,
+          "os": "26.6.2",
+          "cpu": "Apple M1 Max",
+          "memoryBytes": 68719476736,
+          "logicalCpus": 10,
+          "macosBuild": "25G83",
+          "sdk": "14.5",
+          "runtimeLibraries": [
+            "build/libcodonrt.dylib",
+            "build/libomp.dylib",
+            "Apple Accelerate"
+          ],
+          "codonCommit": "8ae46096545463f8eba1352a689403371f0e9f7f",
+          "codonSourceDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "fingerprints": {
+            "build/codon": "9f9f0f37c208a9c76e63fedf9858e139018753d9186d678079624316052e3cbf",
+            "build/libcodonc.dylib": "c27ef7e16047a538bc1f3e420f9bfa4b70f2ba41ff475697e7128a29213b9017",
+            "build/libcodonrt.dylib": "0b37c8d20f56e08f5e18d411c3d710ae231ecac6eea1fdf9ee1287c2ea1e63f1",
+            "build/libomp.dylib": "ea02061f04733372e7278fc87cd910e7855c1721e2b6187148eac403facc100e",
+            "bench/refresh.py": "c005fce47056771a927af7b3fe527847a7516d97f881aebb86a1dca4ece43e31",
+            "bench/codon/binary_trees.py": "bd162f270580171cf6d35daf4c53378b63571bc0b1c65aa51b414a2d83adb17e",
+            "bench/codon/chaos.py": "d412da468d8d41c5d6b3429028de85270c0482c382086ab622944dfd198497f0",
+            "bench/codon/fannkuch.py": "84ae6cd2d2c0a80999a00fbaeeca789df1cc9ebef5acb81228d3c563a2c1edfe",
+            "bench/codon/float.py": "9048d147ef211e0ccdde178b05f22f2e9a894ce6a525afc37ef6ff1c2e85c173",
+            "bench/codon/go.py": "35b9089fddc7bc85448478fcfce766fe49f3452f4f07d2fbc78a25d106295e1f",
+            "bench/codon/mandelbrot.py": "32f389d6ec0d9f79ae81d6b29562726201ad1e5a78702c3feb1835dac8004e77",
+            "bench/codon/nbody.py": "e391030a30e25bdcbd8ba6b5e8532154c255cd69e722233009693f87f5e8006d",
+            "bench/codon/primes.py": "3b31986f8d2d9e30dfa5d76350e554b234114d329e13393d24f245d135fb4310",
+            "bench/codon/set_partition.py": "613ef399703dfdabef82c8ef4f3b8a851fd740926ff5225b0da4829715d0be49",
+            "bench/codon/spectral_norm.py": "1877aa28e65ec64b694bd8898f31cec091eed2c4f060b1a4638f5555f61d510a",
+            "bench/codon/sum.py": "dd36126daae0548c29ee6b28d1e9732eb5e0b83f7148d57d067a1182ec2e98aa",
+            "bench/codon/taq.py": "b82285eb55c9243898b765ae9b686dbb4d14cc2ec626b3b77453a929bdb020af",
+            "bench/codon/word_count.py": "783c5625a72623c1b2856ccbe8ec8241f0a807937ac0334d3942ca67b1d5272f",
+            "bench/codon/binary_trees.codon": "4b7620a3d7136153c7ba38ee6a3bcae3a30d484aaab82cc69c5d8b40527acaa7",
+            "bench/codon/chaos.codon": "e04a995d988704a5b84eb24c8b65cb630e11f6015b08d35d0b34530e58e0168a",
+            "bench/codon/fannkuch.codon": "d4d0f581d9ebfd5285523c3037c7ea8bcdc6b4cf2dddfbb95404a910adcfaa9a",
+            "bench/codon/go.codon": "a43841a1723f5425a32372b0785f9a6e8fdc1f6a54aabc7fde7d38d67357dc09",
+            "bench/codon/mandelbrot.codon": "1fdb1a8a13196ef9ed1eb3832da5f82ea2d16814ad0f50ebb1d61d81f90e048d",
+            "bench/codon/npbench.codon": "532ca7c51bb0430f04e176280ffcabf5ea5b1e89aa72918dcf535923a46ac05d",
+            "bench/codon/npbench_lib.codon": "87127fc0f43ee5a0a6013c98d25a810395ce01d0e5550f1547f9c52ad45520d6",
+            "bench/codon/primes.codon": "32366f93d58c686bb4781fea893d655e565fe056ac65dfe04edd2dd2c695d885",
+            "bench/codon/binary_trees.cpp": "828fed0cf32c2a3084f2c26bd19b8a672fd8d12cbd7ead4a76d82e55a19f4b10",
+            "bench/codon/nbody.cpp": "03015a5d744fcbfd232a5e59fe66dec3d8445828e94f9cd8f0be130119dae3e2",
+            "bench/codon/set_partition.cpp": "f7ffdfe333d1800c537a5e06259693ceca4e819f33de4d0806235002d28f17cd",
+            "bench/codon/taq.cpp": "85a6bb3e7f25aaf50279df5d6bb303c33ed90bfaa0a617be7bbcd56dc771b2b0",
+            "bench/codon/word_count.cpp": "95fb1a3edb4ad2cbf4137d7e0460265bb1d5a8a1551bb498316042cc15a4e3d7"
+          }
+        },
+        "policy": "Fixed input buffers, in-place reset and GC outside timer; one warm-up; kernel-only wall time.",
+        "baselineReport": "$BENCH_WORK/npbench-final/report.json",
+        "baselineReportSha256": "91fce69cbb02304853e49bbe887d5c39bb4f704071836d3884cf45196b0c72a0"
+      },
+      "uniform-histogram-no-fastmath-20261108": {
+        "status": "complete",
+        "preset": "L",
+        "samples": 3,
+        "processTimeoutSeconds": 900,
+        "numbaFastmath": "disabled",
+        "numbaOnly": false,
+        "refreshCases": [],
+        "environment": {
+          "date": "2026-11-08",
+          "machine": "arm64",
+          "platform": "darwin",
+          "codon": "0.20.6",
+          "npbenchCommit": "f2d7f27d87ba4881991e62c18a607aa6ba52b260",
+          "python": "3.15.2",
+          "numpy": "2.5.4",
+          "numba": "0.68.1",
+          "scipy": "1.18.1",
+          "pypy": "Python 3.12.15 (d90944c94ad6, Oct 13 2026, 21:21:03)\n[PyPy 8.0.1 with GCC Apple LLVM 16.0.0 (clang-1600.0.26.6)]",
+          "clang": "clang version 23.1.5 (https://github.com/llvm/llvm-project 392dfff97d29b59d77e5cac6d4b6ef2585fe7117)\nTarget: arm64-apple-darwin25.6.0\nThread model: posix\nInstalledDir: $BENCH_WORK/toolchains/LLVM-23.1.5-macOS-ARM64/bin",
+          "blas": [],
+          "threads": 1,
+          "os": "26.6.2",
+          "cpu": "Apple M1 Max",
+          "memoryBytes": 68719476736,
+          "logicalCpus": 10,
+          "macosBuild": "25G83",
+          "sdk": "14.5",
+          "runtimeLibraries": [
+            "build/libcodonrt.dylib",
+            "build/libomp.dylib",
+            "Apple Accelerate"
+          ],
+          "codonCommit": "8ae46096545463f8eba1352a689403371f0e9f7f",
+          "codonSourceDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "fingerprints": {
+            "build/codon": "9f9f0f37c208a9c76e63fedf9858e139018753d9186d678079624316052e3cbf",
+            "build/libcodonc.dylib": "c27ef7e16047a538bc1f3e420f9bfa4b70f2ba41ff475697e7128a29213b9017",
+            "build/libcodonrt.dylib": "0b37c8d20f56e08f5e18d411c3d710ae231ecac6eea1fdf9ee1287c2ea1e63f1",
+            "build/libomp.dylib": "ea02061f04733372e7278fc87cd910e7855c1721e2b6187148eac403facc100e",
+            "bench/refresh.py": "c005fce47056771a927af7b3fe527847a7516d97f881aebb86a1dca4ece43e31",
+            "bench/codon/binary_trees.py": "bd162f270580171cf6d35daf4c53378b63571bc0b1c65aa51b414a2d83adb17e",
+            "bench/codon/chaos.py": "d412da468d8d41c5d6b3429028de85270c0482c382086ab622944dfd198497f0",
+            "bench/codon/fannkuch.py": "84ae6cd2d2c0a80999a00fbaeeca789df1cc9ebef5acb81228d3c563a2c1edfe",
+            "bench/codon/float.py": "9048d147ef211e0ccdde178b05f22f2e9a894ce6a525afc37ef6ff1c2e85c173",
+            "bench/codon/go.py": "35b9089fddc7bc85448478fcfce766fe49f3452f4f07d2fbc78a25d106295e1f",
+            "bench/codon/mandelbrot.py": "32f389d6ec0d9f79ae81d6b29562726201ad1e5a78702c3feb1835dac8004e77",
+            "bench/codon/nbody.py": "e391030a30e25bdcbd8ba6b5e8532154c255cd69e722233009693f87f5e8006d",
+            "bench/codon/primes.py": "3b31986f8d2d9e30dfa5d76350e554b234114d329e13393d24f245d135fb4310",
+            "bench/codon/set_partition.py": "613ef399703dfdabef82c8ef4f3b8a851fd740926ff5225b0da4829715d0be49",
+            "bench/codon/spectral_norm.py": "1877aa28e65ec64b694bd8898f31cec091eed2c4f060b1a4638f5555f61d510a",
+            "bench/codon/sum.py": "dd36126daae0548c29ee6b28d1e9732eb5e0b83f7148d57d067a1182ec2e98aa",
+            "bench/codon/taq.py": "b82285eb55c9243898b765ae9b686dbb4d14cc2ec626b3b77453a929bdb020af",
+            "bench/codon/word_count.py": "783c5625a72623c1b2856ccbe8ec8241f0a807937ac0334d3942ca67b1d5272f",
+            "bench/codon/binary_trees.codon": "4b7620a3d7136153c7ba38ee6a3bcae3a30d484aaab82cc69c5d8b40527acaa7",
+            "bench/codon/chaos.codon": "e04a995d988704a5b84eb24c8b65cb630e11f6015b08d35d0b34530e58e0168a",
+            "bench/codon/fannkuch.codon": "d4d0f581d9ebfd5285523c3037c7ea8bcdc6b4cf2dddfbb95404a910adcfaa9a",
+            "bench/codon/go.codon": "a43841a1723f5425a32372b0785f9a6e8fdc1f6a54aabc7fde7d38d67357dc09",
+            "bench/codon/mandelbrot.codon": "1fdb1a8a13196ef9ed1eb3832da5f82ea2d16814ad0f50ebb1d61d81f90e048d",
+            "bench/codon/npbench.codon": "532ca7c51bb0430f04e176280ffcabf5ea5b1e89aa72918dcf535923a46ac05d",
+            "bench/codon/npbench_lib.codon": "87127fc0f43ee5a0a6013c98d25a810395ce01d0e5550f1547f9c52ad45520d6",
+            "bench/codon/primes.codon": "32366f93d58c686bb4781fea893d655e565fe056ac65dfe04edd2dd2c695d885",
+            "bench/codon/binary_trees.cpp": "828fed0cf32c2a3084f2c26bd19b8a672fd8d12cbd7ead4a76d82e55a19f4b10",
+            "bench/codon/nbody.cpp": "03015a5d744fcbfd232a5e59fe66dec3d8445828e94f9cd8f0be130119dae3e2",
+            "bench/codon/set_partition.cpp": "f7ffdfe333d1800c537a5e06259693ceca4e819f33de4d0806235002d28f17cd",
+            "bench/codon/taq.cpp": "85a6bb3e7f25aaf50279df5d6bb303c33ed90bfaa0a617be7bbcd56dc771b2b0",
+            "bench/codon/word_count.cpp": "95fb1a3edb4ad2cbf4137d7e0460265bb1d5a8a1551bb498316042cc15a4e3d7",
+            "build/benchmarks-20261106-aws/compare-uniform-histogram-20261108.py": "b3a4d61e6b66b0fb1db21ea25ecf34469b1a06b9e4309a5ed63d27fe8cf6522c",
+            "build/benchmarks-20261106/azimint-hist-shared-L-20261108/azimint_hist/codon/npbench_lib.codon": "af2cfb66378018712f2ba4c0b90ee91da7cd2658ce53abca86719171283504e4",
+            "build/benchmarks-20261106-aws/complete-uniform-histogram-20261108.py": "02fb23910504345d8fd21b2679e0a4d811083e54b2d230ea570aaf90d1d754ed"
+          }
+        },
+        "policy": "Fixed input buffers, in-place reset and GC outside timer; one warm-up; kernel-only wall time.",
+        "baselineReport": "$BENCH_WORK/npbench-final/report.json",
+        "baselineReportSha256": "91fce69cbb02304853e49bbe887d5c39bb4f704071836d3884cf45196b0c72a0",
+        "experiment": {
+          "variant": "uniform",
+          "uniformSource": "$BENCH_WORK/azimint-hist-shared-L-20261108/azimint_hist/codon/npbench_lib.codon",
+          "uniformSourceSha256": "af2cfb66378018712f2ba4c0b90ee91da7cd2658ce53abca86719171283504e4",
+          "reference": "Uniform source on all three runtimes; additionally checked against the prior original NumPy reference"
+        },
+        "carriedFromReport": "$BENCH_WORK/azimint-hist-uniform-no-fastmath-L-20261108/uniform/report.json",
+        "carriedFromReportSha256": "43822d2a4a213c66e71798c14dbf769d7f38bd9d6aa5b398f377448af63d7a24"
+      }
+    }
   }
 }

@@ -2,7 +2,7 @@ import numpy as np
 import numba as nb
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def contour_integral(NR, NM, slab_per_bc, Ham, int_pts, Y):
     P0 = np.zeros((NR, NM), dtype=np.complex128)
     P1 = np.zeros((NR, NM), dtype=np.complex128)

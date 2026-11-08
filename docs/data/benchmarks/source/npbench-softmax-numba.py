@@ -3,7 +3,7 @@ import numba as nb
 
 
 # Numerically-stable version of softmax
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def softmax(x):
     new_shape = (x.shape[0], x.shape[1], x.shape[2], 1)
     # tmp_max = np.max(x, axis=-1, keepdims=True)

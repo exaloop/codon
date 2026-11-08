@@ -30,7 +30,7 @@ import numpy as np
 import numba as nb
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def arc_distance(theta_1, phi_1, theta_2, phi_2):
     """
     Calculates the pairwise arc distance between all points in vector a and b.

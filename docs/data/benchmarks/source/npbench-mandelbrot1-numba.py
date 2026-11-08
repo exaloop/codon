@@ -8,7 +8,7 @@ import numpy as np
 import numba as nb
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def linspace(start, stop, num, dtype):
     X = np.empty((num, ), dtype=dtype)
     dist = (stop - start) / (num - 1)
@@ -17,7 +17,7 @@ def linspace(start, stop, num, dtype):
     return X
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def mandelbrot(xmin, xmax, ymin, ymax, xn, yn, maxiter, horizon=2.0):
     # Adapted from https://www.ibm.com/developerworks/community/blogs/jfp/...
     #              .../entry/How_To_Compute_Mandelbrodt_Set_Quickly?lang=en

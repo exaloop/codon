@@ -51,6 +51,9 @@ if samples == 0:
     print('BENCH_MEMORY', allocated, heap_growth)
     assert allocated < 65536
     assert heap_growth == 0
+elif samples == -1:
+    sample(data, radius, npt)
+    print('BENCH_REFERENCE_ONLY')
 else:
     for iteration in range(samples + 1):
         GC_gcollect()

@@ -11,7 +11,7 @@ import numpy as np
 import numba as nb
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def build_up_b(rho, dt, dx, dy, u, v):
     b = np.zeros_like(u)
     b[1:-1,
@@ -41,7 +41,7 @@ def build_up_b(rho, dt, dx, dy, u, v):
     return b
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def pressure_poisson_periodic(nit, p, dx, dy, b):
     pn = np.empty_like(p)
 
@@ -69,7 +69,7 @@ def pressure_poisson_periodic(nit, p, dx, dy, b):
         p[0, :] = p[1, :]  # dp/dy = 0 at y = 0
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def channel_flow(nit, u, v, dt, dx, dy, p, rho, nu, F):
     udiff = 1
     stepcount = 0

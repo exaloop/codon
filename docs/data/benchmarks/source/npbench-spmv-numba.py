@@ -5,7 +5,7 @@ import numba as nb
 
 # Matrix-Vector Multiplication with the matrix given in Compressed Sparse Row
 # (CSR) format
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def spmv(A_row, A_col, A_val, x):
     y = np.empty(A_row.size - 1, A_val.dtype)
 

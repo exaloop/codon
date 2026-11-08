@@ -4,7 +4,7 @@ import numpy as np
 import numba as nb
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def scattering_self_energies(neigh_idx, dH, G, D, Sigma):
 
     for k in range(G.shape[0]):

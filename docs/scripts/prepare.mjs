@@ -1,4 +1,4 @@
-import {cpSync, existsSync, mkdirSync, writeFileSync} from 'node:fs';
+import {cpSync, existsSync, mkdirSync, rmSync, writeFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {load} from 'cheerio';
 import {icons} from 'lucide';
@@ -12,6 +12,7 @@ if (!existsSync(index)) {
 mkdirSync(`${output}/libraries/api`, {recursive: true});
 cpSync(`${docs}/img`, `${output}/img`, {recursive: true});
 cpSync(index, `${output}/libraries/api/api-search-index.json`);
+rmSync(`${output}/benchmarks`, {recursive: true, force: true});
 cpSync(`${docs}/data/benchmarks`, `${output}/benchmarks`, {recursive: true});
 
 const sprite = load('<svg xmlns="http://www.w3.org/2000/svg"/>', {xmlMode: true});

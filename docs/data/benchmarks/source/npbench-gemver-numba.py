@@ -2,7 +2,7 @@ import numpy as np
 import numba as nb
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def kernel(alpha, beta, A, u1, v1, u2, v2, w, x, y, z):
 
     A += np.outer(u1, v1) + np.outer(u2, v2)

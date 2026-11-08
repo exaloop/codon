@@ -2,13 +2,13 @@ import numpy as np
 import numba as nb
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def relu(x):
     return np.maximum(x, 0)
 
 
 # Deep learning convolutional operator (stride = 1)
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def conv2d(input, weights):
     K = weights.shape[0]  # Assuming square kernel
     N = input.shape[0]
@@ -40,7 +40,7 @@ def conv2d(input, weights):
 
 
 # 2x2 maxpool operator, as used in LeNet-5
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def maxpool2d(x):
     # output = np.empty(
     #     [x.shape[0], x.shape[1] // 2, x.shape[2] // 2, x.shape[3]],
@@ -61,7 +61,7 @@ def maxpool2d(x):
 
 
 # LeNet-5 Convolutional Neural Network (inference mode)
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def lenet5(input, conv1, conv1bias, conv2, conv2bias, fc1w, fc1b, fc2w, fc2b,
            fc3w, fc3b, N, C_before_fc1):
     x = relu(conv2d(input, conv1) + conv1bias)

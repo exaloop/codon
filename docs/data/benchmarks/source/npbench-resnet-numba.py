@@ -2,13 +2,13 @@ import numpy as np
 import numba as nb
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def relu(x):
     return np.maximum(x, 0)
 
 
 # Deep learning convolutional operator (stride = 1)
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def conv2d(input, weights):
     K = weights.shape[0]  # Assuming square kernel
     N = input.shape[0]
@@ -40,7 +40,7 @@ def conv2d(input, weights):
 
 
 # Batch normalization operator, as used in ResNet
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def batchnorm2d(x, eps=1e-5):
     # mean = np.mean(x, axis=0, keepdims=True)
     mean = np.empty(x.shape, dtype=x.dtype)
@@ -53,7 +53,7 @@ def batchnorm2d(x, eps=1e-5):
 
 # Bottleneck residual block (after initial convolution, without downsampling)
 # in the ResNet-50 CNN (inference)
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def resnet_basicblock(input, conv1, conv2, conv3):
     # Pad output of first convolution for second convolution
     padded = np.zeros((input.shape[0], input.shape[1] + 2, input.shape[2] + 2,

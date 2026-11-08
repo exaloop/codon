@@ -7,9 +7,14 @@ import resource
 import json
 from threadpoolctl import threadpool_info, threadpool_limits
 thread_limits = threadpool_limits(limits=1)
-spec = importlib.util.spec_from_file_location('kernel_module', '$BENCH_WORK/npbench-final/ludcmp/numba/kernel.py')
+spec = importlib.util.spec_from_file_location('kernel_module', '$BENCH_WORK/numba-no-fastmath-L-20261108-seeded/ludcmp/numba/kernel.py')
 kernel_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(kernel_module)
+from numba.core.registry import CPUDispatcher
+dispatchers = {name: value for name, value in vars(kernel_module).items() if isinstance(value, CPUDispatcher)}
+assert dispatchers, 'No Numba dispatchers found'
+assert all(value.targetoptions.get('fastmath', False) is False for value in dispatchers.values()), 'Fast-math is still enabled'
+print('BENCH_NUMBA_FASTMATH', json.dumps({name: False for name in sorted(dispatchers)}))
 directory = sys.argv[1]
 samples = int(sys.argv[2])
 original_A = np.load(directory + '/input-A.npy')
@@ -47,6 +52,9 @@ if samples == 0:
         assert b.ctypes.data == address_b
     rss_growth = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - rss_before
     print('BENCH_MEMORY_RSS', rss_growth)
+elif samples == -1:
+    sample(A, b)
+    print('BENCH_REFERENCE_ONLY')
 else:
     for iteration in range(samples + 1):
         gc.collect()

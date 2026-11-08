@@ -22,7 +22,7 @@ hide_table_of_contents: true
   <div class="pipeline-notes" aria-live="polite" aria-atomic="true">
     <div class="pipeline-note-anchor">
     <p class="pipeline-note" id="pipeline-source-info" data-pipeline-info="source" hidden>Write familiar Python, then compile and run it with Codon.</p>
-    <p class="pipeline-note" id="pipeline-ast-info" data-pipeline-info="ast" hidden>Python's syntax and semantics, represented as a tree that the compiler can analyze.</p>
+    <p class="pipeline-note" id="pipeline-ast-info" data-pipeline-info="ast" hidden>Codon reads Python code and organizes it into a form the compiler can analyze.</p>
     <p class="pipeline-note" id="pipeline-types-info" data-pipeline-info="types" hidden>Static type checking and inference enable native code generation, without requiring type annotations.</p>
     <p class="pipeline-note" id="pipeline-ir-info" data-pipeline-info="ir" hidden>A rich intermediate representation supports compiler analyses, transformations, and optimizations.</p>
     <p class="pipeline-note" id="pipeline-optimizations-info" data-pipeline-info="optimizations" hidden>General-purpose, Python-specific, and domain-specific optimizations turn high-level code into efficient native programs.</p>
@@ -34,7 +34,7 @@ hide_table_of_contents: true
       <a class="pipeline-label" id="pipeline-label-source" href="/start/usage/" data-pipeline-label="source" tabindex="-1"><small aria-hidden="true">00</small><strong>Python code</strong></a>
     </div>
     <div class="pipeline-compiler-group" role="group" aria-labelledby="pipeline-compiler-name">
-      <a class="pipeline-label" id="pipeline-label-ast" href="/developers/compilation/#parsing" data-pipeline-label="ast" tabindex="-1"><small aria-hidden="true">01</small><strong>Syntax tree</strong></a>
+      <a class="pipeline-label" id="pipeline-label-ast" href="/developers/compilation/#parsing" data-pipeline-label="ast" tabindex="-1"><small aria-hidden="true">01</small><strong>Parsing</strong></a>
       <a class="pipeline-label" id="pipeline-label-types" href="/developers/compilation/#type-checking" data-pipeline-label="types" tabindex="-1"><small aria-hidden="true">02</small><strong>Type checking</strong></a>
       <a class="pipeline-label" id="pipeline-label-ir" href="/developers/ir/" data-pipeline-label="ir" tabindex="-1"><small aria-hidden="true">03</small><strong>Codon IR</strong></a>
       <a class="pipeline-label" id="pipeline-label-optimizations" href="/developers/compilation/#codon-ir-optimization" data-pipeline-label="optimizations" tabindex="-1"><small aria-hidden="true">04</small><strong>Optimization</strong></a>

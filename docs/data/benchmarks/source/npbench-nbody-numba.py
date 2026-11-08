@@ -11,7 +11,7 @@ Code calculates pairwise forces according to Newton's Law of Gravity
 """
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def getAcc(pos, mass, G, softening):
     """
     Calculate the acceleration on each particle due to Newton's Law 
@@ -50,7 +50,7 @@ def getAcc(pos, mass, G, softening):
     return a
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def getEnergy(pos, vel, mass, G):
     """
     Get kinetic energy (KE) and potential energy (PE) of simulation
@@ -93,7 +93,7 @@ def getEnergy(pos, vel, mass, G):
     return KE, PE
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def nbody(mass, pos, vel, N, Nt, dt, G, softening):
 
     # Convert to Center-of-Mass frame

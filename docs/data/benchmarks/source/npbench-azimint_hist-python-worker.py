@@ -7,7 +7,7 @@ import resource
 import json
 from threadpoolctl import threadpool_info, threadpool_limits
 thread_limits = threadpool_limits(limits=1)
-spec = importlib.util.spec_from_file_location('kernel_module', '$BENCH_WORK/npbench-final/azimint_hist/python/kernel.py')
+spec = importlib.util.spec_from_file_location('kernel_module', '$BENCH_WORK/azimint-hist-uniform-complete-L-20261108/azimint_hist/python/kernel.py')
 kernel_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(kernel_module)
 directory = sys.argv[1]
@@ -48,6 +48,9 @@ if samples == 0:
         assert radius.ctypes.data == address_radius
     rss_growth = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - rss_before
     print('BENCH_MEMORY_RSS', rss_growth)
+elif samples == -1:
+    sample(data, radius, npt)
+    print('BENCH_REFERENCE_ONLY')
 else:
     for iteration in range(samples + 1):
         gc.collect()

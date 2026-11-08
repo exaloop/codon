@@ -21,6 +21,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCES = ROOT / "bench" / "codon"
+LIBRARY_PATH = "DYLD_LIBRARY_PATH" if sys.platform == "darwin" else "LD_LIBRARY_PATH"
 APPLICATIONS = {
     "binary_trees": ["20"],
     "chaos": ["chaos.ppm"],
@@ -32,7 +33,6 @@ APPLICATIONS = {
     "set_partition": ["15"],
     "spectral_norm": [],
     "primes": ["100000"],
-    "sum": [],
     "taq": ["{taq}"],
     "word_count": ["{words}"],
 }
@@ -94,9 +94,31 @@ def benchmark_environment(work):
         environment[name] = "1"
     environment["PYTHONHASHSEED"] = "0"
     environment["PYTHONPATH"] = str(work / "npbench")
+    if sys.platform == "linux":
+        environment["NUMPY_MADVISE_HUGEPAGE"] = "1"
     environment.pop("CODON_PATH", None)
     environment.pop("DYLD_LIBRARY_PATH", None)
+    environment.pop("LD_LIBRARY_PATH", None)
     return environment
+
+
+def toolchain_paths(work):
+    configuration = work / "toolchains.json"
+    if configuration.exists():
+        return {key: Path(value).absolute() for key, value in json.loads(configuration.read_text()).items()}
+    assert sys.platform == "darwin", "Provide toolchains.json with clang and pypy paths on Linux"
+    return dict(clang=work / "toolchains" / "LLVM-23.1.5-macOS-ARM64" / "bin" / "clang++",
+                pypy=work / "toolchains" / "pypy3.12-v8.0.1-macos_arm64" / "bin" / "pypy3")
+
+
+def huge_page_policy():
+    root = Path("/sys/kernel/mm/transparent_hugepage")
+    return {name: (root / name).read_text().strip() for name in ("enabled", "defrag")}
+
+
+def require_huge_pages():
+    if sys.platform == "linux":
+        assert "[always]" in huge_page_policy()["enabled"], "NPBench requires transparent huge pages explicitly enabled (always)"
 
 
 def execute(command, directory, environment, log, timeout=3600):
@@ -129,8 +151,15 @@ def prepare_npbench(work, name, preset, directory):
     inputs = dict(parameters)
     if "init" in spec:
         module = load_module(module_dir / f"{spec['module_name']}.py")
-        values = getattr(module, spec["init"]["func_name"])(
-            *(parameters[key] for key in spec["init"]["input_args"]))
+        random_state = np.random.get_state() if name == "mlp" else None
+        if random_state is not None:
+            np.random.seed(42)
+        try:
+            values = getattr(module, spec["init"]["func_name"])(
+                *(parameters[key] for key in spec["init"]["input_args"]))
+        finally:
+            if random_state is not None:
+                np.random.set_state(random_state)
         if not isinstance(values, tuple):
             values = (values,)
         assert len(values) == len(spec["init"]["output_args"])
@@ -158,6 +187,8 @@ def prepare_npbench(work, name, preset, directory):
     result = dict(id=name, suite="npbench", title=spec["name"], preset=preset,
                   parameters=parameters, inputs=descriptors, metadata=spec,
                   moduleDirectory=str(module_dir))
+    if name == "mlp":
+        result["inputSeed"] = 42
     write_json(directory / "case.json", result)
     return result
 
@@ -184,6 +215,12 @@ def npbench_worker(case, backend):
                    f"spec = importlib.util.spec_from_file_location('kernel_module', {str(filename)!r})",
                    "kernel_module = importlib.util.module_from_spec(spec)",
                    "spec.loader.exec_module(kernel_module)"]
+        if backend == "numba" and case.get("numbaFastmath") == "disabled":
+            prefix += ["from numba.core.registry import CPUDispatcher",
+                       "dispatchers = {name: value for name, value in vars(kernel_module).items() if isinstance(value, CPUDispatcher)}",
+                       "assert dispatchers, 'No Numba dispatchers found'",
+                       "assert all(value.targetoptions.get('fastmath', False) is False for value in dispatchers.values()), 'Fast-math is still enabled'",
+                       "print('BENCH_NUMBA_FASTMATH', json.dumps({name: False for name in sorted(dispatchers)}))"]
         function = f"kernel_module.{spec['func_name']}"
         collector = "gc.collect()"
     prefix += ["directory = sys.argv[1]", "samples = int(sys.argv[2])"]
@@ -201,6 +238,11 @@ def npbench_worker(case, backend):
                        f"np.copyto({argument}, original_{argument})"]
         else:
             prefix += [f"{argument} = {descriptor['value']!r}"]
+    if sys.platform == "linux":
+        prefix += ["with open('/proc/self/smaps_rollup') as memory_status:",
+                   "    for record in memory_status:",
+                   "        if record.startswith('AnonHugePages:'):",
+                   "            print('BENCH_HUGEPAGES_KIB', int(record.split()[1]))"]
     prefix += ["", "def emit(value, filename):"]
     if native:
         prefix += ["    if value is None:", "        return",
@@ -249,7 +291,8 @@ def npbench_worker(case, backend):
     else:
         prefix += ["    rss_growth = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - rss_before",
                    "    print('BENCH_MEMORY_RSS', rss_growth)"]
-    prefix += ["else:", "    for iteration in range(samples + 1):", f"        {collector}"]
+    prefix += ["elif samples == -1:", f"    sample({arguments})", "    print('BENCH_REFERENCE_ONLY')",
+               "else:", "    for iteration in range(samples + 1):", f"        {collector}"]
     if native:
         prefix += ["        if iteration > 0:",
                    "            print('BENCH_GC', GC_get_heap_size(), GC_get_heap_size() - GC_get_free_bytes())"]
@@ -306,24 +349,92 @@ def check_npbench_outputs(reference, candidate, metadata):
             "normLimit": norm_limit, "errors": errors, "dtypes": dtypes}
 
 
+def disable_numba_fastmath(text):
+    source = text.encode()
+    offsets = list(itertools.accumulate([0] + [len(line) for line in source.splitlines(keepends=True)]))
+    replacements = []
+    for node in ast.walk(ast.parse(text)):
+        if isinstance(node, ast.keyword) and node.arg == "fastmath":
+            value = node.value
+            replacements.append((offsets[value.lineno - 1] + value.col_offset,
+                                 offsets[value.end_lineno - 1] + value.end_col_offset))
+    assert replacements, "No explicit Numba fast-math options found"
+    for start, end in sorted(replacements, reverse=True):
+        source = source[:start] + b"False" + source[end:]
+    return source.decode()
+
+
+def uniform_histogram_source(text):
+    removed = set()
+    for node in ast.walk(ast.parse(text)):
+        if isinstance(node, ast.Import) and all(alias.name == "numba" for alias in node.names):
+            removed.update(range(node.lineno, node.end_lineno + 1))
+        elif isinstance(node, ast.FunctionDef):
+            for decorator in node.decorator_list:
+                if (isinstance(decorator, ast.Call) and isinstance(decorator.func, ast.Attribute)
+                        and isinstance(decorator.func.value, ast.Name)
+                        and decorator.func.value.id == "nb" and decorator.func.attr in ("jit", "njit")):
+                    removed.update(range(decorator.lineno, decorator.end_lineno + 1))
+    return "".join(line for number, line in enumerate(text.splitlines(keepends=True), 1) if number not in removed)
+
+
 def prepare_npbench_plan(args, names):
+    require_huge_pages()
     work = args.work.absolute()
     environment = benchmark_environment(work)
     sys.path.insert(0, str(work / "npbench"))
     args.output.mkdir(parents=True, exist_ok=True)
+    refresh_cases = args.refresh_cases.split(",") if args.refresh_cases else []
+    assert set(refresh_cases) <= set(names), "Refreshed cases must be included in this run"
     plan = {"status": "prepared", "preset": args.preset, "samples": args.samples,
+              "processTimeoutSeconds": args.timeout,
+              "numbaFastmath": args.numba_fastmath,
+              "numbaOnly": args.numba_only,
+              "refreshCases": refresh_cases,
               "environment": provenance(work),
               "policy": "Fixed input buffers, in-place reset and GC outside timer; one warm-up; kernel-only wall time.",
               "cases": []}
+    baseline = None
+    if args.baseline_report:
+        baseline = json.loads(args.baseline_report.read_text())
+        assert baseline["status"] == "complete" and baseline["preset"] == args.preset
+        assert baseline["samples"] == args.samples
+        expected = dict(baseline["environment"])
+        current = dict(plan["environment"])
+        expected.setdefault("platform", "darwin" if "macosBuild" in expected else "linux")
+        for metadata in (expected, current):
+            for key in ("date", "fingerprints", "codonCommit", "codonSourceDiffSha256"):
+                metadata.pop(key, None)
+            metadata["blas"] = sorted(metadata["blas"], key=lambda library: json.dumps(library, sort_keys=True))
+        assert expected == current, "Baseline software or hardware differs"
+        for filename, expected_hash in baseline["environment"]["fingerprints"].items():
+            if filename != "bench/refresh.py":
+                assert plan["environment"]["fingerprints"][filename] == expected_hash, filename
+        plan["baselineReport"] = str(args.baseline_report.absolute())
+        plan["baselineReportSha256"] = digest(args.baseline_report)
+        baseline = {case["id"]: case for case in baseline["cases"]}
     for name in names:
         print(f"Preparing {name} ({args.preset})", flush=True)
         directory = args.output.absolute() / name
         directory.mkdir(parents=True, exist_ok=True)
         try:
             case = prepare_npbench(work, name, args.preset, directory)
+            if baseline is not None:
+                for key in ("inputs", "parameters", "metadata"):
+                    expected, actual = baseline[name][key], case[key]
+                    if key == "inputs" and name in refresh_cases:
+                        expected = {argument: {field: value for field, value in descriptor.items() if field != "sha256"}
+                                    for argument, descriptor in expected.items()}
+                        actual = {argument: {field: value for field, value in descriptor.items() if field != "sha256"}
+                                  for argument, descriptor in actual.items()}
+                    assert actual == expected, f"Baseline {key} differs for {name}"
+                if name in refresh_cases:
+                    case["previousInputs"] = baseline[name]["inputs"]
             case["directory"] = str(directory)
+            case["numbaFastmath"] = args.numba_fastmath
             case["results"] = {}
-            for backend in ("codon", "python", "numba"):
+            numba_only = args.numba_only and name not in refresh_cases
+            for backend in (("python", "numba") if numba_only else ("codon", "python", "numba")):
                 backend_dir = directory / backend
                 backend_dir.mkdir(exist_ok=True)
                 for filename in directory.glob("input-*.npy"):
@@ -334,12 +445,19 @@ def prepare_npbench_plan(args, names):
                 source.write_text(npbench_worker(case, backend))
                 runtime_environment = dict(environment)
                 result = dict(status="prepared", source=str(source), sourceSha256=digest(source))
+                if numba_only and backend == "python":
+                    result["referenceOnly"] = True
                 if backend == "codon":
-                    library = (SOURCES / "npbench_lib.codon").read_text()
-                    assert library.count("import numpy.pybridge\n") == 1
-                    (backend_dir / "npbench_lib.codon").write_text(
-                        library.replace("import numpy.pybridge\n", ""))
-                    runtime_environment["DYLD_LIBRARY_PATH"] = str(ROOT / "build")
+                    if name == "azimint_hist":
+                        original = Path(case["moduleDirectory"]) / f"{case['metadata']['module_name']}_numba_n.py"
+                        library = uniform_histogram_source(original.read_text())
+                        result["adaptations"] = ["Uses the same portable weighted-histogram helpers across Codon, Python, and Numba."]
+                    else:
+                        library = (SOURCES / "npbench_lib.codon").read_text()
+                        assert library.count("import numpy.pybridge\n") == 1
+                        library = library.replace("import numpy.pybridge\n", "")
+                    (backend_dir / "npbench_lib.codon").write_text(library)
+                    runtime_environment[LIBRARY_PATH] = str(ROOT / "build")
                     command = [str(ROOT / "build" / "codon"), "build", "-release", str(source), "-o", str(backend_dir / "worker")]
                     if sys.platform == "darwin":
                         command.append("--linker-flags=-framework Accelerate")
@@ -353,15 +471,22 @@ def prepare_npbench_plan(args, names):
                     command = [str(backend_dir / "worker")]
                     code = backend_dir / "npbench_lib.codon"
                 else:
-                    suffix = "numpy" if backend == "python" else "numba_n"
+                    suffix = "numba_n" if backend == "numba" or name == "azimint_hist" else "numpy"
                     original = Path(case["moduleDirectory"]) / f"{case['metadata']['module_name']}_{suffix}.py"
                     code = backend_dir / "kernel.py"
                     text = original.read_text()
+                    if name == "azimint_hist" and backend == "python":
+                        text = uniform_histogram_source(text)
+                        result["adaptations"] = ["Uses the same portable weighted-histogram helpers as Codon and Numba; the Python loop is interpreted."]
                     if name == "mlp" and backend == "numba":
                         text = replace_once(text,
                             "for i in range(x.shape[1]):\n        tmp_max[:, 0] = np.max(x[:, i])",
                             "for i in range(x.shape[0]):\n        tmp_max[i, 0] = np.max(x[i, :])")
                         result["adaptations"] = ["Corrects the upstream softmax maximum axis to prevent overflow; matches NumPy's row-wise maximum."]
+                    if backend == "numba":
+                        result["fastmath"] = False
+                        text = disable_numba_fastmath(text)
+                        result.setdefault("adaptations", []).append("Disables fast-math in Numba kernels and helpers; preserves the original algorithm.")
                     code.write_text(text)
                     command = [sys.executable, str(source)]
                 result.update(command=command, code=str(code), codeSha256=digest(code))
@@ -375,6 +500,7 @@ def prepare_npbench_plan(args, names):
 
 
 def run_npbench(args):
+    require_huge_pages()
     work, output = args.work.absolute(), args.output.absolute()
     environment = benchmark_environment(work)
     names = args.cases.split(",") if args.cases else [case["id"] for case in catalogue() if case["suite"] == "npbench"]
@@ -388,6 +514,11 @@ def run_npbench(args):
     if args.prepare_only:
         return
     assert args.samples == report["samples"], "Sample count differs from preparation"
+    assert args.numba_fastmath == report.get("numbaFastmath", "upstream"), "Fast-math policy differs from preparation"
+    assert args.numba_only == report.get("numbaOnly", False), "Backend selection differs from preparation"
+    assert (args.refresh_cases.split(",") if args.refresh_cases else []) == report.get("refreshCases", []), "Refreshed cases differ from preparation"
+    if "baselineReport" in report:
+        assert digest(Path(report["baselineReport"])) == report["baselineReportSha256"]
     check_fingerprints(report["environment"])
     report["status"] = "running"
     for case_index, case in enumerate(report["cases"]):
@@ -403,12 +534,22 @@ def run_npbench(args):
             backend_dir = directory / backend
             runtime_environment = dict(environment)
             if backend == "codon":
-                runtime_environment["DYLD_LIBRARY_PATH"] = str(ROOT / "build")
+                runtime_environment[LIBRARY_PATH] = str(ROOT / "build")
             assert digest(Path(result["source"])) == result["sourceSha256"]
             assert digest(Path(result["code"])) == result["codeSha256"]
             if "executableSha256" in result:
                 assert digest(Path(result["command"][0])) == result["executableSha256"]
             command = result["command"]
+            if result.get("referenceOnly"):
+                reference = execute(command + [str(backend_dir), "-1"], backend_dir, runtime_environment,
+                                    backend_dir / "reference.log", args.timeout)
+                result.update(reference, phase="validation-reference")
+                if result["status"] == "ok":
+                    assert "BENCH_REFERENCE_ONLY" in (backend_dir / "reference.log").read_text()
+                    result["status"] = "reference"
+                print(case["id"], backend, result["status"], flush=True)
+                write_json(report_file, report)
+                continue
             audit = execute(command + [str(backend_dir), "0"], backend_dir, runtime_environment, backend_dir / "memory.log", args.timeout)
             if audit["status"] != "ok":
                 result.update(audit, phase="memory-audit")
@@ -419,9 +560,17 @@ def run_npbench(args):
             result.update(measured, memoryAudit=(backend_dir / "memory.log").read_text().strip())
             if measured["status"] == "ok":
                 lines = (backend_dir / "run.log").read_text().splitlines()
+                if backend == "numba" and report.get("numbaFastmath") == "disabled":
+                    options = [json.loads(line.removeprefix("BENCH_NUMBA_FASTMATH ")) for line in lines if line.startswith("BENCH_NUMBA_FASTMATH ")]
+                    assert len(options) == 1 and options[0] and all(value is False for value in options[0].values())
+                    result["fastmathDispatchers"] = options[0]
                 samples = [float(line.split()[1]) for line in lines if line.startswith("BENCH_TIME ")]
                 assert len(samples) == args.samples and all(math.isfinite(value) and value > 0 for value in samples)
                 result.update(samples=samples, median=statistics.median(samples))
+                if sys.platform == "linux":
+                    huge_pages = [int(line.split()[1]) for line in lines if line.startswith("BENCH_HUGEPAGES_KIB ")]
+                    assert len(huge_pages) == 1, "Missing huge-page observation"
+                    result["hugePagesKiB"] = huge_pages[0]
                 if backend == "codon":
                     records = [list(map(int, line.split()[1:])) for line in lines if line.startswith("BENCH_GC ")]
                     assert len(records) == args.samples + 1
@@ -436,10 +585,10 @@ def run_npbench(args):
             print(case["id"], backend, result["status"], result.get("median"), flush=True)
             write_json(report_file, report)
         for backend, result in case["results"].items():
-            if result["status"] != "ok":
+            if result["status"] not in ("ok", "memory-review"):
                 continue
             try:
-                assert case["results"]["python"]["status"] == "ok", "Python reference failed"
+                assert case["results"]["python"]["status"] in ("ok", "reference"), "Python reference failed"
                 result["validation"] = check_npbench_outputs(directory / "python", directory / backend, case["metadata"])
             except (AssertionError, OSError, ValueError) as error:
                 result.update(status="invalid", reason=str(error)[:2000])
@@ -468,33 +617,52 @@ def provenance(work):
     import scipy.linalg
     from threadpoolctl import threadpool_info, threadpool_limits
 
-    llvm = work / "toolchains" / "LLVM-23.1.5-macOS-ARM64"
-    pypy = work / "toolchains" / "pypy3.12-v8.0.1-macos_arm64" / "bin" / "pypy3"
-    files = [ROOT / "build" / name for name in ("codon", "libcodonc.dylib", "libcodonrt.dylib", "libomp.dylib")]
+    tools = toolchain_paths(work)
+    suffix = ".dylib" if sys.platform == "darwin" else ".so"
+    files = [ROOT / "build" / name for name in ("codon", f"libcodonc{suffix}", f"libcodonrt{suffix}", f"libomp{suffix}")]
     files.append(Path(__file__))
+    if (work / "toolchains.json").exists():
+        files.append(work / "toolchains.json")
     files += sorted(SOURCES.glob("*.py")) + sorted(SOURCES.glob("*.codon")) + sorted(SOURCES.glob("*.cpp"))
+    source_stamp = ROOT / "benchmark-source.json"
+    if source_stamp.exists():
+        source_metadata = json.loads(source_stamp.read_text())
+        files.append(source_stamp)
+    else:
+        source_metadata = dict(codonCommit=command_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"]),
+                               codonSourceDiffSha256=hashlib.sha256(command_output(["git", "-C", str(ROOT), "diff", "HEAD", "--", "codon", "stdlib"]).encode()).hexdigest())
+    if sys.platform == "darwin":
+        host = dict(os=command_output(["sw_vers", "-productVersion"]),
+                    cpu=command_output(["sysctl", "-n", "machdep.cpu.brand_string"]),
+                    memoryBytes=int(command_output(["sysctl", "-n", "hw.memsize"])),
+                    logicalCpus=int(command_output(["sysctl", "-n", "hw.logicalcpu"])),
+                    macosBuild=command_output(["sw_vers", "-buildVersion"]),
+                    sdk=command_output(["xcrun", "--show-sdk-version"]),
+                    runtimeLibraries=["build/libcodonrt.dylib", "build/libomp.dylib", "Apple Accelerate"])
+    else:
+        assert sys.platform == "linux", sys.platform
+        cpu = next(line.partition(":")[2].strip() for line in Path("/proc/cpuinfo").read_text().splitlines() if line.startswith("model name"))
+        host = dict(os=platform.freedesktop_os_release()["PRETTY_NAME"], kernel=platform.release(), cpu=cpu,
+                    memoryBytes=os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE"), logicalCpus=os.cpu_count(),
+                    transparentHugePages=huge_page_policy(), numpyMadviseHugepage=1,
+                    runtimeLibraries=["build/libcodonrt.so", "build/libomp.so", "OpenBLAS ILP64 (linked into Codon runtime)"])
+        if shutil.which("nvidia-smi"):
+            host["gpu"] = command_output(["nvidia-smi", "--query-gpu=name,memory.total,driver_version", "--format=csv,noheader"])
     with threadpool_limits(limits=1):
         blas = threadpool_info()
-    return dict(date=time.strftime("%Y-%m-%d"), machine=platform.machine(),
-                os=command_output(["sw_vers", "-productVersion"]),
-                cpu=command_output(["sysctl", "-n", "machdep.cpu.brand_string"]),
-                memoryBytes=int(command_output(["sysctl", "-n", "hw.memsize"])),
-                logicalCpus=int(command_output(["sysctl", "-n", "hw.logicalcpu"])),
+    return dict(date=time.strftime("%Y-%m-%d"), machine=platform.machine(), platform=sys.platform,
                 codon=command_output([str(ROOT / "build" / "codon"), "--version"]),
-                codonCommit=command_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"]),
                 npbenchCommit=command_output(["git", "-C", str(work / "npbench"), "rev-parse", "HEAD"]),
                 python=platform.python_version(), numpy=np.__version__, numba=numba.__version__,
-                scipy=scipy.__version__, pypy=command_output([str(pypy), "--version"]),
-                clang=command_output([str(llvm / "bin" / "clang++"), "--version"]),
-                blas=blas, threads=1,
-                macosBuild=command_output(["sw_vers", "-buildVersion"]),
-                sdk=command_output(["xcrun", "--show-sdk-version"]),
-                codonSourceDiffSha256=hashlib.sha256(command_output(["git", "-C", str(ROOT), "diff", "HEAD", "--", "codon", "stdlib"]).encode()).hexdigest(),
-                runtimeLibraries=["build/libcodonrt.dylib", "build/libomp.dylib", "Apple Accelerate"],
+                scipy=scipy.__version__, pypy=command_output([str(tools["pypy"]), "--version"]),
+                clang=command_output([str(tools["clang"]), "--version"]),
+                blas=blas, threads=1, **host, **source_metadata,
                 fingerprints={str(filename.relative_to(ROOT)): digest(filename) for filename in files})
 
 
 def check_fingerprints(metadata):
+    if "transparentHugePages" in metadata:
+        assert huge_page_policy() == metadata["transparentHugePages"], "Huge-page policy changed during benchmark"
     for filename, expected in metadata["fingerprints"].items():
         assert digest(ROOT / filename) == expected, f"Changed during benchmark: {filename}"
 
@@ -504,11 +672,11 @@ def replace_once(text, before, after):
     return text.replace(before, after)
 
 
-def application_source(name, backend, quick):
+def application_source(name, backend, quick, gpu_mandelbrot=False):
     original = SOURCES / f"{name}.py"
     if backend == "cpp":
         original = SOURCES / f"{name}.cpp"
-    elif backend == "codon" and name != "mandelbrot" and (SOURCES / f"{name}.codon").exists():
+    elif backend == "codon" and (name != "mandelbrot" or gpu_mandelbrot) and (SOURCES / f"{name}.codon").exists():
         original = SOURCES / f"{name}.codon"
     source = original.read_text()
     adaptations = []
@@ -520,7 +688,8 @@ def application_source(name, backend, quick):
                               '    with open(filename, "w", encoding="latin1", newline="") as fp:')
         adaptations.append("Uses Latin-1 PPM output, matching the existing Python implementation.")
     if name == "mandelbrot" and backend == "codon":
-        adaptations.append("Uses the existing CPU Python implementation; the CUDA version requires NVIDIA hardware.")
+        adaptations.append("Uses the existing CUDA implementation with @par(gpu=True, collapse=2)." if gpu_mandelbrot
+                           else "Uses the existing CPU Python implementation; the CUDA version requires NVIDIA hardware.")
     if name == "go":
         source = replace_once(source, "def versus_cpu():\n", "def versus_cpu():\n    checksum = 0\n")
         source = replace_once(source, "        computer_move(board)\n", "        checksum += computer_move(board)\n    return checksum\n")
@@ -569,10 +738,15 @@ def prepare_applications(args, names):
     output = args.output.absolute()
     output.mkdir(parents=True, exist_ok=True)
     environment = benchmark_environment(work)
-    llvm = work / "toolchains" / "LLVM-23.1.5-macOS-ARM64"
-    sdk = command_output(["xcrun", "--show-sdk-path"])
-    cpp_headers = Path(sdk) / "usr" / "include" / "c++" / "v1"
-    assert cpp_headers.is_dir(), cpp_headers
+    tools = toolchain_paths(work)
+    cpp_flags = ["-O3", "-std=c++17", "-fuse-ld=lld"]
+    if sys.platform == "darwin":
+        sdk = command_output(["xcrun", "--show-sdk-path"])
+        cpp_headers = Path(sdk) / "usr" / "include" / "c++" / "v1"
+        assert cpp_headers.is_dir(), cpp_headers
+        cpp_flags += ["-mcpu=native", "-isysroot", sdk, "-nostdinc++", "-isystem", str(cpp_headers)]
+    else:
+        cpp_flags += ["-march=native"]
     datasets = {}
     data_directory = output / "data"
     data_directory.mkdir(exist_ok=True)
@@ -592,7 +766,7 @@ def prepare_applications(args, names):
         filename.write_bytes(data.rsplit(b"\n", 1)[0] + b"\n")
         datasets["words"] = dict(path=str(filename), source=args.word_source.name,
                                   bytes=filename.stat().st_size, sha256=digest(filename))
-    plan = dict(status="prepared", quick=args.quick, samples=args.samples,
+    plan = dict(status="prepared", quick=args.quick, gpuMandelbrot=args.gpu_mandelbrot, samples=args.samples,
                 environment=provenance(work), datasets=datasets, cases=[])
     plan["policy"] = "Existing application-internal wall timer; fresh process per sample; first process excluded; allocation and PyPy JIT within the application are included; rotating backend order."
     small_arguments = {"binary_trees": ["10"], "fannkuch": ["7"], "nbody": ["10000"],
@@ -604,7 +778,7 @@ def prepare_applications(args, names):
                 continue
             directory = output / name / backend
             directory.mkdir(parents=True, exist_ok=True)
-            text, original, adaptations = application_source(name, backend, args.quick)
+            text, original, adaptations = application_source(name, backend, args.quick, args.gpu_mandelbrot)
             suffix = ".cpp" if backend == "cpp" else ".codon" if backend == "codon" else ".py"
             source = directory / ("worker" + suffix)
             source.write_text(text)
@@ -614,12 +788,10 @@ def prepare_applications(args, names):
             if backend in ("codon", "cpp"):
                 executable = directory / "worker"
                 if backend == "codon":
-                    backend_environment["DYLD_LIBRARY_PATH"] = str(ROOT / "build")
+                    backend_environment[LIBRARY_PATH] = str(ROOT / "build")
                     command = [str(ROOT / "build" / "codon"), "build", "-release", str(source), "-o", str(executable)]
                 else:
-                    command = [str(llvm / "bin" / "clang++"), "-O3", "-mcpu=native", "-std=c++17", "-fuse-ld=lld",
-                               "-isysroot", sdk, "-nostdinc++", "-isystem", str(cpp_headers),
-                               str(source), "-o", str(executable)]
+                    command = [str(tools["clang"]), *cpp_flags, str(source), "-o", str(executable)]
                 result["compileCommand"] = command
                 compiled = execute(command, directory, backend_environment, directory / "compile.log")
                 result["compile"] = compiled
@@ -631,7 +803,7 @@ def prepare_applications(args, names):
             elif backend == "python":
                 result["command"] = [sys.executable, str(source)]
             else:
-                result["command"] = [str(work / "toolchains" / "pypy3.12-v8.0.1-macos_arm64" / "bin" / "pypy3"), str(source)]
+                result["command"] = [str(tools["pypy"]), str(source)]
             case["results"][backend] = result
             print("Prepared", name, backend, result["status"], flush=True)
         plan["cases"].append(case)
@@ -677,7 +849,7 @@ def run_applications(args):
                 arguments = [argument.format(**{key: value["path"] for key, value in plan["datasets"].items()}) for argument in case["arguments"]]
                 backend_environment = dict(environment)
                 if backend == "codon":
-                    backend_environment["DYLD_LIBRARY_PATH"] = str(ROOT / "build")
+                    backend_environment[LIBRARY_PATH] = str(ROOT / "build")
                 log = directory / f"run-{iteration}.log"
                 execution = execute(result["command"] + arguments, directory, backend_environment, log, args.timeout)
                 if execution["status"] != "ok":
@@ -728,7 +900,12 @@ def main():
     parser.add_argument("--preset", choices=["S", "M", "L"], default="L")
     parser.add_argument("--samples", type=int, default=3)
     parser.add_argument("--timeout", type=int, default=3600)
+    parser.add_argument("--numba-fastmath", choices=["disabled"], default="disabled", help="Numba kernels and helpers always use fastmath=False")
+    parser.add_argument("--numba-only", action="store_true", help="Measure only Numba; run Python once solely for output validation")
+    parser.add_argument("--baseline-report", type=Path, help="Verify software, hardware, and input hashes against an existing NPBench report")
+    parser.add_argument("--refresh-cases", default="", help="Comma-separated NPBench cases to reinitialize and measure on all three runtimes")
     parser.add_argument("--quick", action="store_true", help="Small application correctness pilot")
+    parser.add_argument("--gpu-mandelbrot", action="store_true", help="Use the existing Codon CUDA Mandelbrot implementation")
     parser.add_argument("--prepare-only", action="store_true")
     parser.add_argument("--prepared", action="store_true")
     parser.add_argument("--resume", action="store_true")
@@ -738,6 +915,8 @@ def main():
     args = parser.parse_args()
     if args.samples < 1 or args.timeout < 1:
         parser.error("--samples and --timeout must be positive")
+    if args.suite != "npbench" and (args.numba_only or args.baseline_report or args.refresh_cases):
+        parser.error("--numba-only, --baseline-report and --refresh-cases require --suite npbench")
     if args.list:
         print(json.dumps(catalogue(), indent=2))
     elif args.suite == "npbench":

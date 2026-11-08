@@ -12,7 +12,7 @@ import numpy as np
 import numba as nb
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def azimint_naive(data, radius, npt):
     rmax = radius.max()
     res = np.zeros(npt, dtype=np.float64)

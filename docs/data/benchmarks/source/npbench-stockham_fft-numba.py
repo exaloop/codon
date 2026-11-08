@@ -2,7 +2,7 @@ import numpy as np
 import numba as nb
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def mgrid(xn, yn):
     Xi = np.empty((xn, yn), dtype=np.uint32)
     Yi = np.empty((xn, yn), dtype=np.uint32)
@@ -13,7 +13,7 @@ def mgrid(xn, yn):
     return Xi, Yi
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def stockham_fft(N, R, K, x, y):
 
     # Generate DFT matrix for radix R.

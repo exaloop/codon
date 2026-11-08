@@ -4,7 +4,7 @@ import numpy as np
 import numba as nb
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def go_fast(a):
     trace = 0.0
     for i in range(a.shape[0]):

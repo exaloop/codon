@@ -2,7 +2,7 @@ import numpy as np
 import numba as nb
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def build_up_b(b, rho, dt, u, v, dx, dy):
 
     b[1:-1,
@@ -14,7 +14,7 @@ def build_up_b(b, rho, dt, u, v, dx, dy):
                       ((v[2:, 1:-1] - v[0:-2, 1:-1]) / (2 * dy))**2))
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def pressure_poisson(nit, p, dx, dy, b):
     pn = np.empty_like(p)
     pn = p.copy()
@@ -32,7 +32,7 @@ def pressure_poisson(nit, p, dx, dy, b):
         p[-1, :] = 0  # p = 0 at y = 2
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def cavity_flow(nx, ny, nt, nit, u, v, dt, dx, dy, p, rho, nu):
     un = np.empty_like(u)
     vn = np.empty_like(v)

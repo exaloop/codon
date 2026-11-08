@@ -38,7 +38,7 @@ import numpy as np
 import numba as nb
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def get_bin_edges(a, bins):
     bin_edges = np.zeros((bins + 1, ), dtype=np.float64)
     a_min = a.min()
@@ -51,7 +51,7 @@ def get_bin_edges(a, bins):
     return bin_edges
 
 
-@nb.jit(nopython=True, fastmath=True)
+@nb.jit(nopython=True, fastmath=False)
 def compute_bin(x, bin_edges):
     # assuming uniform bins for now
     n = bin_edges.shape[0] - 1
@@ -65,7 +65,7 @@ def compute_bin(x, bin_edges):
     return int(n * (x - a_min) / (a_max - a_min))
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def histogram(a, bins, weights):
     hist = np.zeros((bins, ), dtype=a.dtype)
     bin_edges = get_bin_edges(a, bins)
@@ -77,7 +77,7 @@ def histogram(a, bins, weights):
     return hist, bin_edges
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def azimint_hist(data, radius, npt):
     histu = np.histogram(radius, npt)[0]
     # histw = np.histogram(radius, npt, weights=data)[0]

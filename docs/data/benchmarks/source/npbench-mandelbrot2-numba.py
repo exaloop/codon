@@ -8,7 +8,7 @@ import numpy as np
 import numba as nb
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def mgrid(xn, yn):
     Xi = np.empty((xn, yn), dtype=np.int64)
     Yi = np.empty((xn, yn), dtype=np.int64)
@@ -19,7 +19,7 @@ def mgrid(xn, yn):
     return Xi, Yi
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def linspace(start, stop, num, dtype):
     X = np.empty((num, ), dtype=dtype)
     dist = (stop - start) / (num - 1)
@@ -28,7 +28,7 @@ def linspace(start, stop, num, dtype):
     return X
 
 
-@nb.jit(nopython=True, parallel=False, fastmath=True)
+@nb.jit(nopython=True, parallel=False, fastmath=False)
 def mandelbrot(xmin, xmax, ymin, ymax, xn, yn, itermax, horizon=2.0):
     # Adapted from
     # https://thesamovar.wordpress.com/2009/03/22/fast-fractals-with-python-and-numpy/
