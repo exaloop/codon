@@ -33,8 +33,10 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
-#include <tlhelp32.h>
+// clang-format off
 #include <windows.h>
+#include <tlhelp32.h>
+// clang-format on
 #else
 #include <dirent.h>
 #include <fcntl.h>
