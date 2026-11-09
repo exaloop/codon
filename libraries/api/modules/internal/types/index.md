@@ -1,0 +1,9 @@
+# internal.types
+
+Standard library package
+
+Modules 22
+
+[`any` →](https://docs.exaloop.io/libraries/api/modules/internal/types/any/) [`bool` →](https://docs.exaloop.io/libraries/api/modules/internal/types/bool/) [`bytes` →](https://docs.exaloop.io/libraries/api/modules/internal/types/bytes/) [`collections` →](https://docs.exaloop.io/libraries/api/modules/internal/types/collections/) [`complex` →](https://docs.exaloop.io/libraries/api/modules/internal/types/complex/) [`ellipsis` →](https://docs.exaloop.io/libraries/api/modules/internal/types/ellipsis/) [`error` →](https://docs.exaloop.io/libraries/api/modules/internal/types/error/) [`float` →](https://docs.exaloop.io/libraries/api/modules/internal/types/float/) [`function` →](https://docs.exaloop.io/libraries/api/modules/internal/types/function/) [`generator` →](https://docs.exaloop.io/libraries/api/modules/internal/types/generator/) [`import_` →](https://docs.exaloop.io/libraries/api/modules/internal/types/import_/) [`int` →](https://docs.exaloop.io/libraries/api/modules/internal/types/int/) [`optional` →](https://docs.exaloop.io/libraries/api/modules/internal/types/optional/) [`ptr` →](https://docs.exaloop.io/libraries/api/modules/internal/types/ptr/) [`range` →](https://docs.exaloop.io/libraries/api/modules/internal/types/range/) [`rtti` →](https://docs.exaloop.io/libraries/api/modules/internal/types/rtti/) [`slice` →](https://docs.exaloop.io/libraries/api/modules/internal/types/slice/) [`str` →](https://docs.exaloop.io/libraries/api/modules/internal/types/str/) [`strbuf` →](https://docs.exaloop.io/libraries/api/modules/internal/types/strbuf/) [`tuple` →](https://docs.exaloop.io/libraries/api/modules/internal/types/tuple/) [`type` →](https://docs.exaloop.io/libraries/api/modules/internal/types/type/) [`union` →](https://docs.exaloop.io/libraries/api/modules/internal/types/union/)
+
+Source: https://docs.exaloop.io/libraries/api/modules/internal/types/

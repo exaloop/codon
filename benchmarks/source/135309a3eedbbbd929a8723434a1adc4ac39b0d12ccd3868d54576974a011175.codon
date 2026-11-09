@@ -1,0 +1,9 @@
+# Copyright 2021 ETH Zurich and the NPBench authors. All rights reserved.
+
+__CODON_RET__: Literal[bool] = True
+
+import numpy as np
+
+def bicg(A: np.ndarray[float,2], p: np.ndarray[float,1], r: np.ndarray[float,1]):
+    res = r @ A, A @ p
+    if __CODON_RET__: return res

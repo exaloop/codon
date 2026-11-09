@@ -1,0 +1,21 @@
+# RawTextHelpFormatter
+
+Standard library class `argparse.RawTextHelpFormatter` [View source](https://github.com/exaloop/codon/blob/master/stdlib/argparse.codon)
+
+class RawTextHelpFormatter[](https://docs.exaloop.io/libraries/api/classes/argparse/RawTextHelpFormatter/#class-rawtexthelpformatter "Copy/link to this API element")
+
+```python
+class RawTextHelpFormatter
+```
+
+Constructors 1
+
+\_\_init\_\_[](https://docs.exaloop.io/libraries/api/classes/argparse/RawTextHelpFormatter/#class-rawtexthelpformatter-__init__ "Copy/link to this API element")
+
+```python
+__init__(self: Self, *args, **kwargs, Self: type)
+```
+
+Defined in [`argparse`](https://docs.exaloop.io/libraries/api/modules/argparse/)
+
+Source: https://docs.exaloop.io/libraries/api/classes/argparse/RawTextHelpFormatter/
