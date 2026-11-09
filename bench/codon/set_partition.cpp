@@ -8,7 +8,7 @@ template <class T> using vec = std::vector<T>;
 
 inline vec<int> range(int start, int stop) {
   vec<int> v(stop - start);
-  uint j = 0;
+  unsigned int j = 0;
   for (int i = start; i < stop; i++)
     v[j++] = i;
   return v;

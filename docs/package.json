@@ -1,0 +1,47 @@
+{
+  "name": "codon-docs",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "prepare:assets": "node scripts/prepare.mjs",
+    "prestart": "npm run prepare:assets",
+    "start": "docusaurus start --host 127.0.0.1",
+    "prebuild": "npm run prepare:assets",
+    "build": "docusaurus build && node scripts/check-links.mjs",
+    "serve": "docusaurus serve --host 127.0.0.1",
+    "theme:sync": "node scripts/sync-theme.mjs",
+    "check:links": "node scripts/check-links.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@docusaurus/core": "3.10.2",
+    "@docusaurus/plugin-client-redirects": "3.10.2",
+    "@docusaurus/preset-classic": "3.10.2",
+    "@docusaurus/theme-mermaid": "3.10.2",
+    "@easyops-cn/docusaurus-search-local": "0.55.3",
+    "@exaloop/theme": "file:vendor/exaloop-theme-0.1.0.tgz",
+    "@fortawesome/free-brands-svg-icons": "7.1.0",
+    "@mermaid-js/layout-elk": "0.1.9",
+    "katex": "0.16.22",
+    "lucide": "1.54.0",
+    "prism-react-renderer": "2.4.1",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "rehype-katex": "7.0.1",
+    "remark-math": "6.0.0",
+    "three": "0.180.0",
+    "turndown": "7.2.5",
+    "turndown-plugin-gfm": "1.0.2"
+  },
+  "devDependencies": {
+    "cheerio": "1.1.2"
+  },
+  "overrides": {
+    "postcss-selector-parser": "7.1.6",
+    "serialize-javascript": "7.1.2",
+    "tinypool": "2.2.0",
+    "uuid": "11.1.1"
+  }
+}

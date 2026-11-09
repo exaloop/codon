@@ -1,45 +1,83 @@
+---
+title: Call Python from Codon
+---
+
 There are two ways to call Python from Codon:
 
 - `from python import` allows importing and calling Python functions
   from existing Python modules.
 - `@python` allows writing Python code directly in Codon.
 
-In order to use these features, the `CODON_PYTHON` environment variable
-must be set to the appropriate Python shared library:
+These features run code in an embedded CPython interpreter; they do not
+compile the imported Python library into native Codon code. This makes it
+possible to keep a library-dependent part of an application in Python while
+using native Codon for the surrounding computation.
+
+## Configure the Python runtime
+
+`CODON_PYTHON` identifies the Python shared library to load, rather than the
+`python3` executable. The library, its standard library and any binary Python
+packages need to come from a compatible Python installation and architecture.
+Using the interpreter from the intended environment helps keep these paths
+consistent.
+
+The following command looks for the shared library using that interpreter's
+build configuration, including framework installations on macOS:
 
 ``` bash
-export CODON_PYTHON=/path/to/libpython.X.Y.so
+export CODON_PYTHON="$(python3 - <<'PY'
+import sysconfig
+from pathlib import Path
+
+config = sysconfig.get_config_vars()
+candidates = []
+for setting in ("LIBDIR", "LIBPL"):
+    directory = config.get(setting)
+    library = config.get("LDLIBRARY")
+    if directory and library:
+        candidates.append(Path(directory) / library)
+
+framework = config.get("PYTHONFRAMEWORK")
+framework_prefix = config.get("PYTHONFRAMEWORKPREFIX")
+if framework and framework_prefix:
+    candidates.append(Path(framework_prefix) / f"{framework}.framework"
+                      / "Versions" / config["VERSION"] / framework)
+
+for candidate in candidates:
+    if candidate.is_file() and candidate.suffix != ".a":
+        print(candidate.resolve())
+        break
+else:
+    raise SystemExit("No shared Python library found; use a shared-library Python installation.")
+PY
+)"
 ```
 
-For example, with a Homebrew-installed Python 3.9 on macOS, this might be
+If a distribution does not provide a shared Python library, an installation
+that includes one is needed for this integration. Native Codon programs that
+do not call Python have no such requirement.
 
+### Virtual environments
+
+After activating a virtual environment, its package directories can be added
+to the embedded interpreter's search path:
+
+``` bash
+export PYTHONPATH="$(python3 -c 'import os, site; print(os.pathsep.join(site.getsitepackages()))')${PYTHONPATH:+:$PYTHONPATH}"
 ```
-/usr/local/opt/python@3.9/Frameworks/Python.framework/Versions/3.9/lib/libpython3.9.dylib
+
+When CPython cannot locate its standard library, `PYTHONHOME` can additionally
+identify the base installation:
+
+``` bash
+export PYTHONHOME="$(python3 -c 'import sys; print(sys.base_prefix)')"
 ```
 
-Note that only Python versions 3.6 and later are supported.
-
-!!! tip "Tip: Finding `libpython`"
-
-    You can use
-    [this](https://raw.githubusercontent.com/exaloop/codon/refs/heads/develop/test/python/find-python-library.py)
-    script to locate the Python shared library for the `CODON_PYTHON` environment variable. Simply run it as
-    `python3 find-python-library.py` and it will print the library path.
-
-!!! info "Info: Using virtual environments (`venv`)"
-
-    If you are using a virtual environment created with `venv`, set `PYTHON_PATH` to the `site-packages`
-    directory inside your virtual environment (e.g. `.venv/lib/python3.11/site-packages`).
-
-!!! info "Info: Using virtual environments (`uv`)"
-
-    If you using a virtual environment created with `uv`, you can use the following steps to set up the necessary
-    environment variables. From the parent directory of your python project (where `pyproject.toml` is):
-
-    1. Run `uv python find --system` and set `PYTHON_HOME` to the result.
-    2. Set `CODON_PYTHON` to the `libpython.dylib` (or `.so`) file found in the folder from the previous
-      step (e.g. `lib/python3.11.dylib`) as an absolute path.
-    3. Set `PYTHON_PATH` to the `site-packages` folder inside your virtual environment (e.g `.venv/lib/python3.11/site-packages`).
+This is an installation directory, not an executable or a `site-packages`
+directory. The variable names are CPython's `PYTHONPATH` and `PYTHONHOME`,
+without an underscore between `PYTHON` and the rest of the name. For a
+`uv`-managed project, the configuration commands can use `uv run python` in
+place of `python3` to select the project's interpreter.
 
 ## Import Python modules in Codon
 
@@ -48,8 +86,11 @@ a `from python import <module>` import statement. For example:
 
 ``` python
 from python import sys  # imports Python's 'sys' module
-print(sys.version)  # 3.11.12 (main, Apr  8 2025, 14:15:29) [Clang 17.0.0 (clang-1700.0.13.3)]
+print(sys.version)
 ```
+
+The reported version is that of the loaded Python runtime, which is a useful
+first check when diagnosing an environment mismatch.
 
 You can also import third-party libraries. Here is an example that imports
 Matplotlib to create a simple plot:
@@ -84,11 +125,10 @@ to have them execute in Python, instead of being compiled by Codon:
 ``` python
 @python
 def version():
-	# the following runs in plain Python
     import sys
     print(sys.version)
 
-version()  # 3.11.12 (main, Apr  8 2025, 14:15:29) [Clang 17.0.0 (clang-1700.0.13.3)]
+version()
 ```
 
 `@python` functions can specify return types, in which case returned values will
@@ -110,8 +150,11 @@ def baz() -> int:
 
 print(foo())  # 4 (Python object)
 print(bar())  # 4 (native Codon int)
-print(baz())  # error: Python object did not have type 'int'
 ```
+
+Calling `baz()` would fail at the conversion boundary because it returns a
+string where a native integer is required. A return annotation therefore
+describes a conversion as well as the type used by subsequent Codon code.
 
 Similarly, arguments can be type-annotated as well:
 
@@ -125,23 +168,39 @@ print(square(4))  # 16
 
 ## Data conversions
 
-Codon uses two new magic methods to transfer data to and from Python:
-
-- `__to_py__`: Produces a Python object (`PyObject*` in C) given a Codon object.
-- `__from_py__`: Produces a Codon object given a Python object.
-
-For example:
+A value obtained from a Python module normally remains a Python object,
+represented by Codon's `pyobj` wrapper. Operations on that value use CPython's
+API. Converting at a deliberate boundary lets the following computation use
+native Codon types instead:
 
 ``` python
-import python  # needed to initialize the Python runtime
+from python import json as pyjson
 
-o = (42).__to_py__()  # type of 'o' is 'Ptr', equivalent to a pointer in C
-print(o)  # 0x100e00610
-
-n = int.__from_py__(o)  # converts Python object 'o' to native Codon integer
-print(n)  # 42
+python_values = pyjson.loads('[2, 3, 5]')
+values = list[int](python_values)
+print(sum(values))  # 10
 ```
 
-Codon stores the results of `__to_py__` calls by wrapping them in an instance of a new
-class called `pyobj`, which correctly handles the underlying Python object's reference
-count. All operations on `pyobj`s then go through CPython's API.
+The conversion produces a native list, rather than a shared view of the
+Python list. Changes to the converted list are therefore not a way to mutate
+the original Python object. For performance-sensitive code, converting a
+batch once and doing the subsequent work natively is often more effective
+than crossing the boundary for each element. NumPy arrays have a separate
+[array interoperability path](../../libraries/numpy.md#python-interoperability)
+that can share data.
+
+At the implementation level, `__to_py__()` creates a raw Python object pointer
+and `__from_py__()` converts from such a pointer. These hooks are useful when
+implementing conversions for custom types, but direct calls require attention
+to Python's reference-ownership rules. Ordinary Python imports, calls and
+conversions use managed `pyobj` wrappers to handle that ownership on the
+application's behalf.
+
+## Troubleshooting imports
+
+A shared-library loading failure usually points to `CODON_PYTHON`, an
+architecture mismatch, or a missing dependent library. By contrast,
+`ModuleNotFoundError` means the interpreter started but could not find the
+requested Python package. Checking the imported Python `sys.version` and
+`sys.path` helps distinguish these cases; packages should be installed with
+the same interpreter used to configure the runtime.

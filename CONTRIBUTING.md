@@ -48,6 +48,12 @@ print(2 + 2)  # EXPECT: 4
 that if you have, for example, an `EXPECT` in a loop, you will need to duplicate it however many times the loop is executed.
 Using `EXPECT` is helpful mainly in cases where you need to test control flow, **otherwise prefer the new style**.
 
+## Documentation
+
+Documentation lives in `docs/` and is built with Docusaurus. See the
+[documentation development guide](website/README.md) for API generation, local
+preview, shared-theme development, and production validation.
+
 ## Pull requests
 
 Pull requests should generally be based on the `develop` branch. Before submitting a pull request, please make sure...

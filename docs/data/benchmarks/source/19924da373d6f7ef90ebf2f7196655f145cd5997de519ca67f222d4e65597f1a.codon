@@ -1,0 +1,74 @@
+import numpy as np
+import sys
+import time
+import npbench_lib as kernel_module
+from C import GC_gcollect() -> None
+from C import GC_get_total_bytes() -> int
+from C import GC_get_heap_size() -> int
+from C import GC_get_free_bytes() -> int
+directory = sys.argv[1]
+samples = int(sys.argv[2])
+NR = 600
+NM = 1000
+slab_per_bc = 2
+original_Ham = np.load(directory + '/input-Ham.npy', dtype=np.complex128, ndim=3)
+Ham = np.empty_like(original_Ham)
+np.copyto(Ham, original_Ham)
+original_int_pts = np.load(directory + '/input-int_pts.npy', dtype=np.complex128, ndim=1)
+int_pts = np.empty_like(original_int_pts)
+np.copyto(int_pts, original_int_pts)
+original_Y = np.load(directory + '/input-Y.npy', dtype=np.complex128, ndim=2)
+Y = np.empty_like(original_Y)
+np.copyto(Y, original_Y)
+
+def emit(value, filename):
+    if value is None:
+        return
+    elif isinstance(value, tuple):
+        index = 0
+        for item in value:
+            emit(item, filename + '_' + str(index))
+            index += 1
+    else:
+        np.save(filename, np.asarray(value))
+
+@noinline
+def sample(NR, NM, slab_per_bc, Ham, int_pts, Y):
+    started = time.perf_counter()
+    result = kernel_module.contour_integral(NR, NM, slab_per_bc, Ham, int_pts, Y)
+    elapsed = time.perf_counter() - started
+    emit(result, directory + '/output-return')
+    return elapsed
+
+if samples == 0:
+    GC_gcollect()
+    allocated_before = GC_get_total_bytes()
+    heap_before = GC_get_heap_size()
+    address_Ham = int(Ham.data)
+    address_int_pts = int(int_pts.data)
+    address_Y = int(Y.data)
+    for iteration in range(32):
+        np.copyto(Ham, original_Ham)
+        assert int(Ham.data) == address_Ham
+        np.copyto(int_pts, original_int_pts)
+        assert int(int_pts.data) == address_int_pts
+        np.copyto(Y, original_Y)
+        assert int(Y.data) == address_Y
+    allocated = GC_get_total_bytes() - allocated_before
+    heap_growth = GC_get_heap_size() - heap_before
+    print('BENCH_MEMORY', allocated, heap_growth)
+    assert allocated < 65536
+    assert heap_growth == 0
+else:
+    for iteration in range(samples + 1):
+        GC_gcollect()
+        if iteration > 0:
+            print('BENCH_GC', GC_get_heap_size(), GC_get_heap_size() - GC_get_free_bytes())
+        np.copyto(Ham, original_Ham)
+        np.copyto(int_pts, original_int_pts)
+        np.copyto(Y, original_Y)
+        elapsed = sample(NR, NM, slab_per_bc, Ham, int_pts, Y)
+        if iteration > 0:
+            print('BENCH_TIME', elapsed)
+    GC_gcollect()
+    print('BENCH_GC', GC_get_heap_size(), GC_get_heap_size() - GC_get_free_bytes())

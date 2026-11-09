@@ -1,0 +1,67 @@
+import numpy as np
+import sys
+import time
+import npbench_lib as kernel_module
+from C import GC_gcollect() -> None
+from C import GC_get_total_bytes() -> int
+from C import GC_get_heap_size() -> int
+from C import GC_get_free_bytes() -> int
+directory = sys.argv[1]
+samples = int(sys.argv[2])
+N = 2097152
+R = 2
+K = 21
+original_x = np.load(directory + '/input-x.npy', dtype=np.complex128, ndim=1)
+x = np.empty_like(original_x)
+np.copyto(x, original_x)
+original_y = np.load(directory + '/input-y.npy', dtype=np.complex128, ndim=1)
+y = np.empty_like(original_y)
+np.copyto(y, original_y)
+
+def emit(value, filename):
+    if value is None:
+        return
+    elif isinstance(value, tuple):
+        index = 0
+        for item in value:
+            emit(item, filename + '_' + str(index))
+            index += 1
+    else:
+        np.save(filename, np.asarray(value))
+
+@noinline
+def sample(N, R, K, x, y):
+    started = time.perf_counter()
+    result = kernel_module.stockham_fft(N, R, K, x, y)
+    elapsed = time.perf_counter() - started
+    emit(y, directory + '/output-y')
+    return elapsed
+
+if samples == 0:
+    GC_gcollect()
+    allocated_before = GC_get_total_bytes()
+    heap_before = GC_get_heap_size()
+    address_x = int(x.data)
+    address_y = int(y.data)
+    for iteration in range(32):
+        np.copyto(x, original_x)
+        assert int(x.data) == address_x
+        np.copyto(y, original_y)
+        assert int(y.data) == address_y
+    allocated = GC_get_total_bytes() - allocated_before
+    heap_growth = GC_get_heap_size() - heap_before
+    print('BENCH_MEMORY', allocated, heap_growth)
+    assert allocated < 65536
+    assert heap_growth == 0
+else:
+    for iteration in range(samples + 1):
+        GC_gcollect()
+        if iteration > 0:
+            print('BENCH_GC', GC_get_heap_size(), GC_get_heap_size() - GC_get_free_bytes())
+        np.copyto(x, original_x)
+        np.copyto(y, original_y)
+        elapsed = sample(N, R, K, x, y)
+        if iteration > 0:
+            print('BENCH_TIME', elapsed)
+    GC_gcollect()
+    print('BENCH_GC', GC_get_heap_size(), GC_get_heap_size() - GC_get_free_bytes())

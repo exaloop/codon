@@ -1,0 +1,59 @@
+import numpy as np
+import sys
+import time
+import npbench_lib as kernel_module
+from C import GC_gcollect() -> None
+from C import GC_get_total_bytes() -> int
+from C import GC_get_heap_size() -> int
+from C import GC_get_free_bytes() -> int
+directory = sys.argv[1]
+samples = int(sys.argv[2])
+M = 3200
+float_n = 4000.0
+original_data = np.load(directory + '/input-data.npy', dtype=np.float64, ndim=2)
+data = np.empty_like(original_data)
+np.copyto(data, original_data)
+
+def emit(value, filename):
+    if value is None:
+        return
+    elif isinstance(value, tuple):
+        index = 0
+        for item in value:
+            emit(item, filename + '_' + str(index))
+            index += 1
+    else:
+        np.save(filename, np.asarray(value))
+
+@noinline
+def sample(M, float_n, data):
+    started = time.perf_counter()
+    result = kernel_module.correlation(M, float_n, data)
+    elapsed = time.perf_counter() - started
+    emit(result, directory + '/output-return')
+    return elapsed
+
+if samples == 0:
+    GC_gcollect()
+    allocated_before = GC_get_total_bytes()
+    heap_before = GC_get_heap_size()
+    address_data = int(data.data)
+    for iteration in range(32):
+        np.copyto(data, original_data)
+        assert int(data.data) == address_data
+    allocated = GC_get_total_bytes() - allocated_before
+    heap_growth = GC_get_heap_size() - heap_before
+    print('BENCH_MEMORY', allocated, heap_growth)
+    assert allocated < 65536
+    assert heap_growth == 0
+else:
+    for iteration in range(samples + 1):
+        GC_gcollect()
+        if iteration > 0:
+            print('BENCH_GC', GC_get_heap_size(), GC_get_heap_size() - GC_get_free_bytes())
+        np.copyto(data, original_data)
+        elapsed = sample(M, float_n, data)
+        if iteration > 0:
+            print('BENCH_TIME', elapsed)
+    GC_gcollect()
+    print('BENCH_GC', GC_get_heap_size(), GC_get_heap_size() - GC_get_free_bytes())

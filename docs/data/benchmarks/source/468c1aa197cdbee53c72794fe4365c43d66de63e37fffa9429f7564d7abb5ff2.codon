@@ -1,0 +1,21 @@
+# Copyright 2021 ETH Zurich and the NPBench authors. All rights reserved.
+
+__CODON_RET__: Literal[bool] = True
+
+import numpy as np
+
+def gramschmidt(A: np.ndarray[float,2]):
+
+    Q = np.zeros_like(A)
+    R = np.zeros((A.shape[1], A.shape[1]), dtype=A.dtype)
+
+    for k in range(A.shape[1]):
+        nrm = np.dot(A[:, k], A[:, k])
+        R[k, k] = np.sqrt(nrm)
+        Q[:, k] = A[:, k] / R[k, k]
+        for j in range(k + 1, A.shape[1]):
+            R[k, j] = np.dot(Q[:, k], A[:, j])
+            A[:, j] -= Q[:, k] * R[k, j]
+
+    res = Q, R
+    if __CODON_RET__: return res
