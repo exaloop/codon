@@ -43,6 +43,8 @@ test_pythrow()
 def test_native_exception_conversion():
     from internal.python import _exception_to_python
     for native in (FileNotFoundError(2, "missing", "file"),
+                   FileNotFoundError(2, "missing"),
+                   FileNotFoundError(2, "missing", "from", None, "to"),
                    UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte"),
                    UnicodeEncodeError("ascii", "\u00e9", 0, 1, "ordinal not in range(128)"),
                    UnicodeTranslateError("\u1234", 0, 1, "invalid"),

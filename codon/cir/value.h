@@ -13,7 +13,7 @@ class Func;
 
 class Value : public ReplaceableNodeBase<Value>, public IdMixin {
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a value.
   /// @param the value's name

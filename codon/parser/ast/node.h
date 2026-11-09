@@ -23,7 +23,7 @@ struct CodonString {
 } // namespace detail
 
 struct ASTNode : public ir::Node {
-  static const char NodeId;
+  static CODON_API const char NodeId;
   using ir::Node::Node;
 
   /// See LLVM documentation.

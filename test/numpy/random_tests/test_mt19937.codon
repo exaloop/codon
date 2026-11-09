@@ -728,7 +728,9 @@ def test_MT19937_power(seed, a, expected, size=None):
     gen = rnd.Generator(rnd.MT19937(seed))
     if size is None:
         if isinstance(a, float) or isinstance(a, int):
-            assert gen.power(a) == expected
+            # Distribution transforms use libm, whose last bit differs between
+            # UCRT and Unix even for the same exact MT19937 random stream.
+            assert abs(gen.power(a) - expected) <= abs(np.spacing(expected))
         else:
             assert (round(gen.power(a), 8) == expected).all()
     else:

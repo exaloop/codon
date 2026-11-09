@@ -35,7 +35,9 @@
 #include "llvm/ExecutionEngine/JITLink/JITLinkDylib.h"
 #include "llvm/ExecutionEngine/JITLink/JITLinkMemoryManager.h"
 #include "llvm/ExecutionEngine/JITSymbol.h"
+#if !defined(_WIN32) || defined(CODON_COMPILER_BUILD)
 #include "llvm/ExecutionEngine/MCJIT.h"
+#endif
 #include "llvm/ExecutionEngine/Orc/CompileOnDemandLayer.h"
 #include "llvm/ExecutionEngine/Orc/CompileUtils.h"
 #include "llvm/ExecutionEngine/Orc/Core.h"
@@ -86,8 +88,13 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/InitializePasses.h"
+// These headers instantiate tool-only static initializers that force all LLVM
+// archives into the host compiler. A Windows SDK plugin must use that host's
+// registries instead of pulling a second LLVM implementation into its DLL.
+#if !defined(_WIN32) || defined(CODON_COMPILER_BUILD)
 #include "llvm/LinkAllIR.h"
 #include "llvm/LinkAllPasses.h"
+#endif
 #include "llvm/Linker/Linker.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Passes/PassBuilder.h"

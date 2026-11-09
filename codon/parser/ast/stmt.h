@@ -15,7 +15,7 @@
 namespace codon::ast {
 
 #define ACCEPT(CLASS, VISITOR, ...)                                                    \
-  static const char NodeId;                                                            \
+  static CODON_API const char NodeId;                                                            \
   using AcceptorExtend::clone;                                                         \
   using AcceptorExtend::accept;                                                        \
   ASTNode *clone(bool c) const override;                                               \
@@ -52,7 +52,7 @@ struct Stmt : public AcceptorExtend<Stmt, ASTNode> {
   /// statement itself
   virtual Stmt *firstInBlock() { return this; }
 
-  static const char NodeId;
+  static CODON_API const char NodeId;
   virtual std::string toPythonString(bool attributes = false, int indent = -1,
                                      int level = 0) const = 0;
   SERIALIZE(Stmt, BASE(ASTNode), done);

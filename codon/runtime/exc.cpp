@@ -16,6 +16,21 @@
 #include <string>
 #include <vector>
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <dbghelp.h>
+#ifndef CODON_SEH_CODE
+#define CODON_SEH_CODE 0xE0C0D047
+#endif
+static thread_local void *seq_current_exc = nullptr;
+#endif
+
 #if defined(__APPLE__) && (__arm64__ || __aarch64__)
 #define APPLE_SILICON
 #endif
@@ -187,6 +202,68 @@ static void seq_delete_unwind_exc(_Unwind_Reason_Code reason,
   seq_delete_exc(expToDelete);
 }
 
+#ifdef _WIN32
+// Native Windows backtrace via dbghelp, exposing libbacktrace's API contract so
+// the rest of the runtime is unchanged. dbghelp reads CodeView/PDB info, matching
+// MSVC/clang-link output (vs libbacktrace's DWARF-on-ELF assumptions).
+static std::mutex dbghelpLock;
+static bool dbghelpInited = false;
+
+extern "C" {
+struct backtrace_state *backtrace_create_state(const char *, int,
+                                               backtrace_error_callback, void *) {
+  std::lock_guard<std::mutex> lock(dbghelpLock);
+  if (!dbghelpInited) {
+    SymSetOptions(SYMOPT_LOAD_LINES | SYMOPT_DEFERRED_LOADS | SYMOPT_UNDNAME);
+    SymInitialize(GetCurrentProcess(), nullptr, TRUE);
+    dbghelpInited = true;
+  }
+  return reinterpret_cast<struct backtrace_state *>(1); // non-null sentinel
+}
+
+int backtrace_simple(struct backtrace_state *, int skip,
+                     backtrace_simple_callback callback, backtrace_error_callback,
+                     void *data) {
+  void *frames[128];
+  USHORT n = CaptureStackBackTrace((DWORD)(skip + 1), 128, frames, nullptr);
+  for (USHORT i = 0; i < n; i++)
+    if (callback(data, (uintptr_t)frames[i]) != 0)
+      break;
+  return 0;
+}
+
+int backtrace_full(struct backtrace_state *, int skip,
+                   backtrace_full_callback callback, backtrace_error_callback,
+                   void *data) {
+  void *frames[128];
+  USHORT n = CaptureStackBackTrace((DWORD)(skip + 1), 128, frames, nullptr);
+  HANDLE proc = GetCurrentProcess();
+  std::lock_guard<std::mutex> lock(dbghelpLock); // dbghelp Sym* are not thread-safe
+  alignas(SYMBOL_INFO) char symBuf[sizeof(SYMBOL_INFO) + 512];
+  for (USHORT i = 0; i < n; i++) {
+    auto addr = (DWORD64)frames[i];
+    const char *function = nullptr, *filename = nullptr;
+    int lineno = 0;
+    auto *sym = reinterpret_cast<SYMBOL_INFO *>(symBuf);
+    sym->SizeOfStruct = sizeof(SYMBOL_INFO);
+    sym->MaxNameLen = 511;
+    if (SymFromAddr(proc, addr, nullptr, sym))
+      function = sym->Name;
+    IMAGEHLP_LINE64 li;
+    li.SizeOfStruct = sizeof(IMAGEHLP_LINE64);
+    DWORD disp = 0;
+    if (SymGetLineFromAddr64(proc, addr, &disp, &li)) {
+      filename = li.FileName;
+      lineno = (int)li.LineNumber;
+    }
+    if (callback(data, (uintptr_t)frames[i], filename, lineno, function) != 0)
+      break;
+  }
+  return 0;
+}
+}
+#endif
+
 static struct backtrace_state *state = nullptr;
 static std::once_flag stateOnce;
 
@@ -311,11 +388,30 @@ SEQ_FUNC void seq_terminate(void *exc) {
 }
 
 SEQ_FUNC void seq_throw(void *exc) {
+#ifdef _WIN32
+  seq_current_exc = exc;
+  RaiseException(CODON_SEH_CODE, EXCEPTION_NONCONTINUABLE, 0, nullptr);
+  seq_terminate(exc);
+#else
   _Unwind_Reason_Code code = _Unwind_RaiseException((_Unwind_Exception *)exc);
   (void)code;
   seq_terminate(exc);
+#endif
 }
 
+static bool isinstance(void *obj, seq_int_t type) {
+  auto *info = *static_cast<codon::runtime::TypeInfo **>(obj);
+  if (info->id == type)
+    return true;
+  if (info->n_mro > codon::runtime::MAX_LINEAR_MRO)
+    return std::binary_search(info->sorted_mro, info->sorted_mro + info->n_mro, type);
+  for (seq_int_t index = 1; index < info->n_mro; ++index)
+    if (info->mro[index] == type)
+      return true;
+  return false;
+}
+
+#ifndef _WIN32
 static uintptr_t readULEB128(const uint8_t **data) {
   uintptr_t result = 0;
   uintptr_t shift = 0;
@@ -446,18 +542,6 @@ static uintptr_t readEncodedPointer(const uint8_t **data, uint8_t encoding) {
   *data = p;
 
   return result;
-}
-
-static bool isinstance(void *obj, seq_int_t type) {
-  auto *info = *static_cast<codon::runtime::TypeInfo **>(obj);
-  if (info->id == type)
-    return true;
-  if (info->n_mro > codon::runtime::MAX_LINEAR_MRO)
-    return std::binary_search(info->sorted_mro, info->sorted_mro + info->n_mro, type);
-  for (seq_int_t index = 1; index < info->n_mro; ++index)
-    if (info->mro[index] == type)
-      return true;
-  return false;
 }
 
 static bool handleActionValue(int64_t *resultAction, uint8_t TTypeEncoding,
@@ -635,6 +719,39 @@ SEQ_FUNC _Unwind_Reason_Code seq_personality(int version, _Unwind_Action actions
   // The real work of the personality function is captured here
   return handleLsda(version, lsda, actions, exceptionClass, exceptionObject, context);
 }
+#else  // _WIN32
+// Windows SEH path: the funclet catch pulls the stashed Codon exception from TLS,
+// and the SEH filter matches our private exception code.
+SEQ_FUNC void *seq_exc_current() { return seq_current_exc; }
+
+SEQ_FUNC int32_t seq_exc_filter(void *info, void *frame) {
+  auto *ep = (EXCEPTION_POINTERS *)info;
+  (void)frame;
+  if (ep && ep->ExceptionRecord &&
+      ep->ExceptionRecord->ExceptionCode == CODON_SEH_CODE)
+    return 1; // EXCEPTION_EXECUTE_HANDLER
+  return 0;   // EXCEPTION_CONTINUE_SEARCH
+}
+
+// Reproduce the Itanium personality's type selection for the WinEH funclet path:
+// given the unwind-exception pointer and the catch clauses' type-ids (in clause
+// order), return the first clause whose type the thrown object is an instance of
+// (0 = no match). The catch funclet stores this as the pad's type-index field so
+// Codon's existing type-id dispatch switch matches the right `except` clause.
+SEQ_FUNC int32_t seq_exc_match(void *unwindExc, int32_t *ids, int32_t n) {
+  if (!unwindExc)
+    return 0;
+  auto *base = (CodonBaseException *)((char *)unwindExc + seq_exc_offset());
+  for (int32_t i = 0; i < n; i++) {
+    seq_int_t t = (seq_int_t)ids[i];
+    if (t == codon::runtime::CATCH_ALL_SELECTOR ||
+        t == codon::runtime::BASE_EXCEPTION_SELECTOR ||
+        isinstance(base->obj, t))
+      return ids[i];
+  }
+  return 0;
+}
+#endif // _WIN32
 
 SEQ_FUNC int64_t seq_exc_offset() {
   static CodonBaseException dummy = {};

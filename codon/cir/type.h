@@ -98,7 +98,7 @@ private:
   std::unique_ptr<RuntimeInfo> runtimeInfo;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   using ReplaceableNodeBase::ReplaceableNodeBase;
 
@@ -183,7 +183,7 @@ private:
 /// Type from which primitive atomic types derive.
 class PrimitiveType : public AcceptorExtend<PrimitiveType, Type> {
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   using AcceptorExtend::AcceptorExtend;
 
@@ -200,7 +200,7 @@ private:
   bool sign;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   static const unsigned MAX_LEN = 2048;
 
@@ -224,7 +224,7 @@ public:
 /// Float type (64-bit double)
 class FloatType : public AcceptorExtend<FloatType, PrimitiveType> {
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a float type.
   FloatType() : AcceptorExtend("float") {}
@@ -233,7 +233,7 @@ public:
 /// Float32 type (32-bit float)
 class Float32Type : public AcceptorExtend<Float32Type, PrimitiveType> {
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a float32 type.
   Float32Type() : AcceptorExtend("float32") {}
@@ -242,7 +242,7 @@ public:
 /// Float16 type (16-bit float)
 class Float16Type : public AcceptorExtend<Float16Type, PrimitiveType> {
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a float16 type.
   Float16Type() : AcceptorExtend("float16") {}
@@ -251,7 +251,7 @@ public:
 /// BFloat16 type (16-bit brain float)
 class BFloat16Type : public AcceptorExtend<BFloat16Type, PrimitiveType> {
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a bfloat16 type.
   BFloat16Type() : AcceptorExtend("bfloat16") {}
@@ -260,7 +260,7 @@ public:
 /// Float128 type (128-bit float)
 class Float128Type : public AcceptorExtend<Float128Type, PrimitiveType> {
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a float128 type.
   Float128Type() : AcceptorExtend("float128") {}
@@ -269,7 +269,7 @@ public:
 /// Bool type (8-bit unsigned integer; either 0 or 1)
 class BoolType : public AcceptorExtend<BoolType, PrimitiveType> {
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a bool type.
   BoolType() : AcceptorExtend("bool") {}
@@ -278,7 +278,7 @@ public:
 /// Type from which membered types derive.
 class MemberedType : public AcceptorExtend<MemberedType, Type> {
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Object that represents a field in a membered type.
   class Field {
@@ -337,7 +337,7 @@ private:
   std::vector<Field> fields;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a record type.
   /// @param name the type's name
@@ -381,7 +381,7 @@ private:
   bool polymorphic;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a reference type.
   /// @param name the type's name
@@ -443,7 +443,7 @@ private:
   bool variadic;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a function type.
   /// @param rType the function's return type
@@ -482,7 +482,7 @@ private:
   Type *base;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a derived type.
   /// @param name the type's name
@@ -502,7 +502,7 @@ private:
 /// Type of a pointer to another CIR type
 class PointerType : public AcceptorExtend<PointerType, DerivedType> {
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a pointer type.
   /// @param base the type's base
@@ -517,7 +517,7 @@ private:
 /// Type of an optional containing another CIR type
 class OptionalType : public AcceptorExtend<OptionalType, DerivedType> {
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs an optional type.
   /// @param base the type's base
@@ -532,7 +532,7 @@ private:
 /// Type of a generator yielding another CIR type
 class GeneratorType : public AcceptorExtend<GeneratorType, DerivedType> {
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a generator type.
   /// @param base the type's base
@@ -553,7 +553,7 @@ private:
   PrimitiveType *base;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a vector type.
   /// @param count the number of elements
@@ -575,7 +575,7 @@ private:
   std::vector<Type *> types;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   using const_iterator = std::vector<Type *>::const_iterator;
   using const_reference = std::vector<Type *>::const_reference;

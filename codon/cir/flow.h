@@ -16,7 +16,7 @@ namespace ir {
 /// Base for flows, which represent control flow.
 class Flow : public AcceptorExtend<Flow, Value> {
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   using AcceptorExtend::AcceptorExtend;
 
@@ -30,7 +30,7 @@ private:
   std::list<Value *> series;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   using AcceptorExtend::AcceptorExtend;
 
@@ -82,7 +82,7 @@ private:
   Value *body;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a while loop.
   /// @param cond the condition
@@ -128,7 +128,7 @@ private:
   bool async;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a for loop.
   /// @param iter the iterator
@@ -219,7 +219,7 @@ private:
   std::unique_ptr<transform::parallel::OMPSched> schedule;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs an imperative for loop.
   /// @param body the body
@@ -308,7 +308,7 @@ private:
   Value *falseBranch;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs an if.
   /// @param cond the condition
@@ -401,7 +401,7 @@ private:
   Value *finally;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs an try-catch.
   /// @param name the's name
@@ -579,7 +579,7 @@ private:
   std::list<Stage> stages;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a pipeline flow.
   /// @param stages vector of pipeline stages

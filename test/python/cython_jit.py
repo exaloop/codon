@@ -1,8 +1,26 @@
 from typing import Dict, List, Tuple
 import subprocess
 import sys
+import os
+from pathlib import Path
 import numpy as np
 import codon
+
+if __name__ == "__main__" and "--stdlib-discovery-only" in sys.argv:
+    from codon.codon_jit import codon_library
+    expected = Path(os.environ['CODON_DIR']) / 'lib' / 'codon' / 'stdlib'
+    assert Path(os.environ['CODON_PATH']).resolve() == expected.resolve()
+    if os.name == 'nt':
+        assert Path(codon_library()).name.lower() == 'codonc.dll'
+    codon.execute('assert 6 * 7 == 42\n')
+    print('JIT stdlib discovery passed', flush=True)
+    sys.exit(0)
+
+if __name__ == "__main__" and "--options-only" not in sys.argv:
+    discovery_env = os.environ.copy()
+    discovery_env.pop('CODON_PATH', None)
+    subprocess.run([sys.executable, __file__, '--stdlib-discovery-only'],
+                   env=discovery_env, check=True, timeout=300)
 
 def test_options():
     for settings in ({"fastmath": 1}, {"fastmath": None}, {"mcpu": True},
@@ -175,6 +193,20 @@ def test_error_handling():
     else:
         assert False
 
+    @codon.jit
+    def runtime_error(value):
+        if value:
+            raise ValueError('native runtime failure')
+        return 0
+
+    try:
+        runtime_error(True)
+    except codon.JITError as error:
+        assert 'ValueError' in str(error)
+        assert 'native runtime failure' in str(error)
+    else:
+        raise AssertionError('runtime exception did not reach Python as JITError')
+
 test_convertible()
 test_many()
 test_roundtrip()
@@ -228,6 +260,17 @@ def d(x, y):
     return z
 
 def test_ndarray():
+    @codon.jit
+    def array_identity(value):
+        return value
+
+    for values, dtype in (([0, 2**63 - 1], np.int64),
+                          ([0, 2**63 + 1, 2**64 - 1], np.uint64)):
+        source = np.array(values, dtype=dtype)
+        result = array_identity(source)
+        assert result.dtype == source.dtype
+        assert np.array_equal(result, source)
+
     x = np.array([1, 2, 3, 4])
     y = np.array([10., 100., 1000., 10000.])
     z = d(x, y)

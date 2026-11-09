@@ -679,7 +679,9 @@ def test_SFC64_pareto(seed, a, expected, size=None):
     gen = rnd.Generator(rnd.SFC64(seed))
     if size is None:
         if isinstance(a, float) or isinstance(a, int):
-            assert gen.pareto(a) == expected
+            # Allow one final libm rounding step; the underlying SFC64 stream
+            # and the array distribution checks are still tested separately.
+            assert abs(gen.pareto(a) - expected) <= abs(np.spacing(expected))
         else:
             assert (round(gen.pareto(a), 8) == expected).all()
     else:

@@ -1,8 +1,21 @@
 import numpy as np
 import gzip
 import bz2
+import os
 
-test_dir = "test/numpy/data"
+def private_test_directory():
+    # Debug/release cases run concurrently. Shared writable/mapped files can
+    # expose truncated data or prevent another worker from replacing a file.
+    for attempt in range(100):
+        candidate = f"build/numpy-io-{os.getpid()}-{attempt}"
+        try:
+            os.mkdir(candidate)
+            return candidate
+        except OSError:
+            pass
+    raise OSError("could not create private NumPy I/O test directory")
+
+test_dir = private_test_directory()
 
 # TestSaveLoad
 
@@ -1267,6 +1280,24 @@ def test_writable_memmap():
 test_writable_memmap()
 
 @test
+def test_memmap_offset_and_copy():
+    filename = test_dir + "/offset_memmap.bin"
+    source = np.memmap(filename, dtype=i32, mode="w+", shape=(20000,))
+    source[:] = np.zeros(20000, dtype=i32)
+    offset = 65536 + 12
+    index = offset // 4
+    source[index] = 7
+    readonly = np.memmap(filename, dtype=i32, mode="r", offset=offset, shape=(2,))
+    private = np.memmap(filename, dtype=i32, mode="c", offset=offset, shape=(2,))
+    private[0] = 99
+    assert readonly[0] == i32(7) and source[index] == i32(7)
+    shared = np.memmap(filename, dtype=i32, mode="r+", offset=offset, shape=(2,))
+    shared[1] = 17
+    assert readonly[1] == i32(17) and source[index + 1] == i32(17)
+
+test_memmap_offset_and_copy()
+
+@test
 def test_text_fromfile_unicode_separator():
     path = test_dir + "/unicode_npio_fromfile.txt"
     with open(path, "w") as output:
@@ -1721,9 +1752,22 @@ test_load_empty_array_v1()
 def test_load_incorrect_filename_v1():
     # Save using filename contains special character or too long
     array = np.array([1, 2, 3])
-    filename = test_dir + "/binary_incorrect_filename-@!$%^&*()_+=~`{}[].np_v1.npy"
+    filename = test_dir + "/binary_incorrect_filename-@!$%^&()_+=~`{}[].np_v1.npy"
     np.save(filename, array)
-    np.load(filename)
+    assert np.array_equal(np.load(filename, dtype=int), array)
+    # Most of these are reserved Windows characters. A colon also names an
+    # NTFS alternate data stream, so it is a valid roundtrip in this position.
+    for character in '<>:"|?*':
+        filename = test_dir + "/reserved-" + character + ".npy"
+        if __windows__ and character != ':':
+            try:
+                np.save(filename, array)
+                assert False, "reserved Windows filename was accepted"
+            except OSError:
+                pass
+        else:
+            np.save(filename, array)
+            assert np.array_equal(np.load(filename, dtype=int), array)
 
 test_load_incorrect_filename_v1()
 

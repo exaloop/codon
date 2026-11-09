@@ -160,7 +160,7 @@ jobs:
   build:
     name: Build Codon
     if: always()
-    needs: [compile, test]
+    needs: [compile, test, build_windows]
     strategy:
       matrix:
         include:
@@ -180,7 +180,8 @@ jobs:
         env:
           COMPILE_RESULT: ${{ needs.compile.result }}
           TEST_RESULT: ${{ needs.test.result }}
-        run: test "$COMPILE_RESULT" = success && test "$TEST_RESULT" = success
+          WINDOWS_RESULT: ${{ needs.build_windows.result }}
+        run: test "$COMPILE_RESULT" = success && test "$TEST_RESULT" = success && test "$WINDOWS_RESULT" = success
 
   publish:
     name: Publish Codon
@@ -204,16 +205,126 @@ jobs:
           name: codon-python
           path: dist/
 
+      - name: Download Windows SDKs
+        uses: actions/download-artifact@v8
+        with:
+          pattern: codon-windows-*.zip
+          path: release/
+          merge-multiple: true
+
       - name: Create Release and Upload SDKs
         if: contains(github.ref, 'tags/v')
         uses: ncipollo/release-action@v1
         with:
-          artifacts: release/codon-*.tar.gz
-          artifactContentType: application/gzip
+          artifacts: release/codon-*.tar.gz,release/codon-windows-*.zip
           artifactErrorsFailBuild: true
 
       - name: Publish PyPI Package
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  build_windows:
+    name: Build and Test Codon (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            arch: windows-x86_64
+            msvc_arch: amd64
+            python_arch: x64
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    needs: unicode_tables
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      CMAKE_POLICY_VERSION_MINIMUM: '3.5'
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+          architecture: ${{ matrix.python_arch }}
+
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc_arch }}
+
+      - name: Install build and test dependencies
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          python -m pip install --only-binary=:all: ninja numpy==2.3.4 cython setuptools wheel astunparse
+          ninja --version
+
+      - name: Download LLVM release
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $archive = "$env:RUNNER_TEMP/llvm-codon-${{ matrix.arch }}.zip"
+          curl.exe --fail --location --retry 5 --output $archive `
+            "https://github.com/exaloop/llvm-project/releases/download/codon/llvm-codon-${{ matrix.arch }}.zip"
+          New-Item -ItemType Directory -Force C:/opt | Out-Null
+          # The release contains llvm-codon/, including Clang and GC-patched libomp.
+          tar -xf $archive -C C:/opt
+
+      - name: Build Codon
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          clang --version
+          cmake -S . -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DLLVM_DIR=C:/opt/llvm-codon/lib/cmake/llvm `
+            -DCMAKE_C_COMPILER=C:/opt/llvm-codon/bin/clang.exe `
+            -DCMAKE_CXX_COMPILER=C:/opt/llvm-codon/bin/clang++.exe `
+            -DCMAKE_C_COMPILER_TARGET=${{ matrix.target }} `
+            -DCMAKE_CXX_COMPILER_TARGET=${{ matrix.target }} `
+            -DCODON_GPU=OFF
+          cmake --build build --config Release --parallel 2
+          cmake --install build --prefix codon-deploy
+
+      - name: Install Python JIT package
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $env:CODON_DIR = "$PWD/codon-deploy"
+          python -m pip install --no-build-isolation "$env:CODON_DIR/python"
+
+      - name: Run full test suite
+        shell: bash
+        env:
+          CODON_BUILD_DIR: build
+          CODON_DIR: codon-deploy
+          CODON_TEST_WORKERS: '2'
+        run: |
+          mkdir -p test-results/${{ matrix.arch }}
+          bash .github/ci/test.sh "$PWD" "${{ matrix.arch }}" 2>&1 | tee test-results/${{ matrix.arch }}/full-suite.log
+
+      - name: Upload Windows test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-${{ matrix.arch }}
+          path: test-results/
+          if-no-files-found: ignore
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Compress-Archive -Path codon-deploy -DestinationPath codon-${{ matrix.arch }}.zip -Force
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: codon-${{ matrix.arch }}.zip
+          path: codon-${{ matrix.arch }}.zip
+          if-no-files-found: error
 
   build_documentation:
     name: Build Docs

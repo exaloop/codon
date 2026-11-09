@@ -18,6 +18,14 @@
 
 #include <cstdlib>
 
+#include <llvm/AsmParser/Parser.h>
+#include <llvm/IR/CFG.h>
+#include <llvm/IR/Verifier.h>
+#include <llvm/MC/TargetRegistry.h>
+#include <llvm/Support/CommandLine.h>
+#include <llvm/Support/FileUtilities.h>
+#include <llvm/Support/SourceMgr.h>
+
 using namespace codon;
 
 namespace {
@@ -172,6 +180,14 @@ class GPUCodegenTest : public testing::Test {
 
 protected:
   void SetUp() override {
+    {
+      auto probeOptions = Options::getDefault("build/codon_test");
+      ir::LLVMVisitor probe(probeOptions.get());
+    }
+    std::string lookupError;
+    llvm::Triple nvptxTriple(llvm::Triple::normalize("nvptx64-nvidia-cuda"));
+    if (!llvm::TargetRegistry::lookupTarget("nvptx64", nvptxTriple, lookupError))
+      GTEST_SKIP() << "LLVM was built without the NVPTX target";
     // These tests only emit PTX and need neither CUDA nor a GPU. Supply an empty
     // libdevice module rather than depending on a system CUDA installation.
     int fd;
@@ -252,6 +268,52 @@ TEST(LLVMOptimizationTest, InlineAttributes) {
       },
       testing::ExitedWithCode(EXIT_SUCCESS), "");
 }
+
+#ifdef _WIN32
+TEST(LLVMOptimizationTest, StabilizesNativeCCallAdapters) {
+  ASSERT_EXIT(
+      {
+        for (bool debug : {false, true}) {
+          auto options = Options::getDefault("build/codon_test");
+          options->debug = debug;
+          options->standalone = true;
+          Compiler compiler(*options);
+          llvm::cantFail(compiler.parseCode("native_callback.codon", R"(
+from internal.dlopen import _call_c
+
+@export
+def invoke_native(callback: Function[[int], int], value: int):
+    return _call_c(callback, (value,))
+)"));
+          llvm::cantFail(compiler.compile());
+          auto *module = compiler.getLLVMVisitor()->getModule();
+          EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+          const auto &functions = compiler.getLLVMVisitor()->getFuncs();
+          size_t adapters = 0;
+          for (auto *variable : *compiler.getModule()) {
+            auto *function = ir::cast<ir::LLVMFunc>(variable);
+            if (!function ||
+                !ir::util::hasAttribute(
+                    function,
+                    ast::getMangledFunc("std.internal.attributes", "llvm_c_call")))
+              continue;
+            auto *adapter = functions.at(function->getId());
+            ASSERT_NE(adapter, nullptr);
+            EXPECT_EQ(adapter->getName(), function->getName() + ".0");
+            size_t definitions = 0;
+            for (auto &candidate : *module)
+              if (candidate.getName().starts_with(function->getName() + "."))
+                ++definitions;
+            EXPECT_EQ(definitions, 1u);
+            ++adapters;
+          }
+          EXPECT_GT(adapters, 0u);
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+#endif
 
 TEST(IntrinsicCodegenTest, TypeQueriesAreConstantsBeforeOptimization) {
   ASSERT_EXIT(
@@ -867,6 +929,16 @@ TEST(RTTICodegenTest, UsesUnconditionalBaseExceptionSelector) {
         bool foundAll = false;
         for (auto &global : module->globals()) {
           auto name = global.getName();
+          if (name.starts_with("codon.win.catchids")) {
+            auto *ids = global.getInitializer();
+            for (unsigned i = 0; i < ids->getType()->getArrayNumElements(); ++i) {
+              auto selector = llvm::cast<llvm::ConstantInt>(ids->getAggregateElement(i))
+                                  ->getSExtValue();
+              foundRoot |= selector == runtime::BASE_EXCEPTION_SELECTOR;
+              foundTyped |= selector > runtime::CATCH_ALL_SELECTOR;
+            }
+            continue;
+          }
           if (!name.starts_with("codon.typeidx."))
             continue;
           auto selector = llvm::cast<llvm::ConstantInt>(
@@ -882,6 +954,18 @@ TEST(RTTICodegenTest, UsesUnconditionalBaseExceptionSelector) {
             foundAll = true;
             EXPECT_EQ(selector, runtime::CATCH_ALL_SELECTOR);
           }
+        }
+        if (llvm::Triple(module->getTargetTriple()).isWindowsMSVCEnvironment()) {
+          // SEH catch-all handlers use selector zero directly, without a typeidx
+          // global or a call to the typed exception matcher.
+          auto *catchAll = module->getFunction("catch_all");
+          ASSERT_NE(catchAll, nullptr);
+          foundAll = true;
+          for (auto &block : *catchAll)
+            for (auto &instruction : block)
+              if (auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction))
+                if (auto *callee = call->getCalledFunction())
+                  EXPECT_NE(callee->getName(), "seq_exc_match");
         }
         EXPECT_TRUE(foundRoot && foundTyped && foundAll);
         std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
@@ -4284,10 +4368,35 @@ def destination_reference(values: np.ndarray[float, 2]):
   return np.empty_like(values)
 )");
         auto *module = compiler->getLLVMVisitor()->getModule();
-        auto allocationCount = [](llvm::Function *function) {
+        // Count allocations on paths that can return normally. On SEH targets a
+        // throw ends in invoke, with unreachable in a separate successor block.
+        // Merely checking the current terminator also counts error formatting
+        // and all of its callees as array allocations.
+        auto normalBlocks = [](llvm::Function *function) {
+          auto result = (llvm::SmallPtrSet<llvm::BasicBlock *, 32>());
+          std::vector<llvm::BasicBlock *> pending;
+          for (auto &block : *function)
+            if (llvm::isa<llvm::ReturnInst>(block.getTerminator()))
+              pending.push_back(&block);
+          while (!pending.empty()) {
+            auto *block = pending.back();
+            pending.pop_back();
+            if (!result.insert(block).second)
+              continue;
+            for (auto *predecessor : llvm::predecessors(block)) {
+              auto *invoke = llvm::dyn_cast<llvm::InvokeInst>(
+                  predecessor->getTerminator());
+              if (!invoke || invoke->getNormalDest() == block)
+                pending.push_back(predecessor);
+            }
+          }
+          return result;
+        };
+        auto allocationCount = [&](llvm::Function *function) {
           unsigned allocations = 0;
+          auto blocks = normalBlocks(function);
           for (auto &block : *function) {
-            if (llvm::isa<llvm::UnreachableInst>(block.getTerminator()))
+            if (!blocks.contains(&block))
               continue;
             for (auto &instruction : block) {
               auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
@@ -4339,8 +4448,9 @@ def destination_reference(values: np.ndarray[float, 2]):
                 return 0u;
               active.push_back(function);
               auto count = allocationCount(function);
+              auto blocks = normalBlocks(function);
               for (auto &block : *function) {
-                if (llvm::isa<llvm::UnreachableInst>(block.getTerminator()))
+                if (!blocks.contains(&block))
                   continue;
                 for (auto &instruction : block) {
                   auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
@@ -4470,8 +4580,9 @@ def destination_reference(values: np.ndarray[float, 2]):
               "fused_any_producer"}) {
           auto *reduction = module->getFunction(name);
           ASSERT_NE(nullptr, reduction);
+          auto blocks = normalBlocks(reduction);
           for (auto &block : *reduction) {
-            if (llvm::isa<llvm::UnreachableInst>(block.getTerminator()))
+            if (!blocks.contains(&block))
               continue;
             for (auto &instruction : block) {
               auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
@@ -6260,4 +6371,40 @@ TEST(LLVMOptimizationTest, DoesNotHoistReallocatedPointer) {
                                   /*inLoopOnly=*/true),
             0);
   EXPECT_EQ(0, countLazyFixedAllocationCaches(optimized.module.get(), 65536));
+}
+
+TEST(LLVMOptimizationTest, DisablesExceptionPads) {
+  ASSERT_EXIT(
+      {
+        for (bool debug : {false, true}) {
+          auto options = Options::getDefault("build/codon_test");
+          options->debug = debug;
+          options->standalone = true;
+          options->noexc = true;
+          Compiler compiler(*options);
+          llvm::cantFail(compiler.parseCode("no_exceptions.codon", R"(
+@export
+def no_exceptions(value: int):
+    try:
+        return 8 // value
+    except ZeroDivisionError:
+        return -1
+    finally:
+        value += 1
+)"));
+          llvm::cantFail(compiler.compile());
+          auto *module = compiler.getLLVMVisitor()->getModule();
+          EXPECT_FALSE(llvm::verifyModule(*module, &llvm::errs()));
+          auto *function = module->getFunction("no_exceptions");
+          ASSERT_NE(function, nullptr);
+          EXPECT_FALSE(function->hasPersonalityFn());
+          for (auto &block : *function)
+            for (auto &instruction : block) {
+              EXPECT_FALSE(instruction.isEHPad());
+              EXPECT_FALSE(llvm::isa<llvm::InvokeInst>(instruction));
+            }
+        }
+        std::_Exit(testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
 }

@@ -1,6 +1,6 @@
 #%% python
 from python import os
-print os.name  #: posix
+print os.curdir  #: .
 
 from python import datetime
 z = datetime.datetime.utcfromtimestamp(0)
@@ -32,7 +32,7 @@ print rs(r'\W+', 'Words, words, words.')  #: ['Words', 'words', 'words', '']
 
 #%% python_import_fn_2
 from python import os.system(str) -> int
-system("echo 'hello!'")  #: hello!
+system("echo hello!")  #: hello!
 
 #%% python_pydef
 @python
@@ -139,3 +139,16 @@ except PyError as e:
 import _operator
 result = _operator.add(6, 7)
 print(result.__class__.__name__, result)  #: pyobj 13
+
+#%% python_integer_width
+from python import builtins as pybuiltins
+for value in [-9223372036854775807 - 1, -4294967296, -1, 0, 4294967296, 9223372036854775807]:
+    converted = pybuiltins.int(value)
+    assert int(converted) == value
+    assert str(converted) == str(value)
+try:
+    int(pybuiltins.int("9223372036854775808"))
+    assert False
+except PyError:
+    pass
+assert int(pybuiltins.int("7")) == 7

@@ -2,18 +2,36 @@
 
 #include <algorithm>
 #include <cstdio>
-#include <dirent.h>
-#include <fcntl.h>
+#include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <gc.h>
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <tuple>
+#include <vector>
+
+#ifdef _WIN32
+#include <atomic>
+#include <io.h>
+#include <thread>
+// No fork()/wait() on Windows. runInChildProcess() re-execs the test binary once
+// per case, so the child's exit code maps directly onto these wait-status macros.
+// (<windows.h> itself is included below, after the LLVM/Codon headers, so its
+// macros can't clobber LLVM identifiers like min/max or GDI's PASSTHROUGH.)
+#define WIFEXITED(s) (true)
+#define WEXITSTATUS(s) (s)
+// Windows has no signals, so a child can never be reported as signal-terminated.
+#define WIFSIGNALED(s) (false)
+#define WTERMSIG(s) (0)
+#else
+#include <dirent.h>
+#include <fcntl.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <tuple>
 #include <unistd.h>
-#include <vector>
+#endif
 
 #include "codon/cir/analyze/dataflow/capture.h"
 #include "codon/cir/analyze/dataflow/reaching.h"
@@ -22,11 +40,22 @@
 #include "codon/cir/util/operator.h"
 #include "codon/cir/util/outlining.h"
 #include "codon/compiler/compiler.h"
+#include "codon/compiler/engine.h"
 #include "codon/compiler/error.h"
 #include "codon/parser/common.h"
 #include "codon/util/common.h"
 
 #include "gtest/gtest.h"
+
+#ifdef _WIN32
+#include "llvm/Support/Signals.h"
+// Pull in the Win32 API only after the LLVM/Codon headers so windows.h's macros
+// (min/max, GDI's PASSTHROUGH, ...) can't clobber LLVM's identifiers.
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#define NOGDI
+#include <windows.h>
+#endif
 
 using namespace codon;
 using namespace std;
@@ -190,13 +219,22 @@ vector<string> splitLines(const string &output) {
   istringstream stream(output);
   const char delim = '\n';
 
-  while (getline(stream, line, delim))
+  while (getline(stream, line, delim)) {
+    // Windows text-mode stdout writes \r\n; drop the trailing \r so captured
+    // output compares equal to the (LF) expectations.
+    if (!line.empty() && line.back() == '\r')
+      line.pop_back();
     result.push_back(line);
+  }
 
   return result;
 }
 
-static pair<bool, string> findExpectOnLine(const string &line) {
+static pair<bool, string> findExpectOnLine(const string &rawLine) {
+  // Drop a trailing \r so CRLF-checked-out test files match LF program output.
+  string line = rawLine;
+  if (!line.empty() && line.back() == '\r')
+    line.pop_back();
   for (auto EXPECT_STR : vector<pair<bool, string>>{
            {false, "# EXPECT: "}, {false, "#: "}, {true, "#! "}}) {
     size_t pos = line.find(EXPECT_STR.second);
@@ -241,67 +279,225 @@ static pair<vector<string>, bool> findExpects(const string &filename, bool isCod
 string argv0;
 void seq_exc_init(int flags);
 
+#ifdef _WIN32
+TEST(WindowsJITTest, SEHHandlerMatchesImageBase) {
+  auto options = Options::getDefault(argv0);
+  Compiler compiler(*options); // Initialize the native LLVM target.
+  jit::Engine engine(options.get());
+  auto handler = engine.lookup("__C_specific_handler");
+  ASSERT_TRUE(bool(handler)) << llvm::toString(handler.takeError());
+  auto imageBase = engine.lookup("__ImageBase");
+  ASSERT_TRUE(bool(imageBase)) << llvm::toString(imageBase.takeError());
+  auto crt = GetModuleHandleW(L"vcruntime140.dll");
+  ASSERT_NE(crt, nullptr);
+  auto expected = GetProcAddress(crt, "__C_specific_handler");
+  ASSERT_NE(expected, nullptr);
+  EXPECT_EQ(handler->getValue(), reinterpret_cast<uintptr_t>(expected));
+  EXPECT_EQ(handler->getValue() - imageBase->getValue(), 0xE0000000ull);
+}
+
+static int64_t unwindTestAnchor(int64_t value) { return value + 1; }
+
+TEST(WindowsJITTest, FailedMaterializationPreservesOtherUnwindTables) {
+  auto options = Options::getDefault(argv0);
+  options->debug = false;
+  Compiler compiler(*options);
+  jit::Engine engine(options.get());
+  auto &dylib = engine.getMainJITDylib();
+  llvm::orc::SymbolMap symbols;
+  symbols[dylib.getExecutionSession().intern("unwind_test_anchor")] = {
+      llvm::orc::ExecutorAddr::fromPtr(&unwindTestAnchor),
+      llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable};
+  llvm::cantFail(dylib.define(llvm::orc::absoluteSymbols(std::move(symbols))));
+  auto submit = [&](const char *name, const char *callee) {
+    auto context = std::make_unique<llvm::LLVMContext>();
+    auto module = std::make_unique<llvm::Module>(name, *context);
+    module->setDataLayout(engine.getDataLayout());
+    module->setTargetTriple(llvm::sys::getDefaultTargetTriple());
+    auto *integer = llvm::Type::getInt64Ty(*context);
+    auto *type = llvm::FunctionType::get(integer, {integer}, false);
+    auto *function = llvm::Function::Create(
+        type, llvm::GlobalValue::ExternalLinkage, name, *module);
+    function->setUWTableKind(llvm::UWTableKind::Async);
+    function->addFnAttr(llvm::Attribute::NoInline);
+    llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
+    auto *result = builder.CreateCall(module->getOrInsertFunction(callee, type),
+                                      {function->getArg(0)});
+    builder.CreateRet(builder.CreateAdd(result, builder.getInt64(1)));
+    return engine.addModule(llvm::orc::ThreadSafeModule(std::move(module),
+                                                       std::move(context)));
+  };
+  llvm::cantFail(submit("preserved_frame", "unwind_test_anchor"));
+  auto address = engine.lookup("preserved_frame");
+  ASSERT_TRUE(bool(address)) << llvm::toString(address.takeError());
+  DWORD64 base = 0;
+  auto *table = RtlLookupFunctionEntry(address->getValue(), &base, nullptr);
+  ASSERT_NE(table, nullptr);
+  llvm::cantFail(submit("failed_frame", "codon_intentionally_missing_unwind_symbol"));
+  auto failed = engine.lookup("failed_frame");
+  ASSERT_FALSE(bool(failed));
+  llvm::consumeError(failed.takeError());
+  EXPECT_EQ(RtlLookupFunctionEntry(address->getValue(), &base, nullptr), table);
+  EXPECT_EQ(address->toPtr<int64_t(int64_t)>()(40), 42);
+  auto destination = dylib.createResourceTracker();
+  dylib.getDefaultResourceTracker()->transferTo(*destination);
+  EXPECT_EQ(RtlLookupFunctionEntry(address->getValue(), &base, nullptr), table);
+  llvm::cantFail(destination->remove());
+  EXPECT_EQ(RtlLookupFunctionEntry(address->getValue(), &base, nullptr), nullptr);
+}
+#endif
+
+// Compile (and optionally run) a single test case. Extracted so the same logic
+// serves both the POSIX forked child and the Windows re-exec'd child process.
+static void runCompileAndRun(const string &file, bool debug, const string &code,
+                             int startLine, int testFlags, bool pyNumerics,
+                             bool run) {
+  auto options = Options::getDefault(argv0);
+  options->test = true;
+  options->standalone = true;
+  options->debug = debug;
+  options->pynum = pyNumerics;
+
+  auto compiler = std::make_unique<Compiler>(*options);
+  // make sure we abort() on runtime error
+  llvm::handleAllErrors(code.empty()
+                            ? compiler->parseFile(file, testFlags)
+                            : compiler->parseCode(file, code, startLine, testFlags),
+                        [](const error::ParserErrorInfo &e) {
+                          for (auto &group : e.getErrors()) {
+                            for (auto &msg : group) {
+                              getLogger().level = 0;
+                              printf("%s\n", msg.getMessage().c_str());
+                            }
+                          }
+                          fflush(stdout);
+                          exit(EXIT_FAILURE);
+                        });
+  auto *pm = compiler->getPassManager();
+  pm->registerPass(std::make_unique<TestOutliner>());
+  pm->registerPass(std::make_unique<TestInliner>());
+  auto capKey =
+      pm->registerAnalysis(std::make_unique<ir::analyze::dataflow::CaptureAnalysis>(
+                               ir::analyze::dataflow::RDAnalysis::KEY,
+                               ir::analyze::dataflow::DominatorAnalysis::KEY),
+                           {ir::analyze::dataflow::RDAnalysis::KEY,
+                            ir::analyze::dataflow::DominatorAnalysis::KEY});
+  pm->registerPass(std::make_unique<EscapeValidator>(capKey), /*insertBefore=*/"",
+                   {capKey});
+  llvm::cantFail(compiler->compile());
+
+  if (run)
+    compiler->getLLVMVisitor()->run({file});
+  fflush(stdout);
+}
+
 class SeqTest
     : public testing::TestWithParam<tuple<
           string /*filename*/, bool /*debug*/, string /* case name */,
           string /* case code */, int /* case line */, bool /* barebones stdlib */,
           bool /* Python numerics */, bool /* run */>> {
   vector<char> buf;
+#ifndef _WIN32
   int out_pipe[2];
   pid_t pid;
+#endif
 
 public:
+#ifdef _WIN32
+  SeqTest() : buf(65536) {}
+#else
   SeqTest() : buf(65536), out_pipe(), pid() {}
+#endif
   string getFilename(const string &basename) {
     return string(TEST_DIR) + "/" + basename;
   }
   int runInChildProcess(bool avoidFork = false) {
-    auto fn = [this]() {
-      auto file = getFilename(get<0>(GetParam()));
-      bool debug = get<1>(GetParam());
-      auto code = get<3>(GetParam());
-      auto startLine = get<4>(GetParam());
-      int testFlags = 1 + get<5>(GetParam());
-      bool pyNumerics = get<6>(GetParam());
-      bool run = get<7>(GetParam());
+    (void)avoidFork;
+    auto file = getFilename(get<0>(GetParam()));
+    bool debug = get<1>(GetParam());
+    auto code = get<3>(GetParam());
+    int startLine = get<4>(GetParam());
+    int testFlags = 1 + get<5>(GetParam());
+    bool pyNumerics = get<6>(GetParam());
+    bool run = get<7>(GetParam());
 
-      auto options = Options::getDefault(argv0);
-      options->test = true;
-      options->standalone = true;
-      options->debug = debug;
-      options->pynum = pyNumerics;
+#ifdef _WIN32
+    // No fork() on Windows: serialize this case's parameters to a temp file, then
+    // re-exec the test binary in "--run-case" mode with its stdout wired to a pipe.
+    // A fresh process per case mirrors the isolation fork() gave us (the JIT/runtime
+    // is set up once per process) and contains any abort() inside the child.
+    char tmpDir[MAX_PATH], tmpFile[MAX_PATH];
+    GetTempPathA(MAX_PATH, tmpDir);
+    GetTempFileNameA(tmpDir, "cdt", 0, tmpFile);
+    {
+      std::ofstream pf(tmpFile, std::ios::binary);
+      pf << debug << ' ' << startLine << ' ' << testFlags << ' ' << pyNumerics << ' '
+         << run << '\n';
+      auto writeStr = [&](const string &s) {
+        pf << s.size() << '\n';
+        pf.write(s.data(), s.size());
+        pf << '\n';
+      };
+      writeStr(file);
+      writeStr(code);
+    }
 
-      auto compiler = std::make_unique<Compiler>(*options);
-      // make sure we abort() on runtime error
-      llvm::handleAllErrors(code.empty()
-                                ? compiler->parseFile(file, testFlags)
-                                : compiler->parseCode(file, code, startLine, testFlags),
-                            [](const error::ParserErrorInfo &e) {
-                              for (auto &group : e.getErrors()) {
-                                for (auto &msg : group) {
-                                  getLogger().level = 0;
-                                  printf("%s\n", msg.getMessage().c_str());
-                                }
-                              }
-                              fflush(stdout);
-                              exit(EXIT_FAILURE);
-                            });
-      auto *pm = compiler->getPassManager();
-      pm->registerPass(std::make_unique<TestOutliner>());
-      pm->registerPass(std::make_unique<TestInliner>());
-      auto capKey =
-          pm->registerAnalysis(std::make_unique<ir::analyze::dataflow::CaptureAnalysis>(
-                                   ir::analyze::dataflow::RDAnalysis::KEY,
-                                   ir::analyze::dataflow::DominatorAnalysis::KEY),
-                               {ir::analyze::dataflow::RDAnalysis::KEY,
-                                ir::analyze::dataflow::DominatorAnalysis::KEY});
-      pm->registerPass(std::make_unique<EscapeValidator>(capKey), /*insertBefore=*/"",
-                       {capKey});
-      llvm::cantFail(compiler->compile());
+    SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};
+    HANDLE rd = nullptr, wr = nullptr;
+    assert(CreatePipe(&rd, &wr, &sa, 0));
+    SetHandleInformation(rd, HANDLE_FLAG_INHERIT, 0);
 
-      if (run)
-        compiler->getLLVMVisitor()->run({file});
-      fflush(stdout);
+    string cmd = "\"" + argv0 + "\" --run-case \"" + string(tmpFile) + "\"";
+    vector<char> cmdv(cmd.begin(), cmd.end());
+    cmdv.push_back('\0');
+
+    STARTUPINFOA si{};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    si.hStdOutput = wr;
+    si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+    PROCESS_INFORMATION pi{};
+    BOOL ok = CreateProcessA(nullptr, cmdv.data(), nullptr, nullptr, TRUE, 0, nullptr,
+                             nullptr, &si, &pi);
+    CloseHandle(wr);
+    assert(ok);
+
+    // A hung child would otherwise block the pipe read below forever and stall the
+    // whole suite; kill it after a generous per-case limit so only this case fails.
+    constexpr DWORD caseTimeoutMs = 20 * 60 * 1000;
+    std::atomic<bool> timedOut{false};
+    std::thread watchdog([&]() {
+      if (WaitForSingleObject(pi.hProcess, caseTimeoutMs) == WAIT_TIMEOUT) {
+        timedOut = true;
+        TerminateProcess(pi.hProcess, 124);
+      }
+    });
+
+    string out;
+    char rbuf[4096];
+    DWORD n = 0;
+    while (ReadFile(rd, rbuf, sizeof(rbuf), &n, nullptr) && n > 0)
+      out.append(rbuf, n);
+    CloseHandle(rd);
+
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    watchdog.join();
+    if (timedOut)
+      fprintf(stderr, "codon_test: case timed out after %lu ms and was killed\n",
+              static_cast<unsigned long>(caseTimeoutMs));
+    DWORD ec = 0;
+    GetExitCodeProcess(pi.hProcess, &ec);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    DeleteFileA(tmpFile);
+
+    std::fill(buf.begin(), buf.end(), '\0');
+    memcpy(buf.data(), out.data(), std::min(out.size(), buf.size() - 1));
+    return static_cast<int>(ec);
+#else
+    auto fn = [&]() {
+      runCompileAndRun(file, debug, code, startLine, testFlags, pyNumerics, run);
     };
 
     assert(pipe(out_pipe) != -1);
@@ -326,6 +522,7 @@ public:
       return status;
     }
     return -1;
+#endif
   }
   string result() { return string(buf.data()); }
 };
@@ -636,7 +833,7 @@ INSTANTIATE_TEST_SUITE_P(
             "numpy/test_lib.codon",
             "numpy/test_linalg.codon",
             "numpy/test_loops.codon",
-            // "numpy/test_misc.codon", // TODO: takes forever in debug mode
+            "numpy/test_misc.codon",
             "numpy/test_ndmath.codon",
             "numpy/test_npdatetime.codon",
             "numpy/test_pybridge.codon",
@@ -656,11 +853,58 @@ INSTANTIATE_TEST_SUITE_P(
         testing::Values(true)
     ),
     getTestNameFromParam);
-
 // clang-format on
 
 int main(int argc, char *argv[]) {
-  argv0 = ast::Filesystem::executable_path(argv[0]);
+#ifdef _WIN32
+  // The re-executed case is a separate process: install the native crash handler
+  // there too, so CRT aborts report a backtrace instead of just an exit status.
+  llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
+  llvm::sys::DisableSystemDialogsOnCrash();
+#endif
+  argv0 = ast::Filesystem::executable_path(argv[0]).string();
+  // The Python bridge imports the fixture modules from test/python, including
+  // when the executable is launched directly instead of through the CI script.
+  std::string pythonPath = std::string(TEST_DIR) + "/python";
+  if (const char *existing = std::getenv("PYTHONPATH"); existing && *existing) {
+#ifdef _WIN32
+    pythonPath += ";";
+#else
+    pythonPath += ":";
+#endif
+    pythonPath += existing;
+  }
+#ifdef _WIN32
+  _putenv_s("PYTHONPATH", pythonPath.c_str());
+#else
+  setenv("PYTHONPATH", pythonPath.c_str(), 1);
+#endif
+#ifdef _WIN32
+  // Child mode: a single case re-exec'd by runInChildProcess(). Read the
+  // serialized parameters, compile/run the case, and let stdout + the exit code
+  // flow back to the parent over the inherited pipe.
+  if (argc >= 3 && string(argv[1]) == "--run-case") {
+    std::ifstream pf(argv[2], std::ios::binary);
+    bool debug = false, pyNumerics = false, run = false;
+    int startLine = 0, testFlags = 0;
+    pf >> debug >> startLine >> testFlags >> pyNumerics >> run;
+    pf.get(); // consume newline
+    auto readStr = [&]() {
+      size_t len = 0;
+      pf >> len;
+      pf.get(); // consume newline
+      string s(len, '\0');
+      pf.read(&s[0], len);
+      pf.get(); // consume trailing newline
+      return s;
+    };
+    string file = readStr();
+    string code = readStr();
+    runCompileAndRun(file, debug, code, startLine, testFlags, pyNumerics, run);
+    fflush(stdout);
+    return EXIT_SUCCESS;
+  }
+#endif
   testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

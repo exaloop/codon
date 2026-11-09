@@ -66,7 +66,7 @@ private:
   std::string domAnalysisKey;
 
 public:
-  static const std::string KEY;
+  static CODON_API const std::string KEY;
   std::string getKey() const override { return KEY; }
 
   /// Initializes a capture analysis.

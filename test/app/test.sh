@@ -2,17 +2,27 @@
 
 export arg=$1
 export testdir=$(dirname $0)
-export codon="$arg/codon"
+windows=0
+case "$(uname -s)" in
+  MINGW*|MSYS*) windows=1 ;;
+esac
+exe_suffix=""
+if [ "$windows" -eq 1 ]; then
+  exe_suffix=".exe"
+fi
+export codon="$arg/codon$exe_suffix"
 
 # argv test
 [ "$($codon run "$testdir/argv.codon" aa bb cc)" == "aa,bb,cc" ] || exit 1
 
 # build test
-$codon build -release -o "$arg/test_binary" "$testdir/build.codon"
-[ "$($arg/test_binary)" == "hello" ] || exit 2
+"$codon" build -release -o "$arg/test_binary$exe_suffix" "$testdir/build.codon" || exit 2
+[ "$("$arg/test_binary$exe_suffix")" == "hello" ] || exit 2
 
-"$codon" build -release -linker-flags=--pie -o "$arg/test_pie" "$testdir/build.codon" || exit 2
-[[ "$("$arg/test_pie")" == "hello" ]] || exit 2
+if [ "$windows" -eq 0 ]; then
+  "$codon" build -release -linker-flags=--pie -o "$arg/test_pie" "$testdir/build.codon" || exit 2
+  [[ "$("$arg/test_pie")" == "hello" ]] || exit 2
+fi
 
 if [[ "$(uname -s)" == "Linux" ]]; then
 	check_executable() {
@@ -70,9 +80,15 @@ if [[ "$(uname -s)" == "Linux" ]]; then
 fi
 
 # library test
-$codon build -relocation-model=pic -o "$arg/libcodon_export_test.so" "$testdir/export.codon"
-gcc "$testdir/test.c" -L"$arg" -Wl,-rpath,"$arg" -lcodon_export_test -o "$arg/test_binary"
-[ "$($arg/test_binary)" == "abcabcabc" ] || exit 3
+if [ "$windows" -eq 1 ]; then
+  "$codon" build -release -o "$arg/codon_export_test.dll" \
+    "-linker-flags=-Wl,/IMPLIB:$(cygpath -am "$arg/codon_export_test.lib")" "$testdir/export.codon" || exit 3
+  clang "$testdir/test.c" "$arg/codon_export_test.lib" -o "$arg/test_binary$exe_suffix" || exit 3
+else
+  "$codon" build -relocation-model=pic -o "$arg/libcodon_export_test.so" "$testdir/export.codon" || exit 3
+  gcc "$testdir/test.c" -L"$arg" -Wl,-rpath,"$arg" -lcodon_export_test -o "$arg/test_binary$exe_suffix" || exit 3
+fi
+[ "$("$arg/test_binary$exe_suffix")" == "abcabcabc" ] || exit 3
 
 # exit code test
 check_exit() {
@@ -82,16 +98,19 @@ check_exit() {
 	exit_code=$?
 	[[ $exit_code -eq $expected_status ]] || exit 4
 	[[ ! -s "$arg/exit_stdout" ]] || exit 4
+	if [ "$windows" -eq 1 ]; then
+		expected_message=${expected_message//$'\n'/$'\r\n'}
+	fi
 	printf '%s' "$expected_message" | cmp - "$arg/exit_stderr" || exit 4
 }
 
 for mode in -debug -release; do
-	"$codon" build "$mode" -o "$arg/test_exit" "$testdir/exit.codon" || exit 4
+	"$codon" build "$mode" -o "$arg/test_exit$exe_suffix" "$testdir/exit.codon" || exit 4
 	for invocation in run binary; do
 		if [[ "$invocation" == run ]]; then
 			command=("$codon" run "$mode" "$testdir/exit.codon")
 		else
-			command=("$arg/test_exit")
+			command=("$arg/test_exit$exe_suffix")
 		fi
 		check_exit 42 "" "${command[@]}"
 		check_exit 0 "" "${command[@]}" default
@@ -108,3 +127,7 @@ done
 
 # input test
 [ "$($codon run "$testdir/input.codon" < "$testdir/input.txt")" == "input: aa bb,,cc,X" ] || exit 5
+
+if [ "$windows" -eq 1 ]; then
+  python "$testdir/windows_sdk.py" "$arg" || exit 6
+fi
