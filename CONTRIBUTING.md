@@ -51,7 +51,7 @@ Using `EXPECT` is helpful mainly in cases where you need to test control flow, *
 ## Documentation
 
 Documentation lives in `docs/` and is built with Docusaurus. See the
-[documentation development guide](website/README.md) for API generation, local
+[documentation development guide](docs/README.md) for API generation, local
 preview, shared-theme development, and production validation.
 
 ## Pull requests
