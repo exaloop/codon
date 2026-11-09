@@ -23,8 +23,10 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include <dbghelp.h>
+// clang-format off
 #include <windows.h>
+#include <dbghelp.h>
+// clang-format on
 #ifndef CODON_SEH_CODE
 #define CODON_SEH_CODE 0xE0C0D047
 #endif
