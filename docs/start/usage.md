@@ -3,7 +3,9 @@ title: Usage
 ---
 
 The `codon` command includes several subcommands for compiling
-and executing code.
+and executing code on Linux, macOS, and Windows x86-64. The commands below use
+a POSIX shell unless marked as PowerShell; Codon's subcommands and flags are
+the same on all three platforms.
 
 ## `codon run`
 
@@ -67,8 +69,23 @@ codon build -exe -o hello -release program.py
 codon build -o hello -release program.py
 ```
 
-Codon uses a C++ compiler to link the actual executable after compilation.
-Extra linker flags can be passed with the `-linker-flags` argument. For example:
+On Windows, use an explicit `.exe` output name and the `.\` relative path prefix
+when running it from PowerShell:
+
+```powershell
+codon build -release -o hello.exe program.py
+.\hello.exe
+```
+
+The Windows linker uses `clang` and `lld-link` with an initialized MSVC/Windows
+SDK environment, as described in the [installation guide](install.mdx). Keep
+the Codon SDK's `bin` directory on `PATH` when running generated executables so
+Windows can find their runtime DLLs. An executable alone is not a self-contained
+deployment of those libraries.
+
+Codon uses a system compiler driver to link the actual executable after compilation.
+Extra linker flags can be passed with the `-linker-flags` argument. For example,
+on Linux or macOS:
 
 ``` bash
 # includes /foo/bar in the executable's rpath
@@ -80,7 +97,7 @@ to `-linker-flags`.
 
 #### Position-independent executables
 
-Use `--pie` to build a position-independent executable (PIE):
+On Linux or macOS, use `--pie` to build a position-independent executable (PIE):
 
 ``` bash
 codon build -release --pie -o program program.py
@@ -115,6 +132,10 @@ codon build -o hello.so -release program.py
 
 The `-linker-flags` flag described above also applies when compiling to
 a shared library.
+
+On Windows, use a DLL filename, for example
+`codon build -lib -release -o hello.dll program.py`. Windows does not use ELF or
+Mach-O rpaths; dependent runtime DLLs must be discoverable by the Windows loader.
 
 :::info
 
@@ -157,6 +178,9 @@ codon build -obj -o hello.o -release program.py
 # '-obj' is inferred from `-o` argument
 codon build -o hello.o -release program.py
 ```
+
+On Windows, `.obj` filenames are also recognized, for example
+`codon build -obj -release -o hello.obj program.py`.
 
 ### Compile to assembly code
 

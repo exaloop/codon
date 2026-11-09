@@ -180,18 +180,26 @@ class BuildCodonExt(build_ext):
         os.makedirs(build_dir, exist_ok=True)
         os.makedirs(extension_path.parent.absolute(), exist_ok=True)
 
-        codon_cmd = str(codon_path / 'bin' / 'codon')
+        codon_cmd = str(codon_path / 'bin' / ('codon.exe' if os.name == 'nt' else 'codon'))
         optimization = '-debug' if self.debug else '-release'
         self.spawn([codon_cmd, 'build', optimization, '--relocation-model=pic', '-pyext',
                     '-o', str(extension_path) + ".o", '-module', ext.name, ext.source])
 
-        ext.runtime_library_dirs = [str(codon_path / 'lib' / 'codon')]
+        library_dirs = [str(codon_path / 'lib' / 'codon')]
+        libraries = ['codonrt']
+        if os.name == 'nt':
+            libraries += ['libomp', 'libopenblas', 'msvcrt', 'vcruntime', 'ucrt',
+                          'oldnames', 'legacy_stdio_definitions',
+                          f'python{sys.version_info.major}{sys.version_info.minor}']
+            library_dirs.append(str(Path(sys.base_prefix) / 'libs'))
+        ext.runtime_library_dirs = [] if os.name == 'nt' else library_dirs
         self.compiler.link_shared_object(
             [str(extension_path) + '.o'],
             str(extension_path),
-            libraries=['codonrt'],
-            library_dirs=ext.runtime_library_dirs,
+            libraries=libraries,
+            library_dirs=library_dirs,
             runtime_library_dirs=ext.runtime_library_dirs,
+            export_symbols=[f'PyInit_{ext.name}'],
             debug=self.debug,
             build_temp=self.build_temp,
         )
@@ -218,12 +226,34 @@ in the target Python environment, build it using that interpreter:
 python3 setup.py build_ext --inplace
 ```
 
+On Windows, use the x64 MSVC developer environment and SDK from the
+[installation guide](../../start/install.mdx):
+
+```powershell
+$env:CODON_DIR = Join-Path $HOME ".codon"
+python setup.py build_ext --inplace
+```
+
+Setuptools produces a `.pyd` module on Windows. Before importing it, register
+the SDK's runtime DLL directory with Python and retain the returned handle:
+
+```python
+import os
+from pathlib import Path
+
+codon_dlls = os.add_dll_directory(str(Path(os.environ['CODON_DIR']) / 'bin'))
+import mymodule
+```
+
+This explicit DLL search directory is needed for Windows Python extensions;
+adding the SDK to `PATH` alone is not sufficient with modern CPython.
+
 The resulting module can be imported as `mymodule` from that directory. Its
 name should agree with the `CodonExtension` entry and generated `-module`
 argument; changing only the output filename does not rename Python's module
 initialization function.
 
-The example links against the local Codon runtime and records that runtime's
-library directory. It is a local build workflow, not a self-contained wheel:
+The example links against the local Codon runtime and, on Linux and macOS,
+records that runtime's library directory. It is a local build workflow, not a self-contained wheel:
 distributing the extension also requires arranging for compatible runtime
 libraries and Python/platform versions on the destination machine.

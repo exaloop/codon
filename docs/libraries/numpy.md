@@ -349,7 +349,7 @@ print(eigenvectors)
 
 Just like standard NumPy, Codon will use an optimized BLAS library under the
 hood to implement many linear algebra operations. This defaults to OpenBLAS
-on Linux and Apple's Accelerate framework on macOS.
+on Linux and Windows, and Apple's Accelerate framework on macOS.
 
 Because Codon supports full multithreading, it's possible to use outer-loop
 parallelism to perform linear algebra operations in parallel. Here's an example

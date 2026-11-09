@@ -76,7 +76,7 @@ module.exports = async function config() {
       prism: {
         theme: {...themes.github, plain: {...themes.github.plain, backgroundColor: '#f6f7f6'}},
         darkTheme: {...themes.dracula, plain: {...themes.dracula.plain, backgroundColor: '#202427'}},
-        additionalLanguages: ['python', 'bash', 'cpp', 'c', 'cmake', 'llvm', 'toml', 'json'],
+        additionalLanguages: ['python', 'bash', 'powershell', 'cpp', 'c', 'cmake', 'llvm', 'toml', 'json'],
       },
       tableOfContents: {minHeadingLevel: 2, maxHeadingLevel: 3},
     },

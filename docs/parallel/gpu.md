@@ -6,6 +6,9 @@ Codon's native GPU backend targets NVIDIA devices through CUDA. This is
 separate from CPU multithreading and does not provide execution on Apple,
 AMD or Intel GPUs.
 
+The native Windows SDK is currently built without the CUDA backend. Native
+Windows support does not yet include GPU compilation or execution.
+
 :::info
 
 

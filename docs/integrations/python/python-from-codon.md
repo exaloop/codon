@@ -21,8 +21,8 @@ packages need to come from a compatible Python installation and architecture.
 Using the interpreter from the intended environment helps keep these paths
 consistent.
 
-The following command looks for the shared library using that interpreter's
-build configuration, including framework installations on macOS:
+On Linux and macOS, the following command looks for the shared library using
+that interpreter's build configuration, including framework installations:
 
 ``` bash
 export CODON_PYTHON="$(python3 - <<'PY'
@@ -53,6 +53,20 @@ PY
 )"
 ```
 
+On Windows, use 64-bit CPython and point to its versioned runtime DLL, such as
+`python313.dll` for Python 3.13. With the intended `python` on `PATH`, run:
+
+```powershell
+$env:CODON_PYTHON = python -c "import sys; from pathlib import Path; print(Path(sys.base_prefix) / ('python%d%d.dll' % sys.version_info[:2]))"
+if (-not (Test-Path -LiteralPath $env:CODON_PYTHON)) {
+    throw "The selected Python installation does not contain its runtime DLL."
+}
+```
+
+This uses the base installation even when `python` belongs to a virtual
+environment. Do not point `CODON_PYTHON` at `python.exe` or the import library
+`python313.lib`.
+
 If a distribution does not provide a shared Python library, an installation
 that includes one is needed for this integration. Native Codon programs that
 do not call Python have no such requirement.
@@ -66,11 +80,24 @@ to the embedded interpreter's search path:
 export PYTHONPATH="$(python3 -c 'import os, site; print(os.pathsep.join(site.getsitepackages()))')${PYTHONPATH:+:$PYTHONPATH}"
 ```
 
+In Windows PowerShell, the equivalent is:
+
+```powershell
+$PackagePaths = python -c "import os, site; print(os.pathsep.join(site.getsitepackages()))"
+$env:PYTHONPATH = (@($PackagePaths, $env:PYTHONPATH) | Where-Object { $_ }) -join ';'
+```
+
 When CPython cannot locate its standard library, `PYTHONHOME` can additionally
 identify the base installation:
 
 ``` bash
 export PYTHONHOME="$(python3 -c 'import sys; print(sys.base_prefix)')"
+```
+
+Or, in PowerShell:
+
+```powershell
+$env:PYTHONHOME = python -c "import sys; print(sys.base_prefix)"
 ```
 
 This is an installation directory, not an executable or a `site-packages`

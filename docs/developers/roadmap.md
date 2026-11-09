@@ -76,8 +76,6 @@ Codon's optimizations and parallel execution. Further library work includes:
 
 ## Infrastructure & Tools
 
-- Windows support
-
 - A package-management workflow similar to Rust's
   [Cargo](https://github.com/rust-lang/cargo)
 

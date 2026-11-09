@@ -13,7 +13,7 @@
   &nbsp;&#183;&nbsp;
   <a href="https://docs.exaloop.io/codon/general/roadmap" target="_blank">Roadmap</a>
   &nbsp;&#183;&nbsp;
-  <a href="https://exaloop.io/#benchmarks" target="_blank">Benchmarks</a>
+  <a href="https://docs.exaloop.io/benchmarks" target="_blank">Benchmarks</a>
 </h3>
 
 <a href="https://github.com/exaloop/codon/actions/workflows/ci.yml">
@@ -62,13 +62,23 @@ up with best possible performance in mind.*
 
 # Quick start
 
-Download and install Codon with this command:
+Codon runs natively on Linux, macOS, and Windows x86-64. On Linux or macOS,
+download and install it with:
 
 ```bash
 /bin/bash -c "$(curl -fsSL https://exaloop.io/install.sh)"
 ```
 
-After following the prompts, the `codon` command will be available to use. For example:
+On Windows x86-64, run this in PowerShell:
+
+```powershell
+& ([scriptblock]::Create((irm https://exaloop.io/install.ps1))) -AddToPath
+```
+
+See the [installation guide](https://docs.exaloop.io/start/install/) for
+PATH setup, C++ build tools, and Python package installation.
+
+Once installed and added to PATH, the `codon` command is available to use. For example:
 
 - To run a program: `codon run file.py`
 - To run a program with optimizations enabled: `codon run -release file.py`

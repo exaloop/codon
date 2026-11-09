@@ -7,7 +7,7 @@ OS=$(uname -s | awk '{print tolower($0)}')
 ARCH=$(uname -m)
 
 if [ "$OS" != "linux" ] && [ "$OS" != "darwin" ]; then
-  echo "error: Pre-built binaries only exist for Linux and macOS." >&2
+  echo "error: This Bash installer supports Linux and macOS. On Windows, use scripts/install.ps1; see https://docs.exaloop.io/start/install/." >&2
   exit 1
 fi
 

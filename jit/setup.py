@@ -36,7 +36,7 @@ if (
 ):
     print(
         "Cannot find Codon.",
-        'Please either install Codon (/bin/bash -c "$(curl -fsSL https://exaloop.io/install.sh)"),',
+        "Please install the Codon SDK: https://docs.exaloop.io/start/install/",
         "or set CODON_DIR if Codon is not in PATH or installed in ~/.codon",
         file=sys.stderr,
     )

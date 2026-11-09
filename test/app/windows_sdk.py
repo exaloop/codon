@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import zipfile
 
 
 def copy_file(source, destination):
@@ -80,4 +81,28 @@ with tempfile.TemporaryDirectory(prefix='codon sdk ', dir=Path(sys.argv[1]).reso
         assert 'Symbol: fflush' in imports, imports
         from windows_abi import check
         check(compiler, root, mode, env, runtime_env)
+    installer = Path(__file__).resolve().parents[2] / 'scripts/install.ps1'
+    powershell = shutil.which('powershell') or shutil.which('pwsh')
+    assert powershell, 'PowerShell is required to test the Windows installer'
+    archive = root / 'codon-windows-x86_64.zip'
+    with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED) as package:
+        for sdk_file in relocated.rglob('*'):
+            if sdk_file.is_file():
+                package.write(sdk_file, Path('codon-deploy') / sdk_file.relative_to(relocated))
+    outer_archive = root / 'artifact.zip'
+    with zipfile.ZipFile(outer_archive, 'w') as package:
+        package.write(archive, archive.name)
+    for package in (archive, outer_archive):
+        installed = root / ('installed SDK ' + package.stem)
+        arguments = [powershell, '-NoProfile', '-ExecutionPolicy', 'Bypass',
+                     '-File', str(installer), '-Archive', str(package),
+                     '-InstallDir', str(installed)]
+        run(arguments, env, root)
+        assert run([str(installed / 'bin/codon.exe'), 'run', str(source)],
+                   env, root).strip() == 'SDK with spaces'
+        repeated = subprocess.run(arguments, env=env, cwd=root, capture_output=True,
+                                  text=True)
+        assert repeated.returncode != 0 and 'already exists' in repeated.stderr
+        shutil.rmtree(installed)
+    print('Windows installer archive and existing-destination checks passed', flush=True)
 print('Windows SDK path-with-spaces checks passed')

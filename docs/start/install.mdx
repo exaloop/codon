@@ -6,11 +6,17 @@ sidebar_label: Installation
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
+Codon runs natively on Linux, macOS, and Windows x86-64. Choose the command-line
+tool to compile programs, or the Python package to use `@codon.jit` in an existing
+Python application.
+
 <Tabs groupId="installation" defaultValue="cli">
 <TabItem value="cli" label="Command-line tool">
 
-Use this command to install the Codon CLI that can be used to compile and
-run programs from the command line:
+<Tabs groupId="installation-os" defaultValue="unix">
+<TabItem value="unix" label="Linux / macOS">
+
+Install the Codon CLI with:
 
 ```bash
 /bin/bash -c "$(curl -fsSL https://exaloop.io/install.sh)"
@@ -19,7 +25,51 @@ run programs from the command line:
 Follow the prompts to add the `codon` command to your path.
 
 </TabItem>
+<TabItem value="windows" label="Windows">
+
+Use a 64-bit PowerShell session on x86-64 Windows. Install the
+[x64 Visual C++ Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)
+if it is not already present, then install Codon with:
+
+```powershell
+& ([scriptblock]::Create((irm https://exaloop.io/install.ps1))) -AddToPath
+```
+
+This downloads the latest Windows SDK and makes `codon` available in the current
+session. The SDK includes the compiler, standard library, runtime DLLs, and Python
+package sources.
+
+The installer places the SDK in `%USERPROFILE%\.codon`, checks that the compiler
+can start, and refuses to overwrite an existing destination. Use `-InstallDir`
+to choose a different, unused directory. `-AddToPath` adds its `bin` directory to
+your **user** `Path` for new terminals; omit that switch to leave persistent
+settings unchanged. The installer also sets `CODON_DIR` for the current session.
+
+Use `-Version vX.Y.Z` to select a release tag, or `-Archive <zip>` to install a
+downloaded SDK. Both direct SDK ZIPs and GitHub artifact ZIPs are accepted.
+Keep the installed SDK intact: the compiler and generated programs need its
+runtime DLLs. When upgrading, install into a new directory or move the old
+installation first.
+
+For `codon build`, install [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/)
+with the **Desktop development with C++** workload, including the MSVC x64 tools
+and a Windows SDK. Install [LLVM](https://releases.llvm.org/) with `clang` and
+`lld-link` on `PATH`. Open **x64 Native Tools Command Prompt for VS 2022**, then
+run `powershell -NoProfile` to use the PowerShell commands in these guides with
+the MSVC environment initialized. Check `clang --version` and `lld-link --version`
+before compiling an executable.
+
+Windows ARM64 SDKs are not currently published. WSL remains an option for using
+the Linux distribution on Windows; it is not required for the native x86-64 SDK.
+
+</TabItem>
+</Tabs>
+
+</TabItem>
 <TabItem value="python" label="Python package">
+
+<Tabs groupId="installation-os" defaultValue="unix">
+<TabItem value="unix" label="Linux / macOS">
 
 Use this command to install the `codon` Python package, which can be used to
 compile functions in an existing Python codebase:
@@ -28,18 +78,34 @@ compile functions in an existing Python codebase:
 python3 -m pip install codon-jit
 ```
 
+</TabItem>
+<TabItem value="windows" label="Windows">
+
+Install the Windows SDK and C++ build tools described in the command-line tab.
+Use 64-bit CPython; the Windows CI configuration tests Python 3.13. In PowerShell
+with the MSVC environment initialized, install the package sources included in
+the same SDK:
+
+```powershell
+$env:CODON_DIR = Join-Path $HOME ".codon"
+$env:PATH = "$env:CODON_DIR\bin;$env:PATH"
+py -3.13 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install cython setuptools wheel astunparse numpy
+.\.venv\Scripts\python.exe -m pip install --no-build-isolation "$env:CODON_DIR\python"
+```
+
+This builds the Python extension against the installed SDK. Keep `CODON_DIR`
+set when using that environment so the package can locate the matching compiler
+and runtime libraries.
+
+</TabItem>
+</Tabs>
+
 With this package installed, you can use the `@codon.jit` decorator.
 [Learn more](../integrations/python/codon-from-python.md).
 
 </TabItem>
 </Tabs>
-
-:::info
-
-Codon is supported natively on Linux and macOS. If you are using Windows,
-we recommend using Codon through [WSL](https://learn.microsoft.com/en-us/windows/wsl/about).
-
-:::
 
 ## Run your first program
 

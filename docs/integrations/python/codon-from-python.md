@@ -3,12 +3,18 @@ title: Call Codon from Python
 ---
 
 Codon can be used within larger Python projects or codebases
-through its just-in-time (JIT) compilation mode. To use Codon's
-Python JIT compiler, install the `codon-jit` Python package:
+through its just-in-time (JIT) compilation mode. On Linux and macOS, install
+the `codon-jit` Python package:
 
 ```bash
 python3 -m pip install codon-jit
 ```
+
+On Windows x86-64, install the native SDK and build the Python package sources
+included in its `python` directory. The [installation guide](../../start/install.mdx)
+covers the C++ build tools and commands; the Windows CI job tests 64-bit CPython
+3.13. Keep `CODON_DIR` set to the SDK root when importing `codon`, so its DLLs and
+standard library come from the same installation.
 
 This library will attempt to use an installed version of Codon.
 If Codon is installed at a non-standard path, set the `CODON_DIR`
