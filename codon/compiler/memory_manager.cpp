@@ -2,8 +2,8 @@
 
 #include "memory_manager.h"
 
+#include "codon/cir/llvm/llvm.h"
 #include "codon/runtime/lib.h"
-#include "llvm/ExecutionEngine/Orc/ObjectLinkingLayer.h"
 
 #include <algorithm>
 #include <mutex>

@@ -10,8 +10,8 @@
 #include <string>
 #include <vector>
 
+#include "codon/cir/llvm/llvm.h"
 #include "codon/util/jupyter.h"
-#include "llvm/Support/CommandLine.h"
 
 extern "C" int codon_cli_main(int argc, const char **argv);
 
@@ -63,8 +63,6 @@ int main(int argc, const char **argv) {
 #ifndef CODON_CLI_IN_COMPILER
 #include "codon/util/jupyter.h"
 #endif
-#include "llvm/Support/CommandLine.h"
-#include "llvm/Support/FileSystem.h"
 
 namespace {
 void versMsg(llvm::raw_ostream &out) {

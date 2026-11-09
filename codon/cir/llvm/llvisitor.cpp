@@ -7,8 +7,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <fmt/args.h>
-#include <llvm/Support/Program.h>
-#include <llvm/Support/StringSaver.h>
 #include <utility>
 
 #ifdef _WIN32
