@@ -16,7 +16,7 @@
 namespace codon::ast {
 
 #define ACCEPT(CLASS, VISITOR, ...)                                                    \
-  static CODON_API const char NodeId;                                                            \
+  static CODON_API const char NodeId;                                                  \
   using AcceptorExtend::clone;                                                         \
   using AcceptorExtend::accept;                                                        \
   ASTNode *clone(bool c) const override;                                               \

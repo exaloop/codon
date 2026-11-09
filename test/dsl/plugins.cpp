@@ -117,7 +117,8 @@ protected:
     EXPECT_EQ(result, 0) << message << (errors ? (*errors)->getBuffer().str() : "");
     auto text = output ? (*output)->getBuffer().str() : "";
 #ifdef _WIN32
-    for (size_t position = 0; (position = text.find("\r\n", position)) != std::string::npos;)
+    for (size_t position = 0;
+         (position = text.find("\r\n", position)) != std::string::npos;)
       text.erase(position, 1);
 #endif
     return text;

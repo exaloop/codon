@@ -4,8 +4,8 @@
 
 #include <cinttypes>
 #include <climits>
-#include <limits.h>
 #include <filesystem>
+#include <limits.h>
 #include <string>
 #include <vector>
 
@@ -434,8 +434,8 @@ std::string library_path() {
 #elif defined(_WIN32)
   HMODULE module = nullptr;
   if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                            GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                        reinterpret_cast<LPCWSTR>(&library_path), &module)) {
+                             GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                         reinterpret_cast<LPCWSTR>(&library_path), &module)) {
     std::vector<wchar_t> buffer(256);
     for (;;) {
       DWORD n = GetModuleFileNameW(module, buffer.data(), DWORD(buffer.size()));
@@ -554,7 +554,8 @@ std::shared_ptr<ImportFile> getImportFile(Cache *cache, const std::string &what,
       }
       if (!failed)
         paths.emplace_back(
-            fs->canonical(path / what / "stdlib" / what / "__init__.codon").generic_string());
+            fs->canonical(path / what / "stdlib" / what / "__init__.codon")
+                .generic_string());
     }
   };
 

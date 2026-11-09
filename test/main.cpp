@@ -316,16 +316,16 @@ TEST(WindowsJITTest, FailedMaterializationPreservesOtherUnwindTables) {
     module->setTargetTriple(llvm::sys::getDefaultTargetTriple());
     auto *integer = llvm::Type::getInt64Ty(*context);
     auto *type = llvm::FunctionType::get(integer, {integer}, false);
-    auto *function = llvm::Function::Create(
-        type, llvm::GlobalValue::ExternalLinkage, name, *module);
+    auto *function =
+        llvm::Function::Create(type, llvm::GlobalValue::ExternalLinkage, name, *module);
     function->setUWTableKind(llvm::UWTableKind::Async);
     function->addFnAttr(llvm::Attribute::NoInline);
     llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
     auto *result = builder.CreateCall(module->getOrInsertFunction(callee, type),
                                       {function->getArg(0)});
     builder.CreateRet(builder.CreateAdd(result, builder.getInt64(1)));
-    return engine.addModule(llvm::orc::ThreadSafeModule(std::move(module),
-                                                       std::move(context)));
+    return engine.addModule(
+        llvm::orc::ThreadSafeModule(std::move(module), std::move(context)));
   };
   llvm::cantFail(submit("preserved_frame", "unwind_test_anchor"));
   auto address = engine.lookup("preserved_frame");
@@ -350,8 +350,7 @@ TEST(WindowsJITTest, FailedMaterializationPreservesOtherUnwindTables) {
 // Compile (and optionally run) a single test case. Extracted so the same logic
 // serves both the POSIX forked child and the Windows re-exec'd child process.
 static void runCompileAndRun(const string &file, bool debug, const string &code,
-                             int startLine, int testFlags, bool pyNumerics,
-                             bool run) {
+                             int startLine, int testFlags, bool pyNumerics, bool run) {
   auto options = Options::getDefault(argv0);
   options->test = true;
   options->standalone = true;

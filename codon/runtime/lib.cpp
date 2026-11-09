@@ -27,20 +27,20 @@
 
 #ifdef _WIN32
 #ifndef NOMINMAX
-#define NOMINMAX // gc.h pulls in windows.h; keep min/max macros from breaking fast_float
+#define NOMINMAX // gc.h pulls in windows.h; keep min/max macros from breaking
+                 // fast_float
 #endif
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
-#include <windows.h>
 #include <tlhelp32.h>
+#include <windows.h>
 #else
 #include <dirent.h>
 #include <fcntl.h>
 #include <pwd.h>
 #include <sys/stat.h>
 #endif
-
 
 #define GC_THREADS
 #include "codon/runtime/lib.h"
@@ -230,15 +230,15 @@ extern "C" void seq_win_dosmaperr(unsigned long code) {
     unsigned long win;
     int err;
   } table[] = {
-      {1, EINVAL},   {2, ENOENT},     {3, ENOENT},  {4, EMFILE},    {5, EACCES},
-      {6, EBADF},    {7, ENOMEM},     {8, ENOMEM},  {9, ENOMEM},    {10, E2BIG},
-      {11, ENOEXEC}, {12, EINVAL},    {13, EINVAL}, {15, ENOENT},   {16, EACCES},
-      {17, EXDEV},   {18, ENOENT},    {33, EACCES}, {53, ENOENT},   {65, EACCES},
-      {67, ENOENT},  {80, EEXIST},    {82, EACCES}, {83, EACCES},   {87, EINVAL},
-      {89, EAGAIN},  {108, EACCES},   {109, EPIPE}, {112, ENOSPC},  {114, EBADF},
-      {128, ECHILD}, {129, ECHILD},   {130, EBADF}, {131, EINVAL},  {132, EACCES},
+      {1, EINVAL},      {2, ENOENT},   {3, ENOENT},   {4, EMFILE},   {5, EACCES},
+      {6, EBADF},       {7, ENOMEM},   {8, ENOMEM},   {9, ENOMEM},   {10, E2BIG},
+      {11, ENOEXEC},    {12, EINVAL},  {13, EINVAL},  {15, ENOENT},  {16, EACCES},
+      {17, EXDEV},      {18, ENOENT},  {33, EACCES},  {53, ENOENT},  {65, EACCES},
+      {67, ENOENT},     {80, EEXIST},  {82, EACCES},  {83, EACCES},  {87, EINVAL},
+      {89, EAGAIN},     {108, EACCES}, {109, EPIPE},  {112, ENOSPC}, {114, EBADF},
+      {128, ECHILD},    {129, ECHILD}, {130, EBADF},  {131, EINVAL}, {132, EACCES},
       {145, ENOTEMPTY}, {158, EACCES}, {161, ENOENT}, {164, EAGAIN}, {167, EACCES},
-      {183, EEXIST}, {206, ENOENT},   {215, EAGAIN}, {1816, ENOMEM}};
+      {183, EEXIST},    {206, ENOENT}, {215, EAGAIN}, {1816, ENOMEM}};
   _doserrno = code;
   for (const auto &entry : table) {
     if (entry.win == code) {

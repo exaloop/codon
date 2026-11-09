@@ -60,7 +60,8 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
                 int startLine, int testFlags,
                 const std::unordered_map<std::string, std::string> &defines) {
   input = file;
-  std::string abspath = (file != "-") ? cache->fs->canonical(file).generic_string() : file;
+  std::string abspath =
+      (file != "-") ? cache->fs->canonical(file).generic_string() : file;
   try {
     auto nodeOrErr = isCode ? ast::parseCode(cache.get(), abspath, code, startLine)
                             : ast::parseFile(cache.get(), abspath);

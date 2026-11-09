@@ -52,7 +52,8 @@ SEQ_FUNC void *__emutls_get_address(TLSControl *control) {
   auto *storage = seq_alloc_uncollectable(control->size + alignment - 1);
   if (!storage)
     std::abort();
-  auto address = (reinterpret_cast<uintptr_t>(storage) + alignment - 1) & ~(alignment - 1);
+  auto address =
+      (reinterpret_cast<uintptr_t>(storage) + alignment - 1) & ~(alignment - 1);
   auto *data = reinterpret_cast<void *>(address);
   if (control->initializer)
     std::memcpy(data, control->initializer, control->size);

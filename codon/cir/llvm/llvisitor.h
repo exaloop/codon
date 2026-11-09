@@ -334,7 +334,7 @@ private:
   std::string getLLVMNameForFunction(const Func *function);
   bool needsWinExportWrapper(const Func *function);
   llvm::Function *makeWinExportWrapper(llvm::StringRef name, llvm::Function *body,
-                                        bool exported = true);
+                                       bool exported = true);
   llvm::Function *getFunctionValue(const Func *function);
   void prepareWinExports();
   void clearLLVMData();

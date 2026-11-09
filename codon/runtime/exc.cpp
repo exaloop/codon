@@ -23,8 +23,8 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include <windows.h>
 #include <dbghelp.h>
+#include <windows.h>
 #ifndef CODON_SEH_CODE
 #define CODON_SEH_CODE 0xE0C0D047
 #endif
@@ -232,9 +232,8 @@ int backtrace_simple(struct backtrace_state *, int skip,
   return 0;
 }
 
-int backtrace_full(struct backtrace_state *, int skip,
-                   backtrace_full_callback callback, backtrace_error_callback,
-                   void *data) {
+int backtrace_full(struct backtrace_state *, int skip, backtrace_full_callback callback,
+                   backtrace_error_callback, void *data) {
   void *frames[128];
   USHORT n = CaptureStackBackTrace((DWORD)(skip + 1), 128, frames, nullptr);
   HANDLE proc = GetCurrentProcess();
@@ -727,8 +726,7 @@ SEQ_FUNC void *seq_exc_current() { return seq_current_exc; }
 SEQ_FUNC int32_t seq_exc_filter(void *info, void *frame) {
   auto *ep = (EXCEPTION_POINTERS *)info;
   (void)frame;
-  if (ep && ep->ExceptionRecord &&
-      ep->ExceptionRecord->ExceptionCode == CODON_SEH_CODE)
+  if (ep && ep->ExceptionRecord && ep->ExceptionRecord->ExceptionCode == CODON_SEH_CODE)
     return 1; // EXCEPTION_EXECUTE_HANDLER
   return 0;   // EXCEPTION_CONTINUE_SEARCH
 }
@@ -745,8 +743,7 @@ SEQ_FUNC int32_t seq_exc_match(void *unwindExc, int32_t *ids, int32_t n) {
   for (int32_t i = 0; i < n; i++) {
     seq_int_t t = (seq_int_t)ids[i];
     if (t == codon::runtime::CATCH_ALL_SELECTOR ||
-        t == codon::runtime::BASE_EXCEPTION_SELECTOR ||
-        isinstance(base->obj, t))
+        t == codon::runtime::BASE_EXCEPTION_SELECTOR || isinstance(base->obj, t))
       return ids[i];
   }
   return 0;

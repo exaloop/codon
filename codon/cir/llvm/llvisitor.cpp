@@ -7,9 +7,9 @@
 #include <cstdint>
 #include <cstdlib>
 #include <fmt/args.h>
-#include <utility>
 #include <llvm/Support/Program.h>
 #include <llvm/Support/StringSaver.h>
+#include <utility>
 
 #ifdef _WIN32
 #include <process.h>
@@ -21,8 +21,8 @@
 #endif
 #include <windows.h>
 #else
-#include <unistd.h>
 #include <sys/wait.h>
+#include <unistd.h>
 #endif
 
 #include "codon/cir/dsl/codegen.h"
@@ -504,12 +504,12 @@ void executeCommand(const std::vector<std::string> &args) {
   // raw arguments, which loses spaces and embedded quotes in paths and flags.
   auto program = llvm::sys::findProgramByName(args.front());
   if (!program)
-    compilationError("process for '" + args.front() + "' could not be found: " +
-                     program.getError().message());
+    compilationError("process for '" + args.front() +
+                     "' could not be found: " + program.getError().message());
   std::vector<llvm::StringRef> arguments(args.begin(), args.end());
   std::string message;
-  int status = llvm::sys::ExecuteAndWait(*program, arguments, std::nullopt, {},
-                                        0, 0, &message);
+  int status =
+      llvm::sys::ExecuteAndWait(*program, arguments, std::nullopt, {}, 0, 0, &message);
   if (status < 0)
     compilationError("process for '" + args.front() + "' failed: " + message);
   if (status != 0) {
@@ -630,9 +630,13 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
   // state and memory ownership across the DLL boundary.
   // Clang's runtime flag affects frontend directives, but this input is an
   // LLVM-generated object. Override the link driver's libcmt default as well.
-  std::vector<std::string> command = {
-      "clang", "-fuse-ld=lld", "-fms-runtime-lib=dll",
-      "-Wl,/nodefaultlib:libcmt", "-lmsvcrt", "-lvcruntime", "-lucrt"};
+  std::vector<std::string> command = {"clang",
+                                      "-fuse-ld=lld",
+                                      "-fms-runtime-lib=dll",
+                                      "-Wl,/nodefaultlib:libcmt",
+                                      "-lmsvcrt",
+                                      "-lvcruntime",
+                                      "-lucrt"};
   if (!library) {
     for (const auto &rpath : rpaths) {
       llvm::SmallString<128> manifest(rpath);
@@ -716,8 +720,8 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
   // -llibomp -> libomp.lib (clang maps -l<name> to <name>.lib on MSVC), resolved via
   // the -L../lib/codon search path; needed for @par programs' __kmpc_* calls.
   // -llibopenblas -> libopenblas.lib for numpy.linalg (cblas_*/LAPACK).
-  std::vector<std::string> extraArgs = {"-lcodonrt", "-llibomp", "-llibopenblas",
-                                        "-o", filename};
+  std::vector<std::string> extraArgs = {"-lcodonrt", "-llibomp", "-llibopenblas", "-o",
+                                        filename};
 #else
   std::vector<std::string> extraArgs = {
       "-lcodonrt", "-lomp", "-lpthread", "-ldl", "-lz", "-lm", "-lc", "-o", filename};
@@ -802,8 +806,7 @@ llvm::Function *LLVMVisitor::createPyTryCatchWrapper(llvm::Function *func) {
   B->SetInsertPoint(unwind);
   llvm::Value *unwindException = nullptr;
   if (win) {
-    auto *cs =
-        B->CreateCatchSwitch(llvm::ConstantTokenNone::get(*context), nullptr, 1);
+    auto *cs = B->CreateCatchSwitch(llvm::ConstantTokenNone::get(*context), nullptr, 1);
     auto *catchBlock = llvm::BasicBlock::Create(*context, "catch", wrap);
     auto *caught = llvm::BasicBlock::Create(*context, "caught", wrap);
     cs->addHandler(catchBlock);
@@ -1188,7 +1191,7 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
         llvm::ConstantStruct::get(
             pyVarObjectType,
             llvm::ConstantStruct::get(pyObjectType, B->getInt64(1),
-                                     importPythonData ? null : pyTypeType),
+                                      importPythonData ? null : pyTypeType),
             zero64),                              // PyObject_VAR_HEAD
         pyString(pymod.name + "." + pytype.name), // tp_name
         B->getInt64(pySize),                      // tp_basicsize
@@ -1293,8 +1296,7 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
   // Imported DLL data addresses cannot be resolved in static initializers.
   if (importPythonData) {
     for (auto &entry : typeVars)
-      B->CreateStore(pyTypeType,
-                     B->CreateStructGEP(pyObjectType, entry.second, 1));
+      B->CreateStore(pyTypeType, B->CreateStructGEP(pyObjectType, entry.second, 1));
   }
 
   // Set base types
@@ -1447,13 +1449,13 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
   {
     uintptr_t handler = 0;
     if (HMODULE crt = ::GetModuleHandleW(L"vcruntime140.dll"))
-      handler = reinterpret_cast<uintptr_t>(
-          ::GetProcAddress(crt, "__C_specific_handler"));
+      handler =
+          reinterpret_cast<uintptr_t>(::GetProcAddress(crt, "__C_specific_handler"));
     // 3.5GB below the handler — MUST match memory_manager.cpp + engine.cpp so the
     // JIT slab and __C_specific_handler share a 4GB window (.xdata Pointer32NB fits).
-    uintptr_t imageBase = handler ? (handler - 0xE0000000ull)
-                                  : reinterpret_cast<uintptr_t>(
-                                        ::GetModuleHandleW(nullptr));
+    uintptr_t imageBase =
+        handler ? (handler - 0xE0000000ull)
+                : reinterpret_cast<uintptr_t>(::GetModuleHandleW(nullptr));
     auto base = llvm::orc::ExecutorAddr(imageBase);
     llvm::orc::SymbolMap winSymbols;
     winSymbols[jit->getExecutionSession().intern("__ImageBase")] = {
@@ -1557,7 +1559,7 @@ static bool isWinMSVC(llvm::Module *M) {
 enum class WinABIKind { Direct, Empty, Integer, Bitcast, Indirect };
 
 static WinABIKind winABIKind(llvm::Module *module, llvm::Type *type,
-                                 bool result = false) {
+                             bool result = false) {
   if (type->isVoidTy())
     return WinABIKind::Empty;
   if (type->isIntegerTy() && type->getIntegerBitWidth() > 64) {
@@ -1576,13 +1578,14 @@ static WinABIKind winABIKind(llvm::Module *module, llvm::Type *type,
 }
 
 static llvm::Type *winABIType(llvm::Module *module, llvm::Type *type,
-                                bool result = false) {
+                              bool result = false) {
   switch (winABIKind(module, type, result)) {
   case WinABIKind::Empty:
     return llvm::Type::getVoidTy(module->getContext());
   case WinABIKind::Integer:
     return llvm::IntegerType::get(
-        module->getContext(), module->getDataLayout().getTypeAllocSize(type).getFixedValue() * 8);
+        module->getContext(),
+        module->getDataLayout().getTypeAllocSize(type).getFixedValue() * 8);
   case WinABIKind::Bitcast:
     return llvm::FixedVectorType::get(llvm::Type::getInt64Ty(module->getContext()), 2);
   case WinABIKind::Indirect:
@@ -1648,7 +1651,7 @@ static llvm::Value *winABIDecode(llvm::Module *module, llvm::IRBuilder<> &builde
 }
 
 static llvm::FunctionType *winABISignature(llvm::Module *module,
-                                          llvm::FunctionType *signature) {
+                                           llvm::FunctionType *signature) {
   auto *result = signature->getReturnType();
   bool indirect = winABIKind(module, result, true) == WinABIKind::Indirect;
   std::vector<llvm::Type *> arguments;
@@ -1657,16 +1660,17 @@ static llvm::FunctionType *winABISignature(llvm::Module *module,
   for (auto *type : signature->params())
     if (winABIKind(module, type) != WinABIKind::Empty)
       arguments.push_back(winABIType(module, type));
-  return llvm::FunctionType::get(
-      indirect ? llvm::Type::getVoidTy(module->getContext()) : winABIType(module, result, true),
-      arguments, signature->isVarArg());
+  return llvm::FunctionType::get(indirect ? llvm::Type::getVoidTy(module->getContext())
+                                          : winABIType(module, result, true),
+                                 arguments, signature->isVarArg());
 }
 
-static llvm::Value *winABICall(
-    llvm::Module *module, llvm::IRBuilder<> &builder, llvm::Value *callee,
-    llvm::FunctionType *signature, llvm::ArrayRef<llvm::Value *> arguments,
-    llvm::function_ref<llvm::Value *(llvm::FunctionType *, llvm::Value *,
-                                    llvm::ArrayRef<llvm::Value *>)> emit) {
+static llvm::Value *
+winABICall(llvm::Module *module, llvm::IRBuilder<> &builder, llvm::Value *callee,
+           llvm::FunctionType *signature, llvm::ArrayRef<llvm::Value *> arguments,
+           llvm::function_ref<llvm::Value *(llvm::FunctionType *, llvm::Value *,
+                                            llvm::ArrayRef<llvm::Value *>)>
+               emit) {
   auto *resultType = signature->getReturnType();
   bool indirect = winABIKind(module, resultType, true) == WinABIKind::Indirect;
   std::vector<llvm::Value *> values;
@@ -1683,7 +1687,8 @@ static llvm::Value *winABICall(
     llvm::cast<llvm::CallBase>(result)->addParamAttr(
         0, llvm::Attribute::get(module->getContext(), llvm::Attribute::StructRet,
                                 resultType));
-  return winABIDecode(module, builder, resultType, indirect ? returnSlot : result, true);
+  return winABIDecode(module, builder, resultType, indirect ? returnSlot : result,
+                      true);
 }
 
 bool LLVMVisitor::needsWinExportWrapper(const Func *function) {
@@ -1692,11 +1697,10 @@ bool LLVMVisitor::needsWinExportWrapper(const Func *function) {
 }
 
 llvm::Function *LLVMVisitor::makeWinExportWrapper(llvm::StringRef name,
-                                                  llvm::Function *body,
-                                                  bool exported) {
+                                                  llvm::Function *body, bool exported) {
   auto *signature = body->getFunctionType();
-  auto *wrapper = llvm::cast<llvm::Function>(M->getOrInsertFunction(
-      name, winABISignature(M.get(), signature)).getCallee());
+  auto *wrapper = llvm::cast<llvm::Function>(
+      M->getOrInsertFunction(name, winABISignature(M.get(), signature)).getCallee());
   if (exported && !options->jit)
     wrapper->setDLLStorageClass(llvm::GlobalValue::DLLExportStorageClass);
   if (!wrapper->empty())
@@ -1709,12 +1713,12 @@ llvm::Function *LLVMVisitor::makeWinExportWrapper(llvm::StringRef name,
   auto argument = wrapper->arg_begin();
   llvm::Value *returnSlot = indirect ? &*argument++ : nullptr;
   if (indirect)
-    wrapper->addParamAttr(0, llvm::Attribute::get(
-                                *context, llvm::Attribute::StructRet, resultType));
+    wrapper->addParamAttr(
+        0, llvm::Attribute::get(*context, llvm::Attribute::StructRet, resultType));
   std::vector<llvm::Value *> values;
   for (auto *type : signature->params()) {
-    auto *native = winABIKind(M.get(), type) == WinABIKind::Empty
-                       ? nullptr : &*argument++;
+    auto *native =
+        winABIKind(M.get(), type) == WinABIKind::Empty ? nullptr : &*argument++;
     values.push_back(winABIDecode(M.get(), builder, type, native));
   }
   auto *result = builder.CreateCall(body, values);
@@ -1735,22 +1739,23 @@ llvm::Function *LLVMVisitor::getFunctionValue(const Func *function) {
       util::isGPUKernel(function))
     return body;
   bool exported = needsWinExportWrapper(function);
-  if (!exported && winABISignature(M.get(), body->getFunctionType()) ==
-                       body->getFunctionType())
+  if (!exported &&
+      winABISignature(M.get(), body->getFunctionType()) == body->getFunctionType())
     return body;
   // An earlier JIT cell already emitted an exported function's native wrapper.
   if (options->jit && exported && body->isDeclaration())
-    return llvm::cast<llvm::Function>(M->getOrInsertFunction(
-        getNameForFunction(function), winABISignature(M.get(), body->getFunctionType()))
-                                         .getCallee());
+    return llvm::cast<llvm::Function>(
+        M->getOrInsertFunction(getNameForFunction(function),
+                               winABISignature(M.get(), body->getFunctionType()))
+            .getCallee());
   if (auto found = winCallbacks.find(body); found != winCallbacks.end())
     return found->second;
-  auto *wrapper = makeWinExportWrapper((body->getName() + ".c_callback").str(),
-                                       body, false);
+  auto *wrapper =
+      makeWinExportWrapper((body->getName() + ".c_callback").str(), body, false);
   // JIT cells can take the same function's address repeatedly. Weak definitions
   // give it one stable native entry point without changing internal body calls.
   wrapper->setLinkage(options->jit ? llvm::GlobalValue::WeakODRLinkage
-                                    : llvm::GlobalValue::PrivateLinkage);
+                                   : llvm::GlobalValue::PrivateLinkage);
   winCallbacks.emplace(body, wrapper);
   return wrapper;
 }
@@ -1761,8 +1766,9 @@ void LLVMVisitor::prepareWinExports() {
   std::vector<std::pair<llvm::Function *, std::string>> exports;
   for (auto &function : *M)
     if (function.hasFnAttribute("codon-c-export") && !function.isDeclaration())
-      exports.emplace_back(&function, function.getFnAttribute("codon-c-export")
-                                          .getValueAsString().str());
+      exports.emplace_back(
+          &function,
+          function.getFnAttribute("codon-c-export").getValueAsString().str());
   for (auto &[body, name] : exports) {
     body->removeFnAttr("codon-c-export");
     body->setName(name + ".codon");
@@ -1825,8 +1831,7 @@ llvm::FunctionCallee LLVMVisitor::makeWinEHFilter() {
   auto *entry = llvm::BasicBlock::Create(*context, "entry", thunk);
   B->SetInsertPoint(entry);
   auto *fp = B->CreateLoad(B->getPtrTy(), ptrGlobal);
-  auto *call =
-      B->CreateCall(filterTy, fp, {thunk->getArg(0), thunk->getArg(1)});
+  auto *call = B->CreateCall(filterTy, fp, {thunk->getArg(0), thunk->getArg(1)});
   B->CreateRet(call);
   if (saved)
     B->SetInsertPoint(saved, savedPt);
@@ -1908,8 +1913,9 @@ llvm::Value *LLVMVisitor::call(llvm::FunctionCallee callee,
       // Keep this boundary through optimization: erasing an empty cleanup can
       // make SEH range coalescing protect the rethrow with an earlier handler.
       llvm::OperandBundleDef bundle("funclet", llvm::ArrayRef<llvm::Value *>(cleanup));
-      B->CreateCall(llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::sideeffect),
-                    {}, {bundle});
+      B->CreateCall(
+          llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::sideeffect), {},
+          {bundle});
       B->CreateCleanupRet(cleanup, nullptr);
       block = normal;
       B->SetInsertPoint(block);
@@ -2219,13 +2225,14 @@ llvm::Function *LLVMVisitor::makeLLVMFunction(const Func *x, bool declarationOnl
   const std::string functionName = getLLVMNameForFunction(x);
   const bool isExternal = bool(cast<ExternalFunc>(x));
   const bool winABI = isExternal && isWinMSVC(M.get());
-  auto *signature = llvm::FunctionType::get(returnType, argTypes, funcType->isVariadic());
+  auto *signature =
+      llvm::FunctionType::get(returnType, argTypes, funcType->isVariadic());
   auto *llvmFuncType = winABI ? winABISignature(M.get(), signature) : signature;
   auto *f = llvm::cast<llvm::Function>(
       M->getOrInsertFunction(functionName, llvmFuncType).getCallee());
   if (winABI && winABIKind(M.get(), returnType, true) == WinABIKind::Indirect)
-    f->addParamAttr(0, llvm::Attribute::get(*context, llvm::Attribute::StructRet,
-                                          returnType));
+    f->addParamAttr(
+        0, llvm::Attribute::get(*context, llvm::Attribute::StructRet, returnType));
   if (needsWinExportWrapper(x))
     f->addFnAttr("codon-c-export", getNameForFunction(x));
   if (!isExternal && !declarationOnly) {
@@ -2359,8 +2366,8 @@ void LLVMVisitor::visit(const LLVMFunc *x) {
     auto *entry = llvm::BasicBlock::Create(*context, "entry", func);
     llvm::IRBuilder<> builder(entry);
     auto *src = getSrcInfo(x);
-    builder.SetCurrentDebugLocation(llvm::DILocation::get(
-        *context, src->line, src->col, func->getSubprogram()));
+    builder.SetCurrentDebugLocation(
+        llvm::DILocation::get(*context, src->line, src->col, func->getSubprogram()));
 
     std::vector<llvm::Value *> arguments;
     auto *tuple = func->getArg(1);
@@ -2370,8 +2377,8 @@ void LLVMVisitor::visit(const LLVMFunc *x) {
       arguments.push_back(builder.CreateExtractValue(tuple, i));
       argumentTypes.push_back(tupleType->getElementType(i));
     }
-    auto *nativeSignature = llvm::FunctionType::get(signature->getReturnType(),
-                                                    argumentTypes, false);
+    auto *nativeSignature =
+        llvm::FunctionType::get(signature->getReturnType(), argumentTypes, false);
     auto *result = winABICall(M.get(), builder, func->getArg(0), nativeSignature,
                               arguments, [&](auto *type, auto *callee, auto args) {
                                 return builder.CreateCall(type, callee, args);
@@ -3636,14 +3643,14 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
     // routes it to the enclosing try-catch's catchswitch (or the proxy-main catch-all
     // at root). NOTE: this tc's *finally* entry is still on the finally-stack here
     // (exitFinally runs later, after the catch handlers), and call() also considers the
-    // finally-stack when picking the unwind target. If we leave it, the re-raise unwinds
-    // back into THIS tc's own finally-routing pad and the finally body runs a second time
-    // (only on WinEH — the Itanium path below uses `resume`, which ignores these stacks).
-    // Temporarily drop our finally entry so the re-raise propagates to the *enclosing*
-    // handler/caller, matching rethrowBlock (which is emitted after exitFinally).
+    // finally-stack when picking the unwind target. If we leave it, the re-raise
+    // unwinds back into THIS tc's own finally-routing pad and the finally body runs a
+    // second time (only on WinEH — the Itanium path below uses `resume`, which ignores
+    // these stacks). Temporarily drop our finally entry so the re-raise propagates to
+    // the *enclosing* handler/caller, matching rethrowBlock (which is emitted after
+    // exitFinally).
     block = unwindResumeBlock;
-    llvm::Value *exc =
-        B->CreateExtractValue(B->CreateLoad(padType, tc.catchStore), 0);
+    llvm::Value *exc = B->CreateExtractValue(B->CreateLoad(padType, tc.catchStore), 0);
     const bool popFinally = haveFinally && !finally.empty();
     TryCatchData savedFinally;
     if (popFinally) {
@@ -3705,8 +3712,7 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
     // it into catchStore mirroring the Itanium { i8* exc, i32 0 } layout, then
     // catchrets into normal code where Codon's own type-id dispatch / finally /
     // nesting runs as ordinary (non-funclet) code.
-    auto *cs =
-        B->CreateCatchSwitch(llvm::ConstantTokenNone::get(*context), nullptr, 1);
+    auto *cs = B->CreateCatchSwitch(llvm::ConstantTokenNone::get(*context), nullptr, 1);
     auto *catchBlock = llvm::BasicBlock::Create(*context, "trycatch.catchpad", func);
     cs->addHandler(catchBlock);
     B->SetInsertPoint(catchBlock);
@@ -3719,8 +3725,7 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
     padVal = B->CreateInsertValue(padVal, exc, 0);
     padVal = B->CreateInsertValue(padVal, B->getInt32(0), 1);
     B->CreateStore(padVal, tc.catchStore);
-    auto *routeContinue =
-        llvm::BasicBlock::Create(*context, "trycatch.catchret", func);
+    auto *routeContinue = llvm::BasicBlock::Create(*context, "trycatch.catchret", func);
     B->CreateCatchRet(llvm::cast<llvm::CatchPadInst>(cp), routeContinue);
     B->SetInsertPoint(routeContinue);
     // funclet-local SSA can't escape the funclet; reload from catchStore.
@@ -3735,13 +3740,12 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
     llvm::Value *selector = B->getInt32(0);
     if (!idConsts.empty()) {
       auto *arrTy = llvm::ArrayType::get(B->getInt32Ty(), idConsts.size());
-      auto *gv = new llvm::GlobalVariable(*M, arrTy, /*isConstant=*/true,
-                                          llvm::GlobalValue::PrivateLinkage,
-                                          llvm::ConstantArray::get(arrTy, idConsts),
-                                          "codon.win.catchids");
-      auto matchFn = M->getOrInsertFunction("seq_exc_match", B->getInt32Ty(),
-                                            B->getPtrTy(), B->getPtrTy(),
-                                            B->getInt32Ty());
+      auto *gv = new llvm::GlobalVariable(
+          *M, arrTy, /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
+          llvm::ConstantArray::get(arrTy, idConsts), "codon.win.catchids");
+      auto matchFn =
+          M->getOrInsertFunction("seq_exc_match", B->getInt32Ty(), B->getPtrTy(),
+                                 B->getPtrTy(), B->getInt32Ty());
       selector = B->CreateCall(
           matchFn, {unwindException, gv, B->getInt32((uint64_t)idConsts.size())});
     }
@@ -4176,8 +4180,8 @@ void LLVMVisitor::visit(const CallInstr *x) {
   }
 
   auto *callee = util::getFunc(x->getCallee());
-  const bool winABI = isWinMSVC(M.get()) &&
-                      (nativeIndirect || (callee && isA<ExternalFunc>(callee)));
+  const bool winABI =
+      isWinMSVC(M.get()) && (nativeIndirect || (callee && isA<ExternalFunc>(callee)));
   if (winABI) {
     B->SetInsertPoint(block);
     auto *result = winABICall(M.get(), *B, f, funcType, args,

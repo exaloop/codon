@@ -1025,12 +1025,11 @@ TEST(JITRTTITest, PropagatesNativeExceptionsAcrossEntryBoundary) {
     ASSERT_FALSE(bool(error)) << llvm::toString(std::move(error));
     auto &dylib = instance.getEngine()->getMainJITDylib();
     llvm::orc::MangleAndInterner mangle(dylib.getExecutionSession(),
-                                       instance.getEngine()->getDataLayout());
+                                        instance.getEngine()->getDataLayout());
     llvm::orc::SymbolMap symbols;
     symbols[mangle("codon_test_throw_native")] = {
-        llvm::orc::ExecutorAddr::fromPtr(+[]() {
-          throw std::runtime_error("native exception through JIT");
-        }),
+        llvm::orc::ExecutorAddr::fromPtr(
+            +[]() { throw std::runtime_error("native exception through JIT"); }),
         llvm::JITSymbolFlags::Exported};
     error = dylib.define(llvm::orc::absoluteSymbols(std::move(symbols)));
     ASSERT_FALSE(bool(error)) << llvm::toString(std::move(error));
@@ -1038,11 +1037,11 @@ TEST(JITRTTITest, PropagatesNativeExceptionsAcrossEntryBoundary) {
         {
           // Unlike an ordinary C import (nounwind), this call may unwind.
           auto result = instance.execute("@llvm\n"
-                                          "def throw_native() -> None:\n"
-                                          "    declare void @codon_test_throw_native()\n"
-                                          "    call void @codon_test_throw_native()\n"
-                                          "    ret {} {}\n"
-                                          "throw_native()\n");
+                                         "def throw_native() -> None:\n"
+                                         "    declare void @codon_test_throw_native()\n"
+                                         "    call void @codon_test_throw_native()\n"
+                                         "    ret {} {}\n"
+                                         "throw_native()\n");
           if (!result)
             llvm::consumeError(result.takeError());
         },

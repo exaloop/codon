@@ -4384,8 +4384,8 @@ def destination_reference(values: np.ndarray[float, 2]):
             if (!result.insert(block).second)
               continue;
             for (auto *predecessor : llvm::predecessors(block)) {
-              auto *invoke = llvm::dyn_cast<llvm::InvokeInst>(
-                  predecessor->getTerminator());
+              auto *invoke =
+                  llvm::dyn_cast<llvm::InvokeInst>(predecessor->getTerminator());
               if (!invoke || invoke->getNormalDest() == block)
                 pending.push_back(predecessor);
             }

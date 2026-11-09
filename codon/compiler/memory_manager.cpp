@@ -120,9 +120,9 @@ BoehmGCJITLinkMemoryManager::Create() {
 /// for both the handler reference and references into the slab itself. Searches
 /// downward from just below the handler and falls back to an unconstrained
 /// allocation if nothing in range is free.
-static llvm::sys::MemoryBlock
-allocateNearImage(size_t size, llvm::sys::Memory::ProtectionFlags prot,
-                  std::error_code &ec) {
+static llvm::sys::MemoryBlock allocateNearImage(size_t size,
+                                                llvm::sys::Memory::ProtectionFlags prot,
+                                                std::error_code &ec) {
   uintptr_t handler = 0;
   if (HMODULE crt = GetModuleHandleW(L"vcruntime140.dll"))
     handler = reinterpret_cast<uintptr_t>(GetProcAddress(crt, "__C_specific_handler"));
@@ -137,11 +137,11 @@ allocateNearImage(size_t size, llvm::sys::Memory::ProtectionFlags prot,
   //
   // We place the slab with direct VirtualAlloc rather than llvm::sys::Memory's hint:
   // that API interprets a NearBlock hint as "allocate AFTER base+size" and, on failure,
-  // silently returns an UNCONSTRAINED mapping — which for a large/late module lands many
-  // GB outside the window, overflowing the ADDR32NB fixup and aborting materialization
-  // (the `seq_exc_filter ... out of range of Pointer32 fixup` JIT crash). Scanning the
-  // window's free regions with VirtualQuery and committing an exact in-window base is
-  // deterministic and reuses slots freed by deallocate().
+  // silently returns an UNCONSTRAINED mapping — which for a large/late module lands
+  // many GB outside the window, overflowing the ADDR32NB fixup and aborting
+  // materialization (the `seq_exc_filter ... out of range of Pointer32 fixup` JIT
+  // crash). Scanning the window's free regions with VirtualQuery and committing an
+  // exact in-window base is deterministic and reuses slots freed by deallocate().
   if (handler && size <= 0xE0000000ull) {
     const uintptr_t anchor = handler - 0xE0000000ull;
     const uintptr_t windowEnd = anchor + 0x100000000ull; // anchor + 4GB
@@ -153,8 +153,7 @@ allocateNearImage(size_t size, llvm::sys::Memory::ProtectionFlags prot,
       MEMORY_BASIC_INFORMATION mbi;
       if (VirtualQuery(reinterpret_cast<void *>(addr), &mbi, sizeof(mbi)) == 0)
         break;
-      auto regionEnd =
-          reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
+      auto regionEnd = reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
       if (mbi.State == MEM_FREE) {
         uintptr_t cand = (addr + gran - 1) & ~(gran - 1);
         if (cand + alignedSize <= regionEnd && cand + alignedSize <= windowEnd) {
@@ -334,7 +333,9 @@ namespace {
 /// the table's base address. Without this, raised SEH exceptions cannot unwind
 /// through JIT'd funclet scopes.
 class Win64SEHRegistrationPlugin : public llvm::orc::ObjectLinkingLayer::Plugin {
-  struct RegisteredTable { PRUNTIME_FUNCTION entries; };
+  struct RegisteredTable {
+    PRUNTIME_FUNCTION entries;
+  };
   struct Materialization {
     llvm::orc::ResourceKey key = 0;
     bool removed = false;
@@ -345,17 +346,20 @@ class Win64SEHRegistrationPlugin : public llvm::orc::ObjectLinkingLayer::Plugin 
   // A resource tracker can own many independent materializations. Keep their
   // registrations separate so failure of one never invalidates its siblings.
   std::unordered_map<llvm::orc::ResourceKey,
-                     std::vector<std::shared_ptr<Materialization>>> resources;
+                     std::vector<std::shared_ptr<Materialization>>>
+      resources;
   std::unordered_map<const llvm::orc::MaterializationResponsibility *,
-                     std::weak_ptr<Materialization>> materializations;
+                     std::weak_ptr<Materialization>>
+      materializations;
 
   static llvm::Error unregister(std::vector<RegisteredTable> tables) {
     llvm::Error error = llvm::Error::success();
     for (auto table : tables)
       if (!RtlDeleteFunctionTable(table.entries))
-        error = llvm::joinErrors(std::move(error), llvm::make_error<llvm::StringError>(
-            "RtlDeleteFunctionTable failed for JIT'd .pdata",
-            llvm::inconvertibleErrorCode()));
+        error = llvm::joinErrors(std::move(error),
+                                 llvm::make_error<llvm::StringError>(
+                                     "RtlDeleteFunctionTable failed for JIT'd .pdata",
+                                     llvm::inconvertibleErrorCode()));
     return error;
   }
 
@@ -363,7 +367,8 @@ public:
   Win64SEHRegistrationPlugin() {
     uintptr_t handler = 0;
     if (HMODULE crt = GetModuleHandleW(L"vcruntime140.dll"))
-      handler = reinterpret_cast<uintptr_t>(GetProcAddress(crt, "__C_specific_handler"));
+      handler =
+          reinterpret_cast<uintptr_t>(GetProcAddress(crt, "__C_specific_handler"));
     // MUST match allocateNearImage, engine.cpp and llvisitor.cpp.
     imageBase = handler ? handler - 0xE0000000ull
                         : reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
@@ -428,7 +433,8 @@ public:
       auto resource = resources.find(owner->key);
       if (resource != resources.end()) {
         auto &siblings = resource->second;
-        siblings.erase(std::remove(siblings.begin(), siblings.end(), owner), siblings.end());
+        siblings.erase(std::remove(siblings.begin(), siblings.end(), owner),
+                       siblings.end());
         if (siblings.empty())
           resources.erase(resource);
       }
