@@ -292,7 +292,7 @@ jobs:
       - name: Package Test Bundle
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
-          $files = @('build/codon.exe', 'build/codon_test.exe', 'build/stdlib')
+          $files = @('build/codon.exe', 'build/codon_test.exe', 'build/stdlib', 'build/codon-utf8.manifest')
           $files += @(Get-ChildItem build -File |
             Where-Object { $_.Extension -in '.dll', '.lib' } |
             ForEach-Object { "build/$($_.Name)" })
