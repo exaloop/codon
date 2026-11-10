@@ -222,8 +222,8 @@ jobs:
       - name: Publish PyPI Package
         uses: pypa/gh-action-pypi-publish@release/v1
 
-  build_windows:
-    name: Build and Test Codon (${{ matrix.arch }})
+  compile_windows:
+    name: Compile Codon (${{ matrix.arch }})
     strategy:
       fail-fast: false
       matrix:
@@ -289,29 +289,15 @@ jobs:
           cmake --build build --config Release --parallel 2
           cmake --install build --prefix codon-deploy
 
-      - name: Install Python JIT package
+      - name: Package Test Bundle
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
-          $env:CODON_DIR = "$PWD/codon-deploy"
-          python -m pip install --no-build-isolation "$env:CODON_DIR/python"
-
-      - name: Run full test suite
-        shell: bash
-        env:
-          CODON_BUILD_DIR: build
-          CODON_DIR: codon-deploy
-          CODON_TEST_WORKERS: '2'
-        run: |
-          mkdir -p test-results/${{ matrix.arch }}
-          bash .github/ci/test.sh "$PWD" "${{ matrix.arch }}" 2>&1 | tee test-results/${{ matrix.arch }}/full-suite.log
-
-      - name: Upload Windows test results
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: test-results-${{ matrix.arch }}
-          path: test-results/
-          if-no-files-found: ignore
+          $files = @('build/codon.exe', 'build/codon_test.exe', 'build/stdlib')
+          $files += @(Get-ChildItem build -File |
+            Where-Object { $_.Extension -in '.dll', '.lib' } |
+            ForEach-Object { "build/$($_.Name)" })
+          if (Test-Path build/lib/codon) { $files += 'build/lib/codon' }
+          tar -czf "codon-tests-${{ matrix.arch }}.tar.gz" @files
 
       - name: Package
         shell: pwsh
@@ -325,6 +311,123 @@ jobs:
           name: codon-${{ matrix.arch }}.zip
           path: codon-${{ matrix.arch }}.zip
           if-no-files-found: error
+
+      - name: Upload Test Bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: codon-tests-${{ matrix.arch }}
+          path: codon-tests-${{ matrix.arch }}.tar.gz
+          retention-days: 3
+          if-no-files-found: error
+
+  test_windows:
+    name: Test Codon (${{ matrix.platform.arch }}, shard ${{ matrix.shard }})
+    needs: compile_windows
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+        platform:
+          - os: windows-latest
+            arch: windows-x86_64
+            msvc_arch: amd64
+            python_arch: x64
+    runs-on: ${{ matrix.platform.os }}
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      CMAKE_POLICY_VERSION_MINIMUM: '3.5'
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+          architecture: ${{ matrix.platform.python_arch }}
+
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.platform.msvc_arch }}
+
+      - name: Install test dependencies
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          python -m pip install --only-binary=:all: ninja numpy==2.3.4 cython setuptools wheel astunparse
+
+      - name: Download LLVM release
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $archive = "$env:RUNNER_TEMP/llvm-codon-${{ matrix.platform.arch }}.zip"
+          curl.exe --fail --location --retry 5 --output $archive `
+            "https://github.com/exaloop/llvm-project/releases/download/codon/llvm-codon-${{ matrix.platform.arch }}.zip"
+          New-Item -ItemType Directory -Force C:/opt | Out-Null
+          tar -xf $archive -C C:/opt
+
+      - name: Download SDK
+        uses: actions/download-artifact@v8
+        with:
+          name: codon-${{ matrix.platform.arch }}.zip
+
+      - name: Download Test Bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: codon-tests-${{ matrix.platform.arch }}
+
+      - name: Restore Build
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          Expand-Archive -Path "codon-${{ matrix.platform.arch }}.zip" -DestinationPath . -Force
+          tar -xzf "codon-tests-${{ matrix.platform.arch }}.tar.gz"
+          New-Item -ItemType Directory -Force "test-results/${{ matrix.platform.arch }}" | Out-Null
+
+      - name: Install Python JIT package
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $env:CODON_DIR = "$PWD/codon-deploy"
+          python -m pip install --no-build-isolation "$env:CODON_DIR/python"
+
+      - name: Run test shard
+        shell: bash
+        env:
+          CODON_BUILD_DIR: build
+          CODON_DIR: codon-deploy
+          CODON_TEST_WORKERS: '1'
+        run: |
+          set -o pipefail
+          bash .github/ci/test.sh "$PWD" "${{ matrix.platform.arch }}" "${{ matrix.shard }}" 4 \
+            2>&1 | tee test-results/${{ matrix.platform.arch }}/shard-${{ matrix.shard }}.log
+
+      - name: Upload Windows test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-${{ matrix.platform.arch }}-${{ matrix.shard }}
+          path: test-results/${{ matrix.platform.arch }}/
+          if-no-files-found: ignore
+
+  build_windows:
+    name: Build and Test Codon (${{ matrix.arch }})
+    if: always()
+    needs: [compile_windows, test_windows]
+    strategy:
+      matrix:
+        arch: [windows-x86_64]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Require Successful Windows Build and Tests
+        env:
+          COMPILE_RESULT: ${{ needs.compile_windows.result }}
+          TEST_RESULT: ${{ needs.test_windows.result }}
+        run: test "$COMPILE_RESULT" = success && test "$TEST_RESULT" = success
 
   build_documentation:
     name: Build Docs
