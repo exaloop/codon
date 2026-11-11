@@ -14,7 +14,7 @@ on:
 jobs:
   unicode_tables:
     name: Verify Unicode Tables
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
