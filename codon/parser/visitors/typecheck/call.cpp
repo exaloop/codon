@@ -296,6 +296,10 @@ bool TypecheckVisitor::transformCallArgs(CallExpr *expr) {
   auto preserveEmptyExpansion = [&](Expr *value, int position) {
     auto call = clone(expr);
     std::vector<Stmt *> statements;
+    while (auto suite = cast<StmtExpr>(call->getExpr())) {
+      statements.insert(statements.end(), suite->items.begin(), suite->items.end());
+      call->expr = suite->getExpr();
+    }
     if (hasSideEffect(call->getExpr())) {
       auto temporary = getTemporaryVar("fixed.callee");
       statements.push_back(N<AssignStmt>(N<IdExpr>(temporary), call->getExpr()));
@@ -372,35 +376,22 @@ bool TypecheckVisitor::transformCallArgs(CallExpr *expr) {
         head = N<IdExpr>(var);
       }
       bool fixed = typ->is(getMangledClass("", "FixedDict"));
-      if (typ->is(StdlibTypes::NamedTuple) || fixed) {
-        auto id = getIntLiteral(typ);
-        seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}",
-                  id);
-        auto names = ctx->cache->generatedTupleNames[id];
-        if (fixed && names.empty() && lead) {
+      if (typ->isRecord()) {
+        const auto fields = getRecordFields(typ);
+        if (fields.empty() && lead) {
           preserveEmptyExpansion(kwstar->getExpr(), ai);
           return false;
         }
-        for (size_t i = 0; i < names.size(); i++, ai++) {
-          if (fixed && names[i].empty())
+        for (const auto &field : fields) {
+          if (fixed && field.name.empty())
             E(Error::CUSTOM, kwstar,
               "empty fixed dictionary keys cannot be expanded as keyword arguments");
           expr->items.insert(
               expr->items.begin() + ai,
-              CallArg{names[i], transform(N<DotExpr>(
-                                    N<DotExpr>(clone(lead && i == 0 ? lead : head),
-                                               fixed ? "_values" : "args"),
-                                    fmt::format("item{}", i + 1)))});
-        }
-        expr->items.erase(expr->items.begin() + ai);
-      } else if (typ->isRecord()) {
-        auto fields = getClassFields(typ);
-        for (size_t i = 0; i < fields.size(); i++, ai++) {
-          expr->items.insert(
-              expr->items.begin() + ai,
-              CallArg{fields[i].name,
-                      transform(N<DotExpr>(clone(lead && i == 0 ? lead : head),
-                                           fields[i].name))});
+              CallArg{field.name,
+                      transform(getRecordField(clone(lead ? lead : head), field))});
+          lead = nullptr;
+          ++ai;
         }
         expr->items.erase(expr->items.begin() + ai);
       } else {
@@ -708,7 +699,7 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
                 newKeywords[(*expr)[argument].getName()] = argument;
               if (!part.known.empty()) {
                 auto captured = transform(N<DotExpr>(N<IdExpr>(part.var), "kwargs"));
-                for (auto &[name, value] : extractNamedTuple(captured)) {
+                for (auto &[name, value] : extractRecord(captured)) {
                   kwStarNames.emplace_back(name);
                   auto replacement = newKeywords.find(name);
                   if (replacement != newKeywords.end()) {
@@ -1086,7 +1077,7 @@ std::pair<bool, Expr *> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
   };
   if (isF(ei, "", "superf")) {
     return {true, transformSuperF(expr)};
-  } else if (isF(ei, "", "FixedDict", "_value_type")) {
+  } else if (isF(ei, "std.internal.types.tuple", "_FixedDictView", "_value_type")) {
     auto *values = extractFuncGeneric(ei->getType()->getFunc(), 0);
     if (!values->canRealize())
       return {true, nullptr};
@@ -1104,7 +1095,7 @@ std::pair<bool, Expr *> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
       alternatives.push_back(member);
     return {true,
             transform(N<InstantiateExpr>(N<IdExpr>(StdlibTypes::Union), alternatives))};
-  } else if (isF(ei, "", "FixedDict", "_index")) {
+  } else if (isF(ei, "", "_NamedRecord", "_index")) {
     auto *function = ei->getType()->getFunc();
     auto *shape = extractFuncGeneric(function, 0);
     auto *key = extractFuncGeneric(function, 1);

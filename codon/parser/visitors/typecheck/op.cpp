@@ -457,17 +457,16 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
       auto *shape = extractClassGeneric(cls, 0);
       if (!shape->canRealize())
         return;
-      const auto &names = ctx->cache->generatedTupleNames.at(getIntLiteral(shape));
+      const auto fields = getRecordFields(cls);
       auto name = constant ? constant->value : literal->getValue();
-      auto position = std::find(names.begin(), names.end(), name);
-      if (position == names.end())
+      auto position = std::ranges::find(fields, name, &RecordField::name);
+      if (position == fields.end())
         E(Error::CUSTOM, expr, "unknown fixed dictionary key: {}", name);
       auto temporary = getTemporaryVar("fixed.lookup");
-      resultExpr = transform(N<StmtExpr>(
-          N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(temporary), expr->getExpr()),
-                       N<ExprStmt>(expr->getIndex())),
-          N<IndexExpr>(N<DotExpr>(N<IdExpr>(temporary), "_values"),
-                       N<IntExpr>(std::distance(names.begin(), position)))));
+      resultExpr = transform(
+          N<StmtExpr>(N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(temporary), expr->getExpr()),
+                                   N<ExprStmt>(expr->getIndex())),
+                      getRecordField(N<IdExpr>(temporary), *position)));
       return;
     }
   }

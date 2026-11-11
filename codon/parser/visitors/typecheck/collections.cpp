@@ -102,12 +102,11 @@ Expr *TypecheckVisitor::transformFixedDict(const std::vector<Expr *> &items) {
       auto *shape = extractClassGeneric(type, 0);
       if (!shape->canRealize())
         return nullptr;
-      const auto &keys = ctx->cache->generatedTupleNames.at(getIntLiteral(shape));
+      const auto fields = getRecordFields(type);
       auto temporary = getTemporaryVar("fixed.spread");
       statements.push_back(N<AssignStmt>(N<IdExpr>(temporary), value));
-      for (size_t index = 0; index < keys.size(); ++index)
-        append(keys[index], N<IndexExpr>(N<DotExpr>(N<IdExpr>(temporary), "_values"),
-                                         N<IntExpr>(index)));
+      for (const auto &field : fields)
+        append(field.name, getRecordField(N<IdExpr>(temporary), field));
       continue;
     }
     auto *pair = cast<TupleExpr>(item);

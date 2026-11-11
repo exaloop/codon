@@ -215,6 +215,102 @@ assert ordered_call(events, argument(events, 1), *empty_keywords(events),
 assert events == [1, 2, 3, 4]
 print('fixed dictionary kwargs ok')  #: fixed dictionary kwargs ok
 
+#%% named_record_protocols
+from collections import namedtuple
+from internal.gc import sizeof
+
+Entry = namedtuple('RecordEntry', ('number', 'text'))
+OtherEntry = namedtuple('OtherRecordEntry', ('number', 'text'))
+entry = Entry(42, 'hello')
+other = OtherEntry(42, 'hello')
+mapping = {'number': 42, 'text': 'hello'}
+def capture(**kwargs):
+    return kwargs
+keywords = capture(number=42, text='hello')
+def accept(number: int, text: str):
+    return number, text
+def check_fields(record):
+    assert accept(**record) == (42, 'hello')
+check_fields(entry)
+check_fields(mapping)
+check_fields(keywords)
+assert entry.number == 42 and entry.text == 'hello'
+Point = namedtuple('RecordPoint', ('left', 'right'))
+point = Point(1, 2)
+assert point[0] == 1 and point[-1] == 2
+assert list(point) == [1, 2]
+assert tuple(entry) == (42, 'hello')
+assert type(entry) is not type(other)
+assert not isinstance(entry, FixedDict)
+assert list(mapping) == ['number', 'text']
+assert keywords.args == (42, 'hello')
+assert keywords.__keys__() == mapping.keys() == ('number', 'text')
+assert type(keywords.get('number', 'unused')) is int
+assert type(keywords.get('missing', 3.5)) is float
+assert keywords.get('missing') is None
+assert 'number' in keywords and 'missing' not in keywords
+assert repr(keywords) == "(number: 42, text: 'hello')"
+assert repr(mapping) == "{'number': 42, 'text': 'hello'}"
+assert sizeof(type(keywords)) == sizeof(type(mapping)) == sizeof(type(entry))
+assert sizeof(type(mapping)) == sizeof(type((42, 'hello')))
+assert sizeof(type(capture())) == sizeof(type(fixed_dict({}))) == sizeof(type(()))
+events: list[int] = []
+def observed(events, label, value):
+    events.append(label)
+    return value
+ordered = capture(before=observed(events, 1, 0), **observed(events, 2, entry),
+                  after=observed(events, 3, False))
+assert events == [1, 2, 3]
+assert ordered.__keys__() == ('before', 'number', 'text', 'after')
+assert ordered['number'] == 42 and ordered['text'] == 'hello'
+print('named record protocols ok')  #: named record protocols ok
+
+#%% named_record_keyword_fields
+from collections import namedtuple
+
+def capture(**kwargs):
+    return kwargs
+fields = namedtuple('RecordFieldNames', ('_record', '_values', 'args'))
+entry = fields(1, 'value', [3])
+mapping = fixed_dict({'_record': 1, '_values': 'value', 'args': [3]})
+def check_fields(record):
+    keywords = capture(**record)
+    assert keywords['_record'] == 1
+    assert keywords['_values'] == 'value'
+    assert keywords['args'] == [3]
+    assert keywords.__getitem__('_record') == 1
+    assert keywords.__getitem__('args') == [3]
+    assert keywords.get('_values') == 'value'
+check_fields(entry)
+check_fields(mapping)
+print('named record keyword fields ok')  #: named record keyword fields ok
+
+#%% named_record_empty_expansion
+from collections import namedtuple
+
+Empty = namedtuple('EmptyRecord', ())
+def capture(**kwargs):
+    return kwargs
+def observed(events, label, value):
+    events.append(label)
+    return value
+def accept(first, third):
+    return first + third
+def check_empty(empty):
+    events: list[int] = []
+    assert accept(observed(events, 1, 1), **observed(events, 2, empty),
+                  third=observed(events, 3, 3)) == 4
+    assert events == [1, 2, 3]
+    events.clear()
+    assert observed(events, 0, accept)(observed(events, 1, 1),
+                                       **observed(events, 2, empty),
+                                       third=observed(events, 3, 3)) == 4
+    assert events == [0, 1, 2, 3]
+check_empty(Empty())
+check_empty(fixed_dict({}))
+check_empty(capture())
+print('named record empty expansion ok')  #: named record empty expansion ok
+
 #%% fixed_dict_json
 import json
 

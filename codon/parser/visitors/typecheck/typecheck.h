@@ -274,7 +274,13 @@ private:
   std::vector<types::FuncType *> findMatchingMethods(
       types::ClassType *typ, const std::vector<types::FuncType *> &methods,
       const std::vector<CallArg> &args, types::ClassType *part = nullptr);
-  std::vector<std::pair<std::string, Expr *>> extractNamedTuple(Expr *);
+  struct RecordField {
+    std::string name;
+    std::vector<std::string> path;
+  };
+  std::vector<RecordField> getRecordFields(types::ClassType *) const;
+  Expr *getRecordField(Expr *, const RecordField &);
+  std::vector<std::pair<std::string, Expr *>> extractRecord(Expr *);
   std::vector<types::TypePtr> getClassFieldTypes(types::ClassType *);
   static std::vector<std::pair<size_t, Expr *>> findEllipsis(Expr *);
 

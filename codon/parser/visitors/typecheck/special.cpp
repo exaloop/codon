@@ -901,7 +901,7 @@ SuiteStmt *TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     return generateUnionIteratorAST(type);
   } else if (startswith(ast->name, getMangledMethod("", "Union", "_binary"))) {
     return generateUnionBinaryAST(type);
-  } else if (startswith(ast->name, getMangledMethod("", "NamedTuple", "_namedkeys"))) {
+  } else if (startswith(ast->name, getMangledMethod("", "_NamedRecord", "_keys"))) {
     return generateNamedKeysAST(type);
   } else if (startswith(ast->name, getMangledMethod("", "__magic__", "mul"))) {
     return generateTupleMulAST(type);
@@ -1248,7 +1248,7 @@ Expr *TypecheckVisitor::transformHasAttr(CallExpr *expr, bool allow_dynamic) {
       args.emplace_back("", t->is(StdlibTypes::TypeWrap) ? extractClassGeneric(t) : t);
     }
   }
-  for (auto &[n, ne] : extractNamedTuple((*expr)[2].getExpr())) {
+  for (auto &[n, ne] : extractRecord((*expr)[2].getExpr())) {
     ne = transform(ne);
     auto t = extractType(ne);
     args.emplace_back(n, t->is(StdlibTypes::TypeWrap) ? extractClassGeneric(t) : t);
@@ -1273,10 +1273,9 @@ Expr *TypecheckVisitor::transformHasAttr(CallExpr *expr, bool allow_dynamic) {
   } else if (typ->is(StdlibTypes::NamedTuple)) {
     if (!typ->canRealize())
       return nullptr;
-    auto id = getIntLiteral(typ);
-    seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}", id);
-    const auto &names = ctx->cache->generatedTupleNames[id];
-    return transform(N<BoolExpr>(in(names, attr)));
+    const auto fields = getRecordFields(typ);
+    return transform(N<BoolExpr>(std::ranges::find(fields, attr, &RecordField::name) !=
+                                 fields.end()));
   }
 
   // enum_test: __members__ is an ordinary ClassVar, so hasattr must include

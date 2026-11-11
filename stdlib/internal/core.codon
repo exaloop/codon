@@ -369,35 +369,66 @@ def superf(*args):
     """Special handling"""
     pass
 
-#(init=False, repr=False, eq=False, order=False, hash=False, pickle=False, python=False, gpu=False, container=False)
+_NAMED_RECORD_KEYWORDS: Literal[int] = 0
+_NAMED_RECORD_MAPPING: Literal[int] = 1
+
+@__internal__
+@tuple
+class _NamedRecord:
+    _values: T
+    N: Literal[int]
+    T: type
+    Kind: Literal[int]
+
+    @pure
+    @derives
+    @llvm
+    def __new__(values: T) -> _NamedRecord[N, T, Kind]:
+        %result = insertvalue { {=T} } undef, {=T} %values, 0
+        ret { {=T} } %result
+
+    @pure
+    @derives
+    @llvm
+    def _wrap(record: Record, Wrapper: type, Record: type) -> Wrapper:
+        %result = insertvalue {=Wrapper} undef, {=Record} %record, 0
+        ret {=Wrapper} %result
+
+
 @__internal__
 @tuple
 class NamedTuple:
-    args: T
+    _record: _NamedRecord[N, T, _NAMED_RECORD_KEYWORDS]
     N: Literal[int]  # name cache ID
     T: type
 
     @pure
     @derives
-    @llvm
     def __new__(args: T = (), N: Literal[int] = 0, T: type) -> NamedTuple[N, T]:
-        %0 = insertvalue { {=T} } undef, {=T} %args, 0
-        ret { {=T} } %0
+        return _NamedRecord._wrap(_NamedRecord[N, T, _NAMED_RECORD_KEYWORDS](args),
+                                  NamedTuple[N, T])
+
+    @property
+    def args(self):
+        return self._record._values
 
 
 @__internal__
 @tuple
 class FixedDict:
-    _values: T
+    _record: _NamedRecord[N, T, _NAMED_RECORD_MAPPING]
     N: Literal[int]
     T: type
 
     @pure
     @derives
-    @llvm
     def __new__(values: T = (), N: Literal[int] = 0, T: type) -> FixedDict[N, T]:
-        %0 = insertvalue { {=T} } undef, {=T} %values, 0
-        ret { {=T} } %0
+        return _NamedRecord._wrap(_NamedRecord[N, T, _NAMED_RECORD_MAPPING](values),
+                                  FixedDict[N, T])
+
+    @property
+    def _values(self):
+        return self._record._values
 
 
 @__generated__

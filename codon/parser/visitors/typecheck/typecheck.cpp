@@ -1217,19 +1217,34 @@ TypecheckVisitor::unpackTupleTypes(const Expr *expr) {
   return ret;
 }
 
-std::vector<std::pair<std::string, Expr *>>
-TypecheckVisitor::extractNamedTuple(Expr *expr) {
-  std::vector<std::pair<std::string, Expr *>> ret;
-
-  seqassert(expr->getType()->is(StdlibTypes::NamedTuple) &&
-                extractClassGeneric(expr->getClassType())->canRealize(),
-            "bad named tuple: {}", *expr);
-  auto id = getIntLiteral(expr->getClassType());
-  seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}", id);
-  auto names = ctx->cache->generatedTupleNames[id];
-  for (size_t i = 0; i < names.size(); i++) {
-    ret.emplace_back(names[i], N<IndexExpr>(N<DotExpr>(expr, "args"), N<IntExpr>(i)));
+std::vector<TypecheckVisitor::RecordField>
+TypecheckVisitor::getRecordFields(types::ClassType *type) const {
+  std::vector<RecordField> fields;
+  if (type->is(StdlibTypes::NamedTuple) || type->is(getMangledClass("", "FixedDict"))) {
+    auto id = getIntLiteral(type);
+    seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}", id);
+    const auto &names = ctx->cache->generatedTupleNames[id];
+    for (size_t index = 0; index < names.size(); ++index)
+      fields.push_back(
+          {names[index], {"_record", "_values", fmt::format("item{}", index + 1)}});
+  } else {
+    for (const auto &field : getClassFields(type))
+      fields.push_back({field.name, {field.name}});
   }
+  return fields;
+}
+
+Expr *TypecheckVisitor::getRecordField(Expr *expr, const RecordField &field) {
+  for (const auto &member : field.path)
+    expr = N<DotExpr>(expr, member);
+  return expr;
+}
+
+std::vector<std::pair<std::string, Expr *>>
+TypecheckVisitor::extractRecord(Expr *expr) {
+  std::vector<std::pair<std::string, Expr *>> ret;
+  for (const auto &field : getRecordFields(expr->getClassType()))
+    ret.emplace_back(field.name, getRecordField(expr, field));
   return ret;
 }
 
