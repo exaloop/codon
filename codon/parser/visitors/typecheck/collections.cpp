@@ -43,10 +43,93 @@ void TypecheckVisitor::visit(SetExpr *expr) {
 /// expression. See @c transformComprehension
 void TypecheckVisitor::visit(DictExpr *expr) {
   expr->setType(instantiateUnbound());
+  if (auto *expected = expr->getExpectedType();
+      expected && expected->is(getMangledClass("", "FixedDict"))) {
+    resultExpr = transformFixedDict(expr->items);
+    return;
+  }
+  if (!expr->getExpectedType() && std::ranges::any_of(expr->items, [](auto *item) {
+        return cast<KeywordStarExpr>(item) != nullptr;
+      })) {
+    bool fixedSpread = false;
+    bool fixedKeys = true;
+    for (auto *item : expr->items) {
+      if (auto *spread = cast<KeywordStarExpr>(item)) {
+        auto *value = transform(clone(spread->getExpr()));
+        bool fixed = value->getType()->is(getMangledClass("", "FixedDict"));
+        fixedSpread |= fixed;
+        fixedKeys &= fixed;
+      } else if (auto *pair = cast<TupleExpr>(item)) {
+        auto *key = transform(clone(pair->items[0]));
+        auto *literal = cast<StringExpr>(key);
+        fixedKeys &= (literal && literal->isSimple()) || key->getType()->getStrStatic();
+      } else {
+        fixedKeys = false;
+      }
+    }
+    if (fixedSpread && fixedKeys) {
+      resultExpr = transformFixedDict(expr->items);
+      return;
+    }
+  }
   if ((resultExpr = transformComprehension(StdlibTypes::Dict, "__setitem__",
                                            expr->items, expr->getExpectedType()))) {
     resultExpr->setAttribute(Attr::ExprDict);
   }
+}
+
+Expr *TypecheckVisitor::transformFixedDict(const std::vector<Expr *> &items) {
+  std::vector<std::string> names;
+  std::vector<Expr *> values;
+  std::vector<Stmt *> statements;
+  std::unordered_map<std::string, size_t> positions;
+  auto append = [&](const std::string &name, Expr *value) {
+    auto [position, inserted] = positions.emplace(name, names.size());
+    if (inserted) {
+      names.push_back(name);
+      values.push_back(nullptr);
+    }
+    values[position->second] = value;
+  };
+  for (auto *item : items) {
+    if (auto *spread = cast<KeywordStarExpr>(item)) {
+      auto *value = transform(clone(spread->getExpr()));
+      auto *type = value->getClassType();
+      if (!type)
+        return nullptr;
+      if (!type->is(getMangledClass("", "FixedDict")))
+        E(Error::CUSTOM, spread, "fixed_dict can only expand fixed dictionaries");
+      auto *shape = extractClassGeneric(type, 0);
+      if (!shape->canRealize())
+        return nullptr;
+      const auto &keys = ctx->cache->generatedTupleNames.at(getIntLiteral(shape));
+      auto temporary = getTemporaryVar("fixed.spread");
+      statements.push_back(N<AssignStmt>(N<IdExpr>(temporary), value));
+      for (size_t index = 0; index < keys.size(); ++index)
+        append(keys[index], N<IndexExpr>(N<DotExpr>(N<IdExpr>(temporary), "_values"),
+                                         N<IntExpr>(index)));
+      continue;
+    }
+    auto *pair = cast<TupleExpr>(item);
+    if (!pair)
+      pair = cast<TupleExpr>(item->getOrigExpr());
+    if (!pair || pair->items.size() != 2)
+      E(Error::CUSTOM, item, "fixed_dict requires literal string-keyed entries");
+    auto *key = transform(clone(pair->items[0]));
+    if (!key->getType())
+      return nullptr;
+    auto *literal = cast<StringExpr>(key);
+    auto *constant = key->getType()->getStrStatic();
+    if ((!literal || !literal->isSimple()) && !constant)
+      E(Error::CUSTOM, key, "fixed dictionary keys must be compile-time strings");
+    auto name = constant ? constant->value : literal->getValue();
+    auto temporary = getTemporaryVar("fixed.entry");
+    statements.push_back(N<AssignStmt>(N<IdExpr>(temporary), clone(item)));
+    append(name, N<IndexExpr>(N<IdExpr>(temporary), N<IntExpr>(1)));
+  }
+  return transform(N<StmtExpr>(
+      statements, N<CallExpr>(N<IdExpr>(getMangledClass("", "FixedDict")),
+                              N<TupleExpr>(values), N<IntExpr>(generateKwId(names)))));
 }
 
 /// Transform a tuple generator expression.
@@ -241,6 +324,8 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
   bool done = true;
   for (auto &i : items) {
     ClassType *typ = nullptr;
+    std::vector<ClassType *> entryTypes;
+    bool fixedView = false;
     if (!isDict && cast<StarExpr>(i)) {
       auto star = cast<StarExpr>(i);
       star->expr = transform(N<CallExpr>(N<DotExpr>(star->getExpr(), "__iter__")));
@@ -251,30 +336,74 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
       star->expr = transform(N<CallExpr>(N<DotExpr>(star->getExpr(), "items")));
       if (star->getExpr()->getType()->is("Generator"))
         typ = extractClassGeneric(star->getExpr()->getType())->getClass();
+      else if (star->getExpr()->getType()->is(
+                   getMangledClass("std.internal.types.tuple", "_FixedDictView"))) {
+        auto *entries = extractClassGeneric(star->getExpr()->getType())->getClass();
+        if (!entries)
+          return nullptr;
+        fixedView = true;
+        for (const auto &entry : entries->generics)
+          entryTypes.push_back(entry.getType()->getClass());
+      }
     } else {
       i = transform(i);
       typ = i->getClassType();
     }
-    if (!typ) {
+    if (typ)
+      entryTypes.push_back(typ);
+    if (entryTypes.empty() && !fixedView) {
       done = false;
       continue;
     }
-    if (isDict)
-      typ = unify(typ, instantiateType(generateTuple(2)))->getClass();
-    for (size_t di = 0; di < elementTypes.size(); ++di) {
-      // A declared union fixes storage; only inferred slots participate in lctyp.
-      // Keep dict keys/values independent (union_collection_common_type).
-      if (declaredUnions[di])
-        continue;
-      auto member = isDict ? extractClassGeneric(typ, di) : typ;
-      if (!elementTypes[di]->getClass())
-        unify(elementTypes[di].get(), member);
-      else if (auto t = lctyp(elementTypes[di]->getClass(), member->getClass()))
-        elementTypes[di] = t;
+    for (auto *entryType : entryTypes) {
+      if (!entryType)
+        return nullptr;
+      if (isDict)
+        entryType = unify(entryType, instantiateType(generateTuple(2)))->getClass();
+      for (size_t di = 0; di < elementTypes.size(); ++di) {
+        // A declared union fixes storage; only inferred slots participate in lctyp.
+        // Keep dict keys/values independent (union_collection_common_type).
+        if (declaredUnions[di])
+          continue;
+        auto member = isDict ? extractClassGeneric(entryType, di) : entryType;
+        if (!elementTypes[di]->getClass())
+          unify(elementTypes[di].get(), member);
+        else if (auto t = lctyp(elementTypes[di]->getClass(), member->getClass()))
+          elementTypes[di] = t;
+      }
     }
   }
   if (!done)
     return nullptr;
+  auto ta = instantiateType(root, ctx->cache->castVectorPtr(elementTypes));
+  if (isDict && !(expectedType && expectedType->is(root->name)) && !items.empty()) {
+    bool fixedKeys = true;
+    bool incompatible = false;
+    for (auto *item : items) {
+      auto *pair = cast<TupleExpr>(item->getOrigExpr());
+      if (!pair)
+        pair = cast<TupleExpr>(item);
+      auto *entryType = item->getClassType();
+      if (!pair || pair->items.size() != 2 || !entryType || !entryType->canRealize()) {
+        fixedKeys = false;
+        break;
+      }
+      auto *key = transform(clone(pair->items[0]));
+      auto *literal = cast<StringExpr>(key);
+      if ((!literal || !literal->isSimple()) && !key->getType()->getStrStatic()) {
+        fixedKeys = false;
+        break;
+      }
+      auto *keyType = extractClassGeneric(entryType, 0);
+      auto *valueType = extractClassGeneric(entryType, 1);
+      if (elementTypes[0]->unify(keyType, nullptr) < 0 ||
+          elementTypes[1]->unify(valueType, nullptr) < 0)
+        incompatible |= !findBestMethod(ta->getClass(), "__setitem__",
+                                        {ta.get(), keyType, valueType});
+    }
+    if (fixedKeys && incompatible)
+      return transformFixedDict(items);
+  }
   std::vector<Stmt *> stmts;
   Expr *var = N<IdExpr>(getTemporaryVar("cont"));
 
@@ -284,7 +413,6 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
     constructorArgs.push_back(N<IntExpr>(items.size()));
   }
   auto t = N<IdExpr>(isDict ? root->name : type);
-  auto ta = instantiateType(root, ctx->cache->castVectorPtr(elementTypes));
   t->setType(instantiateTypeVar(ta.get()));
   stmts.push_back(N<AssignStmt>(clone(var), N<CallExpr>(t, constructorArgs)));
   for (const auto &it : items) {

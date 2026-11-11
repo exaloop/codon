@@ -450,6 +450,28 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
     return;
   }
 
+  if (cls->is(getMangledClass("", "FixedDict"))) {
+    auto *literal = cast<StringExpr>(expr->getIndex());
+    auto *constant = expr->getIndex()->getType()->getStrStatic();
+    if ((literal && literal->isSimple()) || constant) {
+      auto *shape = extractClassGeneric(cls, 0);
+      if (!shape->canRealize())
+        return;
+      const auto &names = ctx->cache->generatedTupleNames.at(getIntLiteral(shape));
+      auto name = constant ? constant->value : literal->getValue();
+      auto position = std::find(names.begin(), names.end(), name);
+      if (position == names.end())
+        E(Error::CUSTOM, expr, "unknown fixed dictionary key: {}", name);
+      auto temporary = getTemporaryVar("fixed.lookup");
+      resultExpr = transform(N<StmtExpr>(
+          N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(temporary), expr->getExpr()),
+                       N<ExprStmt>(expr->getIndex())),
+          N<IndexExpr>(N<DotExpr>(N<IdExpr>(temporary), "_values"),
+                       N<IntExpr>(std::distance(names.begin(), position)))));
+      return;
+    }
+  }
+
   // Case: static tuple access
   // Note: needs untransformed origIndex to parse statics nicely
   auto [isStaticTuple, tupleExpr] =

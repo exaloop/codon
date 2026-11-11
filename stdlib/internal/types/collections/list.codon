@@ -51,12 +51,17 @@ class List:
         Mutable tuple-backed sequences must use the snapshot paths instead, so
         earlier assignment targets cannot change values still being unpacked.
         """
+        from internal.types.tuple import _FixedDictView
         if isinstance(source, Tuple):
             if static.len(source) < count:
                 compile_error("not enough values to unpack")
             if not has_star and static.len(source) > count:
                 compile_error("too many values to unpack")
             return source
+        elif isinstance(source, FixedDict):
+            return List._unpack(source.keys(), count, has_star)
+        elif isinstance(source, _FixedDictView):
+            return List._unpack(source._values, count, has_star)
         elif hasattr(type(source), '__tuplesize__') and not hasattr(type(source), '__setitem__'):
             if static.len(source) < count:
                 raise ValueError("not enough values to unpack")

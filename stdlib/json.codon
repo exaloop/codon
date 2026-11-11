@@ -154,7 +154,7 @@ class JSON:
             return JSON(_KIND_FLOAT, _bits_pointer(_float_bits(value)))
         elif isinstance(value, str):
             return JSON((value._meta << _TAG_BITS) | _KIND_STR, value._ptr)
-        elif isinstance(value, dict):
+        elif isinstance(value, dict) or isinstance(value, FixedDict):
             result = JSON.object()
             for key, item in value.items():
                 if isinstance(key, str):

@@ -1362,6 +1362,13 @@ Expr *TypecheckVisitor::transformTupleFn(CallExpr *expr) {
   if (!cls)
     return nullptr;
 
+  if (!isTypeExpr(expr->begin()->getExpr())) {
+    if (cls->is(getMangledClass("std.internal.types.tuple", "_FixedDictView")))
+      return transform(N<DotExpr>(expr->begin()->getExpr(), "_values"));
+    if (cls->is(getMangledClass("", "FixedDict")))
+      return transform(N<CallExpr>(N<DotExpr>(expr->begin()->getExpr(), "keys")));
+  }
+
   // tuple(ClassType) is a tuple type that corresponds to a class
   if (isTypeExpr(expr->begin()->getExpr())) {
     if (!realize(cls))

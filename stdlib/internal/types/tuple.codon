@@ -106,3 +106,92 @@ class NamedTuple:
         values = [v.__repr__() for v in self.args]
         s = ', '.join(f"{keys[i]}: {values[i]}" for i in range(len(keys)))
         return f"({s})"
+
+
+@extend
+class FixedDict:
+    @__generated__
+    def _index(N: Literal[int], key: Literal[str]):
+        pass
+
+    @__generated__
+    def _value_type(Values: type):
+        pass
+
+    def __len__(self):
+        return static.len(self._values)
+
+    def __bool__(self):
+        return len(self) != 0
+
+    def keys(self):
+        return NamedTuple._namedkeys(N)
+
+    def values(self):
+        return _FixedDictView(self._values)
+
+    def items(self):
+        return _FixedDictView(tuple((self.keys()[index], self._values[index])
+                                    for index in static.range(static.len(self._values))))
+
+    def __iter__(self) -> Generator[str]:
+        if N == 0:
+            for index in range(0):
+                yield ""
+        else:
+            for key in self.keys():
+                yield key
+
+    def __getitem__(self, key: str):
+        compile_error("fixed dictionary lookup requires a compile-time string key")
+
+    def __getitem__(self, key: Literal[str]):
+        index: Literal[int] = FixedDict._index(N, key)
+        if index < 0:
+            compile_error("unknown fixed dictionary key: " + key)
+        else:
+            return self._values[index]
+
+    def __contains__(self, key: str):
+        for index in static.range(static.len(self._values)):
+            if self.keys()[index] == key:
+                return True
+        return False
+
+    def __contains__(self, key: Literal[str]) -> Literal[bool]:
+        return FixedDict._index(N, key) >= 0
+
+    def get(self, key: str, default=None):
+        compile_error("fixed dictionary lookup requires a compile-time string key")
+
+    def get(self, key: Literal[str], default=None):
+        index: Literal[int] = FixedDict._index(N, key)
+        if index < 0:
+            return default
+        else:
+            return self._values[index]
+
+    def __repr__(self):
+        keys = self.keys()
+        values = [repr(value) for value in self._values]
+        return '{' + ', '.join(repr(keys[index]) + ': ' + values[index]
+                              for index in range(len(keys))) + '}'
+
+
+@tuple
+class _FixedDictView:
+    _values: T
+    T: type
+
+    def __len__(self):
+        return static.len(self._values)
+
+    def __iter__(self):
+        if static.len(self._values) == 0:
+            for index in range(0):
+                yield NoneType()
+        else:
+            Result = FixedDict._value_type(T)
+            for index in static.range(static.len(self._values)):
+                result: Result = self._values[index]
+                yield result

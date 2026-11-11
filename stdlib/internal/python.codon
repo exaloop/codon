@@ -44,7 +44,7 @@ PyDict_New = Function[[], cobj](cobj())
 PyDict_Next = Function[[cobj, Ptr[int], Ptr[cobj], Ptr[cobj]], int](cobj())
 PyDict_GetItem = Function[[cobj, cobj], cobj](cobj())
 PyDict_GetItemString = Function[[cobj, cobj], cobj](cobj())
-PyDict_SetItem = Function[[cobj, cobj, cobj], cobj](cobj())
+PyDict_SetItem = Function[[cobj, cobj, cobj], i32](cobj())
 PyDict_Size = Function[[cobj], int](cobj())
 PySet_Add = Function[[cobj, cobj], cobj](cobj())
 PySet_New = Function[[cobj], cobj](cobj())
@@ -602,7 +602,7 @@ def init_handles_static():
     from C import PyDict_Next(cobj, Ptr[int], Ptr[cobj], Ptr[cobj]) -> int as _PyDict_Next
     from C import PyDict_GetItem(cobj, cobj) -> cobj as _PyDict_GetItem
     from C import PyDict_GetItemString(cobj, cobj) -> cobj as _PyDict_GetItemString
-    from C import PyDict_SetItem(cobj, cobj, cobj) -> cobj as _PyDict_SetItem
+    from C import PyDict_SetItem(cobj, cobj, cobj) -> i32 as _PyDict_SetItem
     from C import PyDict_Size(cobj) -> int as _PyDict_Size
     from C import PySet_Add(cobj, cobj) -> cobj as _PySet_Add
     from C import PySet_New(cobj) -> cobj as _PySet_New
@@ -1787,6 +1787,26 @@ class Dict:
             v = V.__from_py__(v_ptr)
             b[k] = v
         return b
+
+@extend
+class FixedDict:
+    def __to_py__(self) -> cobj:
+        result_owner = pyobj(pyobj.exc_wrap(PyDict_New()), steal=True)
+        key_owner = pyobj(cobj(), steal=True)
+        for key, value in self.items():
+            key_owner.p = key.__to_py__()
+            python_value = value.__to_py__()
+            insertion_status = PyDict_SetItem(result_owner.p, key_owner.p, python_value)
+            pyobj.decref(python_value)
+            pyobj.decref(key_owner.p)
+            key_owner.p = cobj()
+            if insertion_status < i32(0):
+                pyobj.decref(result_owner.p)
+                result_owner.p = cobj()
+                pyobj.exc_check()
+        result = result_owner.p
+        result_owner.p = cobj()
+        return result
 
 @extend
 class Set:

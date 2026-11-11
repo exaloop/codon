@@ -84,6 +84,17 @@ void TypecheckVisitor::visit(CallExpr *expr) {
   if (isUnbound(expr->getExpr()))
     return; // delay
 
+  if (auto *function = cast<IdExpr>(getHeadExpr(expr->getExpr()));
+      function && function->getValue() == getMangledFunc("", "fixed_dict")) {
+    if (expr->size() != 1 || !expr->front().getName().empty())
+      E(Error::CUSTOM, expr, "fixed_dict expects one dictionary literal");
+    if (auto *literal = cast<DictExpr>(expr->front().getExpr()))
+      resultExpr = transformFixedDict(literal->items);
+    else
+      E(Error::CUSTOM, expr, "fixed_dict expects a dictionary literal");
+    return;
+  }
+
   auto [calleeFn, newExpr] = getCalleeFn(expr, part);
   // Transform `tuple(i for i in tup)` into a GeneratorExpr
   // that will be handled during the type checking.
@@ -282,6 +293,24 @@ void TypecheckVisitor::validateCall(CallExpr *expr) {
 /// objects.
 /// @return false if expansion could not be completed; true otherwise
 bool TypecheckVisitor::transformCallArgs(CallExpr *expr) {
+  auto preserveEmptyExpansion = [&](Expr *value, int position) {
+    auto call = clone(expr);
+    std::vector<Stmt *> statements;
+    if (hasSideEffect(call->getExpr())) {
+      auto temporary = getTemporaryVar("fixed.callee");
+      statements.push_back(N<AssignStmt>(N<IdExpr>(temporary), call->getExpr()));
+      call->expr = N<IdExpr>(temporary);
+    }
+    for (int previous = 0; previous < position; ++previous) {
+      auto temporary = getTemporaryVar("fixed.argument");
+      statements.push_back(
+          N<AssignStmt>(N<IdExpr>(temporary), (*call)[previous].getExpr()));
+      (*call)[previous].value = N<IdExpr>(temporary);
+    }
+    statements.push_back(N<ExprStmt>(value));
+    call->items.erase(call->items.begin() + position);
+    resultExpr = transform(N<StmtExpr>(statements, call));
+  };
   for (auto ai = 0; ai < expr->size();) {
     if (auto star = cast<StarExpr>((*expr)[ai].getExpr())) {
       // Case: *args expansion
@@ -294,9 +323,23 @@ bool TypecheckVisitor::transformCallArgs(CallExpr *expr) {
       }
       if (!typ) // Process later
         return false;
+      bool fixed = typ->is(getMangledClass("", "FixedDict"));
+      bool fixedView =
+          typ->is(getMangledClass("std.internal.types.tuple", "_FixedDictView"));
+      if (fixed || fixedView) {
+        star->expr = fixed ? transform(N<CallExpr>(N<DotExpr>(star->getExpr(), "keys")))
+                           : transform(N<DotExpr>(star->getExpr(), "_values"));
+        typ = star->getExpr()->getClassType();
+        if (!typ)
+          return false;
+      }
       if (!typ->isRecord())
         E(Error::CALL_BAD_UNPACK, (*expr)[ai], typ->prettyString());
       auto fields = getClassFields(typ);
+      if ((fixed || fixedView) && fields.empty() && hasSideEffect(star->getExpr())) {
+        preserveEmptyExpansion(star->getExpr(), ai);
+        return false;
+      }
 
       Expr *head = star->getExpr(), *lead = nullptr;
       if (hasSideEffect(head)) {
@@ -328,18 +371,26 @@ bool TypecheckVisitor::transformCallArgs(CallExpr *expr) {
         lead = N<AssignExpr>(N<IdExpr>(var), head);
         head = N<IdExpr>(var);
       }
-      if (typ->is(StdlibTypes::NamedTuple)) {
+      bool fixed = typ->is(getMangledClass("", "FixedDict"));
+      if (typ->is(StdlibTypes::NamedTuple) || fixed) {
         auto id = getIntLiteral(typ);
         seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}",
                   id);
         auto names = ctx->cache->generatedTupleNames[id];
+        if (fixed && names.empty() && lead) {
+          preserveEmptyExpansion(kwstar->getExpr(), ai);
+          return false;
+        }
         for (size_t i = 0; i < names.size(); i++, ai++) {
+          if (fixed && names[i].empty())
+            E(Error::CUSTOM, kwstar,
+              "empty fixed dictionary keys cannot be expanded as keyword arguments");
           expr->items.insert(
               expr->items.begin() + ai,
-              CallArg{names[i],
-                      transform(N<DotExpr>(
-                          N<DotExpr>(clone(lead && i == 0 ? lead : head), "args"),
-                          fmt::format("item{}", i + 1)))});
+              CallArg{names[i], transform(N<DotExpr>(
+                                    N<DotExpr>(clone(lead && i == 0 ? lead : head),
+                                               fixed ? "_values" : "args"),
+                                    fmt::format("item{}", i + 1)))});
         }
         expr->items.erase(expr->items.begin() + ai);
       } else if (typ->isRecord()) {
@@ -1035,6 +1086,35 @@ std::pair<bool, Expr *> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
   };
   if (isF(ei, "", "superf")) {
     return {true, transformSuperF(expr)};
+  } else if (isF(ei, "", "FixedDict", "_value_type")) {
+    auto *values = extractFuncGeneric(ei->getType()->getFunc(), 0);
+    if (!values->canRealize())
+      return {true, nullptr};
+    std::map<std::string, Expr *> members;
+    for (const auto &generic : values->getClass()->generics) {
+      auto name = generic.getType()->realizedName();
+      members.emplace(name, N<IdExpr>(name));
+    }
+    if (members.empty())
+      return {true, transform(N<IdExpr>(StdlibTypes::NoneType))};
+    if (members.size() == 1)
+      return {true, transform(members.begin()->second)};
+    std::vector<Expr *> alternatives;
+    for (const auto &[name, member] : members)
+      alternatives.push_back(member);
+    return {true,
+            transform(N<InstantiateExpr>(N<IdExpr>(StdlibTypes::Union), alternatives))};
+  } else if (isF(ei, "", "FixedDict", "_index")) {
+    auto *function = ei->getType()->getFunc();
+    auto *shape = extractFuncGeneric(function, 0);
+    auto *key = extractFuncGeneric(function, 1);
+    if (!shape->canRealize() || !key->canRealize())
+      return {true, nullptr};
+    const auto &names = ctx->cache->generatedTupleNames.at(getIntLiteral(shape));
+    auto name = getStrLiteral(key);
+    auto position = std::find(names.begin(), names.end(), name);
+    auto index = position == names.end() ? -1 : std::distance(names.begin(), position);
+    return {true, transform(N<IntExpr>(index))};
   } else if (isF(ei, "", "super") && expr->empty()) {
     return {true, transformSuper()};
   } else if (isF(ei, "", "__ptr__")) {

@@ -6,6 +6,61 @@ from python import datetime
 z = datetime.datetime.utcfromtimestamp(0)
 print z  #: 1970-01-01 00:00:00
 
+#%% python_fixed_dict
+from python import builtins
+
+document = {'name': 'entry', 'numbers': [1, 2, 3],
+            'metadata': {'active': True, 'rank': 4}}
+converted: pyobj = document
+assert builtins.isinstance(converted, builtins.dict)
+assert builtins.list(converted.keys()) == ['name', 'numbers', 'metadata']
+assert converted['name'] == 'entry' and converted['numbers'][2] == 3
+assert converted['metadata']['active'] == True
+assert builtins.isinstance(fixed_dict({}), builtins.dict)
+ordinary = {'native': 1, 'python': builtins.int(2)}
+assert type(ordinary) is dict[str, pyobj]
+ordinary['later'] = 'value'
+print('fixed dictionary Python conversion ok')  #: fixed dictionary Python conversion ok
+
+#%% python_fixed_dict_conversion_checks
+from python import builtins
+from python import sys as python_sys
+from internal.python import PyDict_SetItem
+
+def collect_python_owners():
+    from C import GC_gcollect()
+    GC_gcollect()
+
+value = builtins.object()
+references = int(python_sys.getrefcount(value))
+mapping = fixed_dict({'value': value})
+for iteration in range(3):
+    converted = mapping.__to_py__()
+    pyobj.decref(converted)
+collect_python_owners()
+assert int(python_sys.getrefcount(value)) == references
+
+@tuple
+class FailedConversion:
+    def __to_py__(self) -> cobj:
+        raise ValueError('value conversion failed')
+
+failing = fixed_dict({'value': value, 'failure': FailedConversion()})
+try:
+    failing.__to_py__()
+    assert False
+except ValueError as error:
+    assert str(error) == 'value conversion failed'
+
+insertion_status = PyDict_SetItem(value.p, value.p, value.p)
+assert insertion_status == i32(-1)
+try:
+    pyobj.exc_check()
+    assert False
+except PyError:
+    pass
+print('fixed dictionary conversion checks ok')  #: fixed dictionary conversion checks ok
+
 #%% python_numpy
 from python import numpy as np
 a = np.arange(9).reshape(3, 3)
