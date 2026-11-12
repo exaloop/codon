@@ -79,11 +79,11 @@ class Tuple:
 @extend
 class FixedDict:
     @__generated__
-    def _index(N: Literal[int], key: Literal[str]):
+    def _index(_KeysId: Literal[int], key: Literal[str]):
         pass
 
     @__generated__
-    def _keys(N: Literal[int]):
+    def _keys(_KeysId: Literal[int]):
         pass
 
     def __len__(self):
@@ -93,7 +93,7 @@ class FixedDict:
         return len(self) != 0
 
     def keys(self):
-        return FixedDict._keys(N)
+        return FixedDict._keys(_KeysId)
 
     def values(self):
         return _FixedDictView(self._values)
@@ -103,7 +103,7 @@ class FixedDict:
                                     for index in static.range(static.len(self._values))))
 
     def __iter__(self) -> Generator[str]:
-        if N == 0:
+        if _KeysId == 0:
             for index in range(0):
                 yield ""
         else:
@@ -114,7 +114,7 @@ class FixedDict:
         compile_error("fixed dictionary lookup requires a compile-time string key")
 
     def __getitem__(self, key: Literal[str]):
-        index: Literal[int] = FixedDict._index(N, key)
+        index: Literal[int] = FixedDict._index(_KeysId, key)
         if index < 0:
             compile_error("unknown fixed dictionary key: " + key)
         else:
@@ -127,13 +127,13 @@ class FixedDict:
         return False
 
     def __contains__(self, key: Literal[str]) -> Literal[bool]:
-        return FixedDict._index(N, key) >= 0
+        return FixedDict._index(_KeysId, key) >= 0
 
     def get(self, key: str, default=None):
         compile_error("fixed dictionary lookup requires a compile-time string key")
 
     def get(self, key: Literal[str], default=None):
-        index: Literal[int] = FixedDict._index(N, key)
+        index: Literal[int] = FixedDict._index(_KeysId, key)
         if index < 0:
             return default
         else:

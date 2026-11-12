@@ -373,13 +373,13 @@ def superf(*args):
 @tuple
 class FixedDict:
     _values: T
-    N: Literal[int]
+    _KeysId: Literal[int]
     T: type
 
     @pure
     @derives
     @llvm
-    def __new__(values: T = (), N: Literal[int] = 0, T: type) -> FixedDict[N, T]:
+    def __new__(values: T = (), _KeysId: Literal[int] = 0, T: type) -> FixedDict[_KeysId, T]:
         %result = insertvalue { {=T} } undef, {=T} %values, 0
         ret { {=T} } %result
 
