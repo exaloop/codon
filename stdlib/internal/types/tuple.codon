@@ -141,9 +141,13 @@ class FixedDict:
 
     def __repr__(self):
         keys = self.keys()
-        values = [repr(value) for value in self._values]
-        return '{' + ', '.join(repr(keys[index]) + ': ' + values[index]
-                              for index in range(len(keys))) + '}'
+        fragments_per_entry: Literal[int] = 4
+        entries = tuple((', ' if index else '', repr(keys[index]),
+                         ': ', repr(self._values[index]))
+                        for index in static.range(static.len(self._values)))
+        fragments = tuple(entries[index // fragments_per_entry][index % fragments_per_entry]
+                          for index in static.range(fragments_per_entry * static.len(entries)))
+        return str.cat('{', *fragments, '}')
 
 
 @tuple

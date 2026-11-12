@@ -223,6 +223,40 @@ assert events == [1, 2, 3]
 assert duplicate.keys() == ('a', 'b') and duplicate['a'] == [3]
 print('fixed dictionary literals ok')  #: fixed dictionary literals ok
 
+#%% fixed_dict_repr
+single: FixedDict = {'': '\u00e9\n'}
+assert repr(single) == repr({'': '\u00e9\n'})
+wide: FixedDict = {'ascii': '\u00e9', '\u03a9': '\U0001f600', '\U0001f600': 'plain'}
+ordinary = {'ascii': '\u00e9', '\u03a9': '\U0001f600', '\U0001f600': 'plain'}
+assert repr(wide) == str(wide) == repr(ordinary)
+
+@tuple
+class ReprValue:
+    text: str
+    events: list[str]
+
+    def __repr__(self):
+        self.events.append(self.text)
+        if self.text == 'failure':
+            raise ValueError('repr failed')
+        return self.text
+
+events: list[str] = []
+ordered: FixedDict = {'first': ReprValue('one', events), 'second': ReprValue('two', events)}
+assert repr(ordered) == "{'first': one, 'second': two}"
+assert events == ['one', 'two']
+events.clear()
+failing: FixedDict = {'first': ReprValue('one', events),
+                      'second': ReprValue('failure', events),
+                      'third': ReprValue('unreached', events)}
+try:
+    repr(failing)
+    assert False
+except ValueError as error:
+    assert str(error) == 'repr failed'
+assert events == ['one', 'failure']
+print('fixed dictionary repr ok')  #: fixed dictionary repr ok
+
 #%% fixed_dict_read_api
 mapping: FixedDict = {'number': 42, 'text': 'hello'}
 assert 'number' in mapping and 'missing' not in mapping
