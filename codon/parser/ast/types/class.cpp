@@ -290,22 +290,7 @@ bool ClassType::isInstantiated() const {
 std::string ClassType::debugString(char mode) const {
   if (auto canonical = canonicalOptional())
     return canonical->debugString(mode);
-  if (name == StdlibTypes::NamedTuple) {
-    if (auto ids = generics[0].type->getIntStatic()) {
-      auto id = ids->value;
-      seqassert(id >= 0 && id < cache->generatedTupleNames.size(), "bad id: {}", id);
-      const auto &names = cache->generatedTupleNames[id];
-      auto ts = generics[1].getType()->getClass();
-      if (names.empty())
-        return name;
-      std::vector<std::string> as;
-      for (size_t i = 0; i < names.size(); i++)
-        as.push_back(names[i] + "=" + ts->generics[i].debugString(mode));
-      return name + "[" + join(as, ",") + "]";
-    } else {
-      return name + "[" + generics[0].type->debugString(mode) + "]";
-    }
-  } else if (name == "Partial" && generics[3].type->getClass() && mode != 2) {
+  if (name == "Partial" && generics[3].type->getClass() && mode != 2) {
     // Name: function[full_args](instantiated_args...)
     std::vector<std::string> as;
     auto known = getPartialMask();
@@ -336,10 +321,16 @@ std::string ClassType::debugString(char mode) const {
       // unused *args (by default always 0 in mask)
       as.push_back(args.back());
     }
-    auto ks = generics[2].type->debugString(mode);
-    if (ks.size() > 10) {                 // if **kwargs is used
-      ks = ks.substr(11, ks.size() - 12); // chop off NamedTuple[...]
-      as.push_back(ks);
+    if (auto keywords = generics[2].type->getClass()) {
+      auto shape = keywords->generics[0].type->getIntStatic();
+      auto values = keywords->generics[1].type->getClass();
+      if (shape && values) {
+        auto id = shape->value;
+        seqassert(id >= 0 && id < cache->generatedTupleNames.size(), "bad id: {}", id);
+        const auto &names = cache->generatedTupleNames[id];
+        for (size_t index = 0; index < names.size(); ++index)
+          as.push_back(names[index] + "=" + values->generics[index].debugString(mode));
+      }
     }
 
     auto fnname = func->ast->getName();

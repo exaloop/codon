@@ -595,8 +595,8 @@ std::pair<Expr *, bool> TypecheckVisitor::getClassMember(Expr *expr,
             true};
   }
 
-  // Case: NamedTuple support
-  if (typ->is(StdlibTypes::NamedTuple)) {
+  // Case: named mapping fields
+  if (typ->is(StdlibTypes::FixedDict)) {
     for (const auto &field : getRecordFields(typ))
       if (field.name == member)
         return {transform(getRecordField(expr, field)), true};

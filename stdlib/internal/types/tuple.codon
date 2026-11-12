@@ -1,7 +1,6 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
 import internal.static as static
-from internal.core import _NamedRecord, _NAMED_RECORD_KEYWORDS
 
 @extend
 class Tuple:
@@ -78,7 +77,7 @@ class Tuple:
 
 
 @extend
-class _NamedRecord:
+class FixedDict:
     @__generated__
     def _index(N: Literal[int], key: Literal[str]):
         pass
@@ -94,7 +93,10 @@ class _NamedRecord:
         return len(self) != 0
 
     def keys(self):
-        return _NamedRecord._keys(N)
+        return FixedDict._keys(N)
+
+    def __keys__(self):
+        return self.keys()
 
     def values(self):
         return _FixedDictView(self._values)
@@ -111,8 +113,11 @@ class _NamedRecord:
             for key in self.keys():
                 yield key
 
+    def __getitem__(self, key: str):
+        compile_error("fixed dictionary lookup requires a compile-time string key")
+
     def __getitem__(self, key: Literal[str]):
-        index: Literal[int] = _NamedRecord._index(N, key)
+        index: Literal[int] = FixedDict._index(N, key)
         if index < 0:
             compile_error("unknown fixed dictionary key: " + key)
         else:
@@ -125,10 +130,13 @@ class _NamedRecord:
         return False
 
     def __contains__(self, key: Literal[str]) -> Literal[bool]:
-        return _NamedRecord._index(N, key) >= 0
+        return FixedDict._index(N, key) >= 0
+
+    def get(self, key: str, default=None):
+        compile_error("fixed dictionary lookup requires a compile-time string key")
 
     def get(self, key: Literal[str], default=None):
-        index: Literal[int] = _NamedRecord._index(N, key)
+        index: Literal[int] = FixedDict._index(N, key)
         if index < 0:
             return default
         else:
@@ -137,81 +145,8 @@ class _NamedRecord:
     def __repr__(self):
         keys = self.keys()
         values = [repr(value) for value in self._values]
-        if Kind == _NAMED_RECORD_KEYWORDS:
-            return '(' + ', '.join(f'{keys[index]}: {values[index]}'
-                                  for index in range(len(keys))) + ')'
-        else:
-            return '{' + ', '.join(repr(keys[index]) + ': ' + values[index]
-                                  for index in range(len(keys))) + '}'
-
-
-@extend
-class NamedTuple:
-    def __getitem__(self, key: Literal[str]):
-        if key in self._record:
-            return self._record[key]
-        else:
-            return getattr(self, key)
-
-    def __contains__(self, key: Literal[str]) -> Literal[bool]:
-        return key in self._record
-
-    def _get(kw, key: Literal[str], default):
-        return kw._record.get(key, default)
-
-    def get(self, key: Literal[str], default=None):
-        return self._record.get(key, default)
-
-    def _namedkeys(N: Literal[int]):
-        return _NamedRecord._keys(N)
-
-    def __keys__(self):
-        return self._record.keys()
-
-    def __repr__(self):
-        return repr(self._record)
-
-
-@extend
-class FixedDict:
-    def __len__(self):
-        return len(self._record)
-
-    def __bool__(self):
-        return bool(self._record)
-
-    def keys(self):
-        return self._record.keys()
-
-    def values(self):
-        return self._record.values()
-
-    def items(self):
-        return self._record.items()
-
-    def __iter__(self) -> Generator[str]:
-        yield from self._record
-
-    def __getitem__(self, key: str):
-        compile_error("fixed dictionary lookup requires a compile-time string key")
-
-    def __getitem__(self, key: Literal[str]):
-        return self._record[key]
-
-    def __contains__(self, key: str):
-        return key in self._record
-
-    def __contains__(self, key: Literal[str]) -> Literal[bool]:
-        return key in self._record
-
-    def get(self, key: str, default=None):
-        compile_error("fixed dictionary lookup requires a compile-time string key")
-
-    def get(self, key: Literal[str], default=None):
-        return self._record.get(key, default)
-
-    def __repr__(self):
-        return repr(self._record)
+        return '{' + ', '.join(repr(keys[index]) + ': ' + values[index]
+                              for index in range(len(keys))) + '}'
 
 
 @tuple

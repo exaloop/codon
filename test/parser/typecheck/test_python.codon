@@ -9,14 +9,23 @@ print z  #: 1970-01-01 00:00:00
 #%% python_fixed_dict
 from python import builtins
 
-document = {'name': 'entry', 'numbers': [1, 2, 3],
-            'metadata': {'active': True, 'rank': 4}}
+metadata: FixedDict = {'active': True, 'rank': 4}
+document: FixedDict = {'name': 'entry', 'numbers': [1, 2, 3], 'metadata': metadata}
 converted: pyobj = document
 assert builtins.isinstance(converted, builtins.dict)
 assert builtins.list(converted.keys()) == ['name', 'numbers', 'metadata']
 assert converted['name'] == 'entry' and converted['numbers'][2] == 3
 assert converted['metadata']['active'] == True
-assert builtins.isinstance(fixed_dict({}), builtins.dict)
+empty: FixedDict = {}
+assert builtins.isinstance(empty, builtins.dict)
+def capture(**kwargs):
+    return kwargs
+keywords = capture(**document)
+assert type(keywords) is type(document)
+converted_keywords: pyobj = keywords
+assert builtins.isinstance(converted_keywords, builtins.dict)
+assert converted_keywords == converted
+assert builtins.isinstance(capture(), builtins.dict)
 ordinary = {'native': 1, 'python': builtins.int(2)}
 assert type(ordinary) is dict[str, pyobj]
 ordinary['later'] = 'value'
@@ -33,7 +42,7 @@ def collect_python_owners():
 
 value = builtins.object()
 references = int(python_sys.getrefcount(value))
-mapping = fixed_dict({'value': value})
+mapping: FixedDict = {'value': value}
 for iteration in range(3):
     converted = mapping.__to_py__()
     pyobj.decref(converted)
@@ -45,7 +54,7 @@ class FailedConversion:
     def __to_py__(self) -> cobj:
         raise ValueError('value conversion failed')
 
-failing = fixed_dict({'value': value, 'failure': FailedConversion()})
+failing: FixedDict = {'value': value, 'failure': FailedConversion()}
 try:
     failing.__to_py__()
     assert False

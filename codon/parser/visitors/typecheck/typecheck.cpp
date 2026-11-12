@@ -639,7 +639,7 @@ int TypecheckVisitor::canCall(FuncType *fn, const std::vector<CallArg> &args,
                   if (si == kwstar) {
                     auto id = std::make_shared<IntStaticType>(ctx->cache,
                                                               generateKwId(names));
-                    actual = instantiateType(getStdLibType(StdlibTypes::NamedTuple),
+                    actual = instantiateType(getStdLibType(StdlibTypes::FixedDict),
                                              {id.get(), actual.get()});
                   }
                 } else if (!slots[si].empty()) {
@@ -1197,7 +1197,7 @@ TypecheckVisitor::unpackTupleTypes(const Expr *expr) {
     }
   } else if (cast<CallExpr>(expr->getOrigExpr())) {
     auto val = extractClassType(expr->getType());
-    if (!val || !val->is(StdlibTypes::NamedTuple) ||
+    if (!val || !val->is(StdlibTypes::FixedDict) ||
         !extractClassGeneric(val, 1)->getClass() ||
         !extractClassGeneric(val)->canRealize())
       return nullptr;
@@ -1205,7 +1205,7 @@ TypecheckVisitor::unpackTupleTypes(const Expr *expr) {
     seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}", id);
     auto names = ctx->cache->generatedTupleNames[id];
     auto types = extractClassGeneric(val, 1)->getClass();
-    seqassert(startswith(types->name, "Tuple"), "bad NamedTuple argument");
+    seqassert(startswith(types->name, "Tuple"), "bad FixedDict argument");
     for (size_t i = 0; i < types->generics.size(); i++) {
       if (!extractClassGeneric(types, i))
         return nullptr;
@@ -1220,13 +1220,12 @@ TypecheckVisitor::unpackTupleTypes(const Expr *expr) {
 std::vector<TypecheckVisitor::RecordField>
 TypecheckVisitor::getRecordFields(types::ClassType *type) const {
   std::vector<RecordField> fields;
-  if (type->is(StdlibTypes::NamedTuple) || type->is(getMangledClass("", "FixedDict"))) {
+  if (type->is(StdlibTypes::FixedDict)) {
     auto id = getIntLiteral(type);
     seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}", id);
     const auto &names = ctx->cache->generatedTupleNames[id];
     for (size_t index = 0; index < names.size(); ++index)
-      fields.push_back(
-          {names[index], {"_record", "_values", fmt::format("item{}", index + 1)}});
+      fields.push_back({names[index], {"_values", fmt::format("item{}", index + 1)}});
   } else {
     for (const auto &field : getClassFields(type))
       fields.push_back({field.name, {field.name}});

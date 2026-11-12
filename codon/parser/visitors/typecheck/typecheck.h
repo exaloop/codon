@@ -138,7 +138,8 @@ private: // Node typechecking rules
   void visit(EllipsisExpr *) override;
   void visit(CallExpr *) override;
   static void validateCall(CallExpr *expr);
-  bool transformCallArgs(CallExpr *);
+  bool transformCallArgs(CallExpr *, types::FuncType *, const PartialCallData &);
+  void transformCallDicts(CallExpr *, types::FuncType *, const PartialCallData &);
   Expr *transformOptionalCall(CallExpr *, types::ClassType *);
   std::pair<std::shared_ptr<types::FuncType>, Expr *> getCalleeFn(CallExpr *,
                                                                   PartialCallData &);

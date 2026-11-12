@@ -673,7 +673,7 @@ SuiteStmt *TypecheckVisitor::generateUnionDispatchAST(FuncType *type) {
   auto suite = clone(getFunction(type->getFuncName())->ast->getSuite());
 
   bool isCall = extractFuncArgType(type, 1)->is(StdlibTypes::Tuple) &&
-                extractFuncArgType(type, 2)->is(StdlibTypes::NamedTuple);
+                extractFuncArgType(type, 2)->is(StdlibTypes::FixedDict);
   std::vector<std::pair<std::string, Type *>> arguments;
   if (isCall) {
     for (auto &generic : extractFuncArgType(type, 1)->getClass()->generics)
@@ -901,7 +901,7 @@ SuiteStmt *TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     return generateUnionIteratorAST(type);
   } else if (startswith(ast->name, getMangledMethod("", "Union", "_binary"))) {
     return generateUnionBinaryAST(type);
-  } else if (startswith(ast->name, getMangledMethod("", "_NamedRecord", "_keys"))) {
+  } else if (startswith(ast->name, getMangledMethod("", "FixedDict", "_keys"))) {
     return generateNamedKeysAST(type);
   } else if (startswith(ast->name, getMangledMethod("", "__magic__", "mul"))) {
     return generateTupleMulAST(type);
@@ -1270,18 +1270,18 @@ Expr *TypecheckVisitor::transformHasAttr(CallExpr *expr, bool allow_dynamic) {
     if (!cond)
       return transform(N<BoolExpr>(false));
     return transform(cond);
-  } else if (typ->is(StdlibTypes::NamedTuple)) {
-    if (!typ->canRealize())
-      return nullptr;
-    const auto fields = getRecordFields(typ);
-    return transform(N<BoolExpr>(std::ranges::find(fields, attr, &RecordField::name) !=
-                                 fields.end()));
   }
 
   // enum_test: __members__ is an ordinary ClassVar, so hasattr must include
   // class variables just as attribute lookup does (also through instances).
   bool exists = !findMethod(typ->getClass(), attr).empty() ||
                 findMember(typ->getClass(), attr) || in(getClass(typ)->classVars, attr);
+  if (!exists && typ->is(StdlibTypes::FixedDict)) {
+    if (!extractClassGeneric(typ)->canRealize())
+      return nullptr;
+    const auto fields = getRecordFields(typ);
+    exists = std::ranges::find(fields, attr, &RecordField::name) != fields.end();
+  }
   if (exists && args.size() > 1) {
     exists &= findBestMethod(typ, attr, args) != nullptr;
   }
@@ -1773,7 +1773,7 @@ SuiteStmt *TypecheckVisitor::generateSuperDispatchAST(FuncType *type) {
   auto suite = clone(getFunction(type->getFuncName())->ast->getSuite());
 
   seqassert(extractFuncArgType(type, 1)->is(StdlibTypes::Tuple) &&
-                extractFuncArgType(type, 2)->is(StdlibTypes::NamedTuple),
+                extractFuncArgType(type, 2)->is(StdlibTypes::FixedDict),
             "invalid arguments");
   std::vector<CallArg> callArgs;
   callArgs.emplace_back("", N<NoneExpr>());

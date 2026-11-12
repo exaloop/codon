@@ -48,30 +48,6 @@ void TypecheckVisitor::visit(DictExpr *expr) {
     resultExpr = transformFixedDict(expr->items);
     return;
   }
-  if (!expr->getExpectedType() && std::ranges::any_of(expr->items, [](auto *item) {
-        return cast<KeywordStarExpr>(item) != nullptr;
-      })) {
-    bool fixedSpread = false;
-    bool fixedKeys = true;
-    for (auto *item : expr->items) {
-      if (auto *spread = cast<KeywordStarExpr>(item)) {
-        auto *value = transform(clone(spread->getExpr()));
-        bool fixed = value->getType()->is(getMangledClass("", "FixedDict"));
-        fixedSpread |= fixed;
-        fixedKeys &= fixed;
-      } else if (auto *pair = cast<TupleExpr>(item)) {
-        auto *key = transform(clone(pair->items[0]));
-        auto *literal = cast<StringExpr>(key);
-        fixedKeys &= (literal && literal->isSimple()) || key->getType()->getStrStatic();
-      } else {
-        fixedKeys = false;
-      }
-    }
-    if (fixedSpread && fixedKeys) {
-      resultExpr = transformFixedDict(expr->items);
-      return;
-    }
-  }
   if ((resultExpr = transformComprehension(StdlibTypes::Dict, "__setitem__",
                                            expr->items, expr->getExpectedType()))) {
     resultExpr->setAttribute(Attr::ExprDict);
@@ -98,7 +74,8 @@ Expr *TypecheckVisitor::transformFixedDict(const std::vector<Expr *> &items) {
       if (!type)
         return nullptr;
       if (!type->is(getMangledClass("", "FixedDict")))
-        E(Error::CUSTOM, spread, "fixed_dict can only expand fixed dictionaries");
+        E(Error::CUSTOM, spread,
+          "fixed dictionary literals can only expand fixed dictionaries");
       auto *shape = extractClassGeneric(type, 0);
       if (!shape->canRealize())
         return nullptr;
@@ -113,7 +90,7 @@ Expr *TypecheckVisitor::transformFixedDict(const std::vector<Expr *> &items) {
     if (!pair)
       pair = cast<TupleExpr>(item->getOrigExpr());
     if (!pair || pair->items.size() != 2)
-      E(Error::CUSTOM, item, "fixed_dict requires literal string-keyed entries");
+      E(Error::CUSTOM, item, "fixed dictionary literals require string-keyed entries");
     auto *key = transform(clone(pair->items[0]));
     if (!key->getType())
       return nullptr;
@@ -375,34 +352,6 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
   if (!done)
     return nullptr;
   auto ta = instantiateType(root, ctx->cache->castVectorPtr(elementTypes));
-  if (isDict && !(expectedType && expectedType->is(root->name)) && !items.empty()) {
-    bool fixedKeys = true;
-    bool incompatible = false;
-    for (auto *item : items) {
-      auto *pair = cast<TupleExpr>(item->getOrigExpr());
-      if (!pair)
-        pair = cast<TupleExpr>(item);
-      auto *entryType = item->getClassType();
-      if (!pair || pair->items.size() != 2 || !entryType || !entryType->canRealize()) {
-        fixedKeys = false;
-        break;
-      }
-      auto *key = transform(clone(pair->items[0]));
-      auto *literal = cast<StringExpr>(key);
-      if ((!literal || !literal->isSimple()) && !key->getType()->getStrStatic()) {
-        fixedKeys = false;
-        break;
-      }
-      auto *keyType = extractClassGeneric(entryType, 0);
-      auto *valueType = extractClassGeneric(entryType, 1);
-      if (elementTypes[0]->unify(keyType, nullptr) < 0 ||
-          elementTypes[1]->unify(valueType, nullptr) < 0)
-        incompatible |= !findBestMethod(ta->getClass(), "__setitem__",
-                                        {ta.get(), keyType, valueType});
-    }
-    if (fixedKeys && incompatible)
-      return transformFixedDict(items);
-  }
   std::vector<Stmt *> stmts;
   Expr *var = N<IdExpr>(getTemporaryVar("cont"));
 

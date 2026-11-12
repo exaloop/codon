@@ -58,10 +58,122 @@ combined = {**record(events, 1, {'a': 1}),
 assert combined == {'a': 3, 'b': 2} and events == [1, 2, 3, 4]
 print('dictionary unpacking ok')  #: dictionary unpacking ok
 
+#%% fixed_dict_context_variable
+data: FixedDict = {'number': 42, 'text': 'hello'}
+assert isinstance(data, FixedDict)
+assert type(data['number']) is int and type(data['text']) is str
+separate: FixedDict = {'first': [], 'second': []}
+separate['first'].append(1)
+separate['second'].append('two')
+assert type(separate['first']) is list[int]
+assert type(separate['second']) is list[str]
+alias = data
+assert alias['number'] == 42 and alias['text'] == 'hello'
+empty: FixedDict = {}
+assert len(empty) == 0 and not empty
+homogeneous: FixedDict = {'first': 1, 'second': 2}
+assert isinstance(homogeneous, FixedDict)
+assert homogeneous.keys() == ('first', 'second')
+print('fixed dictionary variable context ok')  #: fixed dictionary variable context ok
+
+#%% fixed_dict_context_call
+def read(value: FixedDict):
+    return value['number'], value['text']
+assert read({'number': 42, 'text': 'hello'}) == (42, 'hello')
+assert read(value={'number': 43, 'text': 'world'}) == (43, 'world')
+def count(value: FixedDict):
+    return len(value)
+assert count({}) == 0
+assert count({'first': 1, 'second': 2}) == 2
+def separate(value: FixedDict):
+    value['first'].append(3)
+    value['second'].append('four')
+    return value['first'], value['second']
+assert separate({'first': [1], 'second': ['two']}) == ([1, 3], ['two', 'four'])
+class Receiver:
+    offset: int
+    def read(self, value: FixedDict):
+        return self.offset + value['number']
+assert Receiver(1).read({'number': 2}) == 3
+def selected(value: FixedDict, tag: int):
+    return value['number'] + tag
+@overload
+def selected(value: int, tag: str):
+    return value + len(tag)
+assert selected({'number': 2}, 3) == 5
+assert selected(tag=3, value={'number': 2}) == 5
+def ordinary(value: FixedDict):
+    return 'fixed'
+@overload
+def ordinary(value: dict[str, int]):
+    return 'dict'
+assert ordinary({'number': 2}) == 'dict'
+print('fixed dictionary call context ok')  #: fixed dictionary call context ok
+
+#%% fixed_dict_context_binding
+def read(prefix: int, value: FixedDict, *, suffix: int = 3):
+    return prefix + value['number'] + suffix
+alias = read
+assert alias(1, {'number': 2}) == 6
+partial = read(1, ...)
+assert partial({'number': 2}) == 6
+captured = read(value={'number': 2}, ...)
+assert captured(1) == 6
+def variadic(*values: FixedDict):
+    return sum(value['number'] for value in values)
+assert variadic({'number': 1}, {'number': 2}) == 3
+def keywords(**values: FixedDict):
+    return values['left']['number'] + values['right']['number']
+assert keywords(left={'number': 1}, right={'number': 2}) == 3
+print('fixed dictionary argument binding ok')  #: fixed dictionary argument binding ok
+
+#%% fixed_dict_context_default
+def read(value: FixedDict = {'number': 42, 'text': 'hello'}):
+    return value['number'], value['text']
+assert read() == (42, 'hello')
+assert read({'number': 43, 'text': 'world'}) == (43, 'world')
+Mapping = FixedDict
+def aliased(value: Mapping = {'number': 1}):
+    return value['number']
+assert aliased() == 1
+class Receiver:
+    def read(self, value: FixedDict = {'number': 2}):
+        return value['number']
+assert Receiver().read() == 2
+print('fixed dictionary default context ok')  #: fixed dictionary default context ok
+
+#%% fixed_dict_context_evaluation
+events: list[int] = []
+def observed(events, label, value):
+    events.append(label)
+    return value
+def read(prefix: int, value: FixedDict, suffix: int):
+    return prefix + value['number'] + suffix
+assert read(suffix=observed(events, 1, 3),
+            value={'number': observed(events, 2, 0),
+                   'number': observed(events, 3, 2)},
+            prefix=observed(events, 4, 1)) == 6
+assert events == [1, 2, 3, 4]
+events.clear()
+def capture(**kwargs):
+    return kwargs
+def empty(events):
+    events.append(2)
+    return capture()
+def receive(value: FixedDict):
+    return value['number']
+assert receive({'number': observed(events, 1, 42)}, **empty(events)) == 42
+assert events == [1, 2]
+assert read(1, {'number': (last := 3)}, last) == 7
+def ordinary(value, suffix: int):
+    return value['number'] + suffix
+assert ordinary({'number': (last_ordinary := 4)}, last_ordinary) == 8
+print('fixed dictionary evaluation order ok')  #: fixed dictionary evaluation order ok
+
 #%% fixed_dict_literals
 from typing import Union
 
-data = {'foo': [1, 2, 3], 'bar': ['x', 'y', 'z']}
+data: FixedDict = {'foo': [1, 2, 3], 'bar': ['x', 'y', 'z']}
 assert isinstance(data, FixedDict)
 assert type(data['foo']) is list[int] and type(data['bar']) is list[str]
 assert len(data) == 2 and bool(data)
@@ -69,13 +181,13 @@ assert list(data) == ['foo', 'bar']
 assert repr(data) == "{'foo': [1, 2, 3], 'bar': ['x', 'y', 'z']}"
 data['foo'].append(4)
 assert data['foo'] == [1, 2, 3, 4]
-separate = fixed_dict({'a': [], 'b': []})
+separate: FixedDict = {'a': [], 'b': []}
 separate['a'].append(1)
 separate['b'].append('second')
 assert type(separate['a']) is list[int] and type(separate['b']) is list[str]
-factory = fixed_dict
+Mapping = FixedDict
 key: Literal[str] = 'first'
-aliased = factory({key: [], 'second': []})
+aliased: Mapping = {key: [], 'second': []}
 aliased[key].append(1)
 aliased['second'].append('two')
 assert aliased[key] == [1] and aliased['second'] == ['two']
@@ -95,24 +207,24 @@ assert type(empty) is dict[str, list[NoneType]]
 annotated: dict[str, Union[int, str]] = {'a': 1, 'b': 'second'}
 annotated['c'] = 'third'
 assert isinstance(annotated, dict)
-reserved = fixed_dict({'args': 1, 'keys': 'value', 'items': [3], 'a;b': 4, '': 5})
+reserved: FixedDict = {'args': 1, 'keys': 'value', 'items': [3], 'a;b': 4, '': 5}
 assert reserved.keys() == ('args', 'keys', 'items', 'a;b', '')
 assert reserved['args'] == 1 and reserved['keys'] == 'value' and reserved[''] == 5
-first = fixed_dict({'a;b': 1, 'c': 'first'})
-second = fixed_dict({'a': 2, 'b;c': 'second'})
+first: FixedDict = {'a;b': 1, 'c': 'first'}
+second: FixedDict = {'a': 2, 'b;c': 'second'}
 assert first.keys() == ('a;b', 'c') and second.keys() == ('a', 'b;c')
 events: list[int] = []
 def record(events, label, value):
     events.append(label)
     return value
-duplicate = fixed_dict({'a': record(events, 1, 'old'), 'b': record(events, 2, 2),
-                        'a': record(events, 3, [3])})
+duplicate: FixedDict = {'a': record(events, 1, 'old'), 'b': record(events, 2, 2),
+                        'a': record(events, 3, [3])}
 assert events == [1, 2, 3]
 assert duplicate.keys() == ('a', 'b') and duplicate['a'] == [3]
 print('fixed dictionary literals ok')  #: fixed dictionary literals ok
 
 #%% fixed_dict_read_api
-mapping = {'number': 42, 'text': 'hello'}
+mapping: FixedDict = {'number': 42, 'text': 'hello'}
 assert 'number' in mapping and 'missing' not in mapping
 assert type(mapping.get('number')) is int
 assert mapping.get('number') == 42
@@ -155,7 +267,7 @@ def arguments(*args):
     return args
 assert arguments(*mapping) == ('number', 'text')
 assert arguments(*mapping.values()) == (42, 'hello')
-empty = fixed_dict({})
+empty: FixedDict = {}
 assert not empty and len(empty) == 0
 assert list(empty) == []
 assert len(list(empty.values())) == 0 and len(list(empty.items())) == 0
@@ -166,19 +278,20 @@ print('fixed dictionary reads ok')  #: fixed dictionary reads ok
 #%% fixed_dict_spreading
 from typing import Union
 
-mapping = {'number': 42, 'text': 'hello'}
-merged = {**mapping, 'number': [1, 2], 'extra': False}
+mapping: FixedDict = {'number': 42, 'text': 'hello'}
+merged: FixedDict = {**mapping, 'number': [1, 2], 'extra': False}
 assert merged.keys() == ('number', 'text', 'extra')
 assert type(merged['number']) is list[int] and merged['text'] == 'hello'
-explicit = fixed_dict({'start': 0, **mapping, 'text': [3]})
+explicit: FixedDict = {'start': 0, **mapping, 'text': [3]}
 assert explicit.keys() == ('start', 'number', 'text') and explicit['text'] == [3]
 events: list[int] = []
 def record(events, label, value):
     events.append(label)
     return value
-ordered = fixed_dict({'number': record(events, 1, 'old'),
+empty: FixedDict = {}
+ordered: FixedDict = {'number': record(events, 1, 'old'),
                       **record(events, 2, mapping), 'text': record(events, 3, [3]),
-                      **record(events, 4, fixed_dict({}))})
+                      **record(events, 4, empty)}
 assert events == [1, 2, 3, 4]
 assert ordered['number'] == 42 and ordered['text'] == [3]
 regular: dict[str, Union[int, str]] = {**mapping, 'third': 3}
@@ -186,10 +299,14 @@ assert isinstance(regular, dict) and regular['text'] == 'hello'
 runtime_mapping = {'runtime': 1}
 mixed: dict[str, Union[int, str]] = {**mapping, **runtime_mapping}
 assert isinstance(mixed, dict) and mixed['runtime'] == 1
+homogeneous: FixedDict = {'first': 1, 'second': 2}
+copied = {**homogeneous}
+assert type(copied) is dict[str, int]
+copied['third'] = 3
 print('fixed dictionary spreading ok')  #: fixed dictionary spreading ok
 
 #%% fixed_dict_kwargs
-mapping = {'number': 42, 'text': 'hello'}
+mapping: FixedDict = {'number': 42, 'text': 'hello'}
 def target(number: int, text: str):
     return str(number) + text
 assert target(**mapping) == '42hello'
@@ -199,7 +316,8 @@ assert passthrough(**mapping)['text'] == 'hello'
 events: list[int] = []
 def empty_keywords(events):
     events.append(2)
-    return fixed_dict({})
+    empty: FixedDict = {}
+    return empty
 def argument(events, value):
     events.append(value)
     return value
@@ -223,7 +341,7 @@ Entry = namedtuple('RecordEntry', ('number', 'text'))
 OtherEntry = namedtuple('OtherRecordEntry', ('number', 'text'))
 entry = Entry(42, 'hello')
 other = OtherEntry(42, 'hello')
-mapping = {'number': 42, 'text': 'hello'}
+mapping: FixedDict = {'number': 42, 'text': 'hello'}
 def capture(**kwargs):
     return kwargs
 keywords = capture(number=42, text='hello')
@@ -249,11 +367,36 @@ assert type(keywords.get('number', 'unused')) is int
 assert type(keywords.get('missing', 3.5)) is float
 assert keywords.get('missing') is None
 assert 'number' in keywords and 'missing' not in keywords
-assert repr(keywords) == "(number: 42, text: 'hello')"
-assert repr(mapping) == "{'number': 42, 'text': 'hello'}"
+assert repr(keywords) == repr(mapping) == "{'number': 42, 'text': 'hello'}"
+assert str(keywords) == str(mapping) == repr(mapping)
+assert type(keywords) is type(mapping)
+assert isinstance(keywords, FixedDict)
+assert keywords.number == mapping.number == 42
+assert hasattr(keywords, 'number') and hasattr(mapping, 'keys')
+assert not hasattr(keywords, 'missing')
+assert list(keywords) == ['number', 'text'] and len(keywords) == 2
+assert tuple(keywords.values()) == (42, 'hello')
+def accept_mapping(record: FixedDict):
+    return record['number'], record['text']
+assert accept_mapping(keywords) == accept_mapping(mapping) == (42, 'hello')
+assert bool(keywords)
 assert sizeof(type(keywords)) == sizeof(type(mapping)) == sizeof(type(entry))
 assert sizeof(type(mapping)) == sizeof(type((42, 'hello')))
-assert sizeof(type(capture())) == sizeof(type(fixed_dict({}))) == sizeof(type(()))
+empty: FixedDict = {}
+assert sizeof(type(capture())) == sizeof(type(empty)) == sizeof(type(()))
+assert repr(capture()) == str(capture()) == repr(empty) == str(empty) == '{}'
+assert type(capture()) is type(empty)
+assert not bool(capture())
+escaped: FixedDict = {"quote'key": 'line\nslash\\', 'plain': 'value'}
+ordinary = {"quote'key": 'line\nslash\\', 'plain': 'value'}
+escaped_keywords = capture(**escaped)
+assert repr(escaped_keywords) == repr(escaped) == repr(ordinary)
+assert str(escaped_keywords) == str(escaped) == str(ordinary)
+nested: FixedDict = {'keywords': capture(inner=1), 'mapping': mapping}
+nested_keywords = capture(**nested)
+expected = "{'keywords': {'inner': 1}, 'mapping': {'number': 42, 'text': 'hello'}}"
+assert repr(nested_keywords) == repr(nested) == expected
+assert str(nested_keywords) == str(nested) == expected
 events: list[int] = []
 def observed(events, label, value):
     events.append(label)
@@ -272,7 +415,7 @@ def capture(**kwargs):
     return kwargs
 fields = namedtuple('RecordFieldNames', ('_record', '_values', 'args'))
 entry = fields(1, 'value', [3])
-mapping = fixed_dict({'_record': 1, '_values': 'value', 'args': [3]})
+mapping: FixedDict = {'_record': 1, '_values': 'value', 'args': [3]}
 def check_fields(record):
     keywords = capture(**record)
     assert keywords['_record'] == 1
@@ -307,88 +450,115 @@ def check_empty(empty):
                                        third=observed(events, 3, 3)) == 4
     assert events == [0, 1, 2, 3]
 check_empty(Empty())
-check_empty(fixed_dict({}))
+empty: FixedDict = {}
+check_empty(empty)
 check_empty(capture())
 print('named record empty expansion ok')  #: named record empty expansion ok
 
 #%% fixed_dict_json
 import json
 
-document = {'name': 'entry', 'numbers': [1, 2, 3],
-            'metadata': {'active': True, 'rank': 4}}
+metadata: FixedDict = {'active': True, 'rank': 4}
+document: FixedDict = {'name': 'entry', 'numbers': [1, 2, 3], 'metadata': metadata}
 assert json.dumps(document) == '{"name": "entry", "numbers": [1, 2, 3], "metadata": {"active": true, "rank": 4}}'
 assert json.JSON(document)['numbers'][1].as_int() == 2
-assert json.dumps(fixed_dict({})) == '{}'
+empty: FixedDict = {}
+assert json.dumps(empty) == '{}'
 print('fixed dictionary JSON ok')  #: fixed dictionary JSON ok
 
 #%% fixed_dict_missing_static_key
-mapping = {'number': 42, 'text': 'hello'}
+mapping: FixedDict = {'number': 42, 'text': 'hello'}
 mapping['missing']  #! unknown fixed dictionary key: missing
 
 #%% fixed_dict_runtime_lookup
-mapping = {'number': 42, 'text': 'hello'}
+mapping: FixedDict = {'number': 42, 'text': 'hello'}
 key: str = 'number'
 mapping[key]  #! fixed dictionary lookup requires a compile-time string key
 #! during the realization of
 
 #%% fixed_dict_runtime_getitem_method
-mapping = {'number': 42, 'text': 'hello'}
+mapping: FixedDict = {'number': 42, 'text': 'hello'}
 key: str = 'number'
 mapping.__getitem__(key)  #! fixed dictionary lookup requires a compile-time string key
 #! during the realization of
 
 #%% fixed_dict_runtime_get
-mapping = {'number': 42, 'text': 'hello'}
+mapping: FixedDict = {'number': 42, 'text': 'hello'}
 key: str = 'number'
 mapping.get(key)  #! fixed dictionary lookup requires a compile-time string key
 #! during the realization of
 
 #%% fixed_dict_runtime_get_default
-mapping = {'number': 42, 'text': 'hello'}
+mapping: FixedDict = {'number': 42, 'text': 'hello'}
 key: str = 'missing'
 mapping.get(key, 3.5)  #! fixed dictionary lookup requires a compile-time string key
 #! during the realization of
 
 #%% fixed_dict_runtime_homogeneous_lookup
-mapping = fixed_dict({'number': 42})
+mapping: FixedDict = {'number': 42}
 key: str = 'number'
 mapping[key]  #! fixed dictionary lookup requires a compile-time string key
 #! during the realization of
 
 #%% fixed_dict_runtime_empty_get
-mapping = fixed_dict({})
+mapping: FixedDict = {}
 key: str = 'missing'
 mapping.get(key, 'fallback')  #! fixed dictionary lookup requires a compile-time string key
 #! during the realization of
 
-#%% fixed_dict_requires_literal
-fixed_dict(42)  #! fixed_dict expects a dictionary literal
+#%% fixed_dict_constructor_removed
+fixed_dict({})  #! name 'fixed_dict' is not defined
+
+#%% fixed_dict_requires_opt_in
+mapping = {'number': 42, 'text': 'hello'}
+#! 'str' does not match expected type 'int'
+
+#%% fixed_dict_requires_opt_in_call
+def consume(value):
+    return value
+consume({'number': 42, 'text': 'hello'})
+#! 'str' does not match expected type 'int'
+
+#%% fixed_dict_runtime_conversion
+ordinary = {'number': 42}
+mapping: FixedDict = ordinary
+#! 'FixedDict[
+
+#%% fixed_dict_runtime_argument
+def consume(value: FixedDict):
+    return len(value)
+ordinary = {'number': 42}
+consume(ordinary)
+#! 'OrderedDict[str,int]' does not match expected type
 
 #%% fixed_dict_requires_string_keys
-fixed_dict({1: 'first', 2: 3})  #! fixed dictionary keys must be compile-time strings
+mapping: FixedDict = {1: 'first', 2: 3}
+#! fixed dictionary keys must be compile-time strings
 
 #%% fixed_dict_explicit_annotation
 mapping: dict[str, int] = {'number': 42, 'text': 'hello'}
 #! 'str' does not match expected type 'int'
 
 #%% fixed_dict_read_only_replace
-mapping = {'number': 42, 'text': 'hello'}
+mapping: FixedDict = {'number': 42, 'text': 'hello'}
 mapping['number'] = 1  #! 'FixedDict[1,Tuple[int,str]]' object has no attribute '__setitem__'
 
 #%% fixed_dict_read_only_delete
-mapping = {'number': 42, 'text': 'hello'}
+mapping: FixedDict = {'number': 42, 'text': 'hello'}
 del mapping['number']  #! 'FixedDict[1,Tuple[int,str]]' object has no attribute '__delitem__'
 
 #%% fixed_dict_runtime_key
 def make(key: str):
-    return fixed_dict({key: 1, 'other': 'two'})
+    mapping: FixedDict = {key: 1, 'other': 'two'}
+    return mapping
 #! fixed dictionary keys must be compile-time strings
 make('first')  #! during the realization of make
 
 #%% fixed_dict_empty_keyword
 def accept(**kwargs):
     pass
-accept(**fixed_dict({'': 1}))
+mapping: FixedDict = {'': 1}
+accept(**mapping)
 #! empty fixed dictionary keys cannot be expanded as keyword arguments
 
 #%% union_set_layout

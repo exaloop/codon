@@ -24,9 +24,9 @@ print(g(1))
 #: [1]
 g = lambda a, b=1, *s, **kw: ((a,b,*s),kw)
 print(g('hey!', c=3))
-#: (('hey!', 1), (c: 3))
+#: (('hey!', 1), {'c': 3})
 print(g('hey!', 2, 3, 4, zz=3))
-#: (('hey!', 2, 3, 4), (zz: 3))
+#: (('hey!', 2, 3, 4), {'zz': 3})
 
 #%% nested_lambda,barebones
 def foo():
@@ -738,7 +738,7 @@ def retfn(a):
     return inner(15, ...)
 f = retfn(1)
 print f.__class__.__name__ #: inner(int,...,int,...)
-f(2,3,foo='bar') #: 1 15 (2, 3) (foo: 'bar')
+f(2,3,foo='bar') #: 1 15 (2, 3) {'foo': 'bar'}
 
 #%% decorator_manual,barebones
 def foo(x, *args, **kwargs):
@@ -747,12 +747,12 @@ def foo(x, *args, **kwargs):
 def dec(fn, a):
     print 'decorating', fn.__class__.__name__ #: decorating foo(...,...,...)
     def inner(*args, **kwargs):
-        print 'decorator', args, kwargs #: decorator (5.5, 's') (z: True)
+        print 'decorator', args, kwargs #: decorator (5.5, 's') {'z': True}
         return fn(a, *args, **kwargs)
     return inner(...)
 ff = dec(foo(...), 10)
 print ff(5.5, 's', z=True)
-#: 10 (5.5, 's') (z: True)
+#: 10 (5.5, 's') {'z': True}
 #: 1
 
 
@@ -771,8 +771,8 @@ def dec(a):
 ff = dec(10)(foo)
 print ff(5.5, 's', z=True)
 #: decorating foo(...,...,...)
-#: decorator (5.5, 's') (z: True)
-#: 10 (5.5, 's') (z: True)
+#: decorator (5.5, 's') {'z': True}
+#: 10 (5.5, 's') {'z': True}
 #: 1
 
 @dec(a=5)
@@ -781,9 +781,9 @@ def zoo(e, b, *args):
 print zoo(2, 3)
 print zoo('s', 3)
 #: decorating zoo(...,...,...)
-#: decorator (2, 3) ()
+#: decorator (2, 3) {}
 #: zoo: 5, 2, (3,)
-#: decorator ('s', 3) ()
+#: decorator ('s', 3) {}
 #: zoo: 5, s, (3,)
 
 def mydecorator(func):
