@@ -361,8 +361,7 @@ assert tuple(entry) == (42, 'hello')
 assert type(entry) is not type(other)
 assert not isinstance(entry, FixedDict)
 assert list(mapping) == ['number', 'text']
-assert keywords.args == (42, 'hello')
-assert keywords.__keys__() == mapping.keys() == ('number', 'text')
+assert keywords.keys() == mapping.keys() == ('number', 'text')
 assert type(keywords.get('number', 'unused')) is int
 assert type(keywords.get('missing', 3.5)) is float
 assert keywords.get('missing') is None
@@ -371,8 +370,11 @@ assert repr(keywords) == repr(mapping) == "{'number': 42, 'text': 'hello'}"
 assert str(keywords) == str(mapping) == repr(mapping)
 assert type(keywords) is type(mapping)
 assert isinstance(keywords, FixedDict)
-assert keywords.number == mapping.number == 42
-assert hasattr(keywords, 'number') and hasattr(mapping, 'keys')
+assert keywords['number'] == mapping['number'] == 42
+assert not hasattr(keywords, 'number') and not hasattr(mapping, 'number')
+assert hasattr(keywords, 'keys') and hasattr(mapping, 'keys')
+assert not hasattr(keywords, 'args') and not hasattr(mapping, 'args')
+assert not hasattr(keywords, '__keys__') and not hasattr(mapping, '__keys__')
 assert not hasattr(keywords, 'missing')
 assert list(keywords) == ['number', 'text'] and len(keywords) == 2
 assert tuple(keywords.values()) == (42, 'hello')
@@ -404,7 +406,7 @@ def observed(events, label, value):
 ordered = capture(before=observed(events, 1, 0), **observed(events, 2, entry),
                   after=observed(events, 3, False))
 assert events == [1, 2, 3]
-assert ordered.__keys__() == ('before', 'number', 'text', 'after')
+assert ordered.keys() == ('before', 'number', 'text', 'after')
 assert ordered['number'] == 42 and ordered['text'] == 'hello'
 print('named record protocols ok')  #: named record protocols ok
 
@@ -426,7 +428,26 @@ def check_fields(record):
     assert keywords.get('_values') == 'value'
 check_fields(entry)
 check_fields(mapping)
+reserved = capture(args=1, __keys__=2, keys=3, values=4, items=5)
+assert reserved.keys() == ('args', '__keys__', 'keys', 'values', 'items')
+assert tuple(reserved.values()) == (1, 2, 3, 4, 5)
+assert reserved['args'] == 1 and reserved['__keys__'] == 2
+assert reserved['keys'] == 3 and reserved['values'] == 4 and reserved['items'] == 5
+assert not hasattr(reserved, 'args') and not hasattr(reserved, '__keys__')
+assert hasattr(reserved, 'keys') and hasattr(reserved, 'values') and hasattr(reserved, 'items')
 print('named record keyword fields ok')  #: named record keyword fields ok
+
+#%% fixed_dict_no_named_attributes
+mapping: FixedDict = {'number': 42}
+mapping.number  #! 'FixedDict[1,Tuple[int]]' object has no attribute 'number'
+
+#%% fixed_dict_no_legacy_args
+mapping: FixedDict = {'args': 42}
+mapping.args  #! 'FixedDict[1,Tuple[int]]' object has no attribute 'args'
+
+#%% fixed_dict_no_legacy_keys
+mapping: FixedDict = {'__keys__': 42}
+mapping.__keys__()  #! 'FixedDict[1,Tuple[int]]' object has no attribute '__keys__'
 
 #%% named_record_empty_expansion
 from collections import namedtuple

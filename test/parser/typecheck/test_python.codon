@@ -26,6 +26,16 @@ converted_keywords: pyobj = keywords
 assert builtins.isinstance(converted_keywords, builtins.dict)
 assert converted_keywords == converted
 assert builtins.isinstance(capture(), builtins.dict)
+python_capture = builtins.eval('lambda *args, **kwargs: (args, kwargs)', builtins.dict())
+assert python_capture() == ((), {})
+assert python_capture(7) == ((7,), {})
+assert python_capture(7, 'eight') == ((7, 'eight'), {})
+result = python_capture(7, 'eight', **keywords)
+assert result[0] == (7, 'eight') and result[1] == converted
+assert builtins.list(result[1].keys()) == ['name', 'numbers', 'metadata']
+reserved = capture(values=1, keys=2, __keys__=3)
+converted_reserved = python_capture(**reserved)
+assert converted_reserved[1] == {'values': 1, 'keys': 2, '__keys__': 3}
 ordinary = {'native': 1, 'python': builtins.int(2)}
 assert type(ordinary) is dict[str, pyobj]
 ordinary['later'] = 'value'
@@ -60,6 +70,20 @@ try:
     assert False
 except ValueError as error:
     assert str(error) == 'value conversion failed'
+
+for iteration in range(3):
+    try:
+        builtins.dict(value, failure=FailedConversion())
+        assert False
+    except ValueError as error:
+        assert str(error) == 'value conversion failed'
+    try:
+        builtins.int(value, base=value)
+        assert False
+    except PyError:
+        pass
+collect_python_owners()
+assert int(python_sys.getrefcount(value)) == references
 
 insertion_status = PyDict_SetItem(value.p, value.p, value.p)
 assert insertion_status == i32(-1)

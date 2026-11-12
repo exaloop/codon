@@ -1569,9 +1569,9 @@ class pyobj:
         Py_DecRef(ptr)
 
     def __call__(self, *args, **kwargs):
-        if static.len(args) == 0 and static.len(kwargs.args) == 0:
+        if static.len(args) == 0 and static.len(kwargs.keys()) == 0:
             return pyobj(pyobj.exc_wrap(PyObject_CallNoArgs(self.p)), steal=True)
-        elif static.len(args) == 1 and static.len(kwargs.args) == 0:
+        elif static.len(args) == 1 and static.len(kwargs.keys()) == 0:
             arg_py = args[0].__to_py__()
             try:
                 return pyobj(pyobj.exc_wrap(PyObject_CallOneArg(self.p, arg_py)), steal=True)
@@ -1581,16 +1581,13 @@ class pyobj:
             args_py = args.__to_py__()
             kws_py = cobj()
 
-            if static.len(kwargs.args) > 0:
-                keys = kwargs.__keys__()
-                values = [pyobj(v.__to_py__(), steal=True) for v in kwargs.args]
-                kws_py = {keys[i]: values[i] for i in range(len(keys))}.__to_py__()
-
             try:
+                if static.len(kwargs.keys()) > 0:
+                    kws_py = kwargs.__to_py__()
                 return pyobj(pyobj.exc_wrap(PyObject_Call(self.p, args_py, kws_py)), steal=True)
             finally:
                 pyobj.decref(args_py)
-                if static.len(kwargs.args) > 0:
+                if kws_py:
                     pyobj.decref(kws_py)
 
     def _tuple_new(length: int):

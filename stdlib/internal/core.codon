@@ -383,10 +383,6 @@ class FixedDict:
         %result = insertvalue { {=T} } undef, {=T} %values, 0
         ret { {=T} } %result
 
-    @property
-    def args(self):
-        return self._values
-
 
 @__internal__
 @tuple

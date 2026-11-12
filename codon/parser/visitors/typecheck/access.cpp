@@ -595,13 +595,6 @@ std::pair<Expr *, bool> TypecheckVisitor::getClassMember(Expr *expr,
             true};
   }
 
-  // Case: named mapping fields
-  if (typ->is(StdlibTypes::FixedDict)) {
-    for (const auto &field : getRecordFields(typ))
-      if (field.name == member)
-        return {transform(getRecordField(expr, field)), true};
-  }
-
   // Case: __getattr__ support. Ensure that only Literal[str] arguments are accepted.
   auto u = instantiateUnbound();
   u->staticKind = LiteralKind::String;

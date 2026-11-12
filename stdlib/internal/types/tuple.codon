@@ -95,9 +95,6 @@ class FixedDict:
     def keys(self):
         return FixedDict._keys(N)
 
-    def __keys__(self):
-        return self.keys()
-
     def values(self):
         return _FixedDictView(self._values)
 

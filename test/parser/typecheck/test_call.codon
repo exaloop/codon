@@ -173,13 +173,13 @@ def unpack(**kwargs):
 assert unpack(third=30, fourth=40) == (1, 20, 30, 40)
 
 def shadow(name, /, **kwargs):
-    return name, kwargs.name
+    return name, kwargs['name']
 assert shadow(1, name=2) == (1, 2)
 def defaults(first=1, /, second=2, *, third=3, fourth):
     return first, second, third, fourth
 assert defaults(fourth=4) == (1, 2, 3, 4)
 def variadic(first=1, /, *args, optional=2, required, **kwargs):
-    return first, args, optional, required, kwargs.extra
+    return first, args, optional, required, kwargs['extra']
 assert variadic(10, 20, 30, required=40, extra=50) == (10, (20, 30), 2, 40, 50)
 
 f = lambda first, /, second=2, *, third: first + second + third
@@ -820,7 +820,7 @@ print hasattr([1, 2], "__getitem__", idx=int) #: False
 print hasattr([1, 2], "__getitem__", idx=str) #: False
 
 def kw(**kwargs):
-    print hasattr(kwargs, "yes"), hasattr(kwargs, "no")
+    print "yes" in kwargs, "no" in kwargs
 kw(yes=1)  #: True False
 kw()  #: False False
 kw(no=1)  #: False True
@@ -1986,7 +1986,7 @@ assert apply(convert) == 5.0
 assert apply(convert(T=int, ...)) == 5
 
 def variadic(*values: float, **kw: float):
-    return sum(values) + sum(kw.args)
+    return sum(values) + sum(tuple(kw.values()))
 assert static.function.can_call(variadic, 1, extra=2)
 assert not static.function.can_call(variadic, 'bad')
 assert not static.function.can_call(variadic, extra='bad')

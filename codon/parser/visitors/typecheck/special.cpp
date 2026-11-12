@@ -1276,12 +1276,6 @@ Expr *TypecheckVisitor::transformHasAttr(CallExpr *expr, bool allow_dynamic) {
   // class variables just as attribute lookup does (also through instances).
   bool exists = !findMethod(typ->getClass(), attr).empty() ||
                 findMember(typ->getClass(), attr) || in(getClass(typ)->classVars, attr);
-  if (!exists && typ->is(StdlibTypes::FixedDict)) {
-    if (!extractClassGeneric(typ)->canRealize())
-      return nullptr;
-    const auto fields = getRecordFields(typ);
-    exists = std::ranges::find(fields, attr, &RecordField::name) != fields.end();
-  }
   if (exists && args.size() > 1) {
     exists &= findBestMethod(typ, attr, args) != nullptr;
   }
