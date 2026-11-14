@@ -93,6 +93,7 @@ private: // Node typechecking rules
   void visit(ListExpr *) override;
   void visit(SetExpr *) override;
   void visit(DictExpr *) override;
+  Expr *prepareDictLiteral(Expr *, bool = false);
   Expr *transformFixedDict(const std::vector<Expr *> &);
   Expr *transformComprehension(const std::string &, const std::string &,
                                std::vector<Expr *> &, types::Type * = nullptr);

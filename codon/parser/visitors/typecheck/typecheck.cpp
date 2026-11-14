@@ -558,7 +558,9 @@ int TypecheckVisitor::canCall(FuncType *fn, const std::vector<CallArg> &args,
   auto argumentType = [&](size_t index, Type *expected) -> TypePtr {
     auto *argument = args[index].getExpr();
     if (cast<DictExpr>(argument)) {
-      bool fixed = expected && expected->is(StdlibTypes::FixedDict);
+      auto *argExpected = argument->getExpectedType();
+      auto *literalType = argExpected ? argExpected : expected;
+      bool fixed = literalType && literalType->is(StdlibTypes::FixedDict);
       if (fixedDictArgs)
         (*fixedDictArgs)[index] = fixed;
       return instantiateType(

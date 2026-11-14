@@ -45,6 +45,7 @@ void TypecheckVisitor::visit(DictExpr *expr) {
   expr->setType(instantiateUnbound());
   if (auto *expected = expr->getExpectedType();
       expected && expected->is(getMangledClass("", "FixedDict"))) {
+    prepareDictLiteral(expr, true);
     resultExpr = transformFixedDict(expr->items);
     return;
   }
@@ -52,6 +53,35 @@ void TypecheckVisitor::visit(DictExpr *expr) {
                                            expr->items, expr->getExpectedType()))) {
     resultExpr->setAttribute(Attr::ExprDict);
   }
+}
+
+/// Preserve literal containers until their dictionary context is known. Visit
+/// other expressions now for source-order bindings (fixed_dict_nested_call_context).
+Expr *TypecheckVisitor::prepareDictLiteral(Expr *expr, bool fixed) {
+  Items<Expr *> *items = nullptr;
+  if (auto *dict = cast<DictExpr>(expr)) {
+    items = dict;
+    if (fixed)
+      dict->setExpectedType(getStdLibType(StdlibTypes::FixedDict));
+  } else if (auto *tuple = cast<TupleExpr>(expr)) {
+    items = tuple;
+  } else if (auto *list = cast<ListExpr>(expr)) {
+    items = list;
+  } else if (auto *set = cast<SetExpr>(expr)) {
+    items = set;
+  } else if (auto *star = cast<StarExpr>(expr)) {
+    star->expr = prepareDictLiteral(star->getExpr(), fixed);
+    return star;
+  } else if (auto *star = cast<KeywordStarExpr>(expr)) {
+    star->expr = prepareDictLiteral(star->getExpr(), fixed);
+    return star;
+  }
+  if (!items)
+    return transform(expr);
+  for (auto &item : *items)
+    item = prepareDictLiteral(item, fixed);
+  expr->setType(instantiateUnbound());
+  return expr;
 }
 
 Expr *TypecheckVisitor::transformFixedDict(const std::vector<Expr *> &items) {

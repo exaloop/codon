@@ -365,16 +365,8 @@ bool TypecheckVisitor::transformCallArgs(CallExpr *expr, PartialCallData &part) 
     } else {
       // Case: normal argument (no expansion)
       if (auto *literal = cast<DictExpr>((*expr)[ai].getExpr())) {
-        // Visit children in source order for walrus bindings.
-        for (auto *item : literal->items) {
-          if (auto *pair = cast<TupleExpr>(item)) {
-            for (auto &entry : pair->items)
-              entry = transform(entry);
-          } else if (auto *spread = cast<KeywordStarExpr>(item)) {
-            spread->expr = transform(spread->getExpr());
-          }
-        }
-        literal->setType(instantiateUnbound());
+        // Defer nested literals
+        prepareDictLiteral(literal);
       } else {
         (*expr)[ai].value = transform((*expr)[ai].getExpr());
       }
