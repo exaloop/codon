@@ -130,7 +130,7 @@ private: // Node typechecking rules
   /// Holds partial call information for a CallExpr.
   struct PartialCallData {
     std::vector<std::pair<int, Expr *>> emptyExpansions; // unpacking side effects
-    bool isPartial = false;                  // true if the call is partial
+    bool isPartial = false;                              // true if the call is partial
     std::string var;                         // set if calling a partial type itself
     std::string known;                       // mask of known arguments
     Expr *args = nullptr, *kwArgs = nullptr; // partial *args/**kwargs expressions
