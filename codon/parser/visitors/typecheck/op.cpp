@@ -451,22 +451,20 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
   }
 
   if (cls->is(getMangledClass("", "FixedDict"))) {
-    auto *literal = cast<StringExpr>(expr->getIndex());
     auto *constant = expr->getIndex()->getType()->getStrStatic();
-    if ((literal && literal->isSimple()) || constant) {
-      auto *shape = extractClassGeneric(cls, 0);
-      if (!shape->canRealize())
+    if (constant) {
+      if (!extractClassGeneric(cls, 0)->canRealize())
         return;
       const auto fields = getRecordFields(cls);
-      auto name = constant ? constant->value : literal->getValue();
+      auto name = constant->value;
       auto position = std::ranges::find(fields, name, &RecordField::name);
       if (position == fields.end())
         E(Error::CUSTOM, expr, "unknown fixed dictionary key: {}", name);
-      auto temporary = getTemporaryVar("fixed.lookup");
+      auto tmp = getTemporaryVar("fixed.lookup");
       resultExpr = transform(
-          N<StmtExpr>(N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(temporary), expr->getExpr()),
+          N<StmtExpr>(N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(tmp), expr->getExpr()),
                                    N<ExprStmt>(expr->getIndex())),
-                      getRecordField(N<IdExpr>(temporary), *position)));
+                      getRecordField(N<IdExpr>(tmp), *position)));
       return;
     }
   }

@@ -300,8 +300,6 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
   bool done = true;
   for (auto &i : items) {
     ClassType *typ = nullptr;
-    std::vector<ClassType *> entryTypes;
-    bool fixedView = false;
     if (!isDict && cast<StarExpr>(i)) {
       auto star = cast<StarExpr>(i);
       star->expr = transform(N<CallExpr>(N<DotExpr>(star->getExpr(), "__iter__")));
@@ -310,43 +308,33 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
     } else if (isDict && cast<KeywordStarExpr>(i)) {
       auto star = cast<KeywordStarExpr>(i);
       star->expr = transform(N<CallExpr>(N<DotExpr>(star->getExpr(), "items")));
+      // Empty tuples contribute no key/value constraints.
+      if (star->getExpr()->getType()->is(StdlibTypes::Tuple) &&
+          !star->getExpr()->getClassType()->size())
+        continue;
+      star->expr = transform(N<CallExpr>(N<DotExpr>(star->getExpr(), "__iter__")));
       if (star->getExpr()->getType()->is("Generator"))
         typ = extractClassGeneric(star->getExpr()->getType())->getClass();
-      else if (star->getExpr()->getType()->is(
-                   getMangledClass("std.internal.types.tuple", "_FixedDictView"))) {
-        auto *entries = extractClassGeneric(star->getExpr()->getType())->getClass();
-        if (!entries)
-          return nullptr;
-        fixedView = true;
-        for (const auto &entry : entries->generics)
-          entryTypes.push_back(entry.getType()->getClass());
-      }
     } else {
       i = transform(i);
       typ = i->getClassType();
     }
-    if (typ)
-      entryTypes.push_back(typ);
-    if (entryTypes.empty() && !fixedView) {
+    if (!typ) {
       done = false;
       continue;
     }
-    for (auto *entryType : entryTypes) {
-      if (!entryType)
-        return nullptr;
-      if (isDict)
-        entryType = unify(entryType, instantiateType(generateTuple(2)))->getClass();
-      for (size_t di = 0; di < elementTypes.size(); ++di) {
-        // A declared union fixes storage; only inferred slots participate in lctyp.
-        // Keep dict keys/values independent (union_collection_common_type).
-        if (declaredUnions[di])
-          continue;
-        auto member = isDict ? extractClassGeneric(entryType, di) : entryType;
-        if (!elementTypes[di]->getClass())
-          unify(elementTypes[di].get(), member);
-        else if (auto t = lctyp(elementTypes[di]->getClass(), member->getClass()))
-          elementTypes[di] = t;
-      }
+    if (isDict)
+      typ = unify(typ, instantiateType(generateTuple(2)))->getClass();
+    for (size_t di = 0; di < elementTypes.size(); ++di) {
+      // A declared union fixes storage; only inferred slots participate in lctyp.
+      // Keep dict keys/values independent (union_collection_common_type).
+      if (declaredUnions[di])
+        continue;
+      auto member = isDict ? extractClassGeneric(typ, di) : typ;
+      if (!elementTypes[di]->getClass())
+        unify(elementTypes[di].get(), member);
+      else if (auto t = lctyp(elementTypes[di]->getClass(), member->getClass()))
+        elementTypes[di] = t;
     }
   }
   if (!done)
@@ -376,6 +364,11 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
     } else if (isDict && cast<KeywordStarExpr>(it)) {
       // Expand kwstar-expression by iterating over it: see the example above
       auto star = cast<KeywordStarExpr>(it);
+      if (star->getExpr()->getType()->is(StdlibTypes::Tuple) &&
+          !star->getExpr()->getClassType()->size()) {
+        stmts.push_back(N<ExprStmt>(star->getExpr()));
+        continue;
+      }
       Expr *forVar = N<IdExpr>(getTemporaryVar("it"));
       star->getExpr()->setAttribute(Attr::ExprStarSequenceItem);
       stmts.push_back(N<ForStmt>(

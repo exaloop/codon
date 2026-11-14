@@ -110,6 +110,36 @@ def ordinary(value: dict[str, int]):
 assert ordinary({'number': 2}) == 'dict'
 print('fixed dictionary call context ok')  #: fixed dictionary call context ok
 
+#%% fixed_dict_context_dispatch
+# Deferred literals must use concrete element types for final overload selection.
+def typed(value: dict[str, str]):
+    return 'str'
+@overload
+def typed(value: dict[str, int]):
+    return 'int'
+assert typed({'value': 'text'}) == 'str'
+assert typed(value={'value': 42}) == 'int'
+# Ordinary dict interpretation wins regardless of overload declaration order.
+def ordinary(value: dict[str, int]):
+    return 'dict'
+@overload
+def ordinary(value: FixedDict):
+    return 'fixed'
+assert ordinary({'value': 42}) == 'dict'
+def variadic(tag: int, *values: FixedDict):
+    return tag + sum(value['number'] for value in values)
+@overload
+def variadic(tag: str, *values: int):
+    return len(tag) + sum(values)
+assert variadic(1, {'number': 2}, {'number': 3}) == 6
+def keywords(tag: int, **values: FixedDict):
+    return tag + values['left']['number'] + values['right']['number']
+@overload
+def keywords(tag: str, **values: int):
+    return len(tag) + sum(values.values())
+assert keywords(right={'number': 3}, tag=1, left={'number': 2}) == 6
+print('fixed dictionary deferred dispatch ok')  #: fixed dictionary deferred dispatch ok
+
 #%% fixed_dict_context_binding
 def read(prefix: int, value: FixedDict, *, suffix: int = 3):
     return prefix + value['number'] + suffix
@@ -164,6 +194,12 @@ def receive(value: FixedDict):
     return value['number']
 assert receive({'number': observed(events, 1, 42)}, **empty(events)) == 42
 assert events == [1, 2]
+# Dispatch retries and empty unpacking must preserve the literal's evaluation.
+@overload
+def receive(value: int):
+    return value
+assert receive({'number': observed(events, 3, 43)}, **empty(events)) == 43
+assert events == [1, 2, 3, 2]
 assert read(1, {'number': (last := 3)}, last) == 7
 def ordinary(value, suffix: int):
     return value['number'] + suffix
@@ -288,8 +324,9 @@ items_seen: list[tuple[str, str]] = []
 for key, value in mapping.items():
     items_seen.append((key, type(value).__name__))
 assert items_seen == [('number', 'int'), ('text', 'str')]
-assert repr(list(mapping.values())) == "[42, 'hello']"
-assert repr(list(mapping.items())) == "[('number', 42), ('text', 'hello')]"
+assert type(mapping.keys()) is tuple[str, str]
+assert type(mapping.values()) is tuple[int, str]
+assert type(mapping.items()) is tuple[tuple[str, int], tuple[str, str]]
 assert tuple(mapping.values()) == (42, 'hello')
 assert tuple(mapping) == ('number', 'text')
 first, second = mapping
@@ -308,6 +345,57 @@ assert len(list(empty.values())) == 0 and len(list(empty.items())) == 0
 assert empty.get('missing') is None and repr(empty) == '{}'
 assert not dynamic_contains(empty, 'missing')
 print('fixed dictionary reads ok')  #: fixed dictionary reads ok
+
+#%% fixed_dict_tuple_iteration
+mapping: FixedDict = {'first': 1, 'second': 2}
+assert list(iter(mapping.keys())) == ['first', 'second']
+assert list(iter(mapping.values())) == [1, 2]
+assert list(iter(mapping.items())) == [('first', 1), ('second', 2)]
+assert mapping.values() == (1, 2)
+assert mapping.items() == (('first', 1), ('second', 2))
+empty: FixedDict = {}
+assert type(empty.keys()) is tuple[0]
+assert type(empty.values()) is tuple[0]
+assert type(empty.items()) is tuple[0]
+for key, value in empty.items():
+    assert False
+
+#%% fixed_dict_tuple_evaluation
+events: list[int] = []
+def observed(events, label):
+    events.append(label)
+    return label
+def empty_values(events):
+    events.append(2)
+    mapping: FixedDict = {}
+    return mapping.values()
+def receive(first, third):
+    return first + third
+assert receive(observed(events, 1), *empty_values(events),
+               third=observed(events, 3)) == 4
+assert events == [1, 2, 3]
+def empty_items(events):
+    events.append(4)
+    mapping: FixedDict = {}
+    return mapping.items()
+for key, value in empty_items(events):
+    assert False
+assert events == [1, 2, 3, 4]
+callback = receive(first=5, ...)
+assert callback(*empty_values(events), third=observed(events, 7)) == 12
+assert events == [1, 2, 3, 4, 2, 7]
+
+#%% fixed_dict_heterogeneous_values_iterator
+mapping: FixedDict = {'number': 42, 'text': 'hello'}
+iter(mapping.values())  #! expected iterable expression
+#! during the realization of __iter__
+#! during the realization of iter
+
+#%% fixed_dict_heterogeneous_items_iterator
+mapping: FixedDict = {'number': 42, 'text': 'hello'}
+iter(mapping.items())  #! expected iterable expression
+#! during the realization of __iter__
+#! during the realization of iter
 
 #%% fixed_dict_spreading
 from typing import Union
@@ -328,16 +416,41 @@ ordered: FixedDict = {'number': record(events, 1, 'old'),
                       **record(events, 4, empty)}
 assert events == [1, 2, 3, 4]
 assert ordered['number'] == 42 and ordered['text'] == [3]
-regular: dict[str, Union[int, str]] = {**mapping, 'third': 3}
-assert isinstance(regular, dict) and regular['text'] == 'hello'
-runtime_mapping = {'runtime': 1}
-mixed: dict[str, Union[int, str]] = {**mapping, **runtime_mapping}
-assert isinstance(mixed, dict) and mixed['runtime'] == 1
 homogeneous: FixedDict = {'first': 1, 'second': 2}
+regular: dict[str, Union[int, str]] = {**homogeneous, 'third': 'three'}
+assert isinstance(regular, dict) and regular['first'] == 1 and regular['third'] == 'three'
+runtime_mapping = {'runtime': 1}
+mixed: dict[str, Union[int, str]] = {**homogeneous, **runtime_mapping}
+assert isinstance(mixed, dict) and mixed['runtime'] == 1
 copied = {**homogeneous}
 assert type(copied) is dict[str, int]
 copied['third'] = 3
+empty_copy = {**empty}
+assert isinstance(empty_copy, dict) and len(empty_copy) == 0
+with_empty = {**empty, 'number': 1}
+assert type(with_empty) is dict[str, int]
+# Empty ordinary spreads still evaluate once, in literal order.
+events.clear()
+with_effects = {**record(events, 1, empty), 'number': record(events, 2, 42),
+                **record(events, 3, empty)}
+assert with_effects == {'number': 42} and events == [1, 2, 3]
+# Mapping items supplied as ordinary tuples use the same expansion path.
+class PairSource:
+    def items(self):
+        return (('first', 1), ('second', 2))
+pairs = {**PairSource()}
+assert pairs == {'first': 1, 'second': 2}
 print('fixed dictionary spreading ok')  #: fixed dictionary spreading ok
+
+#%% fixed_dict_heterogeneous_spread
+mapping: FixedDict = {'number': 42, 'text': 'hello'}
+ordinary = {**mapping}  #! expected iterable expression
+#! during the realization of __iter__
+
+#%% fixed_dict_heterogeneous_spread_union
+mapping: FixedDict = {'number': 42, 'text': 'hello'}
+ordinary: dict[str, int | str] = {**mapping}  #! expected iterable expression
+#! during the realization of __iter__
 
 #%% fixed_dict_kwargs
 mapping: FixedDict = {'number': 42, 'text': 'hello'}
@@ -761,6 +874,32 @@ def foo(*args):
 args, result = ((), [()])
 print list(foo(*args))  #: []
 print result  #: [()]
+
+#%% empty_tuple_generator
+# itertools_test uses generator expressions over combinations of length zero.
+values = [1, 2]
+assert all(e in values for e in ())
+assert not any(e in values for e in ())
+assert list(e + 1 for e in ()) == []
+assert list(e + 1 for e in (1, 2)) == [2, 3]
+assert list(e for outer in (1, 2) if outer > 0 for e in ()) == []
+assert tuple(e for e in ()) == ()
+def generate(values):
+    for value in values:
+        yield value + 1
+assert list(generate(())) == []
+assert list(generate((1, 2))) == [2, 3]
+events: list[int] = []
+def empty(events):
+    events.append(1)
+    return ()
+assert list(e for e in empty(events)) == []
+assert events == [1]
+# Empty items() loops still skip destructuring an element that does not exist.
+for key, value in empty(events):
+    assert False
+assert events == [1, 1]
+print('empty tuple generators ok')  #: empty tuple generators ok
 
 #%% collection_common_type,barebones
 l = [1, 2, 3]

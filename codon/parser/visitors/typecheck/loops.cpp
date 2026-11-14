@@ -368,15 +368,12 @@ TypecheckVisitor::transformStaticLoopCall(Expr *varExpr, SuiteStmt **varSuite,
                               getMangledFunc("std.internal.static", "vars_types"))) {
     block = populateStaticVarTypesLoop(iter, vars);
   } else {
-    bool fixedView = iter->getType()->is(
-        getMangledClass("std.internal.types.tuple", "_FixedDictView"));
-    if (iter->getType()->is(StdlibTypes::Tuple) || fixedView) {
+    if (iter->getType()->is(StdlibTypes::Tuple)) {
       // Maybe heterogenous?
       if (!iter->getType()->canRealize())
         return {true, true, nullptr, {}}; // wait until the tuple is fully realizable
-      if (fixedView)
-        iter = transform(N<DotExpr>(iter, "_values"));
-      if (!fixedView && !isHeterogenous(iter->getClassType()) && !allowNonHeterogenous)
+      if (!isHeterogenous(iter->getClassType()) && !allowNonHeterogenous &&
+          (iter->getClassType()->size() || cast<IdExpr>(varExpr)))
         return {false, false, nullptr, {}};
       block = populateStaticHeterogenousTupleLoop(iter, vars);
       preamble = block.back();

@@ -96,19 +96,14 @@ class FixedDict:
         return FixedDict._keys(_KeysId)
 
     def values(self):
-        return _FixedDictView(self._values)
+        return self._values
 
     def items(self):
-        return _FixedDictView(tuple((self.keys()[index], self._values[index])
-                                    for index in static.range(static.len(self._values))))
+        return tuple((self.keys()[index], self._values[index])
+                     for index in static.range(static.len(self._values)))
 
-    def __iter__(self) -> Generator[str]:
-        if _KeysId == 0:
-            for index in range(0):
-                yield ""
-        else:
-            for key in self.keys():
-                yield key
+    def __iter__(self):
+        return self.keys().__iter__()
 
     def __getitem__(self, key: str):
         compile_error("fixed dictionary lookup requires a compile-time string key")
@@ -148,26 +143,3 @@ class FixedDict:
         fragments = tuple(entries[index // fragments_per_entry][index % fragments_per_entry]
                           for index in static.range(fragments_per_entry * static.len(entries)))
         return str.cat('{', *fragments, '}')
-
-
-@tuple
-class _FixedDictView:
-    _values: T
-    T: type
-
-    @__generated__
-    def _value_type(Values: type):
-        pass
-
-    def __len__(self):
-        return static.len(self._values)
-
-    def __iter__(self):
-        if static.len(self._values) == 0:
-            for index in range(0):
-                yield NoneType()
-        else:
-            Result = _FixedDictView._value_type(T)
-            for index in static.range(static.len(self._values)):
-                result: Result = self._values[index]
-                yield result

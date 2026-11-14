@@ -128,6 +128,7 @@ private: // Node typechecking rules
   void visit(PrintStmt *) override;
   /// Holds partial call information for a CallExpr.
   struct PartialCallData {
+    std::vector<std::pair<int, Expr *>> emptyExpansions; // unpacking side effects
     bool isPartial = false;                  // true if the call is partial
     std::string var;                         // set if calling a partial type itself
     std::string known;                       // mask of known arguments
@@ -138,8 +139,7 @@ private: // Node typechecking rules
   void visit(EllipsisExpr *) override;
   void visit(CallExpr *) override;
   static void validateCall(CallExpr *expr);
-  bool transformCallArgs(CallExpr *, types::FuncType *, const PartialCallData &);
-  void transformCallDicts(CallExpr *, types::FuncType *, const PartialCallData &);
+  bool transformCallArgs(CallExpr *, PartialCallData &);
   Expr *transformOptionalCall(CallExpr *, types::ClassType *);
   std::pair<std::shared_ptr<types::FuncType>, Expr *> getCalleeFn(CallExpr *,
                                                                   PartialCallData &);
@@ -261,13 +261,14 @@ private:
                  const std::vector<std::pair<std::string, types::Type *>> &args);
   int canCall(types::FuncType *, const std::vector<CallArg> &,
               types::ClassType * = nullptr, std::vector<bool> * = nullptr,
-              types::Type::Unification * = nullptr, bool = false);
+              types::Type::Unification * = nullptr, bool = false,
+              std::vector<bool> * = nullptr);
   int matchCallable(types::Type *, const std::vector<CallArg> &,
                     types::Type * = nullptr, types::Type::Unification * = nullptr,
                     types::ClassType * = nullptr, std::vector<bool> * = nullptr);
   int matchCallableImpl(types::Type *, const std::vector<CallArg> &, types::Type *,
                         types::Type::Unification *, types::ClassType *,
-                        std::vector<bool> *, bool);
+                        std::vector<bool> *, bool, std::vector<bool> * = nullptr);
   std::vector<types::Type *> getPartialArgTypes(types::FuncType *,
                                                 types::ClassType *) const;
   Expr *getCallDefault(const Param &);

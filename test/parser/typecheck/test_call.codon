@@ -1986,7 +1986,7 @@ assert apply(convert) == 5.0
 assert apply(convert(T=int, ...)) == 5
 
 def variadic(*values: float, **kw: float):
-    return sum(values) + sum(tuple(kw.values()))
+    return sum(values) + sum(kw.values())
 assert static.function.can_call(variadic, 1, extra=2)
 assert not static.function.can_call(variadic, 'bad')
 assert not static.function.can_call(variadic, extra='bad')

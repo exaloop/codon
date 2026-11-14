@@ -547,10 +547,25 @@ Type *TypecheckVisitor::getCallArgType(FuncType *fn, size_t parameterIndex,
 /// preserveUnions is indexed by supplied arguments, not reordered parameters.
 int TypecheckVisitor::canCall(FuncType *fn, const std::vector<CallArg> &args,
                               ClassType *part, std::vector<bool> *preserveUnions,
-                              Type::Unification *us, bool probing) {
+                              Type::Unification *us, bool probing,
+                              std::vector<bool> *fixedDictArgs) {
   if (!us)
-    return matchCallable(fn, args, nullptr, nullptr, part, preserveUnions);
+    return matchCallableImpl(fn, args, nullptr, nullptr, part, preserveUnions, false,
+                             fixedDictArgs);
   auto changes = us;
+  if (fixedDictArgs)
+    fixedDictArgs->assign(args.size(), false);
+  auto argumentType = [&](size_t index, Type *expected) -> TypePtr {
+    auto *argument = args[index].getExpr();
+    if (cast<DictExpr>(argument)) {
+      bool fixed = expected && expected->is(StdlibTypes::FixedDict);
+      if (fixedDictArgs)
+        (*fixedDictArgs)[index] = fixed;
+      return instantiateType(
+          getStdLibType(fixed ? StdlibTypes::FixedDict : StdlibTypes::Dict));
+    }
+    return argument->getType()->shared_from_this();
+  };
   if (preserveUnions)
     preserveUnions->assign(args.size(), false);
   auto captured = getPartialArgTypes(fn, part);
@@ -618,17 +633,21 @@ int TypecheckVisitor::canCall(FuncType *fn, const std::vector<CallArg> &args,
                         values.push_back((*tuple)[i]);
                       }
                   }
+                  auto ann = param.getType()
+                                 ? extractType(transform(clone(param.getType())))
+                                 : nullptr;
+                  std::vector<TypePtr> literalTypes;
                   for (auto index : slots[si]) {
-                    values.push_back(args[index].getExpr()->getType());
+                    literalTypes.push_back(argumentType(index, ann));
+                    values.push_back(literalTypes.back().get());
                     if (si == kwstar)
                       names.push_back(args[index].name);
                   }
                   // Typed variadics coerce each element before building their tuple.
                   std::vector<TypePtr> wrapped;
-                  if (param.getType()) {
-                    auto annotation = extractType(transform(clone(param.getType())));
+                  if (ann) {
                     for (auto &value : values) {
-                      auto converted = wrap(value, annotation);
+                      auto converted = wrap(value, ann);
                       if (!converted)
                         return -1;
                       value = converted.get();
@@ -644,7 +663,7 @@ int TypecheckVisitor::canCall(FuncType *fn, const std::vector<CallArg> &args,
                   }
                 } else if (!slots[si].empty()) {
                   const auto index = slots[si][0];
-                  actual = args[index].getExpr()->getType()->shared_from_this();
+                  actual = argumentType(index, expected);
                   if (preserveUnions && actual->getUnion() && expected->getUnion() &&
                       actual->unify(expected, nullptr) >= 0)
                     (*preserveUnions)[index] = true;
@@ -706,7 +725,8 @@ int TypecheckVisitor::matchCallableImpl(Type *type, const std::vector<CallArg> &
                                         Type *returnType, Type::Unification *us,
                                         ClassType *captured,
                                         std::vector<bool> *preserveUnions,
-                                        bool instantiated) {
+                                        bool instantiated,
+                                        std::vector<bool> *fixedLiterals) {
   // Nested CallableTrait::unify calls carry the journal, but no matching options.
   // Keep their probe mode here, without adding state to Unification or the context.
   static thread_local llvm::SmallVector<Type::Unification *, 8> probes;
@@ -738,7 +758,8 @@ int TypecheckVisitor::matchCallableImpl(Type *type, const std::vector<CallArg> &
     }
     if (function) {
       auto fn = function->getFunc();
-      auto score = canCall(fn, args, part, preserveUnions, changes, probing);
+      auto score =
+          canCall(fn, args, part, preserveUnions, changes, probing, fixedLiterals);
       if (score < 0)
         return -1;
       if (!probing && returnType && fn->canRealize()) {
@@ -786,6 +807,10 @@ std::vector<types::FuncType *> TypecheckVisitor::findMatchingMethods(
     const std::vector<CallArg> &args, types::ClassType *part) {
   // Pick the last method that accepts the given arguments.
   std::vector<types::FuncType *> results;
+  const bool pendingLiterals = std::ranges::any_of(args, [](const auto &argument) {
+    return cast<DictExpr>(argument.getExpr()) != nullptr;
+  });
+  std::vector<bool> fixed(pendingLiterals ? args.size() : 0, true);
   for (const auto &mi : methods) {
     if (!mi)
       continue; // avoid overloads that have not been seen yet
@@ -794,12 +819,21 @@ std::vector<types::FuncType *> TypecheckVisitor::findMatchingMethods(
     if (!part && !(typ && typ->getPartial()) && !acceptsCallShape(mi, args))
       continue;
     auto method = instantiateType(mi, typ);
-    int score =
-        matchCallableImpl(method.get(), args, nullptr, nullptr, part, nullptr, true);
+    std::vector<bool> candidateFixed;
+    int score = matchCallableImpl(method.get(), args, nullptr, nullptr, part, nullptr,
+                                  true, pendingLiterals ? &candidateFixed : nullptr);
     if (score != -1) {
       results.push_back(mi);
+      for (size_t i = 0; i < fixed.size(); ++i)
+        fixed[i] = fixed[i] && i < candidateFixed.size() && candidateFixed[i];
     }
   }
+  // Ordinary dict interpretation wins if any viable overload accepts it.
+  // Keep only the representation hint; parameter binding does the expansion.
+  for (size_t i = 0; i < args.size(); ++i)
+    if (auto *literal = cast<DictExpr>(args[i].getExpr()))
+      literal->setExpectedType(getStdLibType(
+          !results.empty() && fixed[i] ? StdlibTypes::FixedDict : StdlibTypes::Dict));
   return results;
 }
 
