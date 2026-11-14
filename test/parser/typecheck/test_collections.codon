@@ -427,6 +427,71 @@ assert type(empty.items()) is tuple[0]
 for key, value in empty.items():
     assert False
 
+#%% fixed_dict_tuple_for_else
+def observed_items(mapping, events):
+    events.append('iter')
+    return mapping.items()
+
+def visit(mapping, stop: str = '', skip: str = ''):
+    events: list[str] = []
+    for key, value in observed_items(mapping, events):
+        events.append(key)
+        if key == stop:
+            break
+        if key == skip:
+            continue
+        events.append(str(value))
+    else:
+        events.append('else')
+    return events
+
+empty: FixedDict = {}
+assert visit(empty) == ['iter', 'else']
+mapping: FixedDict = {'first': 1, 'second': 'two'}
+assert visit(mapping) == ['iter', 'first', '1', 'second', 'two', 'else']
+assert visit(mapping, stop='first') == ['iter', 'first']
+assert visit(mapping, stop='second') == ['iter', 'first', '1', 'second']
+assert visit(mapping, skip='first') == ['iter', 'first', 'second', 'two', 'else']
+assert visit(mapping, skip='second') == ['iter', 'first', '1', 'second', 'else']
+homogeneous: FixedDict = {'first': 1, 'second': 2}
+assert visit(homogeneous) == ['iter', 'first', '1', 'second', '2', 'else']
+assert visit(homogeneous, stop='second') == ['iter', 'first', '1', 'second']
+events: list[str] = []
+for value in mapping.values():
+    events.append(str(value))
+else:
+    events.append('else')
+assert events == ['1', 'two', 'else']
+print('fixed dictionary for-else ok')  #: fixed dictionary for-else ok
+
+#%% fixed_dict_for_else_exit
+def visit(mapping, mode: str, events):
+    for key, value in mapping.items():
+        events.append(key)
+        if mode == 'return':
+            return 'returned'
+        if mode == 'raise':
+            raise ValueError('stopped')
+    else:
+        events.append('else')
+    return 'completed'
+
+mapping: FixedDict = {'first': 1, 'second': 'two'}
+events: list[str] = []
+assert visit(mapping, 'normal', events) == 'completed'
+assert events == ['first', 'second', 'else']
+events.clear()
+assert visit(mapping, 'return', events) == 'returned'
+assert events == ['first']
+events.clear()
+try:
+    visit(mapping, 'raise', events)
+    assert False
+except ValueError as error:
+    assert str(error) == 'stopped'
+assert events == ['first']
+print('fixed dictionary for-else exits ok')  #: fixed dictionary for-else exits ok
+
 #%% fixed_dict_tuple_evaluation
 events: list[int] = []
 def observed(events, label):
