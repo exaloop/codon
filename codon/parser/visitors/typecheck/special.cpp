@@ -673,7 +673,7 @@ SuiteStmt *TypecheckVisitor::generateUnionDispatchAST(FuncType *type) {
   auto suite = clone(getFunction(type->getFuncName())->ast->getSuite());
 
   bool isCall = extractFuncArgType(type, 1)->is(StdlibTypes::Tuple) &&
-                extractFuncArgType(type, 2)->is(StdlibTypes::NamedTuple);
+                extractFuncArgType(type, 2)->is(StdlibTypes::FixedDict);
   std::vector<std::pair<std::string, Type *>> arguments;
   if (isCall) {
     for (auto &generic : extractFuncArgType(type, 1)->getClass()->generics)
@@ -901,7 +901,7 @@ SuiteStmt *TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     return generateUnionIteratorAST(type);
   } else if (startswith(ast->name, getMangledMethod("", "Union", "_binary"))) {
     return generateUnionBinaryAST(type);
-  } else if (startswith(ast->name, getMangledMethod("", "NamedTuple", "_namedkeys"))) {
+  } else if (startswith(ast->name, getMangledMethod("", "FixedDict", "_keys"))) {
     return generateNamedKeysAST(type);
   } else if (startswith(ast->name, getMangledMethod("", "__magic__", "mul"))) {
     return generateTupleMulAST(type);
@@ -1248,7 +1248,7 @@ Expr *TypecheckVisitor::transformHasAttr(CallExpr *expr, bool allow_dynamic) {
       args.emplace_back("", t->is(StdlibTypes::TypeWrap) ? extractClassGeneric(t) : t);
     }
   }
-  for (auto &[n, ne] : extractNamedTuple((*expr)[2].getExpr())) {
+  for (auto &[n, ne] : extractRecord((*expr)[2].getExpr())) {
     ne = transform(ne);
     auto t = extractType(ne);
     args.emplace_back(n, t->is(StdlibTypes::TypeWrap) ? extractClassGeneric(t) : t);
@@ -1270,13 +1270,6 @@ Expr *TypecheckVisitor::transformHasAttr(CallExpr *expr, bool allow_dynamic) {
     if (!cond)
       return transform(N<BoolExpr>(false));
     return transform(cond);
-  } else if (typ->is(StdlibTypes::NamedTuple)) {
-    if (!typ->canRealize())
-      return nullptr;
-    auto id = getIntLiteral(typ);
-    seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}", id);
-    const auto &names = ctx->cache->generatedTupleNames[id];
-    return transform(N<BoolExpr>(in(names, attr)));
   }
 
   // enum_test: __members__ is an ordinary ClassVar, so hasattr must include
@@ -1361,6 +1354,11 @@ Expr *TypecheckVisitor::transformTupleFn(CallExpr *expr) {
   auto cls = extractClassType(expr->begin()->getExpr()->getType());
   if (!cls)
     return nullptr;
+
+  if (!isTypeExpr(expr->begin()->getExpr())) {
+    if (cls->is(getMangledClass("", "FixedDict")))
+      return transform(N<CallExpr>(N<DotExpr>(expr->begin()->getExpr(), "keys")));
+  }
 
   // tuple(ClassType) is a tuple type that corresponds to a class
   if (isTypeExpr(expr->begin()->getExpr())) {
@@ -1767,7 +1765,7 @@ SuiteStmt *TypecheckVisitor::generateSuperDispatchAST(FuncType *type) {
   auto suite = clone(getFunction(type->getFuncName())->ast->getSuite());
 
   seqassert(extractFuncArgType(type, 1)->is(StdlibTypes::Tuple) &&
-                extractFuncArgType(type, 2)->is(StdlibTypes::NamedTuple),
+                extractFuncArgType(type, 2)->is(StdlibTypes::FixedDict),
             "invalid arguments");
   std::vector<CallArg> callArgs;
   callArgs.emplace_back("", N<NoneExpr>());

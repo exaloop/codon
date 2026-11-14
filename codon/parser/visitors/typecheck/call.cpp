@@ -53,7 +53,7 @@ void TypecheckVisitor::visit(EllipsisExpr *expr) {
 
 /// Typecheck a call expression. This is the most complex expression to typecheck.
 /// @example
-///   `fn(1, 2, x=3, y=4)` -> `func(a=1, x=3, args=(2,), kwargs=KwArgs(y=4), T=int)`
+///   `fn(1, 2, x=3, y=4)` -> `func(a=1, x=3, args=(2,), kwargs={'y': 4}, T=int)`
 ///   `fn(arg1, ...)`      -> `(_v = Partial.N10(arg1); _v)`
 /// See @c transformCallArgs , @c getCalleeFn , @c callReorderArguments ,
 ///     @c typecheckCallArgs , @c transformSpecialCall and @c wrapExpr for more details.
@@ -106,7 +106,7 @@ void TypecheckVisitor::visit(CallExpr *expr) {
   }
 
   if (!withClassGenerics(
-          calleeFn.get(), [&]() { return transformCallArgs(expr); }, true, true))
+          calleeFn.get(), [&]() { return transformCallArgs(expr, part); }, true, true))
     return;
   // Early dispatch modifier
   if (isDispatch(calleeFn.get())) {
@@ -135,7 +135,7 @@ void TypecheckVisitor::visit(CallExpr *expr) {
     bool doDispatch = !m || m->empty() || part.isPartial;
     if (!doDispatch && m && m->size() > 1) {
       for (auto &a : *expr) {
-        if (isUnbound(a.getExpr()))
+        if (!cast<DictExpr>(a.getExpr()) && isUnbound(a.getExpr()))
           return; // typecheck this later once we know the argument
       }
     }
@@ -143,24 +143,28 @@ void TypecheckVisitor::visit(CallExpr *expr) {
       calleeFn = instantiateType(m->front(), calleeFn->funcParent
                                                  ? calleeFn->funcParent->getClass()
                                                  : nullptr);
-      auto e = N<IdExpr>(calleeFn->getFuncName());
-      e->setType(calleeFn);
-      if (cast<IdExpr>(expr->getExpr())) {
-        expr->expr = e;
-      } else if (cast<StmtExpr>(expr->getExpr())) {
-        // Side effect...
-        for (auto *se = cast<StmtExpr>(expr->getExpr());;) {
-          if (auto ne = cast<StmtExpr>(se->getExpr())) {
-            se = ne;
-          } else {
-            se->expr = e;
-            break;
+      if (!std::ranges::any_of(expr->items, [](const auto &argument) {
+            return cast<DictExpr>(argument.getExpr()) != nullptr;
+          })) {
+        auto e = N<IdExpr>(calleeFn->getFuncName());
+        e->setType(calleeFn);
+        if (cast<IdExpr>(expr->getExpr())) {
+          expr->expr = e;
+        } else if (cast<StmtExpr>(expr->getExpr())) {
+          // Side effect...
+          for (auto *se = cast<StmtExpr>(expr->getExpr());;) {
+            if (auto ne = cast<StmtExpr>(se->getExpr())) {
+              se = ne;
+            } else {
+              se->expr = e;
+              break;
+            }
           }
+        } else {
+          expr->expr = N<StmtExpr>(N<ExprStmt>(expr->getExpr()), e);
         }
-      } else {
-        expr->expr = N<StmtExpr>(N<ExprStmt>(expr->getExpr()), e);
+        expr->getExpr()->setType(calleeFn);
       }
-      expr->getExpr()->setType(calleeFn);
     } else if (m && m->empty()) {
       std::vector<std::string> a;
       for (auto &t : *expr)
@@ -281,7 +285,8 @@ void TypecheckVisitor::validateCall(CallExpr *expr) {
 /// Transform call arguments. Expand *args and **kwargs to the list of @c CallArg
 /// objects.
 /// @return false if expansion could not be completed; true otherwise
-bool TypecheckVisitor::transformCallArgs(CallExpr *expr) {
+bool TypecheckVisitor::transformCallArgs(CallExpr *expr, PartialCallData &part) {
+  auto &emptyExpansions = part.emptyExpansions;
   for (auto ai = 0; ai < expr->size();) {
     if (auto star = cast<StarExpr>((*expr)[ai].getExpr())) {
       // Case: *args expansion
@@ -294,9 +299,18 @@ bool TypecheckVisitor::transformCallArgs(CallExpr *expr) {
       }
       if (!typ) // Process later
         return false;
+      bool fixed = typ->is(getMangledClass("", "FixedDict"));
+      if (fixed) {
+        star->expr = transform(N<CallExpr>(N<DotExpr>(star->getExpr(), "keys")));
+        typ = star->getExpr()->getClassType();
+        if (!typ)
+          return false;
+      }
       if (!typ->isRecord())
         E(Error::CALL_BAD_UNPACK, (*expr)[ai], typ->prettyString());
       auto fields = getClassFields(typ);
+      if (fields.empty() && hasSideEffect(star->getExpr()))
+        emptyExpansions.emplace_back(ai, star->getExpr());
 
       Expr *head = star->getExpr(), *lead = nullptr;
       if (hasSideEffect(head)) {
@@ -328,28 +342,21 @@ bool TypecheckVisitor::transformCallArgs(CallExpr *expr) {
         lead = N<AssignExpr>(N<IdExpr>(var), head);
         head = N<IdExpr>(var);
       }
-      if (typ->is(StdlibTypes::NamedTuple)) {
-        auto id = getIntLiteral(typ);
-        seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}",
-                  id);
-        auto names = ctx->cache->generatedTupleNames[id];
-        for (size_t i = 0; i < names.size(); i++, ai++) {
+      bool fixed = typ->is(getMangledClass("", "FixedDict"));
+      if (typ->isRecord()) {
+        const auto fields = getRecordFields(typ);
+        if (fields.empty() && lead)
+          emptyExpansions.emplace_back(ai, kwstar->getExpr());
+        for (const auto &field : fields) {
+          if (fixed && field.name.empty())
+            E(Error::CUSTOM, kwstar,
+              "empty fixed dictionary keys cannot be expanded as keyword arguments");
           expr->items.insert(
               expr->items.begin() + ai,
-              CallArg{names[i],
-                      transform(N<DotExpr>(
-                          N<DotExpr>(clone(lead && i == 0 ? lead : head), "args"),
-                          fmt::format("item{}", i + 1)))});
-        }
-        expr->items.erase(expr->items.begin() + ai);
-      } else if (typ->isRecord()) {
-        auto fields = getClassFields(typ);
-        for (size_t i = 0; i < fields.size(); i++, ai++) {
-          expr->items.insert(
-              expr->items.begin() + ai,
-              CallArg{fields[i].name,
-                      transform(N<DotExpr>(clone(lead && i == 0 ? lead : head),
-                                           fields[i].name))});
+              CallArg{field.name,
+                      transform(getRecordField(clone(lead ? lead : head), field))});
+          lead = nullptr;
+          ++ai;
         }
         expr->items.erase(expr->items.begin() + ai);
       } else {
@@ -357,7 +364,12 @@ bool TypecheckVisitor::transformCallArgs(CallExpr *expr) {
       }
     } else {
       // Case: normal argument (no expansion)
-      (*expr)[ai].value = transform((*expr)[ai].getExpr());
+      if (auto *literal = cast<DictExpr>((*expr)[ai].getExpr())) {
+        // Defer nested literals
+        prepareDictLiteral(literal);
+      } else {
+        (*expr)[ai].value = transform((*expr)[ai].getExpr());
+      }
       ai++;
     }
   }
@@ -551,11 +563,22 @@ TypecheckVisitor::getCalleeFn(CallExpr *expr, PartialCallData &part) {
 /// CallArg has a set name. Form *args/**kwargs tuples if needed, and use partial
 /// and default values where needed.
 /// @example
-///   `foo(1, 2, baz=3, baf=4)` -> `foo(a=1, baz=2, args=(3, ), kwargs=KwArgs(baf=4))`
+///   `foo(1, 2, baz=3, baf=4)` -> `foo(a=1, baz=2, args=(3, ), kwargs={'baf': 4})`
 Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
                                              PartialCallData &part) {
-  if (calleeFn->ast->hasAttribute(Attr::NoArgReorder))
-    return nullptr;
+  const bool noReorder = calleeFn->ast->hasAttribute(Attr::NoArgReorder);
+  const bool pendingDicts = std::ranges::any_of(expr->items, [](const auto &argument) {
+    return cast<DictExpr>(argument.getExpr()) != nullptr;
+  });
+  bool expandedDicts = false;
+  auto expandDict = [&](CallArg &argument) {
+    if (auto *literal = cast<DictExpr>(argument.getExpr())) {
+      argument.value = transform(literal);
+      expandedDicts = true;
+    }
+  };
+  const bool retryDispatch =
+      isDispatch(expr->getExpr()->getType()) && !isDispatch(calleeFn);
 
   bool inOrder = true;
   std::vector<std::pair<size_t, Expr **>> ordered;
@@ -597,6 +620,24 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
     return withClassGenerics(
         calleeFn,
         [&]() {
+          if (pendingDicts) {
+            for (size_t si = 0, vi = 0; si < slots.size(); ++si) {
+              const auto &parameter = (*calleeFn->ast)[si];
+              if (parameter.isGeneric())
+                continue;
+              auto *expected = extractFuncArgType(calleeFn, vi++);
+              if ((si == starArgIndex || si == kwstarArgIndex) && parameter.getType())
+                expected = extractType(transform(clone(parameter.getType())));
+              for (auto index : slots[si])
+                if (auto *literal = cast<DictExpr>((*expr)[index].getExpr());
+                    literal && !literal->getExpectedType())
+                  literal->setExpectedType(expected);
+            }
+            for (auto &argument : *expr)
+              expandDict(argument);
+          }
+          if (retryDispatch && expandedDicts)
+            return 0;
           for (size_t si = 0, pi = 0, gi = 0; si < slots.size(); si++) {
             // Get the argument name to be used later
             auto [_, rn] = (*calleeFn->ast)[si].getNameWithStars();
@@ -657,7 +698,7 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
                 newKeywords[(*expr)[argument].getName()] = argument;
               if (!part.known.empty()) {
                 auto captured = transform(N<DotExpr>(N<IdExpr>(part.var), "kwargs"));
-                for (auto &[name, value] : extractNamedTuple(captured)) {
+                for (auto &[name, value] : extractRecord(captured)) {
                   kwStarNames.emplace_back(name);
                   auto replacement = newKeywords.find(name);
                   if (replacement != newKeywords.end()) {
@@ -764,7 +805,10 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
 
   // Reorder arguments if needed
   part.args = part.kwArgs = nullptr; // Stores partial *args/**kwargs expression
-  if (expr->hasAttribute(Attr::ExprOrderedCall)) {
+  if (noReorder) {
+    for (auto &argument : *expr)
+      expandDict(argument);
+  } else if (expr->hasAttribute(Attr::ExprOrderedCall)) {
     args = expr->items;
   } else {
     reorderNamedArgs(
@@ -775,6 +819,43 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
         },
         part.known);
   }
+
+  if (!part.emptyExpansions.empty()) {
+    auto call = clone(expr);
+    std::vector<Stmt *> statements;
+    while (auto suite = cast<StmtExpr>(call->getExpr())) {
+      statements.insert(statements.end(), suite->items.begin(), suite->items.end());
+      call->expr = suite->getExpr();
+    }
+    // Preserve the saved partial's captures when retrying argument expansion.
+    if (!part.var.empty())
+      call->expr = N<IdExpr>(part.var);
+    if (hasSideEffect(call->getExpr())) {
+      auto temporary = getTemporaryVar("fixed.callee");
+      statements.push_back(N<AssignStmt>(N<IdExpr>(temporary), call->getExpr()));
+      call->expr = N<IdExpr>(temporary);
+    }
+    int previous = 0;
+    for (const auto &[position, value] : part.emptyExpansions) {
+      for (; previous < position; ++previous) {
+        auto temporary = getTemporaryVar("fixed.argument");
+        statements.push_back(
+            N<AssignStmt>(N<IdExpr>(temporary), (*call)[previous].getExpr()));
+        (*call)[previous].value = N<IdExpr>(temporary);
+      }
+      statements.push_back(N<ExprStmt>(value));
+    }
+    return transform(N<StmtExpr>(statements, call));
+  }
+  if (retryDispatch && expandedDicts) {
+    if (std::ranges::any_of(expr->items, [](const auto &argument) {
+          return cast<DictExpr>(argument.getExpr()) != nullptr;
+        }))
+      return expr; // still need inference.
+    return transform(expr);
+  }
+  if (noReorder)
+    return nullptr;
 
   // Do reordering
   if (!inOrder) {
@@ -818,7 +899,7 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
   // Handle **kwargs
   if (kwStarIdx != -1) {
     auto kwid = generateKwId(kwStarNames);
-    auto kwe = transform(N<CallExpr>(N<IdExpr>(StdlibTypes::NamedTuple),
+    auto kwe = transform(N<CallExpr>(N<IdExpr>(StdlibTypes::FixedDict),
                                      N<TupleExpr>(kwStarArgs), N<IntExpr>(kwid)));
     kwe->setAttribute(Attr::ExprKwStarArgument);
     if (partial) {
@@ -839,8 +920,7 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
     if (!part.args)
       part.args = transform(N<TupleExpr>()); // use ()
     if (!part.kwArgs)
-      part.kwArgs = transform(
-          N<CallExpr>(N<IdExpr>(StdlibTypes::NamedTuple))); // use NamedTuple()
+      part.kwArgs = transform(N<CallExpr>(N<IdExpr>(StdlibTypes::FixedDict)));
   }
 
   // Unify function type generics with the provided generics
@@ -926,7 +1006,7 @@ bool TypecheckVisitor::typecheckCallArgs(FuncType *calleeFn, std::vector<CallArg
               auto tup = transform(N<CallExpr>(N<IdExpr>(name), callExpr->items));
               if (startswith((*calleeFn->ast)[i].getName(), "**")) {
                 args[si].value = transform(N<CallExpr>(
-                    N<IdExpr>(getMangledMethod("", "NamedTuple", "__new__")), tup,
+                    N<IdExpr>(getMangledMethod("", "FixedDict", "__new__")), tup,
                     N<IntExpr>(extractClassGeneric(args[si].getExpr()->getType())
                                    ->getIntStatic()
                                    ->value)));
@@ -1035,6 +1115,17 @@ std::pair<bool, Expr *> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
   };
   if (isF(ei, "", "superf")) {
     return {true, transformSuperF(expr)};
+  } else if (isF(ei, "", "FixedDict", "_index")) {
+    auto *function = ei->getType()->getFunc();
+    auto *shape = extractFuncGeneric(function, 0);
+    auto *key = extractFuncGeneric(function, 1);
+    if (!shape->canRealize() || !key->canRealize())
+      return {true, nullptr};
+    const auto &names = ctx->cache->generatedTupleNames.at(getIntLiteral(shape));
+    auto name = getStrLiteral(key);
+    auto position = std::find(names.begin(), names.end(), name);
+    auto index = position == names.end() ? -1 : std::distance(names.begin(), position);
+    return {true, transform(N<IntExpr>(index))};
   } else if (isF(ei, "", "super") && expr->empty()) {
     return {true, transformSuper()};
   } else if (isF(ei, "", "__ptr__")) {
@@ -1128,7 +1219,7 @@ Expr *TypecheckVisitor::generatePartialCall(const std::string &mask,
   if (!args)
     args = N<TupleExpr>(std::vector<Expr *>{N<TupleExpr>()});
   if (!kwargs)
-    kwargs = N<CallExpr>(N<IdExpr>(StdlibTypes::NamedTuple));
+    kwargs = N<CallExpr>(N<IdExpr>(StdlibTypes::FixedDict));
 
   auto efn = N<IdExpr>(fn->getFuncName());
   efn->setType(instantiateType(getStdLibType(StdlibTypes::UnrealizedType),

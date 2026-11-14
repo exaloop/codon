@@ -173,13 +173,13 @@ def unpack(**kwargs):
 assert unpack(third=30, fourth=40) == (1, 20, 30, 40)
 
 def shadow(name, /, **kwargs):
-    return name, kwargs.name
+    return name, kwargs['name']
 assert shadow(1, name=2) == (1, 2)
 def defaults(first=1, /, second=2, *, third=3, fourth):
     return first, second, third, fourth
 assert defaults(fourth=4) == (1, 2, 3, 4)
 def variadic(first=1, /, *args, optional=2, required, **kwargs):
-    return first, args, optional, required, kwargs.extra
+    return first, args, optional, required, kwargs['extra']
 assert variadic(10, 20, 30, required=40, extra=50) == (10, (20, 30), 2, 40, 50)
 
 f = lambda first, /, second=2, *, third: first + second + third
@@ -448,12 +448,12 @@ def show_keywords(**kwargs):
     print kwargs
 
 stored = show_keywords(z=1, a=2, ...)
-stored() #: (z: 1, a: 2)
-stored(z='updated', b=3) #: (z: 'updated', a: 2, b: 3)
+stored() #: {'z': 1, 'a': 2}
+stored(z='updated', b=3) #: {'z': 'updated', 'a': 2, 'b': 3}
 nested = stored(y=3, z=4, ...)
-nested(a=5, x=6) #: (z: 4, a: 5, y: 3, x: 6)
+nested(a=5, x=6) #: {'z': 4, 'a': 5, 'y': 3, 'x': 6}
 wrapped = partial(show_keywords, z=1, a=2)
-wrapped(z=3, y=4) #: (z: 3, a: 2, y: 4)
+wrapped(z=3, y=4) #: {'z': 3, 'a': 2, 'y': 4}
 
 def traced_keyword(name, value):
     print name
@@ -462,7 +462,7 @@ def traced_keyword(name, value):
 stored(b=traced_keyword('b', 3), z=traced_keyword('z', 4))
 #: b
 #: z
-#: (z: 4, a: 2, b: 3)
+#: {'z': 4, 'a': 2, 'b': 3}
 
 #%% call,barebones
 def foo(a, b, c='hi'):
@@ -559,7 +559,7 @@ f1 = fx(1, x=1, ...)
 f2 = f1(2, y=2, ...)
 f3 = f2(3, z=3, ...)
 f3()
-#: (1, 2, 3) (x: 1, y: 2, z: 3)
+#: (1, 2, 3) {'x': 1, 'y': 2, 'z': 3}
 
 #%% call_arguments_partial,barebones
 def doo[R, T](a: CallableTrait[[T], R], b: Generator[T], c: Optional[T], d: T):
@@ -593,24 +593,24 @@ doo(b=l, d=Optional(5), c=l[0], a=adder(b=4, ...))
 def foo(x, *args, **kwargs):
     print x, args, kwargs
 p = foo(...)
-p(1, z=5) #: 1 () (z: 5)
-p('s', zh=65) #: s () (zh: 65)
+p(1, z=5) #: 1 () {'z': 5}
+p('s', zh=65) #: s () {'zh': 65}
 q = p(zh=43, ...)
-q(1) #: 1 () (zh: 43)
+q(1) #: 1 () {'zh': 43}
 r = q(5, 38, ...)
-r() #: 5 (38,) (zh: 43)
-r(1, a=1) #: 5 (38, 1) (zh: 43, a: 1)
+r() #: 5 (38,) {'zh': 43}
+r(1, a=1) #: 5 (38, 1) {'zh': 43, 'a': 1}
 
 # kwarg overwrite!
-q(1, zh=99)  #: 1 () (zh: 99)
-r(zh=55)  #: 5 (38,) (zh: 55)
+q(1, zh=99)  #: 1 () {'zh': 99}
+r(zh=55)  #: 5 (38,) {'zh': 55}
 
 #%% call_args_kwargs_type,barebones
 def foo(*args: float, **kwargs: int):
     print(args, kwargs, args.__class__.__name__)
 
-foo(1, f=1)  #: (1.0,) (f: 1) Tuple[float]
-foo(1, 2.1, 3, z=2)  #: (1.0, 2.1, 3.0) (z: 2) Tuple[float,float,float]
+foo(1, f=1)  #: (1.0,) {'f': 1} Tuple[float]
+foo(1, 2.1, 3, z=2)  #: (1.0, 2.1, 3.0) {'z': 2} Tuple[float,float,float]
 
 def sum(x: Generator[int]):
     a = 0
@@ -637,48 +637,48 @@ def foo(a, b, c=1, *args, **kwargs):
     whatever(a, b, *args, c)
     kwhatever(x=1, **kwargs)
 foo(1, 2, 3, 4, 5, arg1='s', kwa=2)
-#: 1 2 3 (4, 5) (arg1: 's', kwa: 2)
+#: 1 2 3 (4, 5) {'arg1': 's', 'kwa': 2}
 #: a (1, 2, 4, 5, 3)
-#: k (x: 1, arg1: 's', kwa: 2)
+#: k {'x': 1, 'arg1': 's', 'kwa': 2}
 foo(1, 2)
-#: 1 2 1 () ()
+#: 1 2 1 () {}
 #: a (1, 2, 1)
-#: k (x: 1)
+#: k {'x': 1}
 foo(1, 2, 3)
-#: 1 2 3 () ()
+#: 1 2 3 () {}
 #: a (1, 2, 3)
-#: k (x: 1)
+#: k {'x': 1}
 foo(1, 2, 3, 4)
-#: 1 2 3 (4,) ()
+#: 1 2 3 (4,) {}
 #: a (1, 2, 4, 3)
-#: k (x: 1)
+#: k {'x': 1}
 foo(1, 2, zamboni=3)
-#: 1 2 1 () (zamboni: 3)
+#: 1 2 1 () {'zamboni': 3}
 #: a (1, 2, 1)
-#: k (x: 1, zamboni: 3)
+#: k {'x': 1, 'zamboni': 3}
 
 #%% call_kwargs_order,barebones
 def show(**kwargs):
     print kwargs
 
-show(z=1, a=2) #: (z: 1, a: 2)
-show(a=2, z=1) #: (a: 2, z: 1)
+show(z=1, a=2) #: {'z': 1, 'a': 2}
+show(a=2, z=1) #: {'a': 2, 'z': 1}
 
 def forward(**kwargs):
     show(**kwargs)
 
-forward(z='last', a=2.5) #: (z: 'last', a: 2.5)
+forward(z='last', a=2.5) #: {'z': 'last', 'a': 2.5}
 
 def collect(**kwargs):
     return kwargs
 
-show(**collect(z=1, a=2), **collect(y=3, b=4)) #: (z: 1, a: 2, y: 3, b: 4)
-show(before=0, **collect(z=1, a=2), after=3) #: (before: 0, z: 1, a: 2, after: 3)
+show(**collect(z=1, a=2), **collect(y=3, b=4)) #: {'z': 1, 'a': 2, 'y': 3, 'b': 4}
+show(before=0, **collect(z=1, a=2), after=3) #: {'before': 0, 'z': 1, 'a': 2, 'after': 3}
 
 def typed(**kwargs: int):
     print kwargs
 
-typed(z=1, a=2) #: (z: 1, a: 2)
+typed(z=1, a=2) #: {'z': 1, 'a': 2}
 
 def with_formals(required, *, option=0, **kwargs):
     print required, option, kwargs
@@ -693,7 +693,7 @@ with_formals(z=traced('z', 1), required=traced('required', 10),
 #: required
 #: a
 #: option
-#: 10 20 (z: 1, a: 2)
+#: 10 20 {'z': 1, 'a': 2}
 
 #%% call_unpack,barebones
 def foo(*args, **kwargs):
@@ -706,10 +706,10 @@ class Foo:
 
 t = (1, 's')
 f = Foo(6)
-foo(*t, **f) #: (1, 's') (x: 6, y: True)
-foo(*(1,2)) #: (1, 2) ()
-foo(3, f) #: (3, (x: 6, y: True)) ()
-foo(k = 3, **f) #: () (k: 3, x: 6, y: True)
+foo(*t, **f) #: (1, 's') {'x': 6, 'y': True}
+foo(*(1,2)) #: (1, 2) {}
+foo(3, f) #: (3, (x: 6, y: True)) {}
+foo(k = 3, **f) #: () {'k': 3, 'x': 6, 'y': True}
 
 #%% call_partial_args_kwargs,barebones
 def foo(*args):
@@ -727,7 +727,7 @@ xb = xa(3, 4, q=6, ...)
 xc = xb(5, ...)
 xd = xc(z=5.1, ...)
 xd('zooooo', w='lele')
-#: (1, 2, 3, 4, 5, 'zooooo') (x: 5, q: 6, z: 5.1, w: 'lele')
+#: (1, 2, 3, 4, 5, 'zooooo') {'x': 5, 'q': 6, 'z': 5.1, 'w': 'lele'}
 
 class Foo:
     i: int
@@ -820,7 +820,7 @@ print hasattr([1, 2], "__getitem__", idx=int) #: False
 print hasattr([1, 2], "__getitem__", idx=str) #: False
 
 def kw(**kwargs):
-    print hasattr(kwargs, "yes"), hasattr(kwargs, "no")
+    print "yes" in kwargs, "no" in kwargs
 kw(yes=1)  #: True False
 kw()  #: False False
 kw(no=1)  #: False True
@@ -1803,7 +1803,7 @@ foo(side('a'), side('b'), side('3'), side('4'), T=side_T(int), N=side_N(5))
 #: side 4
 #: side_T int
 #: side_N 5
-#: a b ('3', '4') () <class 'List[int]'> 25
+#: a b ('3', '4') {} <class 'List[int]'> 25
 
 foo(z=side('z'), T=side_T(int), k=side('k'), b=side('b'), a=side('a'), N=side_N(5))
 #: side z
@@ -1812,7 +1812,7 @@ foo(z=side('z'), T=side_T(int), k=side('k'), b=side('b'), a=side('a'), N=side_N(
 #: side b
 #: side a
 #: side_N 5
-#: a b () (z: 'z', k: 'k') <class 'List[int]'> 25
+#: a b () {'z': 'z', 'k': 'k'} <class 'List[int]'> 25
 
 t = List[side_T(int)]
 #: side_T int
@@ -1986,7 +1986,7 @@ assert apply(convert) == 5.0
 assert apply(convert(T=int, ...)) == 5
 
 def variadic(*values: float, **kw: float):
-    return sum(values) + sum(kw.args)
+    return sum(values) + sum(kw.values())
 assert static.function.can_call(variadic, 1, extra=2)
 assert not static.function.can_call(variadic, 'bad')
 assert not static.function.can_call(variadic, extra='bad')

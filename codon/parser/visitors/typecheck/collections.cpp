@@ -43,10 +43,99 @@ void TypecheckVisitor::visit(SetExpr *expr) {
 /// expression. See @c transformComprehension
 void TypecheckVisitor::visit(DictExpr *expr) {
   expr->setType(instantiateUnbound());
+  if (auto *expected = expr->getExpectedType();
+      expected && expected->is(getMangledClass("", "FixedDict"))) {
+    prepareDictLiteral(expr, true);
+    resultExpr = transformFixedDict(expr->items);
+    return;
+  }
   if ((resultExpr = transformComprehension(StdlibTypes::Dict, "__setitem__",
                                            expr->items, expr->getExpectedType()))) {
     resultExpr->setAttribute(Attr::ExprDict);
   }
+}
+
+/// Preserve literal containers until their dictionary context is known. Visit
+/// other expressions now for source-order bindings (fixed_dict_nested_call_context).
+Expr *TypecheckVisitor::prepareDictLiteral(Expr *expr, bool fixed) {
+  Items<Expr *> *items = nullptr;
+  if (auto *dict = cast<DictExpr>(expr)) {
+    items = dict;
+    if (fixed)
+      dict->setExpectedType(getStdLibType(StdlibTypes::FixedDict));
+  } else if (auto *tuple = cast<TupleExpr>(expr)) {
+    items = tuple;
+  } else if (auto *list = cast<ListExpr>(expr)) {
+    items = list;
+  } else if (auto *set = cast<SetExpr>(expr)) {
+    items = set;
+  } else if (auto *star = cast<StarExpr>(expr)) {
+    star->expr = prepareDictLiteral(star->getExpr(), fixed);
+    return star;
+  } else if (auto *star = cast<KeywordStarExpr>(expr)) {
+    star->expr = prepareDictLiteral(star->getExpr(), fixed);
+    return star;
+  }
+  if (!items)
+    return transform(expr);
+  for (auto &item : *items)
+    item = prepareDictLiteral(item, fixed);
+  expr->setType(instantiateUnbound());
+  return expr;
+}
+
+Expr *TypecheckVisitor::transformFixedDict(const std::vector<Expr *> &items) {
+  std::vector<std::string> names;
+  std::vector<Expr *> values;
+  std::vector<Stmt *> statements;
+  std::unordered_map<std::string, size_t> positions;
+  auto append = [&](const std::string &name, Expr *value) {
+    auto [position, inserted] = positions.emplace(name, names.size());
+    if (inserted) {
+      names.push_back(name);
+      values.push_back(nullptr);
+    }
+    values[position->second] = value;
+  };
+  for (auto *item : items) {
+    if (auto *spread = cast<KeywordStarExpr>(item)) {
+      auto *value = transform(clone(spread->getExpr()));
+      auto *type = value->getClassType();
+      if (!type)
+        return nullptr;
+      if (!type->is(getMangledClass("", "FixedDict")))
+        E(Error::CUSTOM, spread,
+          "fixed dictionary literals can only expand fixed dictionaries");
+      auto *shape = extractClassGeneric(type, 0);
+      if (!shape->canRealize())
+        return nullptr;
+      const auto fields = getRecordFields(type);
+      auto temporary = getTemporaryVar("fixed.spread");
+      statements.push_back(N<AssignStmt>(N<IdExpr>(temporary), value));
+      for (const auto &field : fields)
+        append(field.name, getRecordField(N<IdExpr>(temporary), field));
+      continue;
+    }
+    auto *pair = cast<TupleExpr>(item);
+    if (!pair)
+      pair = cast<TupleExpr>(item->getOrigExpr());
+    if (!pair || pair->items.size() != 2)
+      E(Error::CUSTOM, item, "fixed dictionary literals require string-keyed entries");
+    auto *key = transform(clone(pair->items[0]));
+    if (!key->getType())
+      return nullptr;
+    auto *literal = cast<StringExpr>(key);
+    auto *constant = key->getType()->getStrStatic();
+    if ((!literal || !literal->isSimple()) && !constant)
+      E(Error::CUSTOM, key, "fixed dictionary keys must be compile-time strings");
+    auto name = constant ? constant->value : literal->getValue();
+    auto temporary = getTemporaryVar("fixed.entry");
+    statements.push_back(N<AssignStmt>(N<IdExpr>(temporary), clone(item)));
+    append(name, N<IndexExpr>(N<IdExpr>(temporary), N<IntExpr>(1)));
+  }
+  return transform(N<StmtExpr>(
+      statements, N<CallExpr>(N<IdExpr>(getMangledClass("", "FixedDict")),
+                              N<TupleExpr>(values), N<IntExpr>(generateKwId(names)))));
 }
 
 /// Transform a tuple generator expression.
@@ -249,6 +338,11 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
     } else if (isDict && cast<KeywordStarExpr>(i)) {
       auto star = cast<KeywordStarExpr>(i);
       star->expr = transform(N<CallExpr>(N<DotExpr>(star->getExpr(), "items")));
+      // Empty tuples contribute no key/value constraints.
+      if (star->getExpr()->getType()->is(StdlibTypes::Tuple) &&
+          !star->getExpr()->getClassType()->size())
+        continue;
+      star->expr = transform(N<CallExpr>(N<DotExpr>(star->getExpr(), "__iter__")));
       if (star->getExpr()->getType()->is("Generator"))
         typ = extractClassGeneric(star->getExpr()->getType())->getClass();
     } else {
@@ -275,6 +369,7 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
   }
   if (!done)
     return nullptr;
+  auto ta = instantiateType(root, ctx->cache->castVectorPtr(elementTypes));
   std::vector<Stmt *> stmts;
   Expr *var = N<IdExpr>(getTemporaryVar("cont"));
 
@@ -284,7 +379,6 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
     constructorArgs.push_back(N<IntExpr>(items.size()));
   }
   auto t = N<IdExpr>(isDict ? root->name : type);
-  auto ta = instantiateType(root, ctx->cache->castVectorPtr(elementTypes));
   t->setType(instantiateTypeVar(ta.get()));
   stmts.push_back(N<AssignStmt>(clone(var), N<CallExpr>(t, constructorArgs)));
   for (const auto &it : items) {
@@ -300,6 +394,11 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
     } else if (isDict && cast<KeywordStarExpr>(it)) {
       // Expand kwstar-expression by iterating over it: see the example above
       auto star = cast<KeywordStarExpr>(it);
+      if (star->getExpr()->getType()->is(StdlibTypes::Tuple) &&
+          !star->getExpr()->getClassType()->size()) {
+        stmts.push_back(N<ExprStmt>(star->getExpr()));
+        continue;
+      }
       Expr *forVar = N<IdExpr>(getTemporaryVar("it"));
       star->getExpr()->setAttribute(Attr::ExprStarSequenceItem);
       stmts.push_back(N<ForStmt>(

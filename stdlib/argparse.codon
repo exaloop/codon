@@ -392,9 +392,8 @@ class Namespace:
 
     def __init__(self, **kwargs):
         self._data = {}
-        keys = kwargs.__keys__()
-        for index in static.range(static.len(kwargs.args)):
-            self._data[keys[index]] = ArgumentValue(kwargs.args[index])
+        for key, value in kwargs.items():
+            self._data[key] = ArgumentValue(value)
 
     def __getattr__(self, name: Literal[str]) -> ArgumentValue:
         return self[name]
@@ -802,7 +801,7 @@ class _ArgumentGroup:
         return type._force_cast(self._parser, ArgumentParser)
 
     def add_argument(self, *args, **kwargs):
-        return self.parser._add_argument(self, *args, _provided=kwargs.__keys__(), _keywords=kwargs, **kwargs)
+        return self.parser._add_argument(self, *args, _provided=kwargs.keys(), _keywords=kwargs, **kwargs)
 
     def add_mutually_exclusive_group(self, required: bool = False):
         group = _MutuallyExclusiveGroup(self, required)
@@ -822,7 +821,7 @@ class _MutuallyExclusiveGroup:
 
     def add_argument(self, *args, **kwargs):
         target = None if self.group is self.group.parser._optionals else self.group
-        action = self.group.parser._add_argument(target, *args, _provided=kwargs.__keys__(),
+        action = self.group.parser._add_argument(target, *args, _provided=kwargs.keys(),
                                                 _keywords=kwargs, _mutex=True, **kwargs)
         self._actions.append(action)
         return action
@@ -1369,7 +1368,7 @@ class ArgumentParser:
                 self._inherit(parent)
 
     def add_argument(self, *names, **kwargs):
-        return self._add_argument(None, *names, _provided=kwargs.__keys__(), _keywords=kwargs, **kwargs)
+        return self._add_argument(None, *names, _provided=kwargs.keys(), _keywords=kwargs, **kwargs)
 
     def _add_argument(self, group, *names, _provided=(), _keywords=(), _mutex: bool = False, action="store", nargs=_UNSET, const=_UNSET,
                       default=_UNSET, choices=None, required: bool = False,
@@ -1427,7 +1426,7 @@ class ArgumentParser:
                     if provided_key not in allowed:
                         constructor = "_" + "".join(part.capitalize() for part in action.split("_")) + "Action"
                         raise TypeError(constructor + ".__init__() got an unexpected keyword argument " + repr(provided_key))
-            if static.len(kwargs.args) > 1 or (static.len(kwargs.args) == 1 and not hasattr(kwargs, "type")):
+            if static.len(kwargs.keys()) > 1 or (static.len(kwargs.keys()) == 1 and not ("type" in kwargs)):
                 compile_error("unexpected keyword argument: only 'type' is supported for built-in or registered actions")
             arity = _nargs(nargs)
             if kind in (_ACTION_STORE_CONST, _ACTION_STORE_TRUE, _ACTION_STORE_FALSE, _ACTION_APPEND_CONST, _ACTION_COUNT, _ACTION_HELP, _ACTION_VERSION):
@@ -1552,12 +1551,11 @@ class ArgumentParser:
         self._defaults.update(parent._defaults)
 
     def set_defaults(self, **kwargs):
-        keys = kwargs.__keys__()
-        for index in static.range(static.len(kwargs.args)):
-            key, value = keys[index], ArgumentValue(kwargs.args[index])
-            self._defaults[key] = value
+        for key, value in kwargs.items():
+            boxed = ArgumentValue(value)
+            self._defaults[key] = boxed
             for action in self._actions:
-                if action.dest == key: action.default = value
+                if action.dest == key: action.default = boxed
 
     def get_default(self, dest: str) -> ArgumentValue:
         for action in self._actions:

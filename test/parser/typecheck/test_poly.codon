@@ -961,7 +961,7 @@ print("dispatch variance ok")  # EXPECT: dispatch variance ok
 # and heterogeneous packs. Bound calls and super retain the same packed ABI.
 class VariadicBase:
     def count(self, prefix: int = 7, *values, **options) -> int:
-        return prefix + 10 * len(values) + 100 * len(options.__keys__())
+        return prefix + 10 * len(values) + 100 * len(options)
 
     def total(self, *values) -> int:
         return sum(values)
@@ -1011,10 +1011,10 @@ class PackedChildResult(PackedResult):
     pass
 class PackedProducer:
     def produce(self, *values, **options) -> PackedResult:
-        return PackedResult(len(values) + 10 * len(options.__keys__()))
+        return PackedResult(len(values) + 10 * len(options))
 class PackedChildProducer(PackedProducer):
     def produce(self, *values, **options) -> PackedChildResult:
-        return PackedChildResult(len(values) + 10 * len(options.__keys__()))
+        return PackedChildResult(len(values) + 10 * len(options))
 
 @noinline
 def produce_packed(value: PackedProducer) -> PackedResult:

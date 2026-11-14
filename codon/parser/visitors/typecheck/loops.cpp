@@ -372,7 +372,8 @@ TypecheckVisitor::transformStaticLoopCall(Expr *varExpr, SuiteStmt **varSuite,
       // Maybe heterogenous?
       if (!iter->getType()->canRealize())
         return {true, true, nullptr, {}}; // wait until the tuple is fully realizable
-      if (!isHeterogenous(iter->getClassType()) && !allowNonHeterogenous)
+      if (!isHeterogenous(iter->getClassType()) && !allowNonHeterogenous &&
+          (iter->getClassType()->size() || cast<IdExpr>(varExpr)))
         return {false, false, nullptr, {}};
       block = populateStaticHeterogenousTupleLoop(iter, vars);
       preamble = block.back();

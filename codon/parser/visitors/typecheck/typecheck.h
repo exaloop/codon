@@ -93,6 +93,8 @@ private: // Node typechecking rules
   void visit(ListExpr *) override;
   void visit(SetExpr *) override;
   void visit(DictExpr *) override;
+  Expr *prepareDictLiteral(Expr *, bool = false);
+  Expr *transformFixedDict(const std::vector<Expr *> &);
   Expr *transformComprehension(const std::string &, const std::string &,
                                std::vector<Expr *> &, types::Type * = nullptr);
   void visit(GeneratorExpr *) override;
@@ -127,6 +129,7 @@ private: // Node typechecking rules
   void visit(PrintStmt *) override;
   /// Holds partial call information for a CallExpr.
   struct PartialCallData {
+    std::vector<std::pair<int, Expr *>> emptyExpansions; // unpacking side effects
     bool isPartial = false;                  // true if the call is partial
     std::string var;                         // set if calling a partial type itself
     std::string known;                       // mask of known arguments
@@ -137,7 +140,7 @@ private: // Node typechecking rules
   void visit(EllipsisExpr *) override;
   void visit(CallExpr *) override;
   static void validateCall(CallExpr *expr);
-  bool transformCallArgs(CallExpr *);
+  bool transformCallArgs(CallExpr *, PartialCallData &);
   Expr *transformOptionalCall(CallExpr *, types::ClassType *);
   std::pair<std::shared_ptr<types::FuncType>, Expr *> getCalleeFn(CallExpr *,
                                                                   PartialCallData &);
@@ -259,13 +262,14 @@ private:
                  const std::vector<std::pair<std::string, types::Type *>> &args);
   int canCall(types::FuncType *, const std::vector<CallArg> &,
               types::ClassType * = nullptr, std::vector<bool> * = nullptr,
-              types::Type::Unification * = nullptr, bool = false);
+              types::Type::Unification * = nullptr, bool = false,
+              std::vector<bool> * = nullptr);
   int matchCallable(types::Type *, const std::vector<CallArg> &,
                     types::Type * = nullptr, types::Type::Unification * = nullptr,
                     types::ClassType * = nullptr, std::vector<bool> * = nullptr);
   int matchCallableImpl(types::Type *, const std::vector<CallArg> &, types::Type *,
                         types::Type::Unification *, types::ClassType *,
-                        std::vector<bool> *, bool);
+                        std::vector<bool> *, bool, std::vector<bool> * = nullptr);
   std::vector<types::Type *> getPartialArgTypes(types::FuncType *,
                                                 types::ClassType *) const;
   Expr *getCallDefault(const Param &);
@@ -273,7 +277,13 @@ private:
   std::vector<types::FuncType *> findMatchingMethods(
       types::ClassType *typ, const std::vector<types::FuncType *> &methods,
       const std::vector<CallArg> &args, types::ClassType *part = nullptr);
-  std::vector<std::pair<std::string, Expr *>> extractNamedTuple(Expr *);
+  struct RecordField {
+    std::string name;
+    std::vector<std::string> path;
+  };
+  std::vector<RecordField> getRecordFields(types::ClassType *) const;
+  Expr *getRecordField(Expr *, const RecordField &);
+  std::vector<std::pair<std::string, Expr *>> extractRecord(Expr *);
   std::vector<types::TypePtr> getClassFieldTypes(types::ClassType *);
   static std::vector<std::pair<size_t, Expr *>> findEllipsis(Expr *);
 

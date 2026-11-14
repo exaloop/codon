@@ -450,6 +450,25 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
     return;
   }
 
+  if (cls->is(getMangledClass("", "FixedDict"))) {
+    auto *constant = expr->getIndex()->getType()->getStrStatic();
+    if (constant) {
+      if (!extractClassGeneric(cls, 0)->canRealize())
+        return;
+      const auto fields = getRecordFields(cls);
+      auto name = constant->value;
+      auto position = std::ranges::find(fields, name, &RecordField::name);
+      if (position == fields.end())
+        E(Error::CUSTOM, expr, "unknown fixed dictionary key: {}", name);
+      auto tmp = getTemporaryVar("fixed.lookup");
+      resultExpr = transform(
+          N<StmtExpr>(N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(tmp), expr->getExpr()),
+                                   N<ExprStmt>(expr->getIndex())),
+                      getRecordField(N<IdExpr>(tmp), *position)));
+      return;
+    }
+  }
+
   // Case: static tuple access
   // Note: needs untransformed origIndex to parse statics nicely
   auto [isStaticTuple, tupleExpr] =
