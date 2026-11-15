@@ -296,9 +296,15 @@ std::pair<bool, Stmt *> TypecheckVisitor::transformStaticForLoop(const ForStmt *
   Stmt *loop = nullptr;
   if (!stmt->flat) {
     ctx->blockLevel++;
-    auto end = N<BreakStmt>();
-    end->setDone();
-    block->addStmt(end);
+    if (stmt->getElse()) {
+      auto end = N<BreakStmt>();
+      end->setDone();
+      block->addStmt(end);
+    } else {
+      auto end = N<AssignStmt>(N<IdExpr>(loopVar), N<BoolExpr>(false));
+      end->setUpdate();
+      block->addStmt(end);
+    }
     auto result = N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(loopVar), N<BoolExpr>(true)),
                                N<WhileStmt>(N<IdExpr>(loopVar), block));
     if (stmt->getElse())
