@@ -139,6 +139,108 @@ assert consume({'inner': {'number': observed(events, 1, 0),
 assert events == [1, 2, 3]
 print('nested fixed dictionary call context ok')  #: nested fixed dictionary call context ok
 
+#%% fixed_dict_constructor_context
+class Factory:
+    def __new__(value: FixedDict):
+        return value['number'], value['text']
+
+assert Factory({'number': 1, 'text': 'two'}) == (1, 'two')
+assert Factory(value={'number': 2, 'text': 'three'}) == (2, 'three')
+payload: FixedDict = {'number': 3, 'text': 'four'}
+assert Factory(payload) == (3, 'four')
+class NestedFactory:
+    def __new__(value: FixedDict):
+        return Factory(value['inner'])
+assert NestedFactory({'inner': {'number': 4, 'text': 'five'}}) == (4, 'five')
+print('fixed dictionary constructor context ok')  #: fixed dictionary constructor context ok
+
+#%% dict_constructor_context_binding
+class Selected:
+    def __new__(value: FixedDict):
+        return value['number'], value['text']
+    @overload
+    def __new__(value: int):
+        return value, 'integer'
+assert Selected({'number': 1, 'text': 'two'}) == (1, 'two')
+assert Selected(value=2) == (2, 'integer')
+class Ordinary:
+    def __new__(value: dict[str, int | str]):
+        return value
+    @overload
+    def __new__(value: int):
+        return {'number': value}
+ordinary = Ordinary({'number': 1, 'text': 'two'})
+assert type(ordinary) is dict[str, int | str]
+assert ordinary['number'] == 1 and ordinary['text'] == 'two'
+assert type(Ordinary(value={})) is dict[str, int | str]
+assert type(Ordinary({'number': 1})) is dict[str, int | str]
+class Preferred:
+    def __new__(value: dict):
+        return 'ordinary'
+    @overload
+    def __new__(value: FixedDict):
+        return 'fixed'
+assert Preferred({'number': 1}) == 'ordinary'
+payload: FixedDict = {'number': 1}
+assert Preferred(payload) == 'fixed'
+class Variadic:
+    def __new__(*values: FixedDict):
+        return values[0]['number'], values[1]['text']
+class Keywords:
+    def __new__(**values: FixedDict):
+        return values['first']['number'], values['second']['text']
+assert Variadic({'number': 1, 'text': 'one'}, {'number': 2, 'text': 'two'}) == (1, 'two')
+assert Keywords(second={'number': 2, 'text': 'two'},
+                first={'number': 1, 'text': 'one'}) == (1, 'two')
+print('dictionary constructor binding ok')  #: dictionary constructor binding ok
+
+#%% fixed_dict_constructor_evaluation
+events: list[int] = []
+def observed(events, label, value):
+    events.append(label)
+    return value
+class Factory:
+    values: list[int]
+    def __new__(prefix: int, value: FixedDict, suffix: int = 0):
+        events.append(6)
+        obj = type._ref_new(Factory)
+        obj.values = value['numbers']
+        obj.values.extend([prefix, suffix])
+        return obj
+    def __init__(self, prefix: int, value: FixedDict, suffix: int = 0):
+        events.append(7)
+        assert self.values is value['numbers']
+        assert self.values[-2:] == [prefix, suffix]
+        assert value['text'] == 'text'
+        self.values = value['numbers']
+obj = Factory(suffix=observed(events, 1, 30),
+              value={'numbers': observed(events, 2, [0]),
+                     'numbers': observed(events, 3, [10]),
+                     'text': observed(events, 4, 'text')},
+              prefix=observed(events, 5, 20))
+assert events == [1, 2, 3, 4, 5, 6, 7]
+assert obj.values == [10, 20, 30]
+def tail(events):
+    events.append(3)
+    return (30,)
+def capture(**kwargs):
+    return kwargs
+def empty(events):
+    events.append(4)
+    return capture()
+events.clear()
+obj = Factory(observed(events, 1, 20),
+              {'numbers': observed(events, 2, [10]), 'text': 'text'},
+              *tail(events), **empty(events))
+assert events == [1, 2, 3, 4, 6, 7]
+assert obj.values == [10, 20, 30]
+events.clear()
+obj = Factory(**empty(events), value={'numbers': [last := 10], 'text': 'text'},
+              prefix=last)
+assert events == [4, 6, 7]
+assert obj.values == [10, 10, 0]
+print('fixed dictionary constructor evaluation ok')  #: fixed dictionary constructor evaluation ok
+
 #%% fixed_dict_nested_key_error
 nested: FixedDict = {'inner': {1: 'value'}}
 #! fixed dictionary keys must be compile-time strings
