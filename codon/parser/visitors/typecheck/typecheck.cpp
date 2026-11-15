@@ -833,7 +833,8 @@ std::vector<types::FuncType *> TypecheckVisitor::findMatchingMethods(
   // Ordinary dict interpretation wins if any viable overload accepts it.
   // Keep only the representation hint; parameter binding does the expansion.
   for (size_t i = 0; i < args.size(); ++i)
-    if (auto *literal = cast<DictExpr>(args[i].getExpr()))
+    if (auto *literal = cast<DictExpr>(args[i].getExpr());
+        literal && (results.size() != 1 || fixed[i]))
       literal->setExpectedType(getStdLibType(
           !results.empty() && fixed[i] ? StdlibTypes::FixedDict : StdlibTypes::Dict));
   return results;

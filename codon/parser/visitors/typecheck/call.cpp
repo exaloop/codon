@@ -132,7 +132,12 @@ void TypecheckVisitor::visit(CallExpr *expr) {
           expr->items, expr->getExpr()->getType()->getPartial()));
     }
     // partials have dangling ellipsis that messes up with the unbound check below
-    bool doDispatch = !m || m->empty() || part.isPartial;
+    const bool pendingDicts =
+        std::ranges::any_of(expr->items, [](const auto &argument) {
+          return cast<DictExpr>(argument.getExpr()) != nullptr;
+        });
+    bool doDispatch =
+        !m || m->empty() || (part.isPartial && (m->size() != 1 || !pendingDicts));
     if (!doDispatch && m && m->size() > 1) {
       for (auto &a : *expr) {
         if (!cast<DictExpr>(a.getExpr()) && isUnbound(a.getExpr()))
@@ -143,9 +148,7 @@ void TypecheckVisitor::visit(CallExpr *expr) {
       calleeFn = instantiateType(m->front(), calleeFn->funcParent
                                                  ? calleeFn->funcParent->getClass()
                                                  : nullptr);
-      if (!std::ranges::any_of(expr->items, [](const auto &argument) {
-            return cast<DictExpr>(argument.getExpr()) != nullptr;
-          })) {
+      if (!pendingDicts) {
         auto e = N<IdExpr>(calleeFn->getFuncName());
         e->setType(calleeFn);
         if (cast<IdExpr>(expr->getExpr())) {

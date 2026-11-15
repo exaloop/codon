@@ -207,6 +207,96 @@ def keywords(tag: str, **values: int):
 assert keywords(right={'number': 3}, tag=1, left={'number': 2}) == 6
 print('fixed dictionary deferred dispatch ok')  #: fixed dictionary deferred dispatch ok
 
+#%% dict_overload_context
+def direct(value: dict[str, int | str]):
+    return value
+
+def overloaded(value: dict[str, int | str]):
+    return value
+@overload
+def overloaded(value: int):
+    return {'number': value}
+
+expected: dict[str, int | str] = {'number': 1, 'text': 'two'}
+assert direct({'number': 1, 'text': 'two'}) == expected
+assert overloaded({'number': 1, 'text': 'two'}) == expected
+assert overloaded(value={'number': 1, 'text': 'two'}) == expected
+assert type(overloaded({'number': 1})) is dict[str, int | str]
+assert overloaded(3) == {'number': 3}
+def reversed(value: int):
+    return {'number': value}
+@overload
+def reversed(value: dict[str, int | str]):
+    return value
+assert reversed({'number': 1, 'text': 'two'}) == expected
+assert type(overloaded({})) is dict[str, int | str]
+def ambiguous(value: dict[str, int]):
+    return 'int'
+@overload
+def ambiguous(value: dict[str, int | str]):
+    return 'union'
+assert ambiguous({'number': 1}) == 'int'
+print('dictionary overload context ok')  #: dictionary overload context ok
+
+#%% dict_overload_context_binding
+Mapping = dict[int | str, int | str]
+def selected(value: Mapping, tag: int):
+    return value
+@overload
+def selected(value: int, tag: str):
+    return {value: tag}
+alias = selected
+assert type(alias({1: 'one', 'two': 2}, 0)) is Mapping
+events: list[int] = []
+def observed(events, label, value):
+    events.append(label)
+    return value
+actual = selected(tag=observed(events, 1, 0),
+                  value={observed(events, 2, 1): observed(events, 3, 'old'),
+                         observed(events, 4, 1): observed(events, 5, 'one'),
+                         'two': observed(events, 6, 2)})
+assert actual[1] == 'one' and actual['two'] == 2
+assert events == [1, 2, 3, 4, 5, 6]
+class Reader:
+    def read(self, value: Mapping):
+        return value
+    @overload
+    def read(self, value: int):
+        return {value: value}
+assert type(Reader().read({1: 'one', 'two': 2})) is Mapping
+def variadic(tag: int, *values: Mapping):
+    return values
+@overload
+def variadic(tag: str, *values: int):
+    return values
+assert type(variadic(0, {1: 'one', 'two': 2})[0]) is Mapping
+def keywords(tag: int, **values: Mapping):
+    return values['value']
+@overload
+def keywords(tag: str, **values: int):
+    return values['value']
+assert type(keywords(value={1: 'one', 'two': 2}, tag=0)) is Mapping
+print('dictionary overload binding context ok')  #: dictionary overload binding context ok
+
+#%% dict_overload_context_partial
+def selected(value: dict[str, int | str], tag: int):
+    return value, tag
+@overload
+def selected(value: int, tag: str):
+    return {'number': value}, len(tag)
+partial = selected(...)
+value, tag = partial({'number': 1, 'text': 'two'}, 3)
+assert type(value) is dict[str, int | str] and value['text'] == 'two' and tag == 3
+captured = selected({'number': 1, 'text': 'two'}, 3, ...)
+value, tag = captured()
+assert type(value) is dict[str, int | str] and value['number'] == 1 and tag == 3
+keywords = selected(value={'number': 1, 'text': 'two'}, tag=3, ...)
+value, tag = keywords()
+assert type(value) is dict[str, int | str] and value['text'] == 'two' and tag == 3
+value, tag = keywords(value=4, tag='four')
+assert type(value) is dict[str, int] and value['number'] == 4 and tag == 4
+print('dictionary overload partial context ok')  #: dictionary overload partial context ok
+
 #%% fixed_dict_context_binding
 def read(prefix: int, value: FixedDict, *, suffix: int = 3):
     return prefix + value['number'] + suffix
