@@ -64,7 +64,7 @@ extern CODON_API const std::string Function;
 extern CODON_API const std::string Generator;
 extern CODON_API const std::string Int;
 extern CODON_API const std::string List;
-extern CODON_API const std::string NamedTuple;
+extern CODON_API const std::string FixedDict;
 extern CODON_API const std::string NDArray;
 extern CODON_API const std::string NoneType;
 extern CODON_API const std::string Object;

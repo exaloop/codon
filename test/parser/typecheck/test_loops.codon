@@ -195,6 +195,54 @@ for i, j in static.enumerate(tt):
 print tuple((Int[i+1](i), j) for i, j in static.enumerate(tt)).__class__.__name__
 #: Tuple[Tuple[Int[1],int],Tuple[Int[2],str],Tuple[Int[3],float],Tuple[Int[4],bool],Tuple[Int[5],List[int]]]
 
+#%% static_for_else
+import internal.static as static
+
+events: list[int] = []
+for value in static.range(0):
+    assert False
+else:
+    events.append(10)
+for value in static.range(3):
+    if value == 1:
+        continue
+    events.append(value)
+else:
+    events.append(20)
+for value in static.tuple(0, 1, 2):
+    events.append(value)
+    if value == 2:
+        break
+else:
+    assert False
+assert events == [10, 0, 2, 20, 0, 1, 2]
+
+events.clear()
+for outer in static.range(3):
+    for inner in (1, 'two'):
+        break
+    else:
+        assert False
+    for inner in (1, 'two'):
+        continue
+    else:
+        events.append(outer)
+        continue
+    assert False
+else:
+    events.append(3)
+assert events == [0, 1, 2, 3]
+
+for outer in (0, 1):
+    for inner in (1, 'two'):
+        pass
+    else:
+        break
+    assert False
+else:
+    assert False
+print('static for-else ok')  #: static for-else ok
+
 #%% static_range_error,barebones
 for i in static.range(1000, -2000, -2):
     pass

@@ -369,20 +369,19 @@ def superf(*args):
     """Special handling"""
     pass
 
-#(init=False, repr=False, eq=False, order=False, hash=False, pickle=False, python=False, gpu=False, container=False)
 @__internal__
 @tuple
-class NamedTuple:
-    args: T
-    N: Literal[int]  # name cache ID
+class FixedDict:
+    _values: T
+    _KeysId: Literal[int]
     T: type
 
     @pure
     @derives
     @llvm
-    def __new__(args: T = (), N: Literal[int] = 0, T: type) -> NamedTuple[N, T]:
-        %0 = insertvalue { {=T} } undef, {=T} %args, 0
-        ret { {=T} } %0
+    def __new__(values: T = (), _KeysId: Literal[int] = 0, T: type) -> FixedDict[_KeysId, T]:
+        %result = insertvalue { {=T} } undef, {=T} %values, 0
+        ret { {=T} } %result
 
 
 @__internal__
@@ -393,7 +392,7 @@ class Partial:
 
     M: Literal[str] # mask
     T: type # Tuple
-    K: type # NamedTuple
+    K: type # FixedDict
     F: type # must be unrealized_type
 
     @pure

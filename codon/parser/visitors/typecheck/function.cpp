@@ -443,6 +443,11 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
           if (isClassMember) // class variable; go to the global context!
             nctx->bases.erase(nctx->bases.begin() + 1, nctx->bases.end());
           auto tv = TypecheckVisitor(nctx);
+          if (cast<DictExpr>(defaultValue))
+            if (auto *annotation = cast<IdExpr>(a.getType()))
+              if (auto item = ctx->find(annotation->getValue()))
+                if (extractType(item->getType())->is(getMangledClass("", "FixedDict")))
+                  defaultValue->setExpectedType(getStdLibType("FixedDict"));
           auto as = N<AssignStmt>(N<IdExpr>(defName), defaultValue,
                                   a.isValue() ? nullptr : a.getType());
           if (isClassMember) {

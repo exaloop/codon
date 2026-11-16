@@ -1345,8 +1345,9 @@ Stmt *TypecheckVisitor::codegenMagic(const std::string &op, Expr *typExpr,
 }
 
 int TypecheckVisitor::generateKwId(const std::vector<std::string> &names) const {
-  auto key = join(names, ";");
-  std::string suffix;
+  std::string key;
+  for (const auto &name : names)
+    key += fmt::format("{}:{}", name.size(), name);
   if (!names.empty()) {
     // Each set of names generates different tuple (i.e., `KwArgs[foo, bar]` is not the
     // same as `KwArgs[bar, baz]`). Cache the names and use an integer for each name

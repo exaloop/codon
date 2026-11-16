@@ -65,6 +65,7 @@ struct Attr {
     TryPyVar,
     LocalRenames,
     MaybeLiteral,
+    ExprCapture,
   };
 };
 } // namespace codon::ast
