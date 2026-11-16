@@ -178,6 +178,7 @@ std::string attrName(int key) {
     // A(ExprStarArgument);
     // A(ExprKwStarArgument);
     // A(ExprOrderedCall);
+    A(ExprCapture);
     A(ExprExternVar);
     A(ExprNoUndefCheck);
     A(ExprDominatedUsed);

@@ -194,6 +194,39 @@ assert Keywords(second={'number': 2, 'text': 'two'},
                 first={'number': 1, 'text': 'one'}) == (1, 'two')
 print('dictionary constructor binding ok')  #: dictionary constructor binding ok
 
+#%% literal_constructor_context
+# Constructor extraction must preserve Literal annotations, just as ordinary calls.
+class Factory:
+    def __new__(number: Literal[int], text: Literal[str], flag: Literal[bool]):
+        return number + 1, text + '!', not flag
+assert Factory(2, 'two', True) == (3, 'two!', False)
+assert Factory(flag=False, text='three', number=3) == (4, 'three!', True)
+class Selected:
+    def __new__(value: Literal[int]):
+        return value + 1
+    @overload
+    def __new__(value: str):
+        return len(value)
+assert Selected(3) == 4
+assert Selected('three') == 5
+class Instance:
+    value: int
+    def __new__(value: Literal[int], text: Literal[str]):
+        obj = type._ref_new(Instance)
+        obj.value = value
+        return obj
+    def __init__(self, value: Literal[int], text: Literal[str]):
+        assert value == 3 and text == 'three'
+        self.value = value
+assert Instance(text='three', value=3).value == 3
+def increment(value: int):
+    return value + 1
+class CallbackFactory:
+    def __new__(callback):
+        return callback(2)
+assert CallbackFactory(increment) == 3
+print('literal constructor context ok')  #: literal constructor context ok
+
 #%% fixed_dict_constructor_evaluation
 events: list[int] = []
 def observed(events, label, value):

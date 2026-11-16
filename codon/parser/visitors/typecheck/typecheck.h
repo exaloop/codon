@@ -141,6 +141,7 @@ private: // Node typechecking rules
   void visit(CallExpr *) override;
   static void validateCall(CallExpr *expr);
   bool transformCallArgs(CallExpr *, PartialCallData &);
+  Expr *extractCallArg(Expr *);
   Expr *transformOptionalCall(CallExpr *, types::ClassType *);
   std::pair<std::shared_ptr<types::FuncType>, Expr *> getCalleeFn(CallExpr *,
                                                                   PartialCallData &);
@@ -522,8 +523,6 @@ public:
   using CallArgSlots = llvm::SmallVector<llvm::SmallVector<int, 1>, 8>;
   using ReorderDoneFn = std::function<int(int, int, const CallArgSlots &, bool)>;
   using ReorderErrorFn = std::function<int(error::Error, const SrcInfo &, std::string)>;
-  void bindCallDictTypes(types::FuncType *func, const std::vector<CallArg> &args,
-                         int star, int kwstar, const CallArgSlots &slots);
   /// Reorders a given vector or named arguments (consisting of names and the
   /// corresponding types) according to the signature of a given function.
   /// Returns the reordered vector and an associated reordering score (missing
