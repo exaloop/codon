@@ -464,6 +464,79 @@ stored(b=traced_keyword('b', 3), z=traced_keyword('z', 4))
 #: z
 #: {'z': 4, 'a': 2, 'b': 3}
 
+#%% call_partial_functools_context
+from functools import partial
+# Rewrite partial before dictionaries are lowered against the intrinsic stub.
+def read(value: FixedDict, extra: int = 0):
+    return value['inner']['number'] + extra, value['inner']['text']
+p = partial(read, {'inner': {'number': 3, 'text': 'three'}})
+assert p(4) == (7, 'three')
+p = partial(read, value={'inner': {'number': 4, 'text': 'four'}})
+assert p(extra=5) == (9, 'four')
+class Reader:
+    base: int
+    def read(self, value: FixedDict):
+        return self.base + value['number'], value['text']
+assert partial(Reader(1).read, {'number': 2, 'text': 'two'})() == (3, 'two')
+def ordinary(value: dict[str, int | str]):
+    return value
+value = partial(ordinary, {'number': 3, 'text': 'three'})()
+assert type(value) is dict[str, int | str] and value['text'] == 'three'
+def literal(number: Literal[int], text: Literal[str], extra: int):
+    return number + extra, text
+assert partial(literal, 3, 'three')(4) == (7, 'three')
+# Target unpacking and empty expansions must retain their original effects.
+events: list[int] = []
+def observed(events, label, value):
+    events.append(label)
+    return value
+def target(events):
+    events.append(2)
+    return (read,)
+def empty(events):
+    events.append(1)
+    return ()
+p = partial(*empty(events), *target(events),
+            {'inner': {'number': observed(events, 3, 3), 'text': 'three'}})
+assert events == [1, 2, 3] and p(4) == (7, 'three')
+def function(events):
+    events.append(4)
+    return read
+p = partial(function(events),
+            {'inner': {'number': observed(events, 5, 3), 'text': 'three'}})
+assert events == [1, 2, 3, 4, 5] and p(4) == (7, 'three')
+def add(first: int, second: int):
+    return first + second
+p = partial(*(add, 3))
+assert p(4) == 7
+print('functools partial context ok')  #: functools partial context ok
+
+#%% call_empty_unpack_literal
+# Saving arguments before an empty expansion must preserve their Literal types.
+events: list[int] = []
+def empty(events):
+    events.append(1)
+    return ()
+def empty_keywords(events):
+    events.append(2)
+    return capture()
+def capture(**kwargs):
+    return kwargs
+def read(number: Literal[int], text: Literal[str], flag: Literal[bool]):
+    return number + 1, text, flag
+assert read(3, 'three', True, *empty(events)) == (4, 'three', True)
+assert events == [1]
+assert read(3, 'three', True, **empty_keywords(events)) == (4, 'three', True)
+assert events == [1, 2]
+p = read(3, 'three', True, *empty(events), ...)
+assert p() == (4, 'three', True) and events == [1, 2, 1]
+class Factory:
+    def __new__(number: Literal[int]):
+        return number + 1
+assert Factory(3, *empty(events)) == 4
+assert events == [1, 2, 1, 1]
+print('empty unpack literal context ok')  #: empty unpack literal context ok
+
 #%% call,barebones
 def foo(a, b, c='hi'):
     print 'foo', a, b, c

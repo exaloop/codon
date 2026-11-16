@@ -962,11 +962,36 @@ Expr *TypecheckVisitor::transformNamedTuple(CallExpr *expr) {
 /// @example
 ///   `partial(foo, 1, a=2)` -> `foo(1, a=2, ...)`
 Expr *TypecheckVisitor::transformFunctoolsPartial(CallExpr *expr) {
-  if (expr->empty())
+  auto arguments = expr->items;
+  std::vector<Stmt *> prepends;
+  // Unpack only the prefix to find the proper target.
+  // Remaining arguments must keep their context / eval order
+  while (!arguments.empty() && cast<StarExpr>(arguments.front().getExpr())) {
+    auto *prefix =
+        N<CallExpr>(expr->getExpr(), std::vector<CallArg>{arguments.front()});
+    PartialCallData part;
+    if (!transformCallArgs(prefix, part))
+      return nullptr;
+    arguments.erase(arguments.begin());
+    arguments.insert(arguments.begin(), prefix->items.begin(), prefix->items.end());
+    for (auto &[position, value] : part.emptyExpansions)
+      prepends.push_back(N<ExprStmt>(value));
+  }
+  if (arguments.empty())
     E(Error::CALL_PARTIAL, getSrcInfo());
-  std::vector<CallArg> args(expr->items.begin() + 1, expr->items.end());
+  std::vector<CallArg> args(arguments.begin() + 1, arguments.end());
   args.emplace_back("", N<EllipsisExpr>(EllipsisExpr::PARTIAL));
-  return transform(N<CallExpr>(expr->begin()->value, args));
+  Expr *target = arguments.front().value;
+  if (hasSideEffect(target)) {
+    auto name = getTemporaryVar("partial_fn");
+    prepends.push_back(
+        N<AssignStmt>(N<IdExpr>(name), target, getParamType(target->getType())));
+    target = N<IdExpr>(name);
+  }
+  Expr *call = N<CallExpr>(target, args);
+  if (!prepends.empty())
+    call = N<StmtExpr>(prepends, call);
+  return transform(call);
 }
 
 /// Typecheck superf method. This method provides the access to the previous matching

@@ -105,6 +105,13 @@ void TypecheckVisitor::visit(CallExpr *expr) {
     return;
   }
 
+  // Handle before going through the arguments to handle literals/fixed dicts
+  if (!part.isPartial && !expr->hasAttribute(Attr::ExprNoSpecial) &&
+      isId(expr->getExpr(), getMangledFunc("std.functools", "partial"))) {
+    resultExpr = transformFunctoolsPartial(expr);
+    return;
+  }
+
   if (!withClassGenerics(
           calleeFn.get(), [&]() { return transformCallArgs(expr, part); }, true, true))
     return;
@@ -863,8 +870,10 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
     for (const auto &[position, value] : part.emptyExpansions) {
       for (; previous < position; ++previous) {
         auto temporary = getTemporaryVar("fixed.argument");
-        statements.push_back(
-            N<AssignStmt>(N<IdExpr>(temporary), (*call)[previous].getExpr()));
+        auto *argument = (*call)[previous].getExpr();
+        // Preserve Literal annotations
+        statements.push_back(N<AssignStmt>(N<IdExpr>(temporary), argument,
+                                           getParamType(argument->getType())));
         (*call)[previous].value = N<IdExpr>(temporary);
       }
       statements.push_back(N<ExprStmt>(value));
@@ -1176,8 +1185,6 @@ std::pair<bool, Expr *> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
     return {false, transformStaticPrintFn(expr)};
   } else if (isF(ei, "std.collections", "namedtuple")) {
     return {true, transformNamedTuple(expr)};
-  } else if (isF(ei, "std.functools", "partial")) {
-    return {true, transformFunctoolsPartial(expr)};
   } else if (isF(ei, "std.internal.static", "has_rtti")) { // static
     return {true, transformHasRttiFn(expr)};
   } else if (isF(ei, "std.internal.static", "function", "realized")) {
