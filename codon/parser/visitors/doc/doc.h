@@ -8,6 +8,8 @@
 #include <utility>
 #include <vector>
 
+#include "llvm/Support/JSON.h"
+
 #include "codon/parser/ast.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/ctx.h"
@@ -15,30 +17,16 @@
 
 namespace codon::ast {
 
-struct json {
-  // values={str -> null} -> string value
-  // values={i -> json} -> list (if list=true)
-  // values={...} -> dictionary
-  std::unordered_map<std::string, std::shared_ptr<json>> values;
-  bool list;
-
-  json();
-  json(const std::string &s);
-  json(const std::string &s, const std::string &v);
-  json(const std::vector<std::shared_ptr<json>> &vs);
-  json(const std::vector<std::string> &vs);
-  json(const std::unordered_map<std::string, std::string> &vs);
-  std::string toString();
-  std::shared_ptr<json> get(const std::string &s);
-  std::shared_ptr<json> set(const std::string &s, const std::string &value);
-  std::shared_ptr<json> set(const std::string &s, const std::shared_ptr<json> &value);
-};
-
 struct DocContext;
 struct DocShared {
   int itemID = 1;
-  std::shared_ptr<json> j;
+  llvm::json::Object symbols;
   std::unordered_map<std::string, std::shared_ptr<DocContext>> modules;
+  std::unordered_map<int, std::shared_ptr<DocContext>> scopes;
+  std::unordered_map<const Stmt *, std::unordered_map<std::string, int>> declarations;
+  std::unordered_set<std::string> requested;
+  std::unordered_map<std::string, int> overloads;
+  std::string root;
   std::string argv0;
   Cache *cache = nullptr;
   std::unordered_map<int, std::vector<std::string>> generics;
@@ -46,33 +34,45 @@ struct DocShared {
 };
 
 struct DocContext : public Context<int> {
-  std::shared_ptr<DocShared> shared;
-  explicit DocContext(std::shared_ptr<DocShared> shared)
-      : Context<int>(""), shared(std::move(shared)) {}
+  DocShared *shared;
+  DocContext *parent = nullptr;
+  std::string module;
+  std::string owner;
+  int moduleID = 0;
+  std::vector<std::string> extraChildren;
+  explicit DocContext(DocShared *shared) : Context<int>(""), shared(shared) {}
   std::shared_ptr<int> find(const std::string &s) const override;
 };
 
-struct DocVisitor : public CallbackASTVisitor<std::shared_ptr<json>, std::string> {
+struct DocVisitor : public CallbackASTVisitor<llvm::json::Value, std::string> {
   std::shared_ptr<DocContext> ctx;
-  std::shared_ptr<json> resultExpr;
+  llvm::json::Value resultExpr = nullptr;
   std::string resultStmt;
 
 public:
   explicit DocVisitor(std::shared_ptr<DocContext> ctx) : ctx(std::move(ctx)) {}
-  static std::shared_ptr<json> apply(const std::string &argv0,
-                                     const std::vector<std::string> &files);
+  static llvm::json::Object apply(const std::string &argv0,
+                                  const std::vector<std::string> &files,
+                                  const std::string &root = "");
 
-  std::shared_ptr<json> transform(Expr *e) override;
+  llvm::json::Value transform(Expr *e) override;
   std::string transform(Stmt *e) override;
 
-  void transformModule(Stmt *stmt);
-  static std::shared_ptr<json> jsonify(const codon::SrcInfo &s);
+  void transformModule(Stmt *stmt, Stmt *prelude = nullptr);
+  std::shared_ptr<DocContext> loadModule(const std::string &path);
+  int declare(Stmt *stmt, const std::string &kind, const std::string &name,
+              bool bind = true);
+  void publish(int id, llvm::json::Object value);
+  std::shared_ptr<int> resolve(Expr *expr) const;
+  std::string alias(Stmt *stmt, const std::string &name, int target);
+  static llvm::json::Object jsonify(const codon::SrcInfo &s);
   static std::vector<Stmt *> flatten(Stmt *stmt, std::string *docstr = nullptr,
                                      bool deep = true);
 
 public:
   void visit(IntExpr *) override;
   void visit(IdExpr *) override;
+  void visit(DotExpr *) override;
   void visit(IndexExpr *) override;
   void visit(FunctionStmt *) override;
   void visit(ClassStmt *) override;

@@ -247,6 +247,100 @@ flag to generate position-independent code.
 
 :::
 
+## `codon doc`
+
+`codon doc` extracts API information from a source file or library, including
+docstrings, signatures, class members, and source locations. Its JSON output can
+feed a custom documentation tool or Codon's reference-page renderer, which also
+generates the [standard library reference](../libraries/api/index.md).
+
+### Extracting a library's API
+
+Documentation lives alongside the code as module, class, and function docstrings.
+Type annotations and default values become part of the generated signatures,
+while docstrings provide the explanation and can contain Markdown formatting.
+For example, a module at `src/mylib/numeric.codon` might contain:
+
+```python
+"""Numeric utilities for working with bounded values."""
+
+def clamp(value: float, lower: float = 0.0, upper: float = 1.0) -> float:
+		"""Limit `value` to the inclusive interval from `lower` to `upper`.
+
+		Values already within the interval are returned unchanged.
+		"""
+		return min(max(value, lower), upper)
+```
+
+From that project's directory, the following command extracts the package's API
+without running its code:
+
+```bash
+codon doc src/mylib --root src --exclude mylib/tests > api.json
+```
+
+Here, `--root src` establishes the import root, so the example module is named
+`mylib.numeric` rather than `numeric`. The root also provides an import search
+location. When omitted, it is inferred from the input path and surrounding
+package directories containing `__init__.codon` or `__init__.py`. A single source
+file is also a valid input, such as `codon doc src/mylib/numeric.codon --root src`.
+
+Directory inputs are searched recursively for `.codon` and `.py` files, with
+Python sources subject to Codon's supported syntax. Other file types, hidden
+paths, `__pycache__`, and `__init_test__.codon` or `__init_test__.py` are skipped.
+Each `--exclude` names a file or directory subtree relative to the root, rather
+than a glob pattern; multiple exclusions can be supplied by repeating the flag.
+
+Imported dependencies remain available for resolving references, but only the
+discovered input modules receive documentation pages. An excluded module may
+therefore still be read when another module imports it. Extraction does not
+execute decorators or infer APIs created at runtime, and annotations that cannot
+be resolved retain their source text instead of requiring a successful type check.
+
+### Rendering a reference
+
+The renderer is provided as `scripts/docgen.py` in the Codon source repository.
+It requires Python 3.11 or later and the packages listed in
+`docs/requirements.txt`; building the compiler from source is not necessary.
+From a Codon checkout, a dedicated environment can be prepared with:
+
+```bash
+python3 -m venv build/docs-venv
+build/docs-venv/bin/python -m pip install -r docs/requirements.txt
+```
+
+With the extracted JSON available, the renderer can generate pages for an
+existing documentation site:
+
+```bash
+build/docs-venv/bin/python scripts/docgen.py \
+	/path/to/project/api.json /path/to/site/docs/reference \
+	--project "My Library" --route /reference \
+	--source-url 'https://github.com/example/mylib/blob/{revision}/src' \
+	--source-revision v1.0
+```
+
+`--project` supplies the display name and `--route` sets the API's URL prefix.
+The source URL corresponds to the extraction root, which is why this example
+ends in `/src`; `{revision}` is replaced with the URL-encoded value of
+`--source-revision`. Source links are omitted when no source URL is supplied.
+For Codon's own reference, `--stdlib` selects its standard title, routes, sidebar,
+and source links instead of the generic project defaults.
+
+The output consists of Markdown with embedded HTML and Docusaurus frontmatter,
+along with an API search index. Codon's documentation site supplies the API styles
+and search interface; another site can integrate the generated content with its
+own presentation. Public names appear in the reference, with special methods
+included on class pages. Re-exports and type aliases link to their definitions
+when those definitions are part of the documented library, and `@extend` methods
+are collected on the corresponding class page.
+
+Regeneration updates files recorded in `.codon-doc-manifest.json` and removes
+stale generated pages while leaving unrelated files alone. Existing files that
+are not tracked by the manifest are protected from being overwritten, so output
+from an older generator can be moved to a backup directory before the first run
+with the new renderer.
+
 ## `codon jit`
 
 Codon provides a debugging interface for its JIT compilation capabilities through the

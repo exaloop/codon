@@ -467,8 +467,10 @@ jobs:
         run: |
           mv downloaded-artifact/* .
           tar -xvzf codon-linux-x86_64.tar.gz
+          export CODON_PATH="$PWD/codon-deploy-linux-x86_64/lib/codon/stdlib"
+          python test/docgen_test.py --codon codon-deploy-linux-x86_64/bin/codon -v
           codon-deploy-linux-x86_64/bin/codon doc codon-deploy-linux-x86_64/lib/codon/stdlib > docs.json
-          python scripts/docgen.py docs.json docs/libraries/api "$PWD/codon-deploy-linux-x86_64/lib/codon/stdlib"
+          python scripts/docgen.py docs.json docs/libraries/api --stdlib
 
       - name: Build and validate Docusaurus site
         run: npm run build --prefix docs
