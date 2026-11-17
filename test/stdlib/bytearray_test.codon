@@ -372,6 +372,171 @@ def test_bytes_api():
 
 
 @test
+def test_binary_strip_split():
+    assert bytearray(b" x ").strip(None) == b"x"
+    assert bytearray(b" x ").lstrip(None) == b"x "
+    assert bytearray(b" x ").rstrip(None) == b" x"
+    chars_options: list[Optional[bytes]] = [None, b"", b"xy", b" \t\r\nx"]
+    separators: list[Optional[bytes]] = [None, b","]
+    for value in (b"", bytearray(), b" \txyx\r\n", bytearray(b" \txyx\r\n"),
+                  b" a,b ,c ", bytearray(b" a,b ,c ")):
+        text = value.decode("ascii")
+        for chars in chars_options:
+            text_chars: Optional[str] = None if chars is None else chars.decode("ascii")
+            assert value.strip(chars).decode("ascii") == text.strip(text_chars)
+            assert value.lstrip(chars).decode("ascii") == text.lstrip(text_chars)
+            assert value.rstrip(chars).decode("ascii") == text.rstrip(text_chars)
+        for sep in separators:
+            text_sep: Optional[str] = None if sep is None else sep.decode("ascii")
+            for maxsplit in (-1, 0, 1, 3):
+                parts = value.split(sep=sep, maxsplit=maxsplit)
+                rparts = value.rsplit(sep=sep, maxsplit=maxsplit)
+                assert [part.decode("ascii") for part in parts] == text.split(text_sep, maxsplit)
+                assert [part.decode("ascii") for part in rparts] == text.rsplit(text_sep, maxsplit)
+        try:
+            value.split(sep=b"")
+            assert False
+        except ValueError:
+            pass
+        try:
+            value.rsplit(sep=b"")
+            assert False
+        except ValueError:
+            pass
+    original = bytearray(b"xy")
+    result = original.strip(None)
+    result[0] = 97
+    assert original == b"xy"
+    parts = original.split(sep=None)
+    parts[0][0] = 97
+    assert original == b"xy"
+
+
+@test
+def test_binary_search():
+    bounds: list[Optional[int]] = [None, -10, -1, 0, 1, 3, 5, 10]
+    for value in (b"", bytearray(), b"hello", bytearray(b"hello"),
+                  b"\x00\xff\x00", bytearray(b"\x00\xff\x00")):
+        text = value.decode("latin-1")
+        for pattern in (b"", b"l", b"missing", bytearray(b"l"), 108, 0, 255):
+            if isinstance(pattern, int):
+                sub = chr(pattern)
+            else:
+                sub = bytes(pattern).decode("latin-1")
+            for start in bounds:
+                for end in bounds:
+                    found = text.find(sub, start, end)
+                    rfound = text.rfind(sub, start, end)
+                    assert value.find(pattern, start, end) == found
+                    assert value.rfind(pattern, start, end) == rfound
+                    assert value.count(pattern, start, end) == text.count(sub, start, end)
+                    if found >= 0:
+                        assert value.index(pattern, start, end) == found
+                    else:
+                        try:
+                            value.index(pattern, start, end)
+                            assert False
+                        except ValueError:
+                            pass
+                    if rfound >= 0:
+                        assert value.rindex(pattern, start, end) == rfound
+                    else:
+                        try:
+                            value.rindex(pattern, start, end)
+                            assert False
+                        except ValueError:
+                            pass
+        for invalid in (-1, 256):
+            try:
+                value.find(invalid, None, None)
+                assert False
+            except ValueError:
+                pass
+            try:
+                value.rfind(invalid, None, None)
+                assert False
+            except ValueError:
+                pass
+            try:
+                value.count(invalid, 100, 100)
+                assert False
+            except ValueError:
+                pass
+            try:
+                value.index(invalid)
+                assert False
+            except ValueError:
+                pass
+            try:
+                value.rindex(invalid)
+                assert False
+            except ValueError:
+                pass
+
+
+@test
+def test_binary_affix_matching():
+    for value in (b"hello", bytearray(b"hello")):
+        assert value.startswith((b"he", bytearray(b"x")))
+        assert value.startswith((bytearray(b"x"), b"he"))
+        assert value.startswith((b"x", bytearray(b"he")))
+        assert value.endswith((b"lo", bytearray(b"x")))
+        assert value.endswith((bytearray(b"x"), b"lo"))
+        assert value.endswith((b"x", bytearray(b"lo")))
+        assert not value.startswith((b"x", bytearray(b"y")))
+        assert not value.endswith((bytearray(b"x"), b"y"))
+        assert value.startswith((bytearray(b"ell"),), 1)
+        assert value.endswith((bytearray(b"ell"),), 1, 4)
+        assert value.startswith((b"he",), 0, None)
+        assert value.endswith((b"lo",), 0, None)
+        assert value.startswith(b"he", None, None)
+        assert value.endswith(bytearray(b"lo"), None, None)
+        assert value.startswith((bytearray(b"he"),), None, None)
+        assert value.endswith(DynamicTuple([b"lo"]), None, None)
+        assert value.startswith(bytearray(b"he"))
+        assert value.endswith(bytearray(b"lo"))
+        assert value.startswith(DynamicTuple([b"x", b"he"]))
+        assert value.endswith(DynamicTuple([bytearray(b"x"), bytearray(b"lo")]))
+        assert not value.startswith(DynamicTuple[bytes]())
+        assert not value.endswith(DynamicTuple[bytearray]())
+        starts: list[Optional[int]] = [None, -99, -6, -5, -4, -1, 0, 1, 3, 5, 6, 99]
+        ends: list[Optional[int]] = [None, -99, -6, -5, -1, 0, 1, 4, 5, 6, 99]
+        for candidates in ((b"x", bytearray(b"he")), (bytearray(b"x"), b"lo"),
+                           (b"ell", bytearray(b"hello")), (b"",), (bytearray(b""),)):
+            for start in starts:
+                for end in ends:
+                    expected_start = False
+                    expected_end = False
+                    for candidate in candidates:
+                        text = bytes(candidate).decode("ascii")
+                        scalar_start = "hello".startswith(text, start, end)
+                        scalar_end = "hello".endswith(text, start, end)
+                        assert value.startswith(candidate, start, end) == scalar_start
+                        assert value.endswith(candidate, start, end) == scalar_end
+                        expected_start = expected_start or scalar_start
+                        expected_end = expected_end or scalar_end
+                    assert value.startswith(candidates, start, end) == expected_start
+                    assert value.endswith(candidates, start, end) == expected_end
+                    assert not value.startswith((), start, end)
+                    assert not value.endswith((), start, end)
+        mutable = bytearray(b"he")
+        candidates = (mutable, b"missing")
+        assert value.startswith(candidates)
+        mutable[0] = 120
+        assert not value.startswith(candidates)
+    for value in (b"", bytearray()):
+        assert value.startswith((bytearray(b""),))
+        assert value.endswith((b"x", b""))
+        assert not value.startswith(())
+        assert not value.endswith(())
+        assert not value.startswith((b"",), 1)
+        assert not value.endswith((bytearray(b""),), 1)
+    for value in (b"\xff\x00tail", bytearray(b"\xff\x00tail")):
+        assert value.startswith((b"x", bytearray(b"\xff\x00")))
+        assert value.endswith((b"x", bytearray(b"\x00")), 0, 2)
+
+
+@test
 def test_hex_conversion_and_translation():
     assert bytearray.fromhex("") == b""
     assert bytearray.fromhex("2Ef0 F1f2\n") == b".\xf0\xf1\xf2"
@@ -521,6 +686,9 @@ test_mutation()
 test_sequence_operations()
 test_byte_range_errors()
 test_bytes_api()
+test_binary_strip_split()
+test_binary_search()
+test_binary_affix_matching()
 test_hex_conversion_and_translation()
 test_remove_affixes()
 test_resize()

@@ -348,106 +348,40 @@ class bytearray:
             self._ptr[j] = value
             i += 1
 
-    def count(self, value: int, /) -> int:
-        value = int(_bytearray_byte(value))
-        result = 0
-        for i in range(self._len):
-            if int(self._ptr[i]) == value:
-                result += 1
-        return result
-
     def count(
-        self, pattern: bytes, start: int = 0, end: Optional[int] = None,
-        /,
+        self, pattern, start: Optional[int] = 0, end: Optional[int] = None, /,
     ) -> int:
         return self._bytes_view().count(pattern, start, end)
 
-    def count(
-        self, pattern: bytearray, start: int = 0, end: Optional[int] = None,
-        /,
-    ) -> int:
-        return self._bytes_view().count(pattern._bytes_view(), start, end)
-
-    def index(self, value: int, start: int = 0, end: Optional[int] = None, /) -> int:
-        value = int(_bytearray_byte(value))
-        end: int = self._len if end is None else end
-        start, end = self._bytes_view()._correct_indices(start, end)
-        for i in range(start, end):
-            if int(self._ptr[i]) == value:
-                return i
-        raise ValueError("subsection not found")
-
     def index(
-        self, pattern: bytes, start: int = 0, end: Optional[int] = None,
-        /,
+        self, pattern, start: Optional[int] = 0, end: Optional[int] = None, /,
     ) -> int:
         return self._bytes_view().index(pattern, start, end)
 
-    def index(
-        self, pattern: bytearray, start: int = 0, end: Optional[int] = None,
-        /,
-    ) -> int:
-        return self._bytes_view().index(pattern._bytes_view(), start, end)
-
     def find(
-        self, pattern: bytes, start: int = 0, end: Optional[int] = None,
-        /,
+        self, pattern, start: Optional[int] = 0, end: Optional[int] = None, /,
     ) -> int:
         return self._bytes_view().find(pattern, start, end)
 
-    def find(
-        self, pattern: bytearray, start: int = 0, end: Optional[int] = None,
-        /,
-    ) -> int:
-        return self._bytes_view().find(pattern._bytes_view(), start, end)
-
     def rfind(
-        self, pattern: bytes, start: int = 0, end: Optional[int] = None,
-        /,
+        self, pattern, start: Optional[int] = 0, end: Optional[int] = None, /,
     ) -> int:
         return self._bytes_view().rfind(pattern, start, end)
 
-    def rfind(
-        self, pattern: bytearray, start: int = 0, end: Optional[int] = None,
-        /,
-    ) -> int:
-        return self._bytes_view().rfind(pattern._bytes_view(), start, end)
-
     def rindex(
-        self, pattern: bytes, start: int = 0, end: Optional[int] = None,
-        /,
+        self, pattern, start: Optional[int] = 0, end: Optional[int] = None, /,
     ) -> int:
         return self._bytes_view().rindex(pattern, start, end)
 
-    def rindex(
-        self, pattern: bytearray, start: int = 0, end: Optional[int] = None,
-        /,
-    ) -> int:
-        return self._bytes_view().rindex(pattern._bytes_view(), start, end)
-
     def startswith(
-        self, prefix: bytes, start: int = 0, end: Optional[int] = None,
-        /,
+        self, prefix, start: Optional[int] = 0, end: Optional[int] = None, /,
     ) -> bool:
         return self._bytes_view().startswith(prefix, start, end)
 
-    def startswith(
-        self, prefix: bytearray, start: int = 0, end: Optional[int] = None,
-        /,
-    ) -> bool:
-        return self._bytes_view().startswith(prefix._bytes_view(), start, end)
-
     def endswith(
-        self, suffix: bytes, start: int = 0, end: Optional[int] = None,
-        /,
+        self, suffix, start: Optional[int] = 0, end: Optional[int] = None, /,
     ) -> bool:
         return self._bytes_view().endswith(suffix, start, end)
-
-    def endswith(
-        self, suffix: bytearray, start: int = 0, end: Optional[int] = None,
-        /,
-    ) -> bool:
-        return self._bytes_view().endswith(suffix._bytes_view(), start, end)
 
     def removeprefix(self, prefix, /) -> bytearray:
         return bytearray(self._bytes_view().removeprefix(prefix))
@@ -521,22 +455,13 @@ class bytearray:
     def zfill(self, width: int, /) -> bytearray:
         return self._adopt_or_copy(self._bytes_view().zfill(width))
 
-    def lstrip(self, /) -> bytearray:
-        return bytearray(self._bytes_view().lstrip())
-
-    def lstrip(self, chars: bytes, /) -> bytearray:
+    def lstrip(self, chars: Optional[bytes] = None, /) -> bytearray:
         return bytearray(self._bytes_view().lstrip(chars))
 
-    def rstrip(self, /) -> bytearray:
-        return bytearray(self._bytes_view().rstrip())
-
-    def rstrip(self, chars: bytes, /) -> bytearray:
+    def rstrip(self, chars: Optional[bytes] = None, /) -> bytearray:
         return bytearray(self._bytes_view().rstrip(chars))
 
-    def strip(self, /) -> bytearray:
-        return bytearray(self._bytes_view().strip())
-
-    def strip(self, chars: bytes, /) -> bytearray:
+    def strip(self, chars: Optional[bytes] = None, /) -> bytearray:
         return bytearray(self._bytes_view().strip(chars))
 
     def partition(self, separator: bytes, /) -> Tuple[bytearray, bytearray, bytearray]:
@@ -548,14 +473,14 @@ class bytearray:
         return bytearray(before), bytearray(middle), bytearray(after)
 
     def split(
-        self, /, separator: Optional[bytes] = None, maxsplit: int = -1
+        self, /, sep: Optional[bytes] = None, maxsplit: int = -1
     ) -> List[bytearray]:
-        return [bytearray(part) for part in self._bytes_view().split(separator, maxsplit)]
+        return [bytearray(part) for part in self._bytes_view().split(sep, maxsplit)]
 
     def rsplit(
-        self, /, separator: Optional[bytes] = None, maxsplit: int = -1
+        self, /, sep: Optional[bytes] = None, maxsplit: int = -1
     ) -> List[bytearray]:
-        return [bytearray(part) for part in self._bytes_view().rsplit(separator, maxsplit)]
+        return [bytearray(part) for part in self._bytes_view().rsplit(sep, maxsplit)]
 
     def splitlines(self, /, keepends: bool = False) -> List[bytearray]:
         return [bytearray(part) for part in self._bytes_view().splitlines(keepends)]

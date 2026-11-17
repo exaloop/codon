@@ -4,6 +4,7 @@ import internal.static as static
 import internal.gc as gc
 
 _MAX: Literal[int] = 0x7FFFFFFFFFFFFFFF
+_BYTE_MAX: Literal[int] = 255
 
 
 def _bytes_hex_value(value: u8) -> int:
@@ -757,12 +758,12 @@ class bytes:
 
     def center(self, width: int, fillchar: bytes = b" ", /) -> bytes:
         if len(fillchar) != 1:
-            raise ValueError("The fill character must be exactly one character long")
+            raise TypeError("The fill character must be exactly one character long")
         if width <= len(self):
             return self
 
         pad = width - len(self)
-        left_pad = pad.cdiv(2)
+        left_pad = pad.cdiv(2) + (pad & width & 1)
         right_pad = width - len(self) - left_pad
         return bytes._build((fillchar, left_pad), self, (fillchar, right_pad))
 
@@ -784,23 +785,74 @@ class bytes:
 
         return zf
 
-    def count(self, sub: bytes, start: int = 0, end: Optional[int] = None, /) -> int:
-        end: int = end if end is not None else len(self)
+    def count(
+        self, sub, start: Optional[int] = 0, end: Optional[int] = None, /,
+    ) -> int:
+        if isinstance(sub, bytearray):
+            return self.count(sub._bytes_view(), start, end)
+        else:
+            compile_error("a bytes-like object or integer is required")
+
+    def count(
+        self, sub: int, start: Optional[int] = 0, end: Optional[int] = None, /,
+    ) -> int:
+        if sub < 0 or sub > _BYTE_MAX:
+            raise ValueError("byte must be in range(0, 256)")
+        value = u8(sub)
+        return self.count(bytes(__ptr__(value), 1), start, end)
+
+    def count(
+        self, sub: bytes, start: Optional[int] = 0, end: Optional[int] = None, /,
+    ) -> int:
         start, end = self._correct_indices(start, end)
         if end - start < len(sub):
             return 0
         return algorithms.count(self._slice(start, end), sub)
 
-    def find(self, sub: bytes, start: int = 0, end: Optional[int] = None, /) -> int:
-        end: int = end if end is not None else len(self)
+    def find(
+        self, sub, start: Optional[int] = 0, end: Optional[int] = None, /,
+    ) -> int:
+        if isinstance(sub, bytearray):
+            return self.find(sub._bytes_view(), start, end)
+        else:
+            compile_error("a bytes-like object or integer is required")
+
+    def find(
+        self, sub: int, start: Optional[int] = 0, end: Optional[int] = None, /,
+    ) -> int:
+        if sub < 0 or sub > _BYTE_MAX:
+            raise ValueError("byte must be in range(0, 256)")
+        value = u8(sub)
+        return self.find(bytes(__ptr__(value), 1), start, end)
+
+    def find(
+        self, sub: bytes, start: Optional[int] = 0, end: Optional[int] = None, /,
+    ) -> int:
         start, end = self._correct_indices(start, end)
         if end - start < len(sub):
             return -1
         pos = algorithms.find(self._slice(start, end), sub)
         return pos if pos < 0 else pos + start
 
-    def rfind(self, sub: bytes, start: int = 0, end: Optional[int] = None, /) -> int:
-        end: int = end if end is not None else len(self)
+    def rfind(
+        self, sub, start: Optional[int] = 0, end: Optional[int] = None, /,
+    ) -> int:
+        if isinstance(sub, bytearray):
+            return self.rfind(sub._bytes_view(), start, end)
+        else:
+            compile_error("a bytes-like object or integer is required")
+
+    def rfind(
+        self, sub: int, start: Optional[int] = 0, end: Optional[int] = None, /,
+    ) -> int:
+        if sub < 0 or sub > _BYTE_MAX:
+            raise ValueError("byte must be in range(0, 256)")
+        value = u8(sub)
+        return self.rfind(bytes(__ptr__(value), 1), start, end)
+
+    def rfind(
+        self, sub: bytes, start: Optional[int] = 0, end: Optional[int] = None, /,
+    ) -> int:
         start, end = self._correct_indices(start, end)
         if end - start < len(sub):
             return -1
@@ -980,54 +1032,63 @@ class bytes:
         return v
 
     def startswith(
-        self, prefix: bytes, start: int = 0, end: Optional[int] = None,
+        self, prefix, start: Optional[int] = 0, end: Optional[int] = None, /,
+    ) -> bool:
+        if isinstance(prefix, bytearray):
+            return self.startswith(prefix._bytes_view(), start, end)
+        elif isinstance(prefix, Tuple) or isinstance(prefix, DynamicTuple):
+            if isinstance(prefix, Tuple) and static.len(prefix) == 0:
+                return False
+            else:
+                for candidate in prefix:
+                    if isinstance(candidate, bytes) or isinstance(candidate, bytearray):
+                        if self.startswith(candidate, start, end):
+                            return True
+                    else:
+                        compile_error("tuple for startswith must only contain bytes or bytearray")
+                return False
+        else:
+            compile_error("startswith first arg must be bytes, bytearray or a tuple of them")
+
+    def startswith(
+        self, prefix: bytes, start: Optional[int] = 0, end: Optional[int] = None,
         /,
     ) -> bool:
-        end: int = end if end is not None else len(self)
-        if end < 0:
-            end += len(self)
-        elif start < 0:
-            start += len(self)
-
-        # length prefix is longer than range of string being compared to
-        if start + len(prefix) > len(self):
-            return False
-
-        # length of prefix is longer than range of string[start:end]
+        start, end = self._correct_indices(start, end)
         if end - start < len(prefix):
             return False
-
-        # prefix is an empty string
         if not prefix:
             return True
-
         return prefix == self._slice(start, start + len(prefix))
 
-    def endswith(self, suffix: bytes, start: int = 0, end: Optional[int] = None, /) -> bool:
-        end: int = end if end is not None else len(self)
-        if end < 0:
-            end += len(self)
-        elif start < 0:
-            start += len(self)
-        if end > len(self):
-            end = len(self)
+    def endswith(
+        self, suffix, start: Optional[int] = 0, end: Optional[int] = None, /,
+    ) -> bool:
+        if isinstance(suffix, bytearray):
+            return self.endswith(suffix._bytes_view(), start, end)
+        elif isinstance(suffix, Tuple) or isinstance(suffix, DynamicTuple):
+            if isinstance(suffix, Tuple) and static.len(suffix) == 0:
+                return False
+            else:
+                for candidate in suffix:
+                    if isinstance(candidate, bytes) or isinstance(candidate, bytearray):
+                        if self.endswith(candidate, start, end):
+                            return True
+                    else:
+                        compile_error("tuple for endswith must only contain bytes or bytearray")
+                return False
+        else:
+            compile_error("endswith first arg must be bytes, bytearray or a tuple of them")
 
-        # length prefix is longer than range of string being compared to
-        if end - start < len(suffix) or start > len(self):
-            return False
-
-        if end - len(suffix) > start:
-            start = end - len(suffix)
-
-        # length of prefix is longer than range of string[start:end]
+    def endswith(
+        self, suffix: bytes, start: Optional[int] = 0, end: Optional[int] = None, /,
+    ) -> bool:
+        start, end = self._correct_indices(start, end)
         if end - start < len(suffix):
             return False
-
-        # prefix is an empty string
         if not suffix:
             return True
-
-        return suffix == self._slice(start, start + len(suffix))
+        return suffix == self._slice(end - len(suffix), end)
 
     def removeprefix(self, prefix, /) -> bytes:
         prefix: bytes = bytes(prefix)
@@ -1041,14 +1102,14 @@ class bytes:
             return self._slice(0, len(self) - len(suffix))
         return self
 
-    def index(self, sub: bytes, start: int = 0, end: Optional[int] = None, /) -> int:
+    def index(self, sub, start: Optional[int] = 0, end: Optional[int] = None, /) -> int:
         i = self.find(sub, start, end)
         if i == -1:
             raise ValueError("substring not found")
         else:
             return i
 
-    def rindex(self, sub: bytes, start: int = 0, end: Optional[int] = None, /) -> int:
+    def rindex(self, sub, start: Optional[int] = 0, end: Optional[int] = None, /) -> int:
         i = self.rfind(sub, start, end)
         if i == -1:
             raise ValueError("substring not found")
@@ -1174,8 +1235,10 @@ class bytes:
 
     # Internal helpers
 
-    def _correct_indices(self, start: int, end: int) -> Tuple[int, int]:
+    def _correct_indices(self, start: Optional[int], end: Optional[int]) -> Tuple[int, int]:
         n = len(self)
+        start: int = 0 if start is None else start
+        end: int = n if end is None else end
 
         if end > n:
             end = n
