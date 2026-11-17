@@ -414,6 +414,34 @@ def test_binary_strip_split():
 
 @test
 def test_binary_search():
+    for value in (b"hello", bytearray(b"hello")):
+        needle: Optional[bytearray] = bytearray(b"l")
+        prefix: Optional[bytearray] = bytearray(b"he")
+        suffix: Optional[bytearray] = bytearray(b"lo")
+        empty: Optional[bytearray] = bytearray()
+        assert value.count(needle) == 2
+        assert value.find(needle) == 2
+        assert value.rfind(needle) == 3
+        assert value.index(needle) == 2
+        assert value.rindex(needle) == 3
+        assert value.startswith(prefix)
+        assert value.endswith(suffix)
+        assert value.count(needle, None, 3) == 1
+        assert value.find(needle, 3, None) == 3
+        assert value.rfind(needle, None, 3) == 2
+        assert not value.startswith(prefix, 1, None)
+        assert not value.endswith(suffix, None, 4)
+        assert value.count(empty) == 6
+        assert value.startswith(empty)
+        assert value.endswith(empty)
+    for size in (0, 1, 15, 16, 17, 255, 256, 257, 4096, 4097):
+        for value in (b"\n" * size, bytearray(b"\n" * size)):
+            assert value.count(10) == size
+            assert value.count(10, 1, -1) == max(0, size - 2)
+            assert value.count(10, -5000, None) == size
+            assert value.count(10, size, None) == 0
+            assert value.count(10, size + 1, None) == 0
+            assert value.count(0, None, None) == 0
     bounds: list[Optional[int]] = [None, -10, -1, 0, 1, 3, 5, 10]
     for value in (b"", bytearray(), b"hello", bytearray(b"hello"),
                   b"\x00\xff\x00", bytearray(b"\x00\xff\x00")):

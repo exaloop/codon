@@ -786,20 +786,17 @@ class bytes:
         return zf
 
     def count(
-        self, sub, start: Optional[int] = 0, end: Optional[int] = None, /,
-    ) -> int:
-        if isinstance(sub, bytearray):
-            return self.count(sub._bytes_view(), start, end)
-        else:
-            compile_error("a bytes-like object or integer is required")
-
-    def count(
         self, sub: int, start: Optional[int] = 0, end: Optional[int] = None, /,
     ) -> int:
         if sub < 0 or sub > _BYTE_MAX:
             raise ValueError("byte must be in range(0, 256)")
+        start, end = self._correct_indices(start, end)
         value = u8(sub)
-        return self.count(bytes(__ptr__(value), 1), start, end)
+        result = 0
+        for position in range(start, end):
+            if self._ptr[position] == value:
+                result += 1
+        return result
 
     def count(
         self, sub: bytes, start: Optional[int] = 0, end: Optional[int] = None, /,
@@ -808,14 +805,6 @@ class bytes:
         if end - start < len(sub):
             return 0
         return algorithms.count(self._slice(start, end), sub)
-
-    def find(
-        self, sub, start: Optional[int] = 0, end: Optional[int] = None, /,
-    ) -> int:
-        if isinstance(sub, bytearray):
-            return self.find(sub._bytes_view(), start, end)
-        else:
-            compile_error("a bytes-like object or integer is required")
 
     def find(
         self, sub: int, start: Optional[int] = 0, end: Optional[int] = None, /,
@@ -833,14 +822,6 @@ class bytes:
             return -1
         pos = algorithms.find(self._slice(start, end), sub)
         return pos if pos < 0 else pos + start
-
-    def rfind(
-        self, sub, start: Optional[int] = 0, end: Optional[int] = None, /,
-    ) -> int:
-        if isinstance(sub, bytearray):
-            return self.rfind(sub._bytes_view(), start, end)
-        else:
-            compile_error("a bytes-like object or integer is required")
 
     def rfind(
         self, sub: int, start: Optional[int] = 0, end: Optional[int] = None, /,
@@ -1034,9 +1015,7 @@ class bytes:
     def startswith(
         self, prefix, start: Optional[int] = 0, end: Optional[int] = None, /,
     ) -> bool:
-        if isinstance(prefix, bytearray):
-            return self.startswith(prefix._bytes_view(), start, end)
-        elif isinstance(prefix, Tuple) or isinstance(prefix, DynamicTuple):
+        if isinstance(prefix, Tuple) or isinstance(prefix, DynamicTuple):
             if isinstance(prefix, Tuple) and static.len(prefix) == 0:
                 return False
             else:
@@ -1064,9 +1043,7 @@ class bytes:
     def endswith(
         self, suffix, start: Optional[int] = 0, end: Optional[int] = None, /,
     ) -> bool:
-        if isinstance(suffix, bytearray):
-            return self.endswith(suffix._bytes_view(), start, end)
-        elif isinstance(suffix, Tuple) or isinstance(suffix, DynamicTuple):
+        if isinstance(suffix, Tuple) or isinstance(suffix, DynamicTuple):
             if isinstance(suffix, Tuple) and static.len(suffix) == 0:
                 return False
             else:

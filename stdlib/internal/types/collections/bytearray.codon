@@ -613,6 +613,31 @@ class bytearray:
 
 @extend
 class bytes:
+    def count(
+        self, sub: bytearray, start: Optional[int] = 0, end: Optional[int] = None, /,
+    ) -> int:
+        return self.count(sub._bytes_view(), start, end)
+
+    def find(
+        self, sub: bytearray, start: Optional[int] = 0, end: Optional[int] = None, /,
+    ) -> int:
+        return self.find(sub._bytes_view(), start, end)
+
+    def rfind(
+        self, sub: bytearray, start: Optional[int] = 0, end: Optional[int] = None, /,
+    ) -> int:
+        return self.rfind(sub._bytes_view(), start, end)
+
+    def startswith(
+        self, prefix: bytearray, start: Optional[int] = 0, end: Optional[int] = None, /,
+    ) -> bool:
+        return self.startswith(prefix._bytes_view(), start, end)
+
+    def endswith(
+        self, suffix: bytearray, start: Optional[int] = 0, end: Optional[int] = None, /,
+    ) -> bool:
+        return self.endswith(suffix._bytes_view(), start, end)
+
     def __eq__(self, other: bytearray, /) -> bool:
         return self == other._bytes_view()
 
