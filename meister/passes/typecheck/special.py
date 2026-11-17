@@ -247,6 +247,12 @@ def prepare_vtables(ctx):
                             realization.vtable[identifier] = adapt_target(
                                 method, receiver, resolved
                             )
+                            adapted = realization.vtable[identifier]
+                            realization.ir.runtime_info.methods[identifier] = (
+                                utils.get_function(ctx, adapted)
+                                .realizations[adapted.realized_name()]
+                                .ir
+                            )
                             added = True
         # Realizing a target can register more super calls; process a snapshot.
         for identifier, signature in sorted(list(ctx.cache.super_calls.items())):
@@ -274,6 +280,12 @@ def prepare_vtables(ctx):
                         realization.vtable[identifier] = adapt_target(
                             ctx.cache.super_call_signatures[identifier], receiver, resolved
                         )
+                        adapted = realization.vtable[identifier]
+                        realization.ir.runtime_info.methods[identifier] = (
+                            utils.get_function(ctx, adapted)
+                            .realizations[adapted.realized_name()]
+                            .ir
+                        )
                         added = True
                         break
         added |= realize_value_methods(ctx, visitor)
@@ -284,7 +296,6 @@ def prepare_vtables(ctx):
 
 
 def realize_value_methods(ctx, visitor):
-    """Realize frontend value adapters; backend TypeInfo emission remains unported."""
     requests = []
     for method, count, fallback in [
         ("__hash__", 1, "_unsupported_hash"),
@@ -314,42 +325,39 @@ def realize_value_methods(ctx, visitor):
     ]:
         fn = utils.get_function(ctx, name)
         for _, realization in sorted(fn.realizations.items()) if fn else []:
-            pending.append(
-                utils.extract_func_generic(realization.type) if generic else realization.type[0]
-            )
-    for _, cls in sorted(ctx.cache.classes.items()):
-        pending.extend(
-            real.type for _, real in sorted(cls.realizations.items()) if real.value_accessed
-        )
+            typ = utils.extract_func_generic(realization.type) if generic else realization.type[0]
+            pending.append(infer.make_ir_type(ctx, typ.require_cls))
+    pending.extend(
+        typ
+        for typ in ctx.cache.module.types
+        if typ.runtime_info and typ.runtime_info.value_accessed
+    )
     seen, added = set(), False
     while pending:
-        typ = utils.get_underlying_static_type(ctx, pending.pop()).require_cls
-        if typ.func:
-            typ = ast.types.Class(base=typ)
-        key = typ.realized_name()
-        if key in seen or typ == ast.types.Stdlib.Any:
+        handle = pending.pop()
+        if handle is None or handle in seen:
             continue
-        seen.add(key)
+        seen.add(handle)
+        if handle.ast_type and handle.ast_type == ast.types.Stdlib.Any:
+            continue
+        pending.extend(handle.get_used_types())
+        info = handle.runtime_info
+        if info is None:
+            continue
+        typ = handle.ast_type.require_cls
+        key = typ.realized_name()
         realization = utils.get_class_realization(ctx, typ)
-        pending.extend(field for _, field in realization.fields)
-        pending.extend(realization.bases)
-        if typ.name not in {ast.types.Stdlib.Int, ast.types.Stdlib.UnrealizedType}:
-            pending.extend(
-                utils.get_underlying_static_type(ctx, g.type)
-                for g in typ.generics
-                if g.type and g.type.cls
-            )
         for name in sorted(utils.get_class(ctx, typ).descendants):
             for _, child in sorted(utils.get_class(ctx, name).realizations.items()):
                 if any(base.realized_name() == key for base in child.bases):
-                    pending.append(child.type)
+                    pending.append(child.ir)
         for member, count, fallback in requests:
             if member == "_dict_value":
                 root = utils.get_stdlib_type(ctx, ast.types.Stdlib.Dict)
-                if not any(base.name == root.name for base in [typ, *realization.bases]):
+                if not any(base.ast_type.require_cls.name == root.name for base in info.mro):
                     continue
             identifier = value_method_id(ctx, member)
-            if identifier in realization.value_methods:
+            if identifier in info.methods:
                 continue
             pointer = utils.get_class_field_types(
                 ctx, utils.get_stdlib_type(ctx, ast.types.Stdlib.Any)
@@ -386,6 +394,10 @@ def realize_value_methods(ctx, visitor):
                         )
                     )
             realization.value_methods[identifier] = call.expr.type.require_func
+            resolved = call.expr.type.require_func
+            info.methods[identifier] = (
+                utils.get_function(ctx, resolved).realizations[resolved.realized_name()].ir
+            )
             added = True
     return added
 

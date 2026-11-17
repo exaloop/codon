@@ -146,6 +146,13 @@ public:
   /// @param module the module
   void run(Module *module);
 
+  /// Read-only pass order for stage-by-stage IR dump comparisons.
+  const std::vector<std::string> &getExecutionOrder() const { return executionOrder; }
+
+  /// Run one registered pass with its normal dependencies and invalidations.
+  /// Used by stage-by-stage dump comparisons; the transformation is unchanged.
+  void runPass(Module *module, const std::string &name);
+
   /// Gets the result of a given analysis.
   /// @param key the (unique'd) analysis key
   /// @return the result
@@ -163,7 +170,6 @@ public:
   }
 
 private:
-  void runPass(Module *module, const std::string &name);
   void registerStandardPasses();
   void runAnalysis(Module *module, const std::string &name);
   void invalidate(const std::string &key);

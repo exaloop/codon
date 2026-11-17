@@ -417,7 +417,7 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
     break;
   case BuildKind::CIR: {
     std::ofstream out(filename);
-    codon::ir::util::format(out, compiler->getModule());
+    codon::ir::util::format(out, compiler->getModule(), true, true, 2, true);
     break;
   }
   case BuildKind::Detect:

@@ -320,9 +320,7 @@ def typecheck_program(
     from ...cache import MAIN_IMPORT, MODULE_MAIN, STDLIB_IMPORT, Import
     from . import infer, special, utils
 
-    if False:
-        raise NotImplementedError
-        assert cache.module is not None, "cache's module is not set"
+    assert cache.module is not None, "cache's module is not set"
 
     # An isolated test worker may resume from the stdlib-loading cut point.
     preamble = ast.SuiteStmt() if _preamble is None else _preamble

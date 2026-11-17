@@ -322,14 +322,20 @@ def realize_type(ctx: TypeContext, typ: ast.types.Class) -> ast.types.Class | No
         ir_field_types.append(make_ir_type(ctx, field_type.require_cls))
         member_info[fields[idx].name] = field_type.info
 
-    # IR attributes
     # Set IR attributes
-    if False:
-        raise NotImplementedError
-        if names and isinstance(ir_type, ast.ir.types.RefType):
-            ir_type.get_contents().realize(ir_field_types, names)
-            ir_type.set(ast.ir.Attr.Member, member_info)
-            ir_type.get_contents().set(ast.ir.Attr.Member, member_info)
+    from ... import ir
+
+    if names and (reference := ir.cast(ir.RefType, ir_type)):
+        reference.contents.realize(ir_field_types, names)
+        reference.set_attribute(ir.MemberAttribute(member_info))
+        reference.contents.set_attribute(ir.MemberAttribute(member_info))
+    for field in fields:
+        owner = ir_type
+        for base in ir_type.runtime_info.mro:
+            if base.ast_type.require_cls.name == field.base_class:
+                owner = base
+                break
+        ir_type.runtime_info.field_owners.append(owner)
     return generalized
 
 
@@ -579,269 +585,257 @@ def _realize_func_body(
     return realization.type
 
 
-def make_ir_type(ctx: TypeContext, typ: ast.types.Class) -> ast.ir.Type:
-    """Make IR node for a realized type."""
+def make_ir_type(ctx: TypeContext, typ: ast.types.Class):
+    """C++: infer.cpp:646. Make IR node for a realized type."""
+    from ... import ir
 
-    # Realize if not, and return cached value if it exists
-    realized_name = ast.types.Class.realized_name(typ)
-    cls_data = utils.get_class(ctx, typ)
-    assert cls_data
-    if realized_name not in cls_data.realizations:
-        realized = realize(ctx, typ)
-        assert realized
-        typ = realized
-        realized_name = ast.types.Class.realized_name(typ)
-        cls_data = utils.get_class(ctx, typ)
-        assert cls_data
-    realization = cls_data.realizations[realized_name]
-    if realization.ir:
-        if cls_data.has_rtti():
-            if False:
-                raise NotImplementedError
-                realization.ir.set_polymorphic()
-        return realization.ir
+    # Realize if not, and return cached value if it exists.
+    name = ast.types.Class.realized_name(typ)
+    cls = utils.get_class(ctx, typ)
+    if name not in cls.realizations:
+        typ = realize(ctx, typ).require_cls
+        name = ast.types.Class.realized_name(typ)
+        cls = utils.get_class(ctx, typ)
+    real = cls.realizations[name]
+    if real.ir:
+        if cls.has_rtti():
+            ir.cast(ir.RefType, real.ir).polymorphic = True
+        return real.ir
 
-    def force_find_ir_type(typ: ast.types.Type):
-        cls = typ.cls
-        assert cls, f"{typ} not realized"
-        cls_data = utils.get_class(ctx, cls)
-        assert cls_data
-        name = ast.types.Class.realized_name(cls)
-        handle = cls_data.realizations[name].ir
-        assert handle, f"no LLVM type for {cls}"
+    def force_find_ir_type(value):
+        cls_type = value.cls
+        assert cls_type, f"{value} not realized"
+        key = ast.types.Class.realized_name(cls_type)
+        data = utils.get_class(ctx, cls_type)
+        assert key in data.realizations, f"{value} not realized"
+        handle = data.realizations[key].ir
+        assert handle, f"no LLVM type for {value}"
         return handle
 
-    # Prepare generics and statics
-    type_arguments = []
-    static_arguments = []
+    # Prepare generics and statics.
+    types, statics = [], []
     if typ == ast.types.Stdlib.UnrealizedType:
-        type_arguments.append(None)
+        types.append(None)
     else:
         for generic in typ.generics:
             if literal := generic.type.literal:
-                static_arguments.append(literal)
+                statics.append(literal)
             else:
-                type_arguments.append(force_find_ir_type(generic.type))
-
-    # Keep makeIRType's typechecking diagnostics even while IR creation is stubbed.
-    # TODO: remove once translate ported
-    if typ == ast.types.Stdlib.Vec:
-        count = static_arguments[0].require_int
-        if count <= 0 or count > 0xFFFFFFFF:
-            raise TypecheckError(ctx.info, "SIMD vector width must be positive and fit in 32 bits")
-        if typ[0].require_cls.name not in {
-            ast.types.Stdlib.Int,
-            ast.types.Stdlib.UInt,
-            ast.types.Stdlib.Float,
-            "float32",
-            ast.types.Stdlib.Float16,
-            "bfloat16",
-            "float128",
-        }:
-            raise TypecheckError(
-                ctx.info, "SIMD element type must be an integer or floating-point type"
-            )
-
-    # Get the IR type
-    handle = ast.ir.Type()
-    # Record layout creation still realizes fields in C++, even though the Python
-    # port only creates an IR stub. Keep that inference work and its diagnostics.
-    # TODO: remove once translate ported
-    if typ.is_tuple and typ.name not in {
-        ast.types.Stdlib.Bool,
-        ast.types.Stdlib.Float,
-        "float32",
-        ast.types.Stdlib.Float16,
-        "bfloat16",
-        "float128",
-        ast.types.Stdlib.String,
-        "bytes",
-        ast.types.Stdlib.Int,
-        ast.types.Stdlib.UInt,
-        ast.types.Stdlib.Ptr,
-        ast.types.Stdlib.Generator,
-        "AsyncGenerator",
-        ast.types.Stdlib.Coroutine,
-        ast.types.Stdlib.Optional,
-        ast.types.Stdlib.NoneType,
-        ast.types.Stdlib.Union,
-        ast.types.Stdlib.Function,
-        ast.types.Stdlib.Vec,
-    }:
-        for idx, field_type in enumerate(utils.get_class_field_types(ctx, typ)):
-            if not realize(ctx, field_type):
-                raise TypecheckError(
-                    ctx.info,
-                    f"type of attribute '{cls_data.fields[idx].name}' of object "
-                    f"'{typ}' cannot be inferred",
-                )
-            make_ir_type(ctx, field_type.require_cls)
-    if False:
-        raise NotImplementedError
-        module = ctx.cache.module
-        if typ.name == ast.types.Stdlib.Bool:
+                types.append(force_find_ir_type(generic.type))
+    module = ctx.cache.module
+    match typ.name:
+        case ast.types.Stdlib.Bool:
             handle = module.get_bool_type()
-        elif typ.name == "byte":
-            handle = module.get_byte_type()
-        elif typ.name == "int":
-            handle = module.get_int_type()
-        elif typ.name == ast.types.Stdlib.Float:
+        case ast.types.Stdlib.Float:
             handle = module.get_float_type()
-        elif typ.name == "float32":
+        case "float32":
             handle = module.get_float32_type()
-        elif typ.name == ast.types.Stdlib.Float16:
+        case ast.types.Stdlib.Float16:
             handle = module.get_float16_type()
-        elif typ.name == "bfloat16":
-            handle = module.get_b_float16_type()
-        elif typ.name == "float128":
+        case "bfloat16":
+            handle = module.get_bfloat16_type()
+        case "float128":
             handle = module.get_float128_type()
-        elif typ.name == ast.types.Stdlib.String:
+        case ast.types.Stdlib.String:
             handle = module.get_string_type()
-        elif typ.name in {ast.types.Stdlib.Int, ast.types.Stdlib.UInt}:
-            assert static_arguments
-            handle = module.new_int_n_type(
-                utils.get_int_literal(static_arguments[0]), typ.name == ast.types.Stdlib.Int
+        case "bytes":
+            handle = module.get_bytes_type()
+        case ast.types.Stdlib.Int | ast.types.Stdlib.UInt:
+            handle = module.unsafe_get_int_type(
+                statics[0].require_int, typ.name == ast.types.Stdlib.Int
             )
-        elif typ.name == ast.types.Stdlib.Ptr:
-            assert len(type_arguments) == 1
-            handle = module.unsafe_get_pointer_type(type_arguments[0])
-        elif (
-            typ.name in {ast.types.Stdlib.Generator, "AsyncGenerator"}
-            or typ.name == ast.types.Stdlib.Coroutine
-        ):
-            assert len(type_arguments) == 1
-            handle = module.unsafe_get_generator_type(type_arguments[0])
-        elif typ.name == ast.types.Stdlib.Optional:
-            assert len(type_arguments) == 1
-            handle = module.unsafe_get_optional_type(type_arguments[0])
-        elif typ.name == ast.types.Stdlib.NoneType:
-            assert not type_arguments and not static_arguments
-            handle = module.unsafe_get_membered_type(realized_name)
-            handle.realize()
-        elif typ.name == ast.types.Stdlib.Union:
-            assert type_arguments
-            union = typ.get_union()
-            union_types = [force_find_ir_type(value) for value in union.get_realization_types()]
-            handle = module.unsafe_get_union_type(union_types)
-        elif typ.name == ast.types.Stdlib.Function:
-            type_arguments.clear()
-            argument_tuple = typ[0]
-            for generic in argument_tuple.generics:
-                type_arguments.append(force_find_ir_type(generic.type))
-            return_type_handle = force_find_ir_type(typ[1])
-            handle = module.unsafe_get_func_type(realized_name, return_type_handle, type_arguments)
-        elif typ.name == ast.types.Stdlib.Vec:
-            assert len(type_arguments) == 1 and static_arguments
-            handle = module.unsafe_get_vector_type(
-                utils.get_int_literal(static_arguments[0]), type_arguments[0]
+        case ast.types.Stdlib.Ptr:
+            assert len(types) == 1, "bad generics/statics"
+            handle = module.unsafe_get_pointer_type(types[0])
+        case ast.types.Stdlib.Generator | "AsyncGenerator" | ast.types.Stdlib.Coroutine:
+            assert len(types) == 1, "bad generics/statics"
+            handle = module.unsafe_get_generator_type(types[0])
+        case ast.types.Stdlib.Optional:
+            assert len(types) == 1, "bad generics/statics"
+            handle = module.unsafe_get_optional_type(types[0])
+        case ast.types.Stdlib.NoneType:
+            assert not types and not statics, "bad generics/statics"
+            handle = ir.cast(ir.RecordType, module.unsafe_get_membered_type(name))
+            handle.realize([], [])
+        case ast.types.Stdlib.Union:
+            assert types, "bad union"
+            handle = module.unsafe_get_union_type(
+                [force_find_ir_type(value) for value in typ.union.get_realization_types()]
             )
-        elif typ.is_record():
-            # Type arguments will be populated afterwards to avoid infinite loop with recursive
-            # reference types (e.g., `class X: x: Optional[X]`)
-
-            ir_field_types = []
-            names = []
-            member_info = {}
-            assert not typ.is_type("__NTuple__")
-
-            field_types = utils.get_class_field_types(ctx, typ)
-            for idx, field_type in enumerate(field_types):
-                if not realize(field_type):
-                    raise TypecheckError(
-                        field_type.info,
-                        f"type of attribute '{cls_data.fields[idx].name}' of object "
-                        f"'{typ.pretty_string()}' cannot be inferred",
-                    )
-                names.append(cls_data.fields[idx].name)
-                ir_field_types.append(make_ir_type(ctx, field_type))
-                member_info[cls_data.fields[idx].name] = field_type.info
-            handle = module.unsafe_get_membered_type(realized_name)
-            handle.realize(ir_field_types, names)
-            handle.set(module.make_member_attribute(member_info))
+        case ast.types.Stdlib.Function:
+            types = [force_find_ir_type(g.type) for g in typ[0].require_cls.generics]
+            handle = module.unsafe_get_func_type(name, force_find_ir_type(typ[1]), types)
+        case ast.types.Stdlib.Vec:
+            assert len(types) == 1 and statics, "bad generics/statics"
+            count = statics[0].require_int
+            if count <= 0 or count > 0xFFFFFFFF:
+                raise TypecheckError(
+                    ctx.info, "SIMD vector width must be positive and fit in 32 bits"
+                )
+            element = types[0]
+            if not isinstance(
+                element.get_actual(),
+                (
+                    ir.IntType,
+                    ir.FloatType,
+                    ir.Float32Type,
+                    ir.Float16Type,
+                    ir.BFloat16Type,
+                    ir.Float128Type,
+                ),
+            ):
+                raise TypecheckError(
+                    ctx.info, "SIMD element type must be an integer or floating-point type"
+                )
+            handle = module.unsafe_get_vector_type(count, element)
+        case _:
+            # Populate type arguments afterwards to avoid infinite loops with
+            # recursive reference types (e.g. class X: x: Optional[X]).
+            if typ.is_tuple:
+                types, names, members = [], [], {}
+                assert typ.name != "__NTuple__", "ntuple not inlined"
+                fields = utils.get_class_field_types(ctx, typ)
+                for idx, field in enumerate(fields):
+                    if not realize(ctx, field):
+                        raise TypecheckError(
+                            ctx.info,
+                            f"type of attribute '{cls.fields[idx].name}' of object '{typ}' cannot be inferred",
+                        )
+                    names.append(cls.fields[idx].name)
+                    types.append(make_ir_type(ctx, field.require_cls))
+                    members[cls.fields[idx].name] = field.info
+                handle = ir.cast(ir.RecordType, module.unsafe_get_membered_type(name))
+                handle.realize(types, names)
+                handle.set_attribute(ir.MemberAttribute(members))
+            else:
+                handle = module.unsafe_get_membered_type(name, not typ.is_tuple)
+                if cls.has_rtti():
+                    ir.cast(ir.RefType, handle).polymorphic = True
+    handle.info, handle.ast_type = typ.info, typ
+    info = ir.RuntimeInfo()
+    info.id, info.raw_name, info.nice_name, info.base_name = (
+        real.id,
+        typ.realized_name(),
+        typ.to_string(0),
+        typ.name,
+    )
+    info.mro.append(handle)
+    for base in real.bases:
+        base_type = realize(ctx, base).require_cls
+        info.mro.append(make_ir_type(ctx, base_type))
+    for base in info.mro:
+        base_name = base.ast_type.require_cls.name
+        if base_name == ast.types.Stdlib.BaseException:
+            info.exception_base = base
+        if base_name == ast.types.mangle("std.internal.types.error", cls="SystemExit"):
+            info.system_exit_base = base
+    if typ != ast.types.Stdlib.UnrealizedType:
+        if typ == ast.types.Stdlib.Int:  # Avoid recursion for Int[N].
+            info.parameters.append(handle)
         else:
-            handle = module.unsafe_get_membered_type(realized_name, not typ.is_record())
-            if cls_data.has_rtti():
-                handle.set_polymorphic()
-        handle.info = typ.info
-        handle.ast_type = typ
-    # Runtime descriptors realize MRO entries and generic parameter types too.
-    # Keep those side effects even without emitting the descriptor itself.
-    for base in realization.bases:
-        realized_base = realize(ctx, base)
-        assert realized_base
-        make_ir_type(ctx, realized_base.require_cls)
-    if typ.name not in {ast.types.Stdlib.UnrealizedType, ast.types.Stdlib.Int}:
-        for generic in typ.generics:
-            parameter = utils.get_underlying_static_type(ctx, generic.type)
-            make_ir_type(ctx, parameter.require_cls)
-    realization.ir = handle
+            for generic in typ.generics:
+                parameter = utils.get_underlying_static_type(ctx, generic.type)
+                info.parameters.append(make_ir_type(ctx, parameter.require_cls))
+    handle.runtime_info = info
+    real.ir = handle
     return handle
 
 
-def make_ir_function(
-    ctx: TypeContext, realization: cache.FunctionData.Realization
-) -> ast.ir.Function:
-    """Make IR node for a realized function."""
+def make_ir_function(ctx: TypeContext, real: cache.FunctionData.Realization):
+    """C++: infer.cpp:820. Make IR node for a realized function."""
+    from ... import ir
+
     module = ctx.cache.module
-
-    # Create and store a function IR node and a realized AST for IR passes
-    assert realization.ast
-    function = ast.ir.Function()
-    if False:
-        raise NotImplementedError
-        if realization.ast.has(ast.Attr.Internal):
-            # e.g., __new__, Ptr.__new__, etc.
-            function = module.new_internal_func(realization.type.ast.name)
-        elif realization.ast.has(ast.Attr.LLVM):
-            function = module.new_llvm_func(realization.type.realized_name())
-        elif realization.ast.has(ast.Attr.C):
-            function = module.new_external_func(realization.type.realized_name())
-        else:
-            function = module.new_bodied_func(realization.type.realized_name())
-
-        function.set_unmangled_name(utils.get_unmangled_name(ctx, realization.type.ast.name))
-
-    parent = realization.type.func_parent
-    parent_name = realization.ast.get(ast.Attr.ParentClass, str)
-    if parent_name and not realization.ast.has(ast.Attr.Method):
-        # Hack for non-generic methods
-        parent = ctx[parent_name].type
+    name = ctx.cache.reverse_identifier_lookup[real.type.ast.name]
+    # Create/store a function IR node and a realized AST for IR passes.
+    if real.ast.has(ast.Attr.Internal):
+        # __new__, Ptr.__new__, etc.
+        fn = module.nr(ir.InternalFunc, real.type.realized_name())
+    elif real.ast.has(ast.Attr.LLVM):
+        fn = module.nr(ir.LLVMFunc, real.type.realized_name())
+    elif real.ast.has(ast.Attr.C):
+        attrs = real.ast.get(ast.Attr.FunctionAttributes, dict, {})
+        if link := attrs.get(ast.types.mangle("std.internal.c_stubs", func="linkname")):
+            name = utils.extract_func_generic(ctx.cache.find_function(link)).require_str
+        fn = module.nr(ir.ExternalFunc, real.type.realized_name())
+    else:
+        fn = module.nr(ir.BodiedFunc, real.type.realized_name())
+    fn.unmangled_name = name
+    parent = real.type.func_parent
+    if (owner := real.ast.get(ast.Attr.ParentClass, str)) and not real.ast.has(ast.Attr.Method):
+        parent = ctx[owner].type  # Hack for non-generic methods.
     if parent and parent.is_instantiated() and parent.can_realize():
         parent = utils.extract_class_type(ctx, parent)
         realize(ctx, parent)
-        make_ir_type(ctx, parent)
-    if False:
-        raise NotImplementedError
-        function.set_global()
-
-    # Mark this realization as pending (i.e., realized but not translated)
-    ctx.cache.pending_realizations.add(
-        (realization.type.ast.name, realization.type.realized_name())
+        fn.parent_type = make_ir_type(ctx, parent)
+    fn.global_ = True
+    # Mark this realization pending (realized but not translated).
+    ctx.cache.pending_realizations.add((real.type.ast.name, real.type.realized_name()))
+    assert len(real.ast.items) == len(real.type) + len(real.type.func_generics), (
+        "type/AST argument mismatch"
     )
-    assert len(realization.ast.items) == len(realization.type) + len(realization.type.func_generics)
-    names = []
-    arg_types = []
-    value_idx = 0
-    for param in realization.ast.items:
-        if param.is_value():
-            arg_type = realization.type[value_idx]
-            if not arg_type.func:
-                arg_types.append(make_ir_type(ctx, arg_type.require_cls))
-                names.append(utils.get_unmangled_name(ctx, param.name))
-            value_idx += 1
-    is_c_vararg = realization.ast.has(ast.Attr.CVarArg)
-    if is_c_vararg:
-        arg_types.pop()
+    names, types, idx = [], [], 0
+    for arg in real.ast.items:
+        if arg.is_value():
+            if not real.type[idx].func:
+                types.append(make_ir_type(ctx, real.type[idx].require_cls))
+                names.append(ctx.cache.reverse_identifier_lookup[arg.name])
+            idx += 1
+    variadic = real.ast.has(ast.Attr.CVarArg)
+    if variadic:
+        types.pop()
         names.pop()
-    make_ir_type(ctx, realization.type.ret_type.require_cls)
-    if False:
-        raise NotImplementedError
-        ir_type = module.unsafe_get_func_type(
-            realization.type.realized_name(),
-            make_ir_type(ctx, realization.type.get_ret_type()),
-            arg_types,
-            is_c_vararg,
-        )
-        ir_type.ast_type = realization.type
-        function.realize(ir_type, names)
-    return function
+    signature = module.unsafe_get_func_type(
+        real.type.realized_name(),
+        make_ir_type(ctx, real.type.ret_type.require_cls),
+        types,
+        variadic,
+    )
+    signature.ast_type = real.type
+    fn.realize(signature, names)
+    # Identify builtins at the frontend boundary; CIR consumers use intrinsic IDs.
+    if isinstance(fn, ir.InternalFunc):
+        method = real.type.func_name
+        if method == ast.types.mangle(cls="type", func="_ref_alloc"):
+            fn.set_intrinsic(ir.Intrinsic.ALLOCATE, signature.return_type)
+        elif method in {
+            ast.types.mangle(cls="type", func=member)
+            for member in ("_force_cast", "_ref_raw", "_force_value_cast")
+        }:
+            target = signature.return_type
+            if method != ast.types.mangle(cls="type", func="_force_value_cast"):
+
+                def pointer_like(typ):
+                    if optional := ir.cast(ir.OptionalType, typ):
+                        return ir.is_a(ir.RefType, optional.base)
+                    return isinstance(
+                        typ.get_actual(),
+                        (ir.RefType, ir.PointerType, ir.FuncType, ir.GeneratorType),
+                    )
+
+                if len(types) != 1 or not pointer_like(types[0]) or not pointer_like(target):
+                    raise TypecheckError(
+                        real.ast, "pointer cast requires pointer-like source and destination types"
+                    )
+            fn.set_intrinsic(ir.Intrinsic.REPRESENTATION_CAST, target)
+        elif method == ast.types.mangle(cls="type", func="_ref_size"):
+            fn.set_intrinsic(
+                ir.Intrinsic.ALLOCATION_SIZE,
+                make_ir_type(ctx, utils.extract_func_generic(real.type).require_cls),
+            )
+        elif method == ast.types.mangle(cls="TypeInfo", func="_get"):
+            fn.set_intrinsic(
+                ir.Intrinsic.TYPEINFO,
+                make_ir_type(ctx, utils.extract_func_generic(real.type).require_cls),
+            )
+        elif method == ast.types.mangle(cls="TypeInfo", func="_lookup"):
+            fn.set_intrinsic(ir.Intrinsic.TYPEINFO_LOOKUP)
+        elif method == ast.types.mangle(cls="TypeInfo", func="_lookup_method"):
+            fn.set_intrinsic(ir.Intrinsic.TYPEINFO_METHOD_LOOKUP)
+        elif (
+            name == "__new__" and ir.is_a(ir.RecordType, fn.parent_type)
+        ) or method == ast.types.mangle(cls="Partial", func="__new__"):
+            fn.set_intrinsic(ir.Intrinsic.RECORD_NEW, signature.return_type)
+        elif method == ast.types.mangle(cls="Generator", func="__promise__"):
+            fn.set_intrinsic(ir.Intrinsic.GENERATOR_PROMISE, fn.parent_type)
+    return fn

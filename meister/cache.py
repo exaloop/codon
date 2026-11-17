@@ -424,6 +424,10 @@ class Cache:
         )
         self.py_module = py_module
         self._timings = {}
+        if self.module is None:
+            from .ir import Module
+
+            self.module = Module(self)
 
     def get_temporary_var(self, prefix: str = "", sigil: str = "%") -> str:
         """
@@ -504,10 +508,8 @@ class Cache:
         """
         if self.type_ctx is None:
             return None
-        if self.type_ctx is None:
-            return None
         for n in (name, f"{name}:0"):
-            if (item := self.type_ctx.get(n)) and item.is_type:
+            if (item := self.type_ctx.get(n)) and item.func:
                 return item.type.func
         return None
 
@@ -666,7 +668,6 @@ class Cache:
         return node
 
     def parse(self, file: str | None = None, code: str | None = None) -> ast.Stmt:
-        print(".. parsing", file, code)
         node = parse(file=file, code=code)
         assert isinstance(node, ast.Stmt)
         return node
@@ -719,8 +720,72 @@ class Cache:
             return TypeVisitor(ctx).visit_stmt(node)
 
     def translate(self, node: ast.Stmt):
-        raise NotImplementedError
-        # return TranslateVisitor(self.codegen_ctx)
+        from .passes.translate import TranslateVisitor
+
+        return TranslateVisitor(self.codegen_ctx).translate_stmts(node)
+
+    def parse_code(self, code):
+        """C++: cache.cpp:225. Typecheck and attach late parsed initialization."""
+        from .error import TypecheckError
+        from .ir import SeriesFlow
+        from .passes.translate import TranslateVisitor
+        from .passes.typecheck import infer, special, utils
+
+        node = self.parse(file="<internal>", code=code)
+        ctx = self.imports[MAIN_IMPORT].ctx
+        self.scope(node, ctx.global_shadows)
+        ctx.prepare_checkpoint()
+        preamble = ast.SuiteStmt()
+        original = node
+        with ctx.substitute("filename", "<internal>"), ctx.substitute("preamble", preamble):
+            node = infer.infer_types(ctx, node, True)
+        if node is None:
+            raise TypecheckError(trace=utils.find_typecheck_errors(ctx, original))
+        node = ast.SuiteStmt(preamble, node)
+        special.prepare_vtables(ctx)
+        # New imports emit initialization, so translate into a fresh block.
+        block = self.module.nr(SeriesFlow, "parsed")
+        old_series, old_bases = self.codegen_ctx.series, self.codegen_ctx.bases
+        try:
+            self.codegen_ctx.series = [block]
+            self.codegen_ctx.bases = [self.codegen_ctx.main_func]
+            TranslateVisitor(self.codegen_ctx).translate_stmts(node)
+        finally:
+            self.codegen_ctx.series, self.codegen_ctx.bases = old_series, old_bases
+        # Module.parse_code discards the returned block. Attach initialization
+        # after the preamble but before user code can call the new helpers.
+        # Definitions alone leave main unchanged.
+        if block.series:
+            body = self.codegen_ctx.main_func.body
+            start = self.codegen_ctx.main_user_start
+            idx = body.series.index(start) if start in body.series else len(body.series)
+            body.series.insert(idx, block)
+        return [block]
+
+    def populate_python_module(self):
+        """C++: cache.cpp:305. Generate Python bindings for Cython-like access."""
+        if not self.options.pyext:
+            return
+        from .passes.typecheck import TypeVisitor, cython, special
+
+        if self.py_module is None:
+            self.py_module = ast.ir.PyModule()
+        visitor = TypeVisitor(self.type_ctx)
+        # Copies: cythonization may mutate class/function caches.
+        for name in list(self.classes):
+            item = cython.cythonize_class(visitor, name)
+            if item.name:
+                self.py_module.types.append(item)
+        for name in list(self.classes["_PyWrap.IterWrap"].realizations):
+            self.py_module.types.append(cython.cythonize_iterator(visitor, name))
+        for name in list(self.functions):
+            item = cython.cythonize_function(visitor, name)
+            if item.name:
+                self.py_module.functions.append(item)
+        special.prepare_vtables(self.type_ctx)
+        # Copy pending realizations as translation can modify the set.
+        for name, _ in self.pending_realizations.copy():
+            self.translate(self.functions[name].ast.clone())
 
     @staticmethod
     def merge_c3(seqs: List[List[ast.types.Class]]) -> List[ast.types.Class]:

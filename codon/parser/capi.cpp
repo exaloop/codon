@@ -9,12 +9,16 @@
 #include <string>
 
 #include "codon/cir/llvm/llvm.h"
+#include "codon/cir/util/format.h"
 #include "codon/compiler/compiler.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/common.h"
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/scoping/scoping.h"
+#include "codon/parser/visitors/translate/translate.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
+
+#include "llvm/Support/JSON.h"
 
 namespace {
 
@@ -110,6 +114,49 @@ char *codon_ast_dump_defines(void) {
   for (const auto &[name, value] : compiler.getEarlyDefines())
     result += fmt::format("{}={}\n", name, value);
   return copyString(result);
+}
+
+CodonAstDumpResult codon_ir_dump_stages(const char *file, uint8_t include_attributes,
+                                        int indent, uint8_t types, int ast_indent) {
+  if (!file)
+    return failure("file must not be null");
+  try {
+    auto options = codon::Options::getDefault(file);
+    options->debug = true;
+    auto compiler = std::make_unique<codon::Compiler>(*options);
+    auto *cache = compiler->getCache();
+    cache->fs->set_module0(file);
+    auto parsed = codon::ast::parseFile(cache, file);
+    if (!parsed)
+      return failure(llvm::toString(parsed.takeError()));
+    auto checked = codon::ast::TypecheckVisitor::apply(
+        cache, *parsed, file, {}, compiler->getEarlyDefines(), false);
+    std::string typed =
+        checked->toCodonString(bool(include_attributes), ast_indent) + "\n";
+    for (const auto &[_, fn] : codon::ast::sorted_view(cache->functions))
+      for (const auto &[_, real] : codon::ast::sorted_view(fn.realizations))
+        if (real->ast)
+          typed +=
+              real->ast->toCodonString(bool(include_attributes), ast_indent) + "\n";
+    llvm::json::Object stages;
+    stages["typecheck"] = std::move(typed);
+    codon::ast::TranslateVisitor::apply(cache, checked);
+    auto dump = [&] {
+      return codon::ir::util::format(compiler->getModule(), true,
+                                     bool(include_attributes), indent, bool(types));
+    };
+    stages["translate"] = dump();
+    auto *manager = compiler->getPassManager();
+    for (const auto &key : manager->getExecutionOrder()) {
+      manager->runPass(compiler->getModule(), key);
+      stages[key] = dump();
+    }
+    return success(llvm::formatv("{0}", llvm::json::Value(std::move(stages))).str());
+  } catch (const std::exception &error) {
+    return failure(error.what());
+  } catch (...) {
+    return failure("unknown C++ exception while dumping CIR stages");
+  }
 }
 
 void codon_ast_dump_free(char *value) { std::free(value); }

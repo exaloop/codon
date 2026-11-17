@@ -1,11 +1,12 @@
 import sys
+from pathlib import Path
 
 from .bridge import *
 
 
 def main(argv):
     mode = argv[0]
-    root = "/Users/inumanag/Projekti/exaloop/meydan/meister"
+    root = str(Path(__file__).resolve().parent)
 
     from . import ast, cache, parser
     from .passes import typecheck
@@ -48,6 +49,47 @@ def main(argv):
                 print(error)
         finally:
             pass
+    elif mode == "ir":
+        from .ir.transform import PassManager
+        from .ir.util.format import format_ir
+        from .passes.translate import TranslateVisitor
+
+        args_parser = argparse.ArgumentParser(description="Dump Codon IR without LLVM generation")
+        args_parser.add_argument("file")
+        args_parser.add_argument("--indent", type=int, default=2)
+        args_parser.add_argument("--no-attributes", action="store_true")
+        args_parser.add_argument("--no-types", action="store_true")
+        args_parser.add_argument("--no-field-names", action="store_true")
+        args_parser.add_argument(
+            "--no-passes", action="store_true", help="dump immediately after translation"
+        )
+        args = args_parser.parse_args(argv[1:])
+        args.file = str(Path(args.file).resolve())
+        # Like the native compiler's embedded stdlib, local builds include
+        # generated tables that are not checked into the source stdlib.
+        cc = cache.Cache(root)
+        for build in ("build", "build-rel", "build-linux", "build-rel-linux"):
+            generated = Path(root).parent / build / "stdlib"
+            if generated.is_dir():
+                cc.fs.add_search_path(str(generated))
+                break
+        sys.setrecursionlimit(max(sys.getrecursionlimit(), cache.MAX_REALIZATION_DEPTH * 100))
+        node = cc.parse(file=args.file)
+        node = typecheck.typecheck_program(
+            cc, node, file=args.file, early_defines=cc.options.get_early_defines()
+        )
+        TranslateVisitor.apply(cc, node)
+        if not args.no_passes:
+            PassManager(cc.options).run(cc.module)
+        sys.stdout.write(
+            format_ir(
+                cc.module,
+                annotate_fields=not args.no_field_names,
+                include_attributes=not args.no_attributes,
+                indent=args.indent,
+                types=not args.no_types,
+            )
+        )
     elif mode == "test":
         from . import test
 

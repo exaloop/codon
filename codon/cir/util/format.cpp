@@ -1,472 +1,769 @@
 // Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
 #include <algorithm>
+#include <charconv>
+#include <cmath>
 #include <fmt/format.h>
 #include <fmt/ostream.h>
+#include <map>
 #include <sstream>
+#include <unordered_map>
 #include <unordered_set>
 
 #include "codon/cir/util/format.h"
 #include "codon/cir/util/visitor.h"
+#include "codon/parser/ast/dump.h"
 
 namespace codon {
 namespace ir {
 namespace util {
 
-struct NodeFormatter {
-  const Type *type = nullptr;
-  const Value *value = nullptr;
-  const Var *var = nullptr;
-  bool canShowFull = false;
+/// Dump-local names and ordering, independent of frontend cache iteration and
+/// CIR allocation order. No node, signature, call or compiler counter is changed.
+struct FormatContext {
+  bool canonical;
+  std::unordered_map<id_t, id_t> ids;
+  std::vector<const Var *> vars;
+  std::vector<const Type *> types;
+  std::unordered_map<std::string, std::vector<size_t>> captureOrder;
 
-  std::unordered_set<id_t> &seenNodes;
-  std::unordered_set<std::string> &seenTypes;
+  explicit FormatContext(const Node *node) : canonical(isA<Module>(node)) {
+    auto *module = cast<Module>(node);
+    if (!module)
+      return;
+    std::unordered_map<id_t, std::string> keys;
+    std::vector<const Func *> functions{module->getMainFunc()};
+    for (const auto *var : *module)
+      if (auto *fn = cast<Func>(var))
+        functions.push_back(fn);
+    for (const auto *fn : functions) {
+      keys[fn->getId()] = "func:" + fn->getName();
+      auto arguments = args(fn);
+      // A generated comprehension closure captures an unordered identifier set.
+      // Show bindings in name order at declarations, signatures and calls, while
+      // leaving ordinary positional arguments and the actual capture ABI alone.
+      if (fn->isGenerator() && fn->getType() && !fn->getType()->getAstType()) {
+        std::vector<size_t> order;
+        for (size_t i = 0; i < arguments.size(); ++i)
+          order.push_back(i);
+        std::sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+          return arguments[a]->getName() < arguments[b]->getName();
+        });
+        captureOrder[fn->getType()->getName()] = order;
+        arguments = reorder(arguments, fn->getType()->getName());
+      }
+      for (size_t i = 0; i < arguments.size(); ++i)
+        keys[arguments[i]->getId()] = "arg:" + fn->getName() + ":" +
+                                      arguments[i]->getName() + ":" + std::to_string(i);
+      if (auto *body = cast<BodiedFunc>(fn)) {
+        size_t i = 0;
+        for (const auto *var : *body)
+          keys[var->getId()] = "local:" + fn->getName() + ":" + var->getName() + ":" +
+                               std::to_string(i++);
+      }
+    }
+    for (const auto *var : *module) {
+      vars.push_back(var);
+      keys.try_emplace(var->getId(), "var:" + var->getName());
+    }
+    std::stable_sort(vars.begin(), vars.end(), [&](const Var *a, const Var *b) {
+      return keys.at(a->getId()) < keys.at(b->getId());
+    });
+    for (auto it = module->types_begin(); it != module->types_end(); ++it)
+      types.push_back(*it);
+    std::sort(types.begin(), types.end(),
+              [](const Type *a, const Type *b) { return a->getName() < b->getName(); });
+    nodeId(module->getArgvVar()->getId());
+    nodeId(module->getArgcVar()->getId());
+    nodeId(module->getMainFunc()->getId());
+    for (const auto *var : vars)
+      nodeId(var->getId());
+    for (const auto *var : vars)
+      if (auto *fn = cast<BodiedFunc>(var))
+        numberValues(fn->getBody());
+    if (auto *main = cast<BodiedFunc>(module->getMainFunc()))
+      numberValues(main->getBody());
+  }
 
-  NodeFormatter(const Type *type, std::unordered_set<id_t> &seenNodes,
-                std::unordered_set<std::string> &seenTypes)
-      : type(type), seenNodes(seenNodes), seenTypes(seenTypes) {}
+  id_t nodeId(id_t id) {
+    if (!canonical)
+      return id;
+    return ids.try_emplace(id, ids.size()).first->second;
+  }
 
-  NodeFormatter(const Value *value, std::unordered_set<id_t> &seenNodes,
-                std::unordered_set<std::string> &seenTypes)
-      : value(value), seenNodes(seenNodes), seenTypes(seenTypes) {}
-  NodeFormatter(const Var *var, std::unordered_set<id_t> &seenNodes,
-                std::unordered_set<std::string> &seenTypes)
-      : var(var), seenNodes(seenNodes), seenTypes(seenTypes) {}
+  std::string reference(const Type *node) { return node->referenceString(); }
+  std::string reference(const Var *node) {
+    return fmt::format("{}.{}", node->getName(), nodeId(node->getId()));
+  }
+  std::string reference(const Value *node) {
+    return fmt::format("{}.{}", node->getName(), nodeId(node->getId()));
+  }
 
-  friend std::ostream &operator<<(std::ostream &os, const NodeFormatter &n);
+  template <typename T>
+  std::vector<T> reorder(const std::vector<T> &items, const std::string &type) const {
+    auto it = captureOrder.find(type);
+    if (it == captureOrder.end())
+      return items;
+    std::vector<T> result;
+    for (auto index : it->second)
+      result.push_back(items.at(index));
+    return result;
+  }
+
+  std::vector<const Var *> args(const Func *fn) const {
+    std::vector<const Var *> result(fn->arg_begin(), fn->arg_end());
+    return fn->getType() ? reorder(result, fn->getType()->getName()) : result;
+  }
+
+  std::vector<const Value *> callArgs(const CallInstr *call) const {
+    std::vector<const Value *> result(call->begin(), call->end());
+    auto *callee = cast<VarValue>(call->getCallee());
+    auto *fn = callee ? cast<Func>(callee->getVar()) : nullptr;
+    return fn && fn->getType() ? reorder(result, fn->getType()->getName()) : result;
+  }
+
+  std::vector<const Value *> seriesValues(const SeriesFlow *series) const {
+    std::vector<const Value *> values;
+    for (const auto *value : *series)
+      values.push_back(value);
+    if (!canonical)
+      return values;
+    // Adjacent literal stores to distinct variables commute. The frontend, in
+    // particular, emits compile-time defines from an unordered map. Preserve all
+    // other evaluation order, including successive writes to the same variable.
+    size_t start = 0;
+    while (start < values.size()) {
+      size_t end = start;
+      std::unordered_set<id_t> seen;
+      while (end < values.size()) {
+        auto *assignment = cast<AssignInstr>(values[end]);
+        if (!assignment || !isA<Const>(assignment->getRhs()) ||
+            !seen.insert(assignment->getLhs()->getId()).second)
+          break;
+        ++end;
+      }
+      std::stable_sort(values.begin() + start, values.begin() + end,
+                       [](const Value *a, const Value *b) {
+                         return cast<AssignInstr>(a)->getLhs()->getName() <
+                                cast<AssignInstr>(b)->getLhs()->getName();
+                       });
+      start = std::max(end, start + 1);
+    }
+    return values;
+  }
+
+  void numberValues(const Value *value) {
+    if (!value || ids.count(value->getId()))
+      return;
+    nodeId(value->getId());
+    auto children = value->getUsedValues();
+    if (auto *call = cast<CallInstr>(value)) {
+      children = callArgs(call);
+      children.push_back(call->getCallee());
+    } else if (auto *series = cast<SeriesFlow>(value))
+      children = seriesValues(series);
+    for (const auto *child : children)
+      numberValues(child);
+  }
 };
 
 namespace {
-std::string escapeString(const std::string &str) {
-  std::stringstream escaped;
-  for (char c : str) {
-    switch (c) {
-    case '\a':
-      escaped << "\\a";
-      break;
-    case '\b':
-      escaped << "\\b";
-      break;
-    case '\f':
-      escaped << "\\f";
-      break;
-    case '\n':
-      escaped << "\\n";
-      break;
-    case '\r':
-      escaped << "\\r";
-      break;
-    case '\t':
-      escaped << "\\t";
-      break;
-    case '\v':
-      escaped << "\\v";
-      break;
-    case '\\':
-      escaped << "\\\\";
-      break;
-    case '\'':
-      escaped << "\\'";
-      break;
-    case '\"':
-      escaped << "\\\"";
-      break;
-    case '\?':
-      escaped << "\\\?";
-      break;
-    default:
-      escaped << c;
-    }
-  }
-  return escaped.str();
-}
 
-class FormatVisitor : util::ConstVisitor {
-private:
-  std::ostream &os;
-  std::unordered_set<id_t> &seenNodes;
-  std::unordered_set<std::string> &seenTypes;
-
-public:
-  FormatVisitor(std::ostream &os, std::unordered_set<id_t> &seenNodes,
-                std::unordered_set<std::string> &seenTypes)
-      : os(os), seenNodes(seenNodes), seenTypes(seenTypes) {}
-  virtual ~FormatVisitor() noexcept = default;
-
-  void visit(const Module *v) override {
-    auto types = makeFormatters(v->types_begin(), v->types_end(), true);
-    auto vars = makeFormatters(v->begin(), v->end(), true);
-    fmt::print(
-        os, FMT_STRING("(module\n(argv {})\n(argc {})\n(types {})\n(vars {})\n{})"),
-        makeFormatter(v->getArgvVar(), true), makeFormatter(v->getArgcVar(), true),
-        fmt::join(types.begin(), types.end(), "\n"),
-        fmt::join(vars.begin(), vars.end(), "\n"),
-        makeFormatter(v->getMainFunc(), true));
-  }
-
-  void defaultVisit(const Node *) override { os << "(unknown_node)"; }
-
-  void visit(const Var *v) override {
-    fmt::print(
-        os, FMT_STRING("(var '\"{}\" {} (global {}) (external {}) (thread-local {}))"),
-        v->referenceString(), makeFormatter(v->getType()), v->isGlobal(),
-        v->isExternal(), v->isThreadLocal());
-  }
-
-  void visit(const BodiedFunc *v) override {
-    auto args = makeFormatters(v->arg_begin(), v->arg_end(), true);
-    auto symbols = makeFormatters(v->begin(), v->end(), true);
-    fmt::print(os, FMT_STRING("(bodied_func '\"{}\" {}\n(args {})\n(vars {})\n{})"),
-               v->referenceString(), makeFormatter(v->getType()),
-               fmt::join(args.begin(), args.end(), " "),
-               fmt::join(symbols.begin(), symbols.end(), " "),
-               makeFormatter(v->getBody()));
-  }
-  void visit(const ExternalFunc *v) override {
-    fmt::print(os, FMT_STRING("(external_func '\"{}\" {})"), v->referenceString(),
-               makeFormatter(v->getType()));
-  }
-  void visit(const InternalFunc *v) override {
-    fmt::print(os, FMT_STRING("(internal_func '\"{}\" {} (intrinsic {} {}))"),
-               v->referenceString(), makeFormatter(v->getType()), v->getIntrinsicName(),
-               makeFormatter(v->getIntrinsicType()));
-  }
-  void visit(const LLVMFunc *v) override {
-    std::vector<std::string> literals;
-
-    for (auto it = v->literal_begin(); it != v->literal_end(); ++it) {
-      const auto &l = *it;
-      if (l.isStatic()) {
-        literals.push_back(fmt::format(FMT_STRING("(static {})"), l.getStaticValue()));
-      } else if (l.isStaticStr()) {
-        literals.push_back(
-            fmt::format(FMT_STRING("(static \"{}\")"), l.getStaticStringValue()));
-      } else {
-        literals.push_back(
-            fmt::format(FMT_STRING("(type {})"), makeFormatter(l.getTypeValue())));
-      }
-    }
-
-    fmt::print(os,
-               FMT_STRING("(llvm_func '\"{}\" {}\n(decls \"{}\")\n"
-                          "\"{}\"\n(literals {}))"),
-               v->referenceString(), makeFormatter(v->getType()),
-               escapeString(v->getLLVMDeclarations()), escapeString(v->getLLVMBody()),
-               fmt::join(literals.begin(), literals.end(), "\n"));
-  }
-
-  void visit(const VarValue *v) override {
-    fmt::print(os, FMT_STRING("'\"{}\""), v->getVar()->referenceString());
-  }
-  void visit(const PointerValue *v) override {
-    fmt::print(os, FMT_STRING("(ptr '\"{}\" \"{}\")"), v->getVar()->referenceString(),
-               fmt::join(v->getFields().begin(), v->getFields().end(), "."));
-  }
-
-  void visit(const SeriesFlow *v) override {
-    auto series = makeFormatters(v->begin(), v->end());
-    fmt::print(os, FMT_STRING("(series\n{}\n)"),
-               fmt::join(series.begin(), series.end(), "\n"));
-  }
-  void visit(const IfFlow *v) override {
-    fmt::print(os, FMT_STRING("(if {}\n{}\n{}\n)"), makeFormatter(v->getCond()),
-               makeFormatter(v->getTrueBranch()), makeFormatter(v->getFalseBranch()));
-  }
-  void visit(const WhileFlow *v) override {
-    fmt::print(os, FMT_STRING("(while {}\n{}\n)"), makeFormatter(v->getCond()),
-               makeFormatter(v->getBody()));
-  }
-  void visit(const ForFlow *v) override {
-    fmt::print(os, FMT_STRING("({}{}for {}\n{}\n{}\n)"), v->isParallel() ? "par_" : "",
-               v->isAsync() ? "async_" : "", makeFormatter(v->getIter()),
-               makeFormatter(v->getVar()), makeFormatter(v->getBody()));
-  }
-  void visit(const ImperativeForFlow *v) override {
-    fmt::print(os, FMT_STRING("({}imp_for {}\n{}\n{}\n{}\n{}\n)"),
-               v->isParallel() ? "par_" : "", makeFormatter(v->getStart()),
-               v->getStep(), makeFormatter(v->getEnd()), makeFormatter(v->getVar()),
-               makeFormatter(v->getBody()));
-  }
-  void visit(const TryCatchFlow *v) override {
-    std::vector<std::string> catches;
-
-    for (auto &c : *v) {
-      catches.push_back(
-          fmt::format(FMT_STRING("(catch {} {}\n{}\n)"), makeFormatter(c.getType()),
-                      makeFormatter(c.getVar()), makeFormatter(c.getHandler())));
-    }
-
-    fmt::print(os, FMT_STRING("(try {}\n{}\n(else\n{}\n)\n(finally\n{})\n)"),
-               makeFormatter(v->getBody()),
-               fmt::join(catches.begin(), catches.end(), "\n"),
-               makeFormatter(v->getElse()), makeFormatter(v->getFinally()));
-  }
-  void visit(const PipelineFlow *v) override {
-    std::vector<std::string> stages;
-    for (const auto &s : *v) {
-      auto args = makeFormatters(s.begin(), s.end());
-      stages.push_back(fmt::format(
-          FMT_STRING("(stage {} {}\n(generator {})\n(parallel {}))"),
-          makeFormatter(s.getCallee()), fmt::join(args.begin(), args.end(), "\n"),
-          s.isGenerator(), s.isParallel()));
-    }
-    fmt::print(os, FMT_STRING("(pipeline {})"),
-               fmt::join(stages.begin(), stages.end(), "\n"));
-  }
-  void visit(const dsl::CustomFlow *v) override { v->doFormat(os); }
-
-  void visit(const IntConst *v) override {
-    fmt::print(os, FMT_STRING("{}"), v->getVal());
-  }
-  void visit(const FloatConst *v) override {
-    fmt::print(os, FMT_STRING("{}"), v->getVal());
-  }
-  void visit(const BoolConst *v) override {
-    fmt::print(os, FMT_STRING("{}"), v->getVal());
-  }
-  void visit(const StringConst *v) override {
-    fmt::print(os, FMT_STRING("\"{}\""), escapeString(v->getVal()));
-  }
-  void visit(const BytesConst *v) override {
-    fmt::print(os, FMT_STRING("b\"{}\""), escapeString(v->getVal()));
-  }
-  void visit(const dsl::CustomConst *v) override { v->doFormat(os); }
-
-  void visit(const AssignInstr *v) override {
-    fmt::print(os, FMT_STRING("(assign {} {})"), makeFormatter(v->getLhs()),
-               makeFormatter(v->getRhs()));
-  }
-  void visit(const ExtractInstr *v) override {
-    fmt::print(os, FMT_STRING("(extract{} {} \"{}\")"),
-               v->isPolymorphic() ? "_poly" : "", makeFormatter(v->getVal()),
-               v->getField());
-  }
-  void visit(const InsertInstr *v) override {
-    fmt::print(os, FMT_STRING("(insert{} {} \"{}\" {})"),
-               v->isPolymorphic() ? "_poly" : "", makeFormatter(v->getLhs()),
-               v->getField(), makeFormatter(v->getRhs()));
-  }
-  void visit(const CallInstr *v) override {
-    auto args = makeFormatters(v->begin(), v->end());
-    fmt::print(os, FMT_STRING("(call {}\n{}\n)"), makeFormatter(v->getCallee()),
-               fmt::join(args.begin(), args.end(), "\n"));
-  }
-  void visit(const StackAllocInstr *v) override {
-    fmt::print(os, FMT_STRING("(stack_alloc {} {})"), makeFormatter(v->getPtrType()),
-               v->getCount());
-  }
-  void visit(const YieldInInstr *v) override {
-    fmt::print(os, FMT_STRING("(yield_in {})"), makeFormatter(v->getType()));
-  }
-  void visit(const TernaryInstr *v) override {
-    fmt::print(os, FMT_STRING("(select {}\n{}\n{}\n)"), makeFormatter(v->getCond()),
-               makeFormatter(v->getTrueValue()), makeFormatter(v->getFalseValue()));
-  }
-  void visit(const BreakInstr *v) override {
-    os << "(break " << (v->getLoop() ? v->getLoop()->getId() : -1) << ')';
-  }
-  void visit(const ContinueInstr *v) override {
-    os << "(continue " << (v->getLoop() ? v->getLoop()->getId() : -1) << ')';
-  }
-  void visit(const ReturnInstr *v) override {
-    fmt::print(os, FMT_STRING("(return {})"), makeFormatter(v->getValue()));
-  }
-  void visit(const YieldInstr *v) override {
-    fmt::print(os, FMT_STRING("(yield {})"), makeFormatter(v->getValue()));
-  }
-  void visit(const AwaitInstr *v) override {
-    fmt::print(os, FMT_STRING("(await {} {} {})"), makeFormatter(v->getType()),
-               makeFormatter(v->getValue()), v->isGenerator());
-  }
-  void visit(const ThrowInstr *v) override {
-    if (v->getFallback()) {
-      fmt::print(os, FMT_STRING("(throw {} (fallback {}))"),
-                 makeFormatter(v->getValue()), makeFormatter(v->getFallback()));
-    } else {
-      fmt::print(os, FMT_STRING("(throw {})"), makeFormatter(v->getValue()));
-    }
-  }
-  void visit(const FlowInstr *v) override {
-    fmt::print(os, FMT_STRING("(flow {} {})"), makeFormatter(v->getFlow()),
-               makeFormatter(v->getValue()));
-  }
-  void visit(const dsl::CustomInstr *v) override { v->doFormat(os); }
-
-  void visit(const IntType *v) override {
-    fmt::print(os, FMT_STRING("(int '\"{}\" {} (signed {}))"), v->referenceString(),
-               v->getLen(), v->isSigned());
-  }
-  void visit(const FloatType *v) override {
-    fmt::print(os, FMT_STRING("(float '\"{}\")"), v->referenceString());
-  }
-  void visit(const Float32Type *v) override {
-    fmt::print(os, FMT_STRING("(float32 '\"{}\")"), v->referenceString());
-  }
-  void visit(const Float16Type *v) override {
-    fmt::print(os, FMT_STRING("(float16 '\"{}\")"), v->referenceString());
-  }
-  void visit(const BFloat16Type *v) override {
-    fmt::print(os, FMT_STRING("(bfloat16 '\"{}\")"), v->referenceString());
-  }
-  void visit(const Float128Type *v) override {
-    fmt::print(os, FMT_STRING("(float128 '\"{}\")"), v->referenceString());
-  }
-  void visit(const BoolType *v) override {
-    fmt::print(os, FMT_STRING("(bool '\"{}\")"), v->referenceString());
-  }
-  void visit(const RecordType *v) override {
-    std::vector<std::string> fields;
-    std::vector<NodeFormatter> formatters;
-    for (const auto &m : *v) {
-      fields.push_back(fmt::format(FMT_STRING("(\"{}\" {})"), m.getName(),
-                                   makeFormatter(m.getType())));
-    }
-
-    fmt::print(os, FMT_STRING("(record '\"{}\" {})"), v->referenceString(),
-               fmt::join(fields.begin(), fields.end(), " "));
-  }
-  void visit(const RefType *v) override {
-    fmt::print(os, FMT_STRING("(ref '\"{}\" {})"), v->referenceString(),
-               makeFormatter(v->getContents()));
-  }
-  void visit(const FuncType *v) override {
-    auto args = makeFormatters(v->begin(), v->end());
-    fmt::print(os, FMT_STRING("(func '\"{}\" {}{} {})"), v->referenceString(),
-               fmt::join(args.begin(), args.end(), " "),
-               (v->isVariadic() ? " ..." : ""), makeFormatter(v->getReturnType()));
-  }
-  void visit(const OptionalType *v) override {
-    fmt::print(os, FMT_STRING("(optional '\"{}\" {})"), v->referenceString(),
-               makeFormatter(v->getBase()));
-  }
-  void visit(const PointerType *v) override {
-    fmt::print(os, FMT_STRING("(pointer '\"{}\" {})"), v->referenceString(),
-               makeFormatter(v->getBase()));
-  }
-  void visit(const GeneratorType *v) override {
-    fmt::print(os, FMT_STRING("(generator '\"{}\" {})"), v->referenceString(),
-               makeFormatter(v->getBase()));
-  }
-  void visit(const VectorType *v) override {
-    fmt::print(os, FMT_STRING("(vector '\"{}\" {} (count {}))"), v->referenceString(),
-               makeFormatter(v->getBase()), v->getCount());
-  }
-  void visit(const UnionType *v) override {
-    auto types = makeFormatters(v->begin(), v->end());
-    fmt::print(os, FMT_STRING("(union '\"{}\" {})"), v->referenceString(),
-               fmt::join(types.begin(), types.end(), " "));
-  }
-  void visit(const dsl::CustomType *v) override { v->doFormat(os); }
-
-  void format(const Node *n) {
-    if (n)
-      n->accept(*this);
-    else
-      os << "(null)";
-  }
-
-  void format(const Type *t, bool canShowFull = false) {
-    if (t) {
-      if (seenTypes.find(t->getName()) != seenTypes.end() || !canShowFull)
-        fmt::print(os, FMT_STRING("(type '\"{}\")"), t->referenceString());
-      else {
-        seenTypes.insert(t->getName());
-        t->accept(*this);
-      }
-    } else
-      os << "(null)";
-  }
-
-  void format(const Value *t) {
-    if (t) {
-      if (seenNodes.find(t->getId()) != seenNodes.end())
-        fmt::print(os, FMT_STRING("(value '\"{}\")"), t->referenceString());
-      else {
-        seenNodes.insert(t->getId());
-        t->accept(*this);
-      }
-
-    } else
-      os << "(null)";
-  }
-
-  void format(const Var *t, bool canShowFull = false) {
-    if (t) {
-      if (seenNodes.find(t->getId()) != seenNodes.end() || !canShowFull)
-        fmt::print(os, FMT_STRING("(var '\"{}\")"), t->referenceString());
-      else {
-        seenNodes.insert(t->getId());
-        t->accept(*this);
-      }
-    } else
-      os << "(null)";
-  }
-
-private:
-  NodeFormatter makeFormatter(const Type *node, bool canShowFull = false) {
-    auto ret = NodeFormatter(node, seenNodes, seenTypes);
-    ret.canShowFull = canShowFull;
-    return ret;
-  }
-  NodeFormatter makeFormatter(const Value *node) {
-    return NodeFormatter(node, seenNodes, seenTypes);
-  }
-  NodeFormatter makeFormatter(const Var *node, bool canShowFull = false) {
-    auto ret = NodeFormatter(node, seenNodes, seenTypes);
-    ret.canShowFull = canShowFull;
-    return ret;
-  }
-
-  template <typename It> std::vector<NodeFormatter> makeFormatters(It begin, It end) {
-    std::vector<NodeFormatter> ret;
-    while (begin != end) {
-      ret.push_back(makeFormatter(*begin));
-      ++begin;
-    }
-    return ret;
-  }
-  template <typename It>
-  std::vector<NodeFormatter> makeFormatters(It begin, It end, bool canShowFull) {
-    std::vector<NodeFormatter> ret;
-    while (begin != end) {
-      ret.push_back(makeFormatter(*begin, canShowFull));
-      ++begin;
-    }
-    return ret;
-  }
+struct Formatted {
+  std::string value;
+  bool simple;
 };
-} // namespace
 
-std::ostream &operator<<(std::ostream &os, const NodeFormatter &n) {
-  FormatVisitor fv(os, n.seenNodes, n.seenTypes);
-  if (n.type)
-    fv.format(n.type, n.canShowFull);
-  else if (n.value)
-    fv.format(n.value);
-  else
-    fv.format(n.var, n.canShowFull);
-  return os;
+struct Field {
+  std::string value;
+  bool simple;
+};
+
+int nestedLevel(int indent, int level) { return indent > 0 ? level + 1 : level; }
+
+std::string prefix(int indent, int level) {
+  return indent > 0 ? "\n" + std::string(indent * level, ' ') : "";
 }
 
-std::string format(const Node *node) {
-  std::stringstream ss;
-  format(ss, node);
-  return ss.str();
+std::string separator(int indent, int level) {
+  return indent > 0 ? ",\n" + std::string(indent * level, ' ') : ", ";
 }
 
-std::ostream &format(std::ostream &os, const Node *node) {
+std::string join(const std::vector<std::string> &values, const std::string &sep) {
+  std::string result;
+  for (size_t i = 0; i < values.size(); ++i) {
+    if (i)
+      result += sep;
+    result += values[i];
+  }
+  return result;
+}
+
+Formatted formatItems(std::vector<std::string> items, bool simple, size_t maxItems,
+                      int indent, int level) {
+  items.erase(std::remove(items.begin(), items.end(), ""), items.end());
+  if ((simple && items.size() <= maxItems) || indent <= 0)
+    return {join(items, ", "), true};
+  return {prefix(indent, level) + join(items, separator(indent, level)), false};
+}
+
+std::string quote(const std::string &value) {
+  const bool useDouble =
+      value.find('\'') != std::string::npos && value.find('"') == std::string::npos;
+  const char delimiter = useDouble ? '"' : '\'';
+  std::string result(1, delimiter);
+  constexpr char hex[] = "0123456789abcdef";
+  for (unsigned char c : value) {
+    if (c == static_cast<unsigned char>(delimiter) || c == '\\') {
+      result += '\\';
+      result += static_cast<char>(c);
+    } else if (c == '\a') {
+      result += "\\a";
+    } else if (c == '\b') {
+      result += "\\b";
+    } else if (c == '\f') {
+      result += "\\f";
+    } else if (c == '\n') {
+      result += "\\n";
+    } else if (c == '\r') {
+      result += "\\r";
+    } else if (c == '\t') {
+      result += "\\t";
+    } else if (c == '\v') {
+      result += "\\v";
+    } else if (c < 32 || c == 127) {
+      result += "\\x";
+      result += hex[c >> 4];
+      result += hex[c & 15];
+    } else {
+      result += static_cast<char>(c);
+    }
+  }
+  result += delimiter;
+  return result;
+}
+
+Formatted formatValue(const std::string &value, bool, int, int) {
+  return value.empty() ? Formatted{"", true} : Formatted{quote(value), true};
+}
+
+Formatted formatValue(bool value, bool, int, int) {
+  return {value ? "True" : "False", true};
+}
+
+template <typename T>
+  requires(std::is_integral_v<T> && !std::is_same_v<T, bool>)
+Formatted formatValue(T value, bool, int, int) {
+  return {std::to_string(value), true};
+}
+
+Formatted formatValue(double value, bool, int, int) {
+  if (std::isnan(value))
+    return {"nan", true};
+  if (std::isinf(value))
+    return {value < 0 ? "-inf" : "inf", true};
+  std::string result = fmt::format("{}", value);
+  // Python's float repr uses fixed notation for decimal exponents in [-4, 16).
+  auto exponentPos = result.find_first_of("eE");
+  if (exponentPos != std::string::npos) {
+    auto exponentBegin = result.data() + exponentPos + 1;
+    if (exponentBegin != result.data() + result.size() && *exponentBegin == '+')
+      ++exponentBegin;
+    int exponent = 0;
+    auto [exponentEnd, exponentError] =
+        std::from_chars(exponentBegin, result.data() + result.size(), exponent);
+    if (exponentError == std::errc() && exponentEnd == result.data() + result.size() &&
+        exponent >= -4 && exponent < 16) {
+      const bool negative = result.front() == '-';
+      std::string digits =
+          result.substr(negative ? 1 : 0, exponentPos - (negative ? 1 : 0));
+      digits.erase(std::remove(digits.begin(), digits.end(), '.'), digits.end());
+
+      const auto decimalPos = exponent + 1;
+      result = negative ? "-" : "";
+      if (decimalPos <= 0) {
+        result += "0." + std::string(-decimalPos, '0') + digits;
+      } else if (decimalPos >= static_cast<int>(digits.size())) {
+        result += digits + std::string(decimalPos - digits.size(), '0') + ".0";
+      } else {
+        result += digits.substr(0, decimalPos) + "." + digits.substr(decimalPos);
+      }
+    }
+  }
+  if (result.find_first_of(".eE") == std::string::npos)
+    result += ".0";
+  return {result, true};
+}
+
+class FormatVisitor : public util::ConstVisitor {
+  FormatContext &ctx;
+  bool annotateFields, includeAttributes, showTypes;
+  int indent, level = 0;
+  bool payloadReferences = false;
   std::unordered_set<id_t> seenNodes;
   std::unordered_set<std::string> seenTypes;
+  Formatted result;
 
-  FormatVisitor fv(os, seenNodes, seenTypes);
-  fv.format(node);
+  int childLevel() const { return nestedLevel(indent, level); }
 
-  return os;
+  Field field(const std::string &name, Formatted value) const {
+    return {value.value.empty() ? "" : (annotateFields ? name + "=" : "") + value.value,
+            value.simple};
+  }
+
+  Formatted record(const std::string &name, std::vector<Field> fields, int at,
+                   const Node *node = nullptr) {
+    bool simple = true;
+    std::vector<std::string> values;
+    for (auto &item : fields) {
+      simple &= item.simple;
+      if (!item.value.empty())
+        values.push_back(std::move(item.value));
+    }
+    if (node && includeAttributes) {
+      auto attrs = attributes(node, nestedLevel(indent, at));
+      simple &= attrs.simple;
+      if (!attrs.value.empty())
+        values.push_back(std::move(attrs.value));
+    }
+    auto items =
+        formatItems(std::move(values), simple, 1, indent, nestedLevel(indent, at));
+    return {name + "(" + items.value + ")", items.simple};
+  }
+
+  Formatted reference(const Node *node, int at) {
+    if (!node)
+      return {"", true};
+    std::vector<Field> fields{
+        field("name", value(node->getName(), nestedLevel(indent, at)))};
+    const char *name = "TypeRef";
+    if (auto *var = cast<Var>(node)) {
+      fields.push_back(
+          field("id", value(ctx.nodeId(var->getId()), nestedLevel(indent, at))));
+      name = "VarRef";
+    } else if (auto *val = cast<Value>(node)) {
+      fields.push_back(
+          field("id", value(ctx.nodeId(val->getId()), nestedLevel(indent, at))));
+      name = "ValueRef";
+    }
+    return record(name, std::move(fields), at);
+  }
+
+  Formatted node(const Node *node, int at, bool full = false) {
+    if (!node)
+      return {"", true};
+    node = cast<Node>(node);
+    if (payloadReferences)
+      return reference(node, at);
+    if (auto *type = cast<Type>(node)) {
+      if (!full || !seenTypes.insert(type->getName()).second)
+        return reference(node, at);
+    } else if (auto *var = cast<Var>(node)) {
+      if (!full || !seenNodes.insert(var->getId()).second)
+        return reference(node, at);
+    } else if (auto *val = cast<Value>(node)) {
+      if (!seenNodes.insert(val->getId()).second)
+        return reference(node, at);
+    }
+    int previous = level;
+    level = at;
+    node->accept(*this);
+    auto formatted = result;
+    level = previous;
+    return formatted;
+  }
+
+  Formatted value(const Node *v, int at) { return node(v, at); }
+  Formatted value(const std::string &v, int at) {
+    return formatValue(v, includeAttributes, indent, at);
+  }
+  Formatted value(bool v, int at) {
+    return formatValue(v, includeAttributes, indent, at);
+  }
+  template <typename T>
+    requires(std::is_integral_v<T> && !std::is_same_v<T, bool>)
+  Formatted value(T v, int at) {
+    return formatValue(v, includeAttributes, indent, at);
+  }
+  Formatted value(double v, int at) {
+    return formatValue(v, includeAttributes, indent, at);
+  }
+  Formatted value(const ast::types::TypePtr &v, int) {
+    return {v ? v->debugString(2) : "", true};
+  }
+
+  template <typename It> Formatted sequence(It begin, It end, int at) {
+    std::vector<std::string> values;
+    for (auto it = begin; it != end; ++it) {
+      auto formatted = value(*it, nestedLevel(indent, at));
+      // Null positional slots carry meaning in pipelines and partial functions.
+      // Omit null fields like AST dumps, but never collapse a positional slot.
+      if constexpr (std::is_pointer_v<std::decay_t<decltype(*it)>>)
+        if (!*it)
+          formatted.value = "None";
+      values.push_back(std::move(formatted.value));
+    }
+    if (values.empty())
+      return {"", true};
+    auto items =
+        formatItems(std::move(values), true, 1, indent, nestedLevel(indent, at));
+    return {"[" + items.value + "]", items.simple};
+  }
+
+  template <typename T> Formatted value(const std::vector<T> &v, int at) {
+    return sequence(v.begin(), v.end(), at);
+  }
+
+  template <typename It> Formatted definitions(It begin, It end, int at) {
+    std::vector<std::string> values;
+    for (auto it = begin; it != end; ++it)
+      values.push_back(node(*it, nestedLevel(indent, at), true).value);
+    if (values.empty())
+      return {"", true};
+    auto items =
+        formatItems(std::move(values), true, 1, indent, nestedLevel(indent, at));
+    return {"[" + items.value + "]", items.simple};
+  }
+
+  template <typename K, typename V> Formatted value(const std::map<K, V> &v, int at) {
+    std::vector<std::string> values;
+    for (const auto &[key, item] : v) {
+      std::string name;
+      if constexpr (std::is_same_v<K, std::string>)
+        name = quote(key);
+      else
+        name = std::to_string(key);
+      values.push_back(name + "=" + value(item, nestedLevel(indent, at)).value);
+    }
+    if (values.empty())
+      return {"", true};
+    auto items =
+        formatItems(std::move(values), true, 1, indent, nestedLevel(indent, at));
+    return {"{" + items.value + "}", items.simple};
+  }
+
+#define C(name, x) field(name, value(x, child))
+  Formatted value(const Type::RuntimeInfo *v, int at) {
+    if (!v)
+      return {"", true};
+    int child = nestedLevel(indent, at);
+    return record("RuntimeInfo",
+                  {C("id", v->id), C("raw_name", v->rawName),
+                   C("nice_name", v->niceName), C("base_name", v->baseName),
+                   C("mro", v->mro), C("field_owners", v->fieldOwners),
+                   C("parameters", v->parameters), C("methods", v->methods),
+                   C("value_accessed", v->valueAccessed),
+                   C("exception_base", v->exceptionBase),
+                   C("system_exit_base", v->systemExitBase)},
+                  at);
+  }
+  Formatted value(const MemberedType::Field &v, int at) {
+    int child = nestedLevel(indent, at);
+    return record("Field", {C("name", v.getName()), C("type", v.getType())}, at);
+  }
+  Formatted value(const transform::parallel::OMPSched *v, int at) {
+    if (!v)
+      return {"", true};
+    int child = nestedLevel(indent, at);
+    return record("OMPSched",
+                  {C("code", v->code), C("dynamic", v->dynamic),
+                   C("threads", v->threads), C("chunk", v->chunk),
+                   C("ordered", v->ordered), C("collapse", v->collapse),
+                   C("gpu", v->gpu)},
+                  at);
+  }
+  Formatted value(const TryCatchFlow::Catch &v, int at) {
+    int child = nestedLevel(indent, at);
+    return record(
+        "Catch",
+        {C("handler", v.getHandler()), C("type", v.getType()), C("var", v.getVar())},
+        at);
+  }
+  Formatted value(const PipelineFlow::Stage &v, int at) {
+    int child = nestedLevel(indent, at);
+    return record("Stage",
+                  {C("callee", v.getCallee()),
+                   field("args", sequence(v.begin(), v.end(), child)),
+                   C("generator", v.isGenerator()), C("parallel", v.isParallel())},
+                  at);
+  }
+  Formatted value(const Generic &v, int at) {
+    int child = nestedLevel(indent, at);
+    return record(
+        "Generic",
+        {field("value", v.isStatic()      ? value(v.getStaticValue(), child)
+                        : v.isStaticStr() ? value(v.getStaticStringValue(), child)
+                                          : reference(v.getTypeValue(), child))},
+        at);
+  }
+  Formatted value(const LiteralElement &v, int at) {
+    int child = nestedLevel(indent, at);
+    return record("LiteralElement", {C("value", v.value), C("star", v.star)}, at);
+  }
+  Formatted value(const DictLiteralAttribute::KeyValuePair &v, int at) {
+    int child = nestedLevel(indent, at);
+    return record("KeyValuePair", {C("key", v.key), C("value", v.value)}, at);
+  }
+
+  std::string attributeName(int key, const Attribute *v) {
+    if (auto *name = ast::attributeName(key))
+      return name;
+#define A(T)                                                                           \
+  if (dynamic_cast<const T##Attribute *>(v))                                           \
+  return #T
+    A(StringValue);
+    A(IntValue);
+    A(StringList);
+    A(KeyValue);
+    A(Member);
+    A(PythonWrapper);
+    A(SrcInfo);
+    A(Docstring);
+    A(TupleLiteral);
+    A(ListLiteral);
+    A(SetLiteral);
+    A(DictLiteral);
+    A(PartialFunction);
+    A(ExactType);
+#undef A
+    return std::to_string(key);
+  }
+  Formatted value(const Attribute *v, int at) {
+    if (!v)
+      return {"", true};
+    int child = nestedLevel(indent, at);
+    if (auto *a = dynamic_cast<const StringValueAttribute *>(v))
+      return value(a->value, at);
+    if (auto *a = dynamic_cast<const IntValueAttribute *>(v))
+      return value(a->value, at);
+    if (auto *a = dynamic_cast<const StringListAttribute *>(v))
+      return value(a->values, at);
+    if (auto *a = dynamic_cast<const KeyValueAttribute *>(v)) {
+      std::map<std::string, std::string> sorted(a->attributes.begin(),
+                                                a->attributes.end());
+      std::vector<std::string> items;
+      for (const auto &[key, item] : sorted)
+        items.push_back(quote(key) + ": " + quote(item));
+      return {"KeyValueAttribute(attributes={" + join(items, ", ") + "})", true};
+    }
+    if (auto *a = dynamic_cast<const MemberAttribute *>(v)) {
+      std::vector<std::string> names;
+      for (const auto &[name, _] : a->memberSrcInfo)
+        names.push_back(name);
+      std::sort(names.begin(), names.end());
+      return record("MemberAttribute", {C("members", names)}, at);
+    }
+    if (auto *a = dynamic_cast<const ExactTypeAttribute *>(v))
+      return record("ExactTypeAttribute", {C("type", a->type)}, at);
+    if (auto *a = dynamic_cast<const DocstringAttribute *>(v))
+      return record("DocstringAttribute", {C("docstring", a->docstring)}, at);
+    if (auto *a = dynamic_cast<const PythonWrapperAttribute *>(v))
+      return record("PythonWrapperAttribute", {C("original", a->original)}, at);
+    if (auto *a = dynamic_cast<const TupleLiteralAttribute *>(v))
+      return record("TupleLiteralAttribute", {C("elements", a->elements)}, at);
+    if (auto *a = dynamic_cast<const ListLiteralAttribute *>(v))
+      return record("ListLiteralAttribute", {C("elements", a->elements)}, at);
+    if (auto *a = dynamic_cast<const SetLiteralAttribute *>(v))
+      return record("SetLiteralAttribute", {C("elements", a->elements)}, at);
+    if (auto *a = dynamic_cast<const DictLiteralAttribute *>(v))
+      return record("DictLiteralAttribute", {C("elements", a->elements)}, at);
+    if (auto *a = dynamic_cast<const PartialFunctionAttribute *>(v))
+      return record("PartialFunctionAttribute",
+                    {C("name", a->name), C("args", a->args)}, at);
+    return {"", true};
+  }
+#undef C
+
+  Formatted attributes(const Node *node, int at) {
+    std::vector<std::pair<std::string, Formatted>> values;
+    bool previous = payloadReferences;
+    payloadReferences = true;
+    for (auto it = node->attributes_begin(); it != node->attributes_end(); ++it) {
+      if (*it == SrcInfoAttribute::AttributeID)
+        continue;
+      const auto *attr = node->getAttribute(*it);
+      auto formatted = value(attr, at + 2);
+      values.emplace_back(attributeName(*it, attr) +
+                              (formatted.value.empty() ? "" : "=" + formatted.value),
+                          formatted);
+    }
+    payloadReferences = previous;
+    if (values.empty())
+      return {"", true};
+    std::sort(values.begin(), values.end(),
+              [](auto &a, auto &b) { return a.first < b.first; });
+    std::vector<std::string> items;
+    bool simple = true;
+    for (const auto &[name, formatted] : values) {
+      items.push_back(name);
+      simple &= formatted.simple;
+    }
+    auto formatted = formatItems(std::move(items), simple, 1, indent, at + 1);
+    return {"attrs=(" + formatted.value + ")", formatted.simple};
+  }
+
+  std::vector<Field> common(const Node *v) {
+    std::vector<Field> fields{field("name", value(v->getName(), childLevel()))};
+    if (auto *var = cast<Var>(v)) {
+      fields.push_back(field("id", value(ctx.nodeId(var->getId()), childLevel())));
+      fields.push_back(field("type", value(var->getType(), childLevel())));
+      fields.push_back(field("global_", value(var->isGlobal(), childLevel())));
+      fields.push_back(field("external", value(var->isExternal(), childLevel())));
+      fields.push_back(field("tls", value(var->isThreadLocal(), childLevel())));
+    } else if (auto *val = cast<Value>(v)) {
+      fields.push_back(field("id", value(ctx.nodeId(val->getId()), childLevel())));
+      if (showTypes)
+        fields.push_back(field("type", value(val->getType(), childLevel())));
+    }
+    if (auto *fn = cast<Func>(v)) {
+      fields.push_back(
+          field("unmangled_name", value(fn->getUnmangledName(), childLevel())));
+      fields.push_back(field("generator", value(fn->isGenerator(), childLevel())));
+      fields.push_back(field("async_", value(fn->isAsync(), childLevel())));
+      fields.push_back(field("parent_type", value(fn->getParentType(), childLevel())));
+      auto args = ctx.args(fn);
+      fields.push_back(
+          field("args", definitions(args.begin(), args.end(), childLevel())));
+    }
+    if (auto *type = cast<Type>(v)) {
+      if (showTypes)
+        fields.push_back(field("ast_type", value(type->getAstType(), childLevel())));
+      fields.push_back(
+          field("runtime_info", value(type->getRuntimeInfo(), childLevel())));
+    }
+    return fields;
+  }
+
+#define F(name, x) field(name, value(x, childLevel()))
+#define EMIT(T, ...)                                                                   \
+  void visit(const T *v) override {                                                    \
+    auto fields = common(v);                                                           \
+    std::vector<Field> extra{__VA_ARGS__};                                             \
+    fields.insert(fields.end(), std::make_move_iterator(extra.begin()),                \
+                  std::make_move_iterator(extra.end()));                               \
+    result = record(#T, std::move(fields), level, v);                                  \
+  }
+
+  EMIT(Module, field("argv_var", node(v->getArgvVar(), childLevel(), true)),
+       field("argc_var", node(v->getArgcVar(), childLevel(), true)),
+       field("types", definitions(ctx.types.begin(), ctx.types.end(), childLevel())),
+       field("vars", definitions(ctx.vars.begin(), ctx.vars.end(), childLevel())),
+       field("main_func", node(v->getMainFunc(), childLevel(), true)))
+  EMIT(Var)
+  EMIT(BodiedFunc, field("symbols", definitions(v->begin(), v->end(), childLevel())),
+       F("body", v->getBody()), F("jit", v->isJIT()))
+  EMIT(ExternalFunc)
+  EMIT(InternalFunc,
+       field("intrinsic", Formatted{intrinsicName(v->getIntrinsic()), true}),
+       F("intrinsic_type", v->getIntrinsicType()))
+  EMIT(LLVMFunc,
+       field("llvm_literals",
+             sequence(v->literal_begin(), v->literal_end(), childLevel())),
+       F("llvm_declares", v->getLLVMDeclarations()), F("llvm_body", v->getLLVMBody()))
+  EMIT(VarValue, F("var", v->getVar()))
+  EMIT(PointerValue, F("var", v->getVar()), F("fields", v->getFields()))
+  EMIT(SeriesFlow, F("series", ctx.seriesValues(v)))
+  EMIT(WhileFlow, F("cond", v->getCond()), F("body", v->getBody()))
+  EMIT(ForFlow, F("iter", v->getIter()), F("body", v->getBody()), F("var", v->getVar()),
+       F("schedule", v->getSchedule()), F("async_", v->isAsync()))
+  EMIT(ImperativeForFlow, F("start", v->getStart()), F("step", v->getStep()),
+       F("end", v->getEnd()), F("body", v->getBody()), F("var", v->getVar()),
+       F("schedule", v->getSchedule()))
+  EMIT(IfFlow, F("cond", v->getCond()), F("true_branch", v->getTrueBranch()),
+       F("false_branch", v->getFalseBranch()))
+  EMIT(TryCatchFlow, field("catches", sequence(v->begin(), v->end(), childLevel())),
+       F("body", v->getBody()), F("else_", v->getElse()),
+       F("finally_", v->getFinally()))
+  EMIT(PipelineFlow, field("stages", sequence(v->begin(), v->end(), childLevel())))
+  EMIT(IntConst, F("val", v->getVal()))
+  EMIT(FloatConst, F("val", v->getVal()))
+  EMIT(BoolConst, F("val", v->getVal()))
+  EMIT(StringConst, F("val", v->getVal()))
+  EMIT(BytesConst, F("val", v->getVal()))
+  EMIT(AssignInstr, F("lhs", v->getLhs()), F("rhs", v->getRhs()))
+  EMIT(ExtractInstr, F("val", v->getVal()), F("field", v->getField()),
+       F("polymorphic", v->isPolymorphic()))
+  EMIT(InsertInstr, F("lhs", v->getLhs()), F("field", v->getField()),
+       F("rhs", v->getRhs()), F("polymorphic", v->isPolymorphic()))
+  EMIT(CallInstr, F("callee", v->getCallee()), F("args", ctx.callArgs(v)))
+  EMIT(StackAllocInstr, F("ptr_type", v->getPtrType()), F("count", v->getCount()))
+  EMIT(YieldInInstr, F("suspend", v->isSuspending()))
+  EMIT(TernaryInstr, F("cond", v->getCond()), F("true_value", v->getTrueValue()),
+       F("false_value", v->getFalseValue()))
+  EMIT(BreakInstr, field("loop", reference(v->getLoop(), childLevel())))
+  EMIT(ContinueInstr, field("loop", reference(v->getLoop(), childLevel())))
+  EMIT(ReturnInstr, F("value", v->getValue()))
+  EMIT(YieldInstr, F("value", v->getValue()), F("final", v->isFinal()))
+  EMIT(AwaitInstr, F("value", v->getValue()), F("generator", v->isGenerator()))
+  EMIT(ThrowInstr, F("value", v->getValue()), F("fallback", v->getFallback()))
+  EMIT(FlowInstr, F("flow", v->getFlow()), F("value", v->getValue()))
+  EMIT(IntType, F("len", v->getLen()), F("sign", v->isSigned()))
+  EMIT(FloatType)
+  EMIT(Float32Type)
+  EMIT(Float16Type)
+  EMIT(BFloat16Type) EMIT(Float128Type) EMIT(BoolType)
+      EMIT(RecordType, field("fields", sequence(v->begin(), v->end(), childLevel())))
+          EMIT(RefType, F("contents", v->getContents()),
+               F("polymorphic", v->isPolymorphic()))
+              EMIT(FuncType, F("return_type", v->getReturnType()),
+                   F("arg_types", ctx.reorder(std::vector<Type *>(v->begin(), v->end()),
+                                              v->getName())),
+                   F("variadic", v->isVariadic()))
+                  EMIT(PointerType, F("base", v->getBase()))
+                      EMIT(OptionalType, F("base", v->getBase()))
+                          EMIT(GeneratorType, F("base", v->getBase()))
+                              EMIT(VectorType, F("count", v->getCount()),
+                                   F("base", v->getBase()))
+                                  EMIT(UnionType,
+                                       field("types", sequence(v->begin(), v->end(),
+                                                               childLevel())))
+#undef EMIT
+#undef F
+
+                                      static const
+      char *intrinsicName(InternalFunc::Intrinsic kind) {
+    static const char *names[]{"NONE",
+                               "ALLOCATE",
+                               "ALLOCATION_SIZE",
+                               "TYPEINFO",
+                               "TYPEINFO_LOOKUP",
+                               "TYPEINFO_METHOD_LOOKUP",
+                               "VIRTUAL_LOOKUP",
+                               "RECORD_NEW",
+                               "REPRESENTATION_CAST",
+                               "GENERATOR_PROMISE",
+                               "SIZEOF",
+                               "IS_ATOMIC",
+                               "IS_CONTENT_ATOMIC"};
+    return names[static_cast<size_t>(kind)];
+  }
+
+  void defaultVisit(const Node *v) override {
+    result = record("Node", common(v), level, v);
+  }
+
+public:
+  FormatVisitor(FormatContext &ctx, bool annotateFields, bool includeAttributes,
+                int indent, bool types)
+      : ctx(ctx), annotateFields(annotateFields), includeAttributes(includeAttributes),
+        showTypes(types), indent(indent) {}
+  std::string format(const Node *v) { return node(v, 0, true).value; }
+};
+
+} // namespace
+
+std::string format(const Node *node, bool annotateFields, bool includeAttributes,
+                   int indent, bool types) {
+  FormatContext ctx(node);
+  return FormatVisitor(ctx, annotateFields, includeAttributes, indent, types)
+      .format(node);
+}
+
+std::ostream &format(std::ostream &os, const Node *node, bool annotateFields,
+                     bool includeAttributes, int indent, bool types) {
+  return os << format(node, annotateFields, includeAttributes, indent, types);
 }
 
 } // namespace util
 } // namespace ir
 } // namespace codon
-
-template <>
-struct fmt::formatter<codon::ir::util::NodeFormatter> : ostream_formatter {};

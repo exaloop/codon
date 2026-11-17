@@ -236,7 +236,9 @@ def access_attribute(
     # Special case: cls.__id__
     if utils.is_type_expr(expr) and member == "__id__":
         if realized := infer.realize(self.ctx, utils.extract_type(self.ctx, expr)):
-            utils.get_class_realization(self.ctx, realized).value_accessed = True
+            realization = utils.get_class_realization(self.ctx, realized)
+            realization.value_accessed = True
+            realization.ir.runtime_info.value_accessed = True
             return wrap_side(ast.IntExpr(utils.get_class_realization(self.ctx, realized).id)), True
         return None, True
 

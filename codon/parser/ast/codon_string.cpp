@@ -1,6 +1,7 @@
 // Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
 #include "codon/parser/ast.h"
+#include "codon/parser/ast/dump.h"
 #include "codon/parser/visitors/scoping/scoping.h"
 
 #include <algorithm>
@@ -272,6 +273,8 @@ Formatted formatBindings(const BindingsAttribute &value, bool attributes, int in
       indent, level);
 }
 
+} // namespace
+
 const char *attributeName(int key) {
   switch (key) {
 #define ATTRIBUTE_NAME(name)                                                           \
@@ -338,6 +341,8 @@ const char *attributeName(int key) {
     return nullptr;
   }
 }
+
+namespace {
 
 Formatted
 formatKeyValueAttribute(const std::unordered_map<std::string, std::string> &values) {

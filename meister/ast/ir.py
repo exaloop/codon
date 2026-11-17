@@ -3,13 +3,10 @@
 from __future__ import annotations
 
 from ..bridge import List, dataclass
+from ..ir import Function, Type
 
+__all__ = ["Function", "PyModule", "Type"]
 
-class Type:
-    pass
-
-class Function:
-    pass
 
 @dataclass(init=False)
 class PyModule:
@@ -23,4 +20,3 @@ class PyModule:
     ):
         self.types = [] if types is None else types
         self.functions = [] if functions is None else functions
-

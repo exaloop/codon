@@ -31,6 +31,13 @@ struct CodonAstDumpResult codon_ast_dump_file(const char *file,
 /// The caller must release the returned string with codon_ast_dump_free().
 char *codon_ast_dump_defines(void);
 
+/// Typecheck and translate a file, then dump translation and each debug IR pass.
+/// Returns a JSON object mapping stage names to dump strings. No LLVM emission.
+/// Ownership and error handling are identical to the AST dump APIs.
+struct CodonAstDumpResult codon_ir_dump_stages(const char *file,
+                                               uint8_t include_attributes, int indent,
+                                               uint8_t types, int ast_indent);
+
 /// Release a string returned in CodonAstDumpResult.
 void codon_ast_dump_free(char *value);
 
