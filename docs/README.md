@@ -19,7 +19,7 @@ npm ci --prefix docs
 CODON_STDLIB="$HOME/.codon/lib/codon/stdlib"
 "$HOME/.codon/bin/codon" doc "$CODON_STDLIB" > build/docs-api.json
 build/docs-venv/bin/python scripts/docgen.py \
-  build/docs-api.json docs/libraries/api "$CODON_STDLIB"
+  build/docs-api.json docs/libraries/api --stdlib
 
 npm start --prefix docs -- --port 3040
 ```
@@ -27,13 +27,105 @@ npm start --prefix docs -- --port 3040
 Open `http://localhost:3040`. Guide edits update automatically. After regenerating
 the API, restart the server to refresh its search index and staged assets.
 
+The renderer tracks its outputs in `.codon-doc-manifest.json`. Subsequent runs
+replace those files and remove stale generated pages, leaving unrelated files
+alone. It refuses to overwrite an existing, untracked output file. When upgrading
+from an older generator, move the old generated directory to a backup location
+before the first run; do not remove authored pages to resolve a conflict.
+
+## Document a Library
+
+`codon doc` parses source without running the library. It accepts a `.codon` or
+`.py` file, or discovers both extensions recursively in a directory. Python files
+must use syntax supported by Codon. Hidden directories, `__pycache__`, and
+`__init_test__.codon`/`__init_test__.py` are skipped automatically; data files and
+other extensions are ignored.
+
+For a project with an importable package at `src/mylib`, run the installed
+compiler from the project directory:
+
+```sh
+"$HOME/.codon/bin/codon" doc src/mylib --root src \
+  --exclude mylib/tests --exclude mylib/examples > api.json
+```
+
+`--root` is the directory containing importable packages. It controls qualified
+module names and provides an additional import search location. Without it, the
+root is inferred by walking above directories containing `__init__.codon` or
+`__init__.py`. Repeat `--exclude` for exact files or directory subtrees relative to
+the root; exclusions are paths, not glob patterns. Empty inputs, unsupported
+explicit files, and filesystem failures produce a nonzero exit status.
+
+Render the result with this repository's script and documentation dependencies:
+
+```sh
+build/docs-venv/bin/python scripts/docgen.py \
+  /path/to/project/api.json /path/to/site/docs/reference \
+  --project "My Library" --route /reference \
+  --source-url 'https://github.com/example/mylib/blob/{revision}/src' \
+  --source-revision v1.0
+```
+
+The output is Markdown containing HTML and Docusaurus frontmatter, plus an API
+search index. This site's API styles and search integration provide its full
+presentation; the script is not a standalone site builder. `--sidebar` optionally
+selects a Docusaurus sidebar. Source links are omitted unless `--source-url` is
+set. Its prefix corresponds to the extraction root, and `{revision}` is replaced
+with the URL-encoded revision. `--project` defaults to `Library` and `--route` to
+`/api`.
+
+Only discovered input modules receive pages. Imported dependencies remain in
+the JSON for reference resolution but do not become part of the project's API
+catalog. Exclusions affect discovery, not import parsing: an excluded module can
+still be read as a dependency. Imports must resolve to available Codon-compatible
+source. Public names are those without a leading underscore; class pages also
+include special methods. Re-exports and type aliases link to their definitions
+when those definitions are in the documented project. Class extensions are
+attached by identity, not by an unqualified class name.
+
+Use `--stdlib` only when generating Codon's own reference. It selects the existing
+stdlib title, route, sidebar, and source URL defaults. For legacy JSON it also
+enables the older stdlib class-consolidation policy; versioned JSON uses explicit
+identities instead.
+
+### JSON Contract
+
+The extractor emits an object with `schema_version: 2`, `module_root`, and a
+`symbols` mapping. Mapping keys are local to that extraction; `symbol_id` supplies
+a qualified identity, with ordinal suffixes for overloads or repeated names.
+Modules include `name`, canonical `path`, `owned`, and `children`. Declarations
+include `qualified_name`, their owning `module`, and a `source` object containing
+`path`, `line`, `column`, and `length`. Builtin placeholders may have no source.
+
+Annotations are objects with `kind` and display `text`. References add `target`;
+applications add `base` and `args`; literals are explicitly tagged, so `64` cannot
+be confused with a symbol key. Unsupported or unresolved annotations retain
+their source text as `expression` records. Functions use `return` and retain
+argument kinds, defaults, generic parameters, and asynchronous status. Classes
+include bases and member identities. Aliases have a `target`, and specialized
+type aliases also retain their annotation in `type`.
+
+The renderer accepts schema v2 and the old unversioned mapping. Legacy input
+requires source roots as positional arguments and accepts both `return` and
+`ret`. Unknown schema versions are rejected. Extraction is source-based: it does
+not execute decorators, evaluate runtime-generated APIs, or replace type checking.
+
+### Work on the Generator
+
 For a compiler checkout, use `build/codon` and stage both `stdlib/` and the
-generated tables in `build/stdlib/` into one clean tree containing only `.codon`
-files. Set `CODON_PATH` to that tree when running `doc`. Supply every source root
-appearing in the emitted JSON to `docgen.py` (the staged tree, `stdlib/`, and
-`build/stdlib/`) so paths remain relative.
-Regeneration replaces Markdown in `docs/libraries/api`; keep authored guides
-outside that generated directory.
+generated tables in `build/stdlib/` into one SDK-style source tree containing the
+installed `.codon` modules. Set `CODON_PATH` to that tree when running `doc`.
+The schema carries its root, so no additional renderer roots are needed.
+
+Run the extractor/renderer regressions with the same compiler and dependencies:
+
+```sh
+CODON_PATH=/path/to/staged/stdlib build/docs-venv/bin/python \
+  test/docgen_test.py --codon build/codon -v
+```
+
+CI runs these tests against the installed SDK artifact before generating the
+stdlib reference and checking the complete site.
 
 ## Verify the Production Site
 

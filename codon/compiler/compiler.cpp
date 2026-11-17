@@ -142,10 +142,14 @@ llvm::Error Compiler::compile() {
   return llvm::Error::success();
 }
 
-llvm::Expected<std::string> Compiler::docgen(const std::vector<std::string> &files) {
+llvm::Expected<std::string> Compiler::docgen(const std::vector<std::string> &files,
+                                             const std::string &moduleRoot) {
   try {
-    auto j = ast::DocVisitor::apply(options->argv0, files);
-    return j->toString();
+    auto j = ast::DocVisitor::apply(options->argv0, files, moduleRoot);
+    std::string output;
+    llvm::raw_string_ostream stream(output);
+    stream << llvm::json::Value(std::move(j));
+    return output;
   } catch (exc::ParserException &exc) {
     return llvm::make_error<error::ParserErrorInfo>(exc.getErrors());
   }
