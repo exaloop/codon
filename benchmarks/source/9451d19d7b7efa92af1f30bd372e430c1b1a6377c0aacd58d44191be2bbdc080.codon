@@ -1,0 +1,129 @@
+import numpy as np
+import sys
+import time
+import npbench_lib as kernel_module
+from C import GC_gcollect() -> None
+from C import GC_get_total_bytes() -> int
+from C import GC_get_heap_size() -> int
+from C import GC_get_free_bytes() -> int
+directory = sys.argv[1]
+samples = int(sys.argv[2])
+original_input = np.load(directory + '/input-input.npy', dtype=np.float32, ndim=4)
+input = np.empty_like(original_input)
+np.copyto(input, original_input)
+original_conv1 = np.load(directory + '/input-conv1.npy', dtype=np.float32, ndim=4)
+conv1 = np.empty_like(original_conv1)
+np.copyto(conv1, original_conv1)
+original_conv1bias = np.load(directory + '/input-conv1bias.npy', dtype=np.float32, ndim=1)
+conv1bias = np.empty_like(original_conv1bias)
+np.copyto(conv1bias, original_conv1bias)
+original_conv2 = np.load(directory + '/input-conv2.npy', dtype=np.float32, ndim=4)
+conv2 = np.empty_like(original_conv2)
+np.copyto(conv2, original_conv2)
+original_conv2bias = np.load(directory + '/input-conv2bias.npy', dtype=np.float32, ndim=1)
+conv2bias = np.empty_like(original_conv2bias)
+np.copyto(conv2bias, original_conv2bias)
+original_fc1w = np.load(directory + '/input-fc1w.npy', dtype=np.float32, ndim=2)
+fc1w = np.empty_like(original_fc1w)
+np.copyto(fc1w, original_fc1w)
+original_fc1b = np.load(directory + '/input-fc1b.npy', dtype=np.float32, ndim=1)
+fc1b = np.empty_like(original_fc1b)
+np.copyto(fc1b, original_fc1b)
+original_fc2w = np.load(directory + '/input-fc2w.npy', dtype=np.float32, ndim=2)
+fc2w = np.empty_like(original_fc2w)
+np.copyto(fc2w, original_fc2w)
+original_fc2b = np.load(directory + '/input-fc2b.npy', dtype=np.float32, ndim=1)
+fc2b = np.empty_like(original_fc2b)
+np.copyto(fc2b, original_fc2b)
+original_fc3w = np.load(directory + '/input-fc3w.npy', dtype=np.float32, ndim=2)
+fc3w = np.empty_like(original_fc3w)
+np.copyto(fc3w, original_fc3w)
+original_fc3b = np.load(directory + '/input-fc3b.npy', dtype=np.float32, ndim=1)
+fc3b = np.empty_like(original_fc3b)
+np.copyto(fc3b, original_fc3b)
+N = 8
+C_before_fc1 = 26896
+
+def emit(value, filename):
+    if value is None:
+        return
+    elif isinstance(value, tuple):
+        index = 0
+        for item in value:
+            emit(item, filename + '_' + str(index))
+            index += 1
+    else:
+        np.save(filename, np.asarray(value))
+
+@noinline
+def sample(input, conv1, conv1bias, conv2, conv2bias, fc1w, fc1b, fc2w, fc2b, fc3w, fc3b, N, C_before_fc1):
+    started = time.perf_counter()
+    result = kernel_module.lenet(input, conv1, conv1bias, conv2, conv2bias, fc1w, fc1b, fc2w, fc2b, fc3w, fc3b, N, C_before_fc1)
+    elapsed = time.perf_counter() - started
+    emit(result, directory + '/output-return')
+    return elapsed
+
+if samples == 0:
+    GC_gcollect()
+    allocated_before = GC_get_total_bytes()
+    heap_before = GC_get_heap_size()
+    address_input = int(input.data)
+    address_conv1 = int(conv1.data)
+    address_conv1bias = int(conv1bias.data)
+    address_conv2 = int(conv2.data)
+    address_conv2bias = int(conv2bias.data)
+    address_fc1w = int(fc1w.data)
+    address_fc1b = int(fc1b.data)
+    address_fc2w = int(fc2w.data)
+    address_fc2b = int(fc2b.data)
+    address_fc3w = int(fc3w.data)
+    address_fc3b = int(fc3b.data)
+    for iteration in range(32):
+        np.copyto(input, original_input)
+        assert int(input.data) == address_input
+        np.copyto(conv1, original_conv1)
+        assert int(conv1.data) == address_conv1
+        np.copyto(conv1bias, original_conv1bias)
+        assert int(conv1bias.data) == address_conv1bias
+        np.copyto(conv2, original_conv2)
+        assert int(conv2.data) == address_conv2
+        np.copyto(conv2bias, original_conv2bias)
+        assert int(conv2bias.data) == address_conv2bias
+        np.copyto(fc1w, original_fc1w)
+        assert int(fc1w.data) == address_fc1w
+        np.copyto(fc1b, original_fc1b)
+        assert int(fc1b.data) == address_fc1b
+        np.copyto(fc2w, original_fc2w)
+        assert int(fc2w.data) == address_fc2w
+        np.copyto(fc2b, original_fc2b)
+        assert int(fc2b.data) == address_fc2b
+        np.copyto(fc3w, original_fc3w)
+        assert int(fc3w.data) == address_fc3w
+        np.copyto(fc3b, original_fc3b)
+        assert int(fc3b.data) == address_fc3b
+    allocated = GC_get_total_bytes() - allocated_before
+    heap_growth = GC_get_heap_size() - heap_before
+    print('BENCH_MEMORY', allocated, heap_growth)
+    assert allocated < 65536
+    assert heap_growth == 0
+else:
+    for iteration in range(samples + 1):
+        GC_gcollect()
+        if iteration > 0:
+            print('BENCH_GC', GC_get_heap_size(), GC_get_heap_size() - GC_get_free_bytes())
+        np.copyto(input, original_input)
+        np.copyto(conv1, original_conv1)
+        np.copyto(conv1bias, original_conv1bias)
+        np.copyto(conv2, original_conv2)
+        np.copyto(conv2bias, original_conv2bias)
+        np.copyto(fc1w, original_fc1w)
+        np.copyto(fc1b, original_fc1b)
+        np.copyto(fc2w, original_fc2w)
+        np.copyto(fc2b, original_fc2b)
+        np.copyto(fc3w, original_fc3w)
+        np.copyto(fc3b, original_fc3b)
+        elapsed = sample(input, conv1, conv1bias, conv2, conv2bias, fc1w, fc1b, fc2w, fc2b, fc3w, fc3b, N, C_before_fc1)
+        if iteration > 0:
+            print('BENCH_TIME', elapsed)
+    GC_gcollect()
+    print('BENCH_GC', GC_get_heap_size(), GC_get_heap_size() - GC_get_free_bytes())

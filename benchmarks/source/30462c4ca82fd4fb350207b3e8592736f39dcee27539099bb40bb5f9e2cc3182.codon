@@ -1,0 +1,80 @@
+import numpy as np
+import sys
+import time
+import npbench_lib as kernel_module
+from C import GC_gcollect() -> None
+from C import GC_get_total_bytes() -> int
+from C import GC_get_heap_size() -> int
+from C import GC_get_free_bytes() -> int
+directory = sys.argv[1]
+samples = int(sys.argv[2])
+original_mass = np.load(directory + '/input-mass.npy', dtype=np.float64, ndim=2)
+mass = np.empty_like(original_mass)
+np.copyto(mass, original_mass)
+original_pos = np.load(directory + '/input-pos.npy', dtype=np.float64, ndim=2)
+pos = np.empty_like(original_pos)
+np.copyto(pos, original_pos)
+original_vel = np.load(directory + '/input-vel.npy', dtype=np.float64, ndim=2)
+vel = np.empty_like(original_vel)
+np.copyto(vel, original_vel)
+N = 100
+Nt = 900
+dt = 0.01
+G = 1.0
+softening = 0.1
+with open('/proc/self/smaps_rollup') as memory_status:
+    for record in memory_status:
+        if record.startswith('AnonHugePages:'):
+            print('BENCH_HUGEPAGES_KIB', int(record.split()[1]))
+
+def emit(value, filename):
+    if value is None:
+        return
+    elif isinstance(value, tuple):
+        index = 0
+        for item in value:
+            emit(item, filename + '_' + str(index))
+            index += 1
+    else:
+        np.save(filename, np.asarray(value))
+
+@noinline
+def sample(mass, pos, vel, N, Nt, dt, G, softening):
+    started = time.perf_counter()
+    result = kernel_module.nbody(mass, pos, vel, N, Nt, dt, G, softening)
+    elapsed = time.perf_counter() - started
+    emit(result, directory + '/output-return')
+    return elapsed
+
+if samples == 0:
+    GC_gcollect()
+    allocated_before = GC_get_total_bytes()
+    heap_before = GC_get_heap_size()
+    address_mass = int(mass.data)
+    address_pos = int(pos.data)
+    address_vel = int(vel.data)
+    for iteration in range(32):
+        np.copyto(mass, original_mass)
+        assert int(mass.data) == address_mass
+        np.copyto(pos, original_pos)
+        assert int(pos.data) == address_pos
+        np.copyto(vel, original_vel)
+        assert int(vel.data) == address_vel
+    allocated = GC_get_total_bytes() - allocated_before
+    heap_growth = GC_get_heap_size() - heap_before
+    print('BENCH_MEMORY', allocated, heap_growth)
+    assert allocated < 65536
+    assert heap_growth == 0
+else:
+    for iteration in range(samples + 1):
+        GC_gcollect()
+        if iteration > 0:
+            print('BENCH_GC', GC_get_heap_size(), GC_get_heap_size() - GC_get_free_bytes())
+        np.copyto(mass, original_mass)
+        np.copyto(pos, original_pos)
+        np.copyto(vel, original_vel)
+        elapsed = sample(mass, pos, vel, N, Nt, dt, G, softening)
+        if iteration > 0:
+            print('BENCH_TIME', elapsed)
+    GC_gcollect()
+    print('BENCH_GC', GC_get_heap_size(), GC_get_heap_size() - GC_get_free_bytes())

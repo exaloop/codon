@@ -1,0 +1,30 @@
+# Copyright 2021 ETH Zurich and the NPBench authors. All rights reserved.
+
+__CODON_RET__: Literal[bool] = True
+
+import numpy as np
+
+def nussinov(N: int, seq: np.ndarray[Int[32], 1]):
+    def match(b1, b2):
+        if b1 + b2 == 3:
+            return 1
+        else:
+            return 0
+
+    table = np.zeros((N, N), np.int32)
+
+    for i in range(N - 1, -1, -1):
+        for j in range(i + 1, N):
+            if j - 1 >= 0:
+                table[i, j] = max(table[i, j], table[i, j - 1])
+            if i + 1 < N:
+                table[i, j] = max(table[i, j], table[i + 1, j])
+            if j - 1 >= 0 and i + 1 < N:
+                if i < j - 1:
+                    table[i, j] = max(table[i, j], table[i + 1, j - 1] + Int[32](match(int(seq[i]), int(seq[j]))))
+                else:
+                    table[i, j] = max(table[i, j], table[i + 1, j - 1])
+            for k in range(i + 1, j):
+                table[i, j] = max(table[i, j], table[i, k] + table[k + 1, j])
+
+    if __CODON_RET__: return table
