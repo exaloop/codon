@@ -29,6 +29,33 @@ def port_modules():
 
 
 class PythonPortTests(unittest.TestCase):
+    def test_index_deletion_preserves_deferred_statement_wrapper(self):
+        from ..passes.typecheck import TypeVisitor
+        from ..passes.typecheck.assign import typecheck_del
+        from ..passes.typecheck.ctx import TypeContext
+
+        class DoneExprVisitor(TypeVisitor):
+            def visit_expr(self, node, *args, **kwargs):
+                node.done = True
+                return node
+
+        visitor = DoneExprVisitor(TypeContext(Cache("codon")))
+        stmt = codon_ast.DelStmt(
+            expr=codon_ast.IndexExpr(codon_ast.IdExpr("values"), codon_ast.IntExpr(0))
+        )
+        result = typecheck_del(visitor, stmt)
+        self.assertIsInstance(result, codon_ast.ExprStmt)
+        self.assertTrue(result.expr.done)
+        self.assertFalse(result.done)
+
+    def test_comparison_discovers_nonprefixed_parser_files(self):
+        from .compare import collect_cases
+
+        directory = Path(__file__).resolve().parents[2] / "test/parser"
+        cases = collect_cases(directory)
+        self.assertEqual({case.path for case in cases}, set(directory.glob("*.codon")))
+        self.assertIn(directory / "llvm.codon", {case.path for case in cases})
+
     def test_dump_fingerprint_chunks_ignore_emission_boundaries(self):
         from .compare import DumpFingerprint
 

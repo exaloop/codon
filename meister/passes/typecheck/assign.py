@@ -77,7 +77,7 @@ def typecheck_del(self: TypeVisitor, node: ast.DelStmt) -> ast.Node:
     match node.expr:
         case ast.IndexExpr(expr=expr, index=index):
             call = ast.CallExpr(ast.DotExpr(expr, member="__delitem__"), items=[index])
-            return self.visit_stmt(ast.ExprStmt(call))
+            return ast.ExprStmt(self.visit_expr(call))
         case ast.IdExpr(value=name):
             # Assign `a` to `type(a)()` to mark it for deletion
             type_call = ast.CallExpr(

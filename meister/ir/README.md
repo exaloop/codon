@@ -60,9 +60,13 @@ LLVM emission (intermediate passes are not dumped or compared):
 python -m meister.ir.compare scratch.codon --output /tmp/scratch-ir-stages
 python -m meister.ir.compare test/parser/typecheck --jobs 6 --timeout 300 \
   --output /tmp/typecheck-ir-suite
+python -m meister.ir.compare test/parser --jobs 4 --timeout 1200 \
+  --output /tmp/parser-ir-suite
+python -m meister.ir.compare test/core --jobs 3 --timeout 1200 \
+  --output /tmp/core-ir-suite
 ```
 
-Directory runs include every `test_*.codon` file and every `#%%` case, with the
+Directory runs include every immediate `*.codon` file and every `#%%` case, with the
 fixture's original filename, line offset and barebones setting. Each case runs
 in an isolated worker. Negative cases rejected by both frontends are reported
 separately; internal failures, crashes, timeouts, and translation/pass failures
@@ -72,6 +76,10 @@ is unchanged.
 The typechecker suite has been checked without skipping cases: 380 cases have
 matching typed ASTs, translated IR, and final debug IR; another 246 are rejected
 by both compilers. Focused reruns after fixes are included in those 626 cases.
+The remaining immediate parser files add 13 matching cases. Core adds 18 matching
+files; `sort.codon` is rejected by both compilers because it supplies the `sorted`
+key function positionally, although that parameter is keyword-only. No fixtures
+are excluded or changed.
 
 The comparison is strict: byte counts and ordered 64-MiB SHA-256 chunks cover the entire dump,
 without filtering or ignoring fields. Only failing dumps are saved, gzip

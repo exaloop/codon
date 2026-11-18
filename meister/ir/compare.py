@@ -333,10 +333,16 @@ def worker(sender, case, native, prepared, defines, indent, ast_indent, director
         sender.close()
 
 
+def collect_cases(path):
+    """Collect a file or all immediate .codon files, regardless of naming prefix."""
+    files = sorted(path.glob("*.codon")) if path.is_dir() else [path]
+    return [case for filename in files for case in discover_tests(filename)]
+
+
 def main(argv=None):
     arguments = argparse.ArgumentParser(description=__doc__)
     arguments.add_argument(
-        "file", type=Path, help="Codon file or directory containing test_*.codon"
+        "file", type=Path, help="Codon file or directory containing .codon files (non-recursive)"
     )
     arguments.add_argument("--library")
     arguments.add_argument("--indent", type=int, default=0)
@@ -349,8 +355,7 @@ def main(argv=None):
     args = arguments.parse_args(argv)
     root = Path(__file__).resolve().parents[2]
     path = args.file.resolve()
-    files = sorted(path.glob("test_*.codon")) if path.is_dir() else [path]
-    cases = [case for filename in files for case in discover_tests(filename)]
+    cases = collect_cases(path)
     if args.filter:
         cases = [case for case in cases if args.filter in case.label]
     if not cases:

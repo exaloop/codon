@@ -1245,7 +1245,12 @@ class Parser(BaseParser):
     def get_comparators(self, pairs):
         return [comp for _, comp in pairs]
 
-    def make_function(self, name, params, generics, **locations):
+    def make_function(self, name, params, generics, def_token=None, **locations):
+        if def_token:
+            # C++ grammar.peg:function_def_async wraps function_def without
+            # changing its source location: diagnostics point at def, not async.
+            # TODO: remove, not needed really after match
+            locations["lineno"], locations["col_offset"] = def_token.start
         fn = ast.FunctionStmt(name, items=params, **locations)
         fn.validate()
         for generic in generics:

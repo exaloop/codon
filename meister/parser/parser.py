@@ -1350,7 +1350,7 @@ class CodonParser(Parser):
         b = None
         if (
             (self.expect_literal("async"))
-            and (self.expect_literal("def"))
+            and (d := self.expect_literal("def"))
             and (n := self.name())
             and (t := self.type_params(),)
             and (self.expect_forced(self.expect_literal("("), "'('"))
@@ -1371,6 +1371,7 @@ class CodonParser(Parser):
                 ret=a,
                 suite=b,
                 async_=True,
+                def_token=d,
                 lineno=start_lineno,
                 col_offset=start_col_offset,
                 end_lineno=end_lineno,

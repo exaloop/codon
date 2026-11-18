@@ -267,13 +267,14 @@ function_def_raw[ast.FunctionStmt]:
             LOCATIONS,
         )
     }
-    | 'async' 'def' n=NAME t=[type_params] &&'(' params=[params] ')' a=['->' z=expression { z }] &&':' b=block {
+    | 'async' d='def' n=NAME t=[type_params] &&'(' params=[params] ')' a=['->' z=expression { z }] &&':' b=block {
         self.make_function(
             name=n.string,
             params=params or [], generics=t or [],
             ret=a,
             suite=b,
             async_=True,
+            def_token=d,
             LOCATIONS,
         )
     }
