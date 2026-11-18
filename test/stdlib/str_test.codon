@@ -191,6 +191,23 @@ def test_center():
     assert "abc".center(3, " ") == "abc"
     assert "abc".center(2, " ") == "abc"
     assert "abc".center(10, "*") == "***abc****"
+    assert "ab".center(3) == " ab"
+    assert "ab".center(3, "-") == "-ab"
+    assert "\u00e9\U0001f600".center(3) == " \u00e9\U0001f600"
+    for value in ("", "a", "ab", "abc", "\u00e9\U0001f600"):
+        for width in range(-1, 10):
+            padding = max(width - len(value), 0)
+            left = padding // 2 + (padding & width & 1)
+            right = padding - left
+            assert value.center(width) == " " * left + value + " " * right
+            for fill in (" ", "-", "\U0001f600"):
+                assert value.center(width, fill) == fill * left + value + fill * right
+            for invalid in ("", "xx"):
+                try:
+                    value.center(width, invalid)
+                    assert False
+                except TypeError:
+                    pass
 
 
 @test
@@ -262,6 +279,49 @@ def test_rfind():
     assert "abc".rfind("", 0, len("abc")) == 3
     assert "abc".rfind("", 3, len("abc")) == 3
     assert "abc".rfind("", 4, len("abc")) == -1
+
+
+@test
+def test_search_bounds():
+    assert "hello".find("l", None, None) == 2
+    assert "hello".rfind("l", None, None) == 3
+    assert "hello".index("l", None, None) == 2
+    assert "hello".rindex("l", None, None) == 3
+    assert "hello".count("l", None, None) == 2
+    assert "hello".startswith(("x", "he"), None, None)
+    assert "hello".endswith(DynamicTuple(["x", "lo"]), None, None)
+    assert not "hello".startswith((), None, None)
+    assert not "hello".endswith(DynamicTuple[str](), None, None)
+    bounds: list[Optional[int]] = [None, -10, -1, 0, 1, 5, 6, 10]
+    for value in ("", "hello", "\u00e9\U0001f600\u00e9"):
+        for sub in ("", "l", "lo", "\u00e9", "missing"):
+            for start in bounds:
+                for end in bounds:
+                    first: int = 0 if start is None else start
+                    last: int = len(value) if end is None else end
+                    found = value.find(sub, first, last)
+                    rfound = value.rfind(sub, first, last)
+                    assert value.find(sub, start, end) == found
+                    assert value.rfind(sub, start, end) == rfound
+                    assert value.count(sub, start, end) == value.count(sub, first, last)
+                    assert value.startswith(sub, start, end) == value.startswith(sub, first, last)
+                    assert value.endswith(sub, start, end) == value.endswith(sub, first, last)
+                    if found >= 0:
+                        assert value.index(sub, start, end) == found
+                    else:
+                        try:
+                            value.index(sub, start, end)
+                            assert False
+                        except ValueError:
+                            pass
+                    if rfound >= 0:
+                        assert value.rindex(sub, start, end) == rfound
+                    else:
+                        try:
+                            value.rindex(sub, start, end)
+                            assert False
+                        except ValueError:
+                            pass
 
 
 @test
@@ -576,6 +636,42 @@ def test_startswith():
     assert "hello".startswith("", -3, -3) == True
     assert "hello".startswith("o", -1, len("hello")) == True
 
+    assert "hello".startswith(("he", "x"))
+    assert "hello".startswith(("x", "he"))
+    assert not "hello".startswith(("x", "y"))
+    assert not "hello".startswith(())
+    assert not "".startswith(())
+    assert "".startswith(("x", ""))
+    assert "hello".startswith(("x", "ell"), 1)
+    assert "hello".startswith(("x", "ell"), 1, 4)
+    assert not "hello".startswith(("ell",), 1, 3)
+    assert "hello".startswith(("",), 5)
+    assert not "hello".startswith(("",), 6)
+    assert "hello".startswith(DynamicTuple(["x", "he"]))
+    assert "hello".startswith(DynamicTuple(["x", "ell"]), 1)
+    assert "hello".startswith(DynamicTuple(["x", "ell"]), 1, 4)
+    assert not "hello".startswith(DynamicTuple[str]())
+    assert "\u00e9\U0001f600tail".startswith(("x", "\U0001f600"), 1, 2)
+    assert "hello".startswith("ello", 1, None)
+    assert not "hello".startswith("ello", 0, None)
+    assert "".startswith("", 0, None)
+    assert "hello".startswith(("x", "ello"), 1, None)
+    assert "hello".startswith(DynamicTuple(["x", "ello"]), 1, None)
+    assert not "hello".startswith(DynamicTuple[str](), 0, None)
+    assert "\u00e9\U0001f600tail".startswith("\U0001f600", 1, None)
+    ends: list[Optional[int]] = [None, -10, -1, 0, 2, 5, 10]
+    for candidates in (("x", "he"), ("",)):
+        for start in (-10, -1, 0, 1, 5, 6):
+            for end in ends:
+                expected = False
+                bound = len("hello") if end is None else end
+                for candidate in candidates:
+                    scalar = "hello".startswith(candidate, start, bound)
+                    assert "hello".startswith(candidate, start, end) == scalar
+                    expected = expected or scalar
+                assert "hello".startswith(candidates, start, end) == expected
+                assert not "hello".startswith((), start, end)
+
 
 @test
 def test_endswith():
@@ -612,6 +708,42 @@ def test_endswith():
     assert "helloworld".endswith("lowo", -7, -3) == True
     assert "helloworld".endswith("lowo", 3, -4) == False
     assert "helloworld".endswith("lowo", -8, -2) == False
+
+    assert "hello".endswith(("lo", "x"))
+    assert "hello".endswith(("x", "lo"))
+    assert not "hello".endswith(("x", "y"))
+    assert not "hello".endswith(())
+    assert not "".endswith(())
+    assert "".endswith(("x", ""))
+    assert "hello".endswith(("x", "lo"), 3)
+    assert "hello".endswith(("x", "ell"), 1, 4)
+    assert not "hello".endswith(("ell",), 2, 4)
+    assert "hello".endswith(("",), 5)
+    assert not "hello".endswith(("",), 6)
+    assert "hello".endswith(DynamicTuple(["x", "lo"]))
+    assert "hello".endswith(DynamicTuple(["x", "lo"]), 3)
+    assert "hello".endswith(DynamicTuple(["x", "ell"]), 1, 4)
+    assert not "hello".endswith(DynamicTuple[str]())
+    assert "head\U0001f600\u00e9".endswith(("x", "\U0001f600"), 4, 5)
+    assert "hello".endswith("lo", 3, None)
+    assert not "hello".endswith("lo", 4, None)
+    assert "".endswith("", 0, None)
+    assert "hello".endswith(("x", "lo"), 3, None)
+    assert "hello".endswith(DynamicTuple(["x", "lo"]), 3, None)
+    assert not "hello".endswith(DynamicTuple[str](), 0, None)
+    assert "head\U0001f600\u00e9".endswith("\U0001f600\u00e9", 4, None)
+    ends: list[Optional[int]] = [None, -10, -1, 0, 2, 5, 10]
+    for candidates in (("x", "lo"), ("",)):
+        for start in (-10, -1, 0, 1, 5, 6):
+            for end in ends:
+                expected = False
+                bound = len("hello") if end is None else end
+                for candidate in candidates:
+                    scalar = "hello".endswith(candidate, start, bound)
+                    assert "hello".endswith(candidate, start, end) == scalar
+                    expected = expected or scalar
+                assert "hello".endswith(candidates, start, end) == expected
+                assert not "hello".endswith((), start, end)
 
 
 @test
@@ -1070,6 +1202,26 @@ def test_bytes_center():
     assert b"abc".center(3, b" ") == b"abc"
     assert b"abc".center(2, b" ") == b"abc"
     assert b"abc".center(10, b"*") == b"***abc****"
+    assert b"ab".center(3) == b" ab"
+    for value in (b"", b"a", b"ab", b"abc", bytearray(), bytearray(b"ab")):
+        for width in range(-1, 10):
+            text = value.decode("ascii")
+            assert value.center(width).decode("ascii") == text.center(width)
+            for fill in (b" ", b"-"):
+                centered = value.center(width, fill)
+                assert centered.decode("ascii") == text.center(width, fill.decode("ascii"))
+                if isinstance(value, bytearray):
+                    assert isinstance(centered, bytearray)
+            for invalid in (b"", b"xx"):
+                try:
+                    value.center(width, invalid)
+                    assert False
+                except TypeError:
+                    pass
+    original = bytearray(b"ab")
+    centered = original.center(1)
+    centered[0] = 120
+    assert original == b"ab"
 
 
 @test
@@ -1717,6 +1869,7 @@ test_zfill()
 test_count()
 test_find()
 test_rfind()
+test_search_bounds()
 test_multibyte_search()
 test_isidentifier()
 test_isprintable()

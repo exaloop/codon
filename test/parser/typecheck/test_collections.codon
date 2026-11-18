@@ -15,6 +15,40 @@ print(s, s.__class__.__name__)
 a = (1, 2, 3)
 z = *a #! unexpected star expression
 
+#%% str_startswith_tuple_element_error
+"hello".startswith(("he", 1)) #! tuple for startswith must only contain str
+#! during the realization of startswith
+
+#%% str_endswith_tuple_element_error
+"hello".endswith(("lo", 1)) #! tuple for endswith must only contain str
+#! during the realization of endswith
+
+#%% str_startswith_nested_tuple_error
+"hello".startswith((("he",),)) #! tuple for startswith must only contain str
+#! during the realization of startswith
+
+#%% str_endswith_dynamic_tuple_error
+"hello".endswith(DynamicTuple([1])) #! tuple for endswith must only contain str
+#! during the realization of endswith
+
+#%% bytes_startswith_tuple_element_error
+b"hello".startswith((b"he", "he")) #! tuple for startswith must only contain bytes or bytearray
+#! during the realization of startswith
+
+#%% bytes_endswith_dynamic_tuple_error
+b"hello".endswith(DynamicTuple([1])) #! tuple for endswith must only contain bytes or bytearray
+#! during the realization of endswith
+
+#%% bytearray_startswith_nested_tuple_error
+bytearray(b"hello").startswith(((b"he",),)) #! tuple for startswith must only contain bytes or bytearray
+#! during the realization of startswith
+#! during the realization of startswith
+
+#%% bytearray_endswith_tuple_element_error
+bytearray(b"hello").endswith((bytearray(b"lo"), 1)) #! tuple for endswith must only contain bytes or bytearray
+#! during the realization of endswith
+#! during the realization of endswith
+
 #%% list,barebones
 a = [4, 5, 6]
 print a #: [4, 5, 6]

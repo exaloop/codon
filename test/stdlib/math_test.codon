@@ -31,6 +31,20 @@ def test_isfinite():
 
 
 @test
+def test_float_hash():
+    for value in (float("nan"), -float("nan"), NAN):
+        assert hash(value) == 0
+        assert hash(float32(value)) == 0
+    assert hash(INF) == -hash(NINF)
+    assert hash(INF) != 0
+    assert hash(0.0) == hash(-0.0) == hash(0)
+    for value in (1, 42, -42, 1 << 60):
+        assert hash(float(value)) == hash(value)
+    assert hash(-1.0) == -2
+    assert hash(-1.5) == -hash(1.5)
+
+
+@test
 def test_ceil():
     assert isinstance(math.ceil(1.0), int)
     assert math.ceil(3.3) == 4
@@ -747,6 +761,7 @@ def test_prod():
 test_isnan()
 test_isinf()
 test_isfinite()
+test_float_hash()
 test_ceil()
 test_floor()
 test_fabs()

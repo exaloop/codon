@@ -678,7 +678,11 @@ def _utf8_unpack_fourbyte4_u32(data: Ptr[u8], pos: int, output: Ptr[u32], out: i
     ret {} {}
 
 
-def _normalize_search_bounds(length: int, start: int, end: int) -> Tuple[int, int]:
+def _normalize_search_bounds(
+    length: int, start: Optional[int], end: Optional[int]
+) -> Tuple[int, int]:
+    start: int = 0 if start is None else start
+    end: int = length if end is None else end
     if start < 0:
         start += length
         if start < 0:
@@ -2871,21 +2875,8 @@ class str:
     def __rmul__(self, count: int, /) -> str:
         return self.__mul__(count)
 
-    def find(self, sub: str, /) -> int:
-        return self.find(sub, 0, len(self))
-
     def find(
-        self,
-        sub: str,
-        start: int, /,
-    ) -> int:
-        return self.find(sub, start, len(self))
-
-    def find(
-        self,
-        sub: str,
-        start: int,
-        end: int, /,
+        self, sub: str, start: Optional[int] = 0, end: Optional[int] = None, /,
     ) -> int:
         start, end = _normalize_search_bounds(len(self), start, end)
 
@@ -2899,21 +2890,8 @@ class str:
 
         return _unicode_fastsearch(self, sub, start, end)
 
-    def rfind(self, sub: str, /) -> int:
-        return self.rfind(sub, 0, len(self))
-
     def rfind(
-        self,
-        sub: str,
-        start: int, /,
-    ) -> int:
-        return self.rfind(sub, start, len(self))
-
-    def rfind(
-        self,
-        sub: str,
-        start: int,
-        end: int, /,
+        self, sub: str, start: Optional[int] = 0, end: Optional[int] = None, /,
     ) -> int:
         start, end = _normalize_search_bounds(len(self), start, end)
 
@@ -2927,21 +2905,8 @@ class str:
 
         return _unicode_fastsearch_reverse(self, sub, start, end)
 
-    def index(self, sub: str, /) -> int:
-        return self.index(sub, 0, len(self))
-
     def index(
-        self,
-        sub: str,
-        start: int, /,
-    ) -> int:
-        return self.index(sub, start, len(self))
-
-    def index(
-        self,
-        sub: str,
-        start: int,
-        end: int, /,
+        self, sub: str, start: Optional[int] = 0, end: Optional[int] = None, /,
     ) -> int:
         pos = self.find(sub, start, end)
 
@@ -2950,21 +2915,8 @@ class str:
 
         return pos
 
-    def rindex(self, sub: str, /) -> int:
-        return self.rindex(sub, 0, len(self))
-
     def rindex(
-        self,
-        sub: str,
-        start: int, /,
-    ) -> int:
-        return self.rindex(sub, start, len(self))
-
-    def rindex(
-        self,
-        sub: str,
-        start: int,
-        end: int, /,
+        self, sub: str, start: Optional[int] = 0, end: Optional[int] = None, /,
     ) -> int:
         pos = self.rfind(sub, start, end)
 
@@ -2973,21 +2925,8 @@ class str:
 
         return pos
 
-    def count(self, sub: str, /) -> int:
-        return self.count(sub, 0, len(self))
-
     def count(
-        self,
-        sub: str,
-        start: int, /,
-    ) -> int:
-        return self.count(sub, start, len(self))
-
-    def count(
-        self,
-        sub: str,
-        start: int,
-        end: int, /,
+        self, sub: str, start: Optional[int] = 0, end: Optional[int] = None, /,
     ) -> int:
         start, end = _normalize_search_bounds(len(self), start, end)
 
@@ -2998,21 +2937,26 @@ class str:
 
         return _unicode_count(self, sub, start, end)
 
-    def startswith(self, prefix: str, /) -> bool:
-        return self.startswith(prefix, 0, len(self))
-
     def startswith(
-        self,
-        prefix: str,
-        start: int, /,
+        self, prefix, start: Optional[int] = 0, end: Optional[int] = None, /,
     ) -> bool:
-        return self.startswith(prefix, start, len(self))
+        if isinstance(prefix, Tuple) or isinstance(prefix, DynamicTuple):
+            if isinstance(prefix, Tuple) and static.len(prefix) == 0:
+                return False
+            else:
+                for candidate in prefix:
+                    if isinstance(candidate, str):
+                        if self.startswith(candidate, start, end):
+                            return True
+                    else:
+                        compile_error("tuple for startswith must only contain str")
+                return False
+        else:
+            compile_error("startswith first arg must be str or a tuple of str")
 
     def startswith(
-        self,
-        prefix: str,
-        start: int,
-        end: int, /,
+        self, prefix: str, start: Optional[int] = 0, end: Optional[int] = None,
+        /,
     ) -> bool:
         start, end = _normalize_search_bounds(len(self), start, end)
 
@@ -3024,21 +2968,25 @@ class str:
 
         return _unicode_starts_at(self, prefix, start)
 
-    def endswith(self, suffix: str, /) -> bool:
-        return self.endswith(suffix, 0, len(self))
-
     def endswith(
-        self,
-        suffix: str,
-        start: int, /,
+        self, suffix, start: Optional[int] = 0, end: Optional[int] = None, /,
     ) -> bool:
-        return self.endswith(suffix, start, len(self))
+        if isinstance(suffix, Tuple) or isinstance(suffix, DynamicTuple):
+            if isinstance(suffix, Tuple) and static.len(suffix) == 0:
+                return False
+            else:
+                for candidate in suffix:
+                    if isinstance(candidate, str):
+                        if self.endswith(candidate, start, end):
+                            return True
+                    else:
+                        compile_error("tuple for endswith must only contain str")
+                return False
+        else:
+            compile_error("endswith first arg must be str or a tuple of str")
 
     def endswith(
-        self,
-        suffix: str,
-        start: int,
-        end: int, /,
+        self, suffix: str, start: Optional[int] = 0, end: Optional[int] = None, /,
     ) -> bool:
         start, end = _normalize_search_bounds(len(self), start, end)
         m = len(suffix)
@@ -3266,26 +3214,6 @@ class str:
     ) -> str:
         return _unicode_replace_impl(self, old, new, count)
 
-    def center(self, width: int, /) -> str:
-        if len(self) >= width:
-            return self
-
-        pad = width - len(self)
-        left = pad // 2
-        right = pad - left
-
-        result = _unicode_new_uninit(width, _unicode_maxchar(self))
-
-        for i in range(left):
-            result._store_codepoint(i, 0x20)
-
-        _unicode_copy_range(result, self, left, 0, len(self))
-
-        for i in range(right):
-            result._store_codepoint(left + len(self) + i, 0x20)
-
-        return result
-
     def ljust(self, width: int, /) -> str:
         if len(self) >= width:
             return self
@@ -3312,7 +3240,7 @@ class str:
 
         return result
 
-    def center(self, width: int, fillchar: str, /) -> str:
+    def center(self, width: int, fillchar: str = " ", /) -> str:
         return _unicode_center_impl(self, width, fillchar)
 
     def ljust(self, width: int, fillchar: str, /) -> str:
@@ -4739,16 +4667,16 @@ def _unicode_center_impl(
     width: int,
     fillchar: str,
 ) -> str:
+    fill = _unicode_fillchar(fillchar)
     if len(value) >= width:
         return value
 
-    fill = _unicode_fillchar(fillchar)
     maxchar = _unicode_maxchar(value)
     if fill > maxchar:
         maxchar = fill
 
     padding = width - len(value)
-    left = padding // 2
+    left = padding.cdiv(2) + (padding & width & 1)
     result = _unicode_new_uninit(width, maxchar)
 
     for i in range(left):
