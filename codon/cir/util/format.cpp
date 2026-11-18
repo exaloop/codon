@@ -5,6 +5,7 @@
 #include <cmath>
 #include <fmt/format.h>
 #include <fmt/ostream.h>
+#include <functional>
 #include <map>
 #include <sstream>
 #include <unordered_map>
@@ -26,6 +27,7 @@ struct FormatContext {
   std::vector<const Var *> vars;
   std::vector<const Type *> types;
   std::unordered_map<std::string, std::vector<size_t>> captureOrder;
+  std::unordered_map<std::string, std::string> aliases;
 
   explicit FormatContext(const Node *node) : canonical(isA<Module>(node)) {
     auto *module = cast<Module>(node);
@@ -36,8 +38,10 @@ struct FormatContext {
     for (const auto *var : *module)
       if (auto *fn = cast<Func>(var))
         functions.push_back(fn);
+    generatorAliases(functions);
     for (const auto *fn : functions) {
-      keys[fn->getId()] = "func:" + fn->getName();
+      const auto owner = name(fn);
+      keys[fn->getId()] = "func:" + owner;
       auto arguments = args(fn);
       // A generated comprehension closure captures an unordered identifier set.
       // Show bindings in name order at declarations, signatures and calls, while
@@ -53,18 +57,18 @@ struct FormatContext {
         arguments = reorder(arguments, fn->getType()->getName());
       }
       for (size_t i = 0; i < arguments.size(); ++i)
-        keys[arguments[i]->getId()] = "arg:" + fn->getName() + ":" +
-                                      arguments[i]->getName() + ":" + std::to_string(i);
+        keys[arguments[i]->getId()] =
+            "arg:" + owner + ":" + arguments[i]->getName() + ":" + std::to_string(i);
       if (auto *body = cast<BodiedFunc>(fn)) {
         size_t i = 0;
         for (const auto *var : *body)
-          keys[var->getId()] = "local:" + fn->getName() + ":" + var->getName() + ":" +
-                               std::to_string(i++);
+          keys[var->getId()] =
+              "local:" + owner + ":" + var->getName() + ":" + std::to_string(i++);
       }
     }
     for (const auto *var : *module) {
       vars.push_back(var);
-      keys.try_emplace(var->getId(), "var:" + var->getName());
+      keys.try_emplace(var->getId(), "var:" + name(var));
     }
     std::stable_sort(vars.begin(), vars.end(), [&](const Var *a, const Var *b) {
       return keys.at(a->getId()) < keys.at(b->getId());
@@ -72,7 +76,7 @@ struct FormatContext {
     for (auto it = module->types_begin(); it != module->types_end(); ++it)
       types.push_back(*it);
     std::sort(types.begin(), types.end(),
-              [](const Type *a, const Type *b) { return a->getName() < b->getName(); });
+              [&](const Type *a, const Type *b) { return name(a) < name(b); });
     nodeId(module->getArgvVar()->getId());
     nodeId(module->getArgcVar()->getId());
     nodeId(module->getMainFunc()->getId());
@@ -89,6 +93,64 @@ struct FormatContext {
     if (!canonical)
       return id;
     return ids.try_emplace(id, ids.size()).first->second;
+  }
+
+  std::string name(const Node *node) const {
+    auto it = aliases.find(node->getName());
+    return it == aliases.end() ? node->getName() : it->second;
+  }
+
+  /// Generated ordinals depend on unordered function-cache traversal. Use the
+  /// semantic owner and occurrence within its body only in printed names.
+  void generatorAliases(const std::vector<const Func *> &functions) {
+    std::unordered_map<id_t, const Func *> generators, owners;
+    std::unordered_map<id_t, size_t> positions;
+    for (const auto *fn : functions) {
+      auto raw = fn->getName();
+      if (fn->isGenerator() && raw.starts_with("_generator.") && raw.size() > 11 &&
+          std::all_of(raw.begin() + 11, raw.end(),
+                      [](char ch) { return ch >= '0' && ch <= '9'; }))
+        generators[fn->getId()] = fn;
+    }
+    for (const auto *fn : functions) {
+      auto *body = cast<BodiedFunc>(fn);
+      if (!body)
+        continue;
+      std::vector<const Value *> pending{body->getBody()};
+      std::unordered_set<id_t> seen;
+      size_t ordinal = 0;
+      while (!pending.empty()) {
+        auto *node = pending.back();
+        pending.pop_back();
+        if (!node || !seen.insert(node->getId()).second)
+          continue;
+        if (auto *ref = cast<VarValue>(node)) {
+          auto id = ref->getVar()->getId();
+          if (generators.count(id) && !positions.count(id)) {
+            owners[id] = fn;
+            positions[id] = ordinal++;
+          }
+        }
+        for (const auto *child : node->getUsedValues())
+          pending.push_back(child);
+      }
+    }
+    std::function<std::string(const Func *)> alias = [&](const Func *fn) {
+      if (auto it = aliases.find(fn->getName()); it != aliases.end())
+        return it->second;
+      const auto *parent = owners.count(fn->getId()) ? owners.at(fn->getId()) : nullptr;
+      // Do not collapse distinct orphan declarations onto one name.
+      if (!parent)
+        return aliases[fn->getName()] = fn->getName();
+      auto owner =
+          generators.count(parent->getId()) ? alias(parent) : parent->getName();
+      auto result = "_generator.context." + std::to_string(owner.size()) + ":" + owner +
+                    "." + std::to_string(positions[fn->getId()]);
+      aliases[fn->getName()] = result;
+      return result;
+    };
+    for (const auto &[_, fn] : generators)
+      alias(fn);
   }
 
   std::string reference(const Type *node) { return node->referenceString(); }
@@ -208,39 +270,7 @@ Formatted formatItems(std::vector<std::string> items, bool simple, size_t maxIte
 }
 
 std::string quote(const std::string &value) {
-  const bool useDouble =
-      value.find('\'') != std::string::npos && value.find('"') == std::string::npos;
-  const char delimiter = useDouble ? '"' : '\'';
-  std::string result(1, delimiter);
-  constexpr char hex[] = "0123456789abcdef";
-  for (unsigned char c : value) {
-    if (c == static_cast<unsigned char>(delimiter) || c == '\\') {
-      result += '\\';
-      result += static_cast<char>(c);
-    } else if (c == '\a') {
-      result += "\\a";
-    } else if (c == '\b') {
-      result += "\\b";
-    } else if (c == '\f') {
-      result += "\\f";
-    } else if (c == '\n') {
-      result += "\\n";
-    } else if (c == '\r') {
-      result += "\\r";
-    } else if (c == '\t') {
-      result += "\\t";
-    } else if (c == '\v') {
-      result += "\\v";
-    } else if (c < 32 || c == 127) {
-      result += "\\x";
-      result += hex[c >> 4];
-      result += hex[c & 15];
-    } else {
-      result += static_cast<char>(c);
-    }
-  }
-  result += delimiter;
-  return result;
+  return codon::ast::quoteDumpString(value);
 }
 
 Formatted formatValue(const std::string &value, bool, int, int) {
@@ -335,7 +365,7 @@ class FormatVisitor : public util::ConstVisitor {
     if (!node)
       return {"", true};
     std::vector<Field> fields{
-        field("name", value(node->getName(), nestedLevel(indent, at)))};
+        field("name", value(ctx.name(node), nestedLevel(indent, at)))};
     const char *name = "TypeRef";
     if (auto *var = cast<Var>(node)) {
       fields.push_back(
@@ -603,7 +633,7 @@ class FormatVisitor : public util::ConstVisitor {
   }
 
   std::vector<Field> common(const Node *v) {
-    std::vector<Field> fields{field("name", value(v->getName(), childLevel()))};
+    std::vector<Field> fields{field("name", value(ctx.name(v), childLevel()))};
     if (auto *var = cast<Var>(v)) {
       fields.push_back(field("id", value(ctx.nodeId(var->getId()), childLevel())));
       fields.push_back(field("type", value(var->getType(), childLevel())));
@@ -701,26 +731,24 @@ class FormatVisitor : public util::ConstVisitor {
   EMIT(FloatType)
   EMIT(Float32Type)
   EMIT(Float16Type)
-  EMIT(BFloat16Type) EMIT(Float128Type) EMIT(BoolType)
-      EMIT(RecordType, field("fields", sequence(v->begin(), v->end(), childLevel())))
-          EMIT(RefType, F("contents", v->getContents()),
-               F("polymorphic", v->isPolymorphic()))
-              EMIT(FuncType, F("return_type", v->getReturnType()),
-                   F("arg_types", ctx.reorder(std::vector<Type *>(v->begin(), v->end()),
-                                              v->getName())),
-                   F("variadic", v->isVariadic()))
-                  EMIT(PointerType, F("base", v->getBase()))
-                      EMIT(OptionalType, F("base", v->getBase()))
-                          EMIT(GeneratorType, F("base", v->getBase()))
-                              EMIT(VectorType, F("count", v->getCount()),
-                                   F("base", v->getBase()))
-                                  EMIT(UnionType,
-                                       field("types", sequence(v->begin(), v->end(),
-                                                               childLevel())))
+  EMIT(BFloat16Type)
+  EMIT(Float128Type)
+  EMIT(BoolType)
+  EMIT(RecordType, field("fields", sequence(v->begin(), v->end(), childLevel())))
+  EMIT(RefType, F("contents", v->getContents()), F("polymorphic", v->isPolymorphic()))
+      EMIT(FuncType, F("return_type", v->getReturnType()),
+           F("arg_types",
+             ctx.reorder(std::vector<Type *>(v->begin(), v->end()), v->getName())),
+           F("variadic", v->isVariadic())) EMIT(PointerType, F("base", v->getBase()))
+          EMIT(OptionalType, F("base", v->getBase()))
+              EMIT(GeneratorType, F("base", v->getBase()))
+                  EMIT(VectorType, F("count", v->getCount()), F("base", v->getBase()))
+                      EMIT(UnionType,
+                           field("types", sequence(v->begin(), v->end(), childLevel())))
 #undef EMIT
 #undef F
 
-                                      static const
+                          static const
       char *intrinsicName(InternalFunc::Intrinsic kind) {
     static const char *names[]{"NONE",
                                "ALLOCATE",
@@ -748,6 +776,53 @@ public:
       : ctx(ctx), annotateFields(annotateFields), includeAttributes(includeAttributes),
         showTypes(types), indent(indent) {}
   std::string format(const Node *v) { return node(v, 0, true).value; }
+
+  void chunks(const Node *v, const std::function<void(const std::string &)> &write) {
+    auto *module = cast<Module>(v);
+    if (!module || indent > 0) {
+      write(format(v));
+      return;
+    }
+    write("Module(");
+    bool first = true;
+    auto begin = [&](const std::string &key) {
+      if (!first)
+        write(", ");
+      first = false;
+      if (annotateFields && !key.empty())
+        write(key + "=");
+    };
+    auto emit = [&](const std::string &key, const std::string &text) {
+      if (!text.empty()) {
+        begin(key);
+        write(text);
+      }
+    };
+    for (const auto &item : common(module))
+      emit("", item.value);
+    emit("argv_var", node(module->getArgvVar(), 0, true).value);
+    emit("argc_var", node(module->getArgcVar(), 0, true).value);
+    auto declarations = [&](const std::string &key, const auto &items) {
+      if (items.empty())
+        return;
+      begin(key);
+      write("[");
+      bool firstItem = true;
+      for (const auto *item : items) {
+        if (!firstItem)
+          write(", ");
+        firstItem = false;
+        write(node(item, 0, true).value);
+      }
+      write("]");
+    };
+    declarations("types", ctx.types);
+    declarations("vars", ctx.vars);
+    emit("main_func", node(module->getMainFunc(), 0, true).value);
+    if (includeAttributes)
+      emit("", attributes(module, 0).value);
+    write(")");
+  }
 };
 
 } // namespace
@@ -757,6 +832,14 @@ std::string format(const Node *node, bool annotateFields, bool includeAttributes
   FormatContext ctx(node);
   return FormatVisitor(ctx, annotateFields, includeAttributes, indent, types)
       .format(node);
+}
+
+void formatChunks(const Node *node,
+                  const std::function<void(const std::string &)> &write,
+                  bool annotateFields, bool includeAttributes, int indent, bool types) {
+  FormatContext ctx(node);
+  FormatVisitor(ctx, annotateFields, includeAttributes, indent, types)
+      .chunks(node, write);
 }
 
 std::ostream &format(std::ostream &os, const Node *node, bool annotateFields,

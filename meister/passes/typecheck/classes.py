@@ -1052,8 +1052,17 @@ def parse_base_classes(
                 base_data.mro.append(object_type)
                 utils.get_class(self.ctx, object_type).descendants.add(base_type.name)
                 # Fix IR stuff [TODO: maybe move this to translate?!]
+                from ... import ir
+                from . import infer
+
+                infer.realize(self.ctx, object_type)
+                ir_type = infer.make_ir_type(self.ctx, object_type)
                 for realization in base_data.realizations.values():
                     realization.bases.append(object_type)
+                    if reference := ir.cast(ir.RefType, realization.ir):
+                        reference.polymorphic = True
+                        if info := reference.runtime_info:
+                            info.mro.append(ir_type)
 
         root_mro = [utils.instantiate(self.ctx, typ, base_type) for typ in base_data.mro]
         mro.append(root_mro)

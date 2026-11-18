@@ -173,16 +173,20 @@ def typecheck_return(self: TypeVisitor, node: ast.ReturnStmt) -> ast.Stmt:
         if self.ctx.base.return_type.is_runtime and node.expr.type.literal:
             node.expr.type = node.expr.type.literal.runtime_type
         if is_async:
-            self.ctx.base.return_type |= utils.instantiate(
+            utils.unify(
                 self.ctx,
-                utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Coroutine),
-                [node.expr.type],
+                self.ctx.base.return_type,
+                utils.instantiate(
+                    self.ctx,
+                    utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Coroutine),
+                    [node.expr.type],
+                ),
             )
         elif self.ctx.base.infer_return_type:
             if not any(stmt is node for stmt, _ in self.ctx.base.return_statements):
                 self.ctx.base.return_statements.append((node, bare))
         else:
-            self.ctx.base.return_type |= node.expr.type
+            utils.unify(self.ctx, self.ctx.base.return_type, node.expr.type)
         if not was_realizable and node.expr.type.can_realize():
             self.ctx.changed_nodes += 1
 

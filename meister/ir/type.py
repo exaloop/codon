@@ -322,6 +322,8 @@ class IntType(PrimitiveType):
         @param len the length of the integer
         @param sign true if signed, false otherwise
         """
+        # C++ accepts unsigned int, including during speculative realizations.
+        length &= 0xFFFFFFFF
         super().__init__(self.get_instance_name(length, sign))
         self.len, self.sign = length, sign
 
@@ -335,7 +337,7 @@ class IntType(PrimitiveType):
     # C++: codon/cir/type.cpp:127
     @staticmethod
     def get_instance_name(length, sign):
-        return f"{'' if sign else 'U'}Int{length}"
+        return f"{'' if sign else 'U'}Int{length & 0xFFFFFFFF}"
 
 
 @dataclass(init=False, eq=False)

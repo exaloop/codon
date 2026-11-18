@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <functional>
 #include <iostream>
 
 #include "codon/cir/cir.h"
@@ -19,6 +20,14 @@ namespace util {
 /// @return the formatted node
 std::string format(const Node *node, bool annotateFields = true,
                    bool includeAttributes = false, int indent = -1, bool types = false);
+
+/// Emit the identical dump in chunks, bounding compact-module buffering to a
+/// declaration instead of the entire module. Indented/non-module dumps use the
+/// regular formatter. The callback must consume its temporary string immediately.
+void formatChunks(const Node *node,
+                  const std::function<void(const std::string &)> &write,
+                  bool annotateFields = true, bool includeAttributes = false,
+                  int indent = -1, bool types = false);
 
 /// Formats an IR node to an IO stream.
 /// @param os the output stream

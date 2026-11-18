@@ -465,7 +465,9 @@ def _realize_func_body(
     # Populate realization table in advance to support recursive realizations
     # note: the key might change later
     key = typ.realized_name()
-    old_ir = None if not existing else existing.ir
+    # Argument realization can change the key since realize_func's first lookup
+    previous = fn_data.realizations.get(key)
+    old_ir = previous.ir if previous else None
 
     # Get it if it was already made (force mode)
     realization = cache.FunctionData.Realization(type=typ, ir=old_ir)

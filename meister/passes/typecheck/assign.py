@@ -332,7 +332,11 @@ def transform_assignment(
         base.pending_defaults.setdefault(1, set()).add(lhs.type)
     if assignment.type_expr:
         ann_type = utils.extract_type(self.ctx, assignment.type_expr)
-        lhs.type |= utils.instantiate(self.ctx, ann_type, info=assignment.type_expr.info)
+        utils.unify(
+            self.ctx,
+            lhs.type,
+            utils.instantiate(self.ctx, ann_type, info=assignment.type_expr.info),
+        )
     value = Item(
         canonical=canonical,
         base=self.ctx.base_name,
@@ -354,7 +358,7 @@ def transform_assignment(
         # Check if we can wrap the expression (e.g., `a: float = 3` -> `a = float(3)`)
         can_wrap, assignment.rhs = utils.wrap_expr(self.ctx, assignment.rhs, lhs.type)
         if can_wrap and assignment.rhs.type:
-            lhs.type |= assignment.rhs.type
+            utils.unify(self.ctx, lhs.type, assignment.rhs.type)
 
         # Generalize non-variable types. That way we can support cases like:
         # `a = foo(x, ...); a(1); a('s')`
@@ -412,8 +416,12 @@ def transform_update(self: TypeVisitor, stmt: ast.AssignStmt) -> ast.Stmt:
     stmt.type_expr = self.visit_expr(stmt.type_expr, enforce_type=True) if stmt.type_expr else None
     if stmt.type_expr:
         assert stmt.lhs.type
-        stmt.lhs.type |= utils.instantiate(
-            self.ctx, utils.extract_type(self.ctx, stmt.type_expr), info=stmt.type_expr.info
+        utils.unify(
+            self.ctx,
+            stmt.lhs.type,
+            utils.instantiate(
+                self.ctx, utils.extract_type(self.ctx, stmt.type_expr), info=stmt.type_expr.info
+            ),
         )
 
     # Annotation-only updates refine the hoisted variable's type, not its value.
@@ -425,7 +433,7 @@ def transform_update(self: TypeVisitor, stmt: ast.AssignStmt) -> ast.Stmt:
     can_wrap, stmt.rhs = utils.wrap_expr(self.ctx, stmt.rhs, stmt.lhs.type)
     if can_wrap:
         assert stmt.rhs.type and stmt.lhs.type
-        stmt.rhs.type |= stmt.lhs.type
+        utils.unify(self.ctx, stmt.rhs.type, stmt.lhs.type)
     if stmt.rhs.done and infer.realize(self.ctx, stmt.lhs.type):
         stmt.done = True
     return stmt
@@ -518,20 +526,24 @@ def typecheck_assignmember(self: TypeVisitor, node: ast.AssignMemberStmt) -> ast
     node.type_expr = self.visit_expr(node.type_expr, enforce_type=True) if node.type_expr else None
     if node.type_expr:
         assert node.rhs.type
-        node.rhs.type |= utils.instantiate(
-            self.ctx, utils.extract_type(self.ctx, node.type_expr), info=node.type_expr.info
+        utils.unify(
+            self.ctx,
+            node.rhs.type,
+            utils.instantiate(
+                self.ctx, utils.extract_type(self.ctx, node.type_expr), info=node.type_expr.info
+            ),
         )
     field_type = utils.instantiate(self.ctx, member.type, lhs_type, node.lhs.info)
     if not field_type.can_realize() and member.type_expr:
         with utils.with_class_generics(self.ctx, lhs_type):
             member_type = self.visit_expr(member.type_expr.clone(clean=True))
-        field_type |= utils.extract_type(self.ctx, member_type)
+        utils.unify(self.ctx, field_type, utils.extract_type(self.ctx, member_type))
 
     can_wrap, node.rhs = utils.wrap_expr(self.ctx, node.rhs, field_type)
     if not can_wrap:
         return node
     assert node.rhs.type
-    node.rhs.type |= field_type
+    utils.unify(self.ctx, node.rhs.type, field_type)
     if node.rhs.done:
         node.done = True
     return node
@@ -583,7 +595,7 @@ def transform_inplace_update(self: TypeVisitor, stmt: ast.AssignStmt):
                     self, binary, stmt.is_atomic_update()
                 ):
                     assert stmt.rhs.type and replacement.type
-                    stmt.rhs.type |= replacement.type
+                    utils.unify(self.ctx, stmt.rhs.type, replacement.type)
                     transformed = self.visit_stmt(ast.ExprStmt(replacement))
                     return True, transformed
                 if not stmt.is_atomic_update():
@@ -592,8 +604,8 @@ def transform_inplace_update(self: TypeVisitor, stmt: ast.AssignStmt):
             else:
                 assert stmt.rhs.type and stmt.lhs.type
                 # Delay
-                stmt.rhs.type |= utils.instantiate_unbound(self.ctx)
-                stmt.lhs.type |= stmt.rhs.type
+                utils.unify(self.ctx, stmt.rhs.type, utils.instantiate_unbound(self.ctx))
+                utils.unify(self.ctx, stmt.lhs.type, stmt.rhs.type)
                 return True, None
     lhs_type = utils.extract_type(self.ctx, stmt.lhs).cls
     match stmt.lhs, stmt.rhs:

@@ -19,6 +19,66 @@
 #include <fmt/format.h>
 
 namespace codon::ast {
+
+std::string quoteDumpString(const std::string &value) {
+  const bool useDouble =
+      value.find('\'') != std::string::npos && value.find('"') == std::string::npos;
+  const char delimiter = useDouble ? '"' : '\'';
+  std::string result(1, delimiter);
+  constexpr char hex[] = "0123456789abcdef";
+  for (size_t i = 0; i < value.size(); ++i) {
+    auto c = static_cast<unsigned char>(value[i]);
+    if (c >= 128) {
+      // Match Python's surrogateescape representation of arbitrary byte strings,
+      // without escaping valid Unicode text. Reject overlongs and surrogates.
+      size_t count = c >= 0xc2 && c <= 0xdf   ? 2
+                     : c >= 0xe0 && c <= 0xef ? 3
+                     : c >= 0xf0 && c <= 0xf4 ? 4
+                                              : 0;
+      bool valid = count && i + count <= value.size();
+      for (size_t j = 1; valid && j < count; ++j) {
+        auto next = static_cast<unsigned char>(value[i + j]);
+        valid = next >= 0x80 && next <= 0xbf;
+        if (j == 1)
+          valid = valid && !(c == 0xe0 && next < 0xa0) &&
+                  !(c == 0xed && next >= 0xa0) && !(c == 0xf0 && next < 0x90) &&
+                  !(c == 0xf4 && next >= 0x90);
+      }
+      if (valid) {
+        result.append(value, i, count);
+        i += count - 1;
+        continue;
+      }
+    }
+    if (c == static_cast<unsigned char>(delimiter) || c == '\\') {
+      result += '\\';
+      result += static_cast<char>(c);
+    } else if (c == '\a') {
+      result += "\\a";
+    } else if (c == '\b') {
+      result += "\\b";
+    } else if (c == '\f') {
+      result += "\\f";
+    } else if (c == '\n') {
+      result += "\\n";
+    } else if (c == '\r') {
+      result += "\\r";
+    } else if (c == '\t') {
+      result += "\\t";
+    } else if (c == '\v') {
+      result += "\\v";
+    } else if (c < 32 || c >= 127) {
+      result += "\\x";
+      result += hex[c >> 4];
+      result += hex[c & 15];
+    } else {
+      result += static_cast<char>(c);
+    }
+  }
+  result += delimiter;
+  return result;
+}
+
 namespace {
 
 using Formatted = detail::CodonString;
@@ -57,39 +117,7 @@ Formatted formatItems(std::vector<std::string> items, bool simple, size_t maxIte
 }
 
 std::string quote(const std::string &value) {
-  const bool useDouble =
-      value.find('\'') != std::string::npos && value.find('"') == std::string::npos;
-  const char delimiter = useDouble ? '"' : '\'';
-  std::string result(1, delimiter);
-  constexpr char hex[] = "0123456789abcdef";
-  for (unsigned char c : value) {
-    if (c == static_cast<unsigned char>(delimiter) || c == '\\') {
-      result += '\\';
-      result += static_cast<char>(c);
-    } else if (c == '\a') {
-      result += "\\a";
-    } else if (c == '\b') {
-      result += "\\b";
-    } else if (c == '\f') {
-      result += "\\f";
-    } else if (c == '\n') {
-      result += "\\n";
-    } else if (c == '\r') {
-      result += "\\r";
-    } else if (c == '\t') {
-      result += "\\t";
-    } else if (c == '\v') {
-      result += "\\v";
-    } else if (c < 32 || c == 127) {
-      result += "\\x";
-      result += hex[c >> 4];
-      result += hex[c & 15];
-    } else {
-      result += static_cast<char>(c);
-    }
-  }
-  result += delimiter;
-  return result;
+  return codon::ast::quoteDumpString(value);
 }
 
 Formatted formatValue(const std::string &value, bool, int, int) {

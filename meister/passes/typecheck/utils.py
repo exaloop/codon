@@ -15,6 +15,18 @@ if TYPE_CHECKING:
     from . import TypeVisitor
 
 
+def unify(ctx: TypeContext, left: ast.types.Type, right: ast.types.Type):
+    assert left, "lhs is nullptr"
+    assert right, "rhs is nullptr"  # Type::operator<<
+    undo = ast.types.Type.UnifyContext()
+    if left.unify(right, undo) < 0:
+        undo.undo()
+        undo = ast.types.Type.UnifyContext()
+        left.unify(right, undo)
+        raise TypecheckError(ctx.info, f"'{left}' does not match expected type '{right}'")
+    return left
+
+
 @dataclass
 class PartialCallData:
     """Holds partial call information for a CallExpr."""

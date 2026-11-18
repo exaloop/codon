@@ -53,23 +53,46 @@ python -m meister ir scratch.codon > /tmp/python-scratch.cir
 cmp /tmp/cpp-scratch.cir /tmp/python-scratch.cir
 ```
 
-Compare typechecking, translation and every individual debug pass without
-LLVM emission:
+Compare typechecking, translation and the final debug pipeline output without
+LLVM emission (intermediate passes are not dumped or compared):
 
 ```sh
 python -m meister.ir.compare scratch.codon --output /tmp/scratch-ir-stages
+python -m meister.ir.compare test/parser/typecheck --jobs 6 --timeout 300 \
+  --output /tmp/typecheck-ir-suite
 ```
 
-All ten stages are byte-identical for `scratch.codon`, including the full
-stdlib. The comparison is strict, without filtering or ignoring dump fields.
-Typechecked ASTs default to compact output (`--ast-indent 0`) to avoid enormous
-repeated indentation; both indented and compact AST output have been checked.
-No other Codon programs have been checked for IR equivalence. The existing
-`meister/test.py` driver is unchanged.
+Directory runs include every `test_*.codon` file and every `#%%` case, with the
+fixture's original filename, line offset and barebones setting. Each case runs
+in an isolated worker. Negative cases rejected by both frontends are reported
+separately; internal failures, crashes, timeouts, and translation/pass failures
+are mismatches, not compiler rejections. The existing `meister/test.py` driver
+is unchanged.
+
+The typechecker suite has been checked without skipping cases: 380 cases have
+matching typed ASTs, translated IR, and final debug IR; another 246 are rejected
+by both compilers. Focused reruns after fixes are included in those 626 cases.
+
+The comparison is strict: byte counts and ordered 64-MiB SHA-256 chunks cover the entire dump,
+without filtering or ignoring fields. Only failing dumps are saved, gzip
+compressed, alongside bounded first-difference excerpts, per-case diagnostics,
+and `summary.json`. Typechecked ASTs default to compact output (`--ast-indent 0`)
+to avoid enormous repeated indentation. `--filter` selects case labels for
+focused debugging; omit it to run the complete suite.
+
+Typed AST forests are hashed one realized function at a time. Compact IR is
+emitted one declaration at a time, with byte-identical text and shared graph
+numbering. This avoids retaining multi-gigabyte closure dumps in memory.
+Native and Python frontends run in separate processes so native allocator arenas
+are released before Python serializes the same large graphs.
+Chunk boundaries are independent of formatter emissions. This also avoids an
+LLVM 20 SHA-256 length-counter bug for messages larger than 512 MiB.
 
 Whole-module dumps use deterministic declaration order and dump-local graph
-IDs, not compiler allocation IDs. Generated generator capture bindings are
-displayed consistently at declarations, signatures and calls. Adjacent literal
+IDs, not compiler allocation IDs. Generated generator names use their semantic
+owner and occurrence within its body rather than global creation ordinals.
+Capture bindings are displayed consistently at declarations, signatures and calls.
+Adjacent literal
 stores to distinct variables are displayed in name order (early compile-time
 defines originate in an unordered C++ map). Other statement and positional
 argument order is preserved. These are read-only formatting operations; they
@@ -90,3 +113,7 @@ allocation/declaration/capture-order independence, preserve observable value
 and positional-argument differences, and verify that dumping does not mutate IR.
 Additional regressions compare the layout directly with `ast.dump` and cover
 attribute enum lookup and replacement-aware graph numbering.
+Generated function naming, unsigned integer widths, and byte-string quoting
+also have regressions.
+Chunked output is checked against the ordinary formatter, including indentation,
+field names, and attributes; printable long-name quoting has an equivalent fast path.

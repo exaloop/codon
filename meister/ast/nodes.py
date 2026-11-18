@@ -2166,9 +2166,21 @@ def get_docstring(suite) -> str:
             return ""
 
 
+_DUMP_ASCII_CONTROLS = "".join(chr(idx) for idx in range(32)) + chr(127)
+
+
 def _quote_dump_string(value):
     use_double = "'" in value and '"' not in value
     delimiter = '"' if use_double else "'"
+    # Nested closure types can have enormous printable ASCII names. Checking
+    # for escapes with native string searches preserves the character-loop
+    # result without rebuilding an unchanged name one Python character at a time.
+    if (
+        len(value) > 256
+        and value.isascii()
+        and not any(char in value for char in "\\" + delimiter + _DUMP_ASCII_CONTROLS)
+    ):
+        return delimiter + value + delimiter
     result = delimiter
     escapes = {
         "\a": "\\a",
@@ -2402,7 +2414,13 @@ def dump(
                         return repr(node), True
             return repr(node), True
 
-    return _format(node)[0]
+    try:
+        return _format(node)[0]
+    finally:
+        # These mutually recursive closures form a cycle. Release potentially
+        # enormous memoized strings now, not at a later cyclic-GC collection.
+        formatted_exprs.clear()
+        formatted_types.clear()
 
 
 def iter_fields(node: Node) -> Iterator[Tuple[str, Any]]:

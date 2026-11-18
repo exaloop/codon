@@ -913,7 +913,7 @@ def typecheck_call_args(
         if receiver:
             for base in utils.get_class(self.ctx, receiver).mro:
                 if base.name == parent.name:
-                    parent |= utils.instantiate(self.ctx, base, receiver)
+                    utils.unify(self.ctx, parent, utils.instantiate(self.ctx, base, receiver))
                     break
     with utils.with_class_generics(self.ctx, callee_fn, func=True):
         signature_idx = 0
@@ -935,7 +935,7 @@ def typecheck_call_args(
                         )
                         if can_wrap:
                             assert call_arg.value.type
-                            call_arg.value.type |= expected_type
+                            utils.unify(self.ctx, call_arg.value.type, expected_type)
                         else:
                             wrapping_done = False
                     call_type = call_expr.cls
@@ -983,7 +983,7 @@ def typecheck_call_args(
                 can_wrap, arg.value = utils.wrap_expr(self.ctx, arg.value, expected_type, callee_fn)
                 if can_wrap:
                     assert arg.value.type
-                    arg.value.type |= expected_type
+                    utils.unify(self.ctx, arg.value.type, expected_type)
                 else:
                     wrapping_done = False
                 replacements.append(arg.value.type if not expected_type.cls else expected_type)
@@ -1013,7 +1013,7 @@ def typecheck_call_args(
                 if param.default and utils.is_unbound(generic):
                     with utils.with_class_generics(self.ctx, callee_fn, True):
                         default = self.visit_expr(param.default.clone(clean=True))
-                    generic |= utils.extract_type(self.ctx, default)
+                    utils.unify(self.ctx, generic, utils.extract_type(self.ctx, default))
                 generic_idx += 1
 
     # Replace the arguments

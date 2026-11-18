@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import ast
 import dataclasses
+import hashlib
 import importlib
 import inspect
 import pkgutil
@@ -28,6 +29,42 @@ def port_modules():
 
 
 class PythonPortTests(unittest.TestCase):
+    def test_dump_fingerprint_chunks_ignore_emission_boundaries(self):
+        from .compare import DumpFingerprint
+
+        class SmallFingerprint(DumpFingerprint):
+            CHUNK_BYTES = 7
+
+        data = b"this dump is emitted in unrelated pieces"
+        expected = {
+            "bytes": len(data),
+            "sha256_chunks": [
+                hashlib.sha256(data[idx : idx + 7]).hexdigest() for idx in range(0, len(data), 7)
+            ],
+        }
+        for width in (1, 5, 7, 11, len(data)):
+            digest = SmallFingerprint()
+            for idx in range(0, len(data), width):
+                digest.update(data[idx : idx + width])
+            self.assertEqual(digest.finish(), expected)
+        self.assertEqual(
+            SmallFingerprint().finish()["sha256_chunks"], [hashlib.sha256(b"").hexdigest()]
+        )
+
+    def test_typed_dump_chunks_preserve_forest_bytes(self):
+        from .compare import dump_typed
+
+        root = codon_ast.SuiteStmt([codon_ast.ExprStmt(codon_ast.IntExpr(1))])
+        fn = codon_ast.FunctionStmt("f", suite=codon_ast.SuiteStmt([]))
+        cc = SimpleNamespace(
+            functions={"f": SimpleNamespace(realizations={"f": SimpleNamespace(ast=fn)})}
+        )
+        expected = "".join(
+            codon_ast.dump(node, include_attributes=True, types=True, indent=0) + "\n"
+            for node in (root, fn)
+        )
+        self.assertEqual("".join(dump_typed(cc, root, 0)), expected)
+
     def test_imports(self):
         for module in port_modules():
             with self.subTest(module=module.__name__):

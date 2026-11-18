@@ -4,7 +4,7 @@
 import unittest
 
 from .. import ast, ir
-from .util.format import format_ir
+from .util.format import format_ir, iter_dump
 
 
 def literal_stores(order, values=(1, 2)):
@@ -35,6 +35,68 @@ def captured_call(order, generator=True):
 
 
 class FormatTests(unittest.TestCase):
+    def test_chunked_dump_matches_regular_formatter(self):
+        module = captured_call(["b", "a"])
+        module.set_attribute(ir.StringValueAttribute("module"), ast.Attr.Module)
+        for indent in (None, 0, -1, 1, 2, "\t"):
+            for names in (False, True):
+                for attrs in (False, True):
+                    opts = {"annotate_fields": names, "include_attributes": attrs, "indent": indent}
+                    self.assertEqual("".join(iter_dump(module, **opts)), ir.dump(module, **opts))
+
+    def test_long_ascii_quote_fast_path(self):
+        quote = ast.nodes._quote_dump_string
+        text = "Fn[Tuple[int,str],parent=Fn[int]]" * 100
+        self.assertEqual(quote(text), "'" + text + "'")
+        self.assertEqual(quote(text + "'"), '"' + text + "'" + '"')
+        for char in ("\n", "\x00", "\\", "\x7f", "\udcff"):
+            self.assertEqual(quote(text + char), "'" + text + quote(char)[1:])
+
+    def test_generated_names_follow_owner_not_creation_order(self):
+        def make_module(order):
+            module = ir.Module(None)
+            typ = module.get_int_type()
+            owners = {}
+            for name in ("a", "b"):
+                fn = module.nr(ir.BodiedFunc, name)
+                fn.realize(module.unsafe_get_func_type(name, typ, []), [])
+                fn.body = module.nr(ir.SeriesFlow)
+                owners[name] = fn
+            for idx, name in enumerate(order):
+                fn = module.nr(ir.BodiedFunc, f"_generator.{idx}")
+                fn.generator = True
+                fn.realize(module.unsafe_get_func_type(fn.name, typ, []), [])
+                fn.body = module.nr(ir.SeriesFlow)
+                fn.body.push_back(module.nr(ir.ReturnInstr, module.nr(ir.IntConst, ord(name), typ)))
+                owners[name].body.push_back(module.nr(ir.CallInstr, module.nr(ir.VarValue, fn), []))
+            return module
+
+        self.assertEqual(ir.dump(make_module("ab")), ir.dump(make_module("ba")))
+
+    def test_integer_width_is_cpp_unsigned_int(self):
+        module = ir.Module(None)
+        typ = module.unsafe_get_int_type(-25)
+        self.assertEqual(typ.len, 4294967271)
+        self.assertEqual(typ.name, "Int4294967271")
+        self.assertIs(module.unsafe_get_int_type(4294967271), typ)
+
+    def test_orphan_generators_keep_distinct_names(self):
+        module = ir.Module(None)
+        for idx in range(2):
+            fn = module.nr(ir.BodiedFunc, f"_generator.{idx}")
+            fn.generator = True
+            fn.realize(module.unsafe_get_func_type(fn.name, module.get_int_type(), []), [])
+            fn.body = module.nr(ir.SeriesFlow)
+        text = ir.dump(module)
+        self.assertIn("name='_generator.0'", text)
+        self.assertIn("name='_generator.1'", text)
+
+    def test_strings_preserve_unicode_and_escape_arbitrary_bytes(self):
+        module = ir.Module(None)
+        value = "λ 😀" + b"\xff\xfe".decode("utf-8", "surrogateescape")
+        literal = module.nr(ir.StringConst, value, module.get_string_type())
+        self.assertIn("λ 😀\\xff\\xfe", ir.dump(literal))
+
     def test_ast_dump_layout_and_options(self):
         module = ir.Module(None)
         var = module.nr(ir.Var, module.get_int_type(), True, False, False, "x")

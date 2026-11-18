@@ -31,17 +31,20 @@ class FormatContext:
     vars: List[Var]
     types: List[types.Type]
     capture_order: Dict[str, List[int]]
+    aliases: Dict[str, str]
 
     # C++: codon/cir/util/format.cpp:30
     def __init__(self, node):
         self.canonical = isinstance(node, Module)
-        self.ids, self.capture_order = {}, {}
+        self.ids, self.capture_order, self.aliases = {}, {}, {}
         self.vars, self.types = [], []
         if not self.canonical:
             return
+        self.generator_aliases(node)
         keys = {}
         for fn in [node.main_func, *(var for var in node.vars if isinstance(var, Func))]:
-            keys[fn.id] = "func:" + fn.name
+            owner = self.name(fn)
+            keys[fn.id] = "func:" + owner
             args = list(fn.args)
             # Generated comprehension closures capture an unordered identifier
             # set. Display their bindings in name order, consistently at the
@@ -52,17 +55,66 @@ class FormatContext:
                 self.capture_order[fn.type.name] = order
                 args = [args[idx] for idx in order]
             for idx, arg in enumerate(args):
-                keys[arg.id] = f"arg:{fn.name}:{arg.name}:{idx}"
+                keys[arg.id] = f"arg:{owner}:{arg.name}:{idx}"
             if isinstance(fn, BodiedFunc):
                 for idx, var in enumerate(fn.symbols):
-                    keys[var.id] = f"local:{fn.name}:{var.name}:{idx}"
-        self.vars = sorted(node.vars, key=lambda var: keys.get(var.id, "var:" + var.name))
-        self.types = sorted(node.types, key=lambda typ: typ.name)
+                    keys[var.id] = f"local:{owner}:{var.name}:{idx}"
+        self.vars = sorted(node.vars, key=lambda var: keys.get(var.id, "var:" + self.name(var)))
+        self.types = sorted(node.types, key=self.name)
         for var in [node.argv_var, node.argc_var, node.main_func, *self.vars]:
             self.node_id(var)
         for var in [*self.vars, node.main_func]:
             if isinstance(var, BodiedFunc):
                 self.number_values(var.body)
+
+    def generator_aliases(self, module):
+        """Generated ordinals depend on unordered function-cache traversal, not semantics."""
+        functions = [module.main_func, *(var for var in module.vars if isinstance(var, Func))]
+        generators = {
+            fn.id: fn
+            for fn in functions
+            if fn.generator
+            and fn.name.startswith("_generator.")
+            and fn.name[len("_generator.") :].isdigit()
+        }
+        owners, positions = {}, {}
+        for fn in functions:
+            if not isinstance(fn, BodiedFunc):
+                continue
+            pending, seen, ordinal = [fn.body], set(), 0
+            while pending:
+                node = pending.pop()
+                if node is None:
+                    continue
+                node = node.get_actual()
+                if node.id in seen:
+                    continue
+                seen.add(node.id)
+                if isinstance(node, VarValue) and node.var.id in generators:
+                    if node.var.id not in positions:
+                        owners[node.var.id] = fn
+                        positions[node.var.id] = ordinal
+                        ordinal += 1
+                pending.extend(node.get_used_values())
+
+        def alias(fn):
+            if fn.name in self.aliases:
+                return self.aliases[fn.name]
+            parent = owners.get(fn.id)
+            if parent is None:
+                # Do not collapse distinct orphan declarations onto one name.
+                self.aliases[fn.name] = fn.name
+                return fn.name
+            owner = alias(parent) if parent.id in generators else parent.name
+            name = f"_generator.context.{len(owner.encode())}:{owner}.{positions[fn.id]}"
+            self.aliases[fn.name] = name
+            return name
+
+        for fn in generators.values():
+            alias(fn)
+
+    def name(self, node):
+        return self.aliases.get(node.name, node.name)
 
     # C++: codon/cir/util/format.cpp:88
     def node_id(self, node):
@@ -206,7 +258,7 @@ class FormatVisitor:
         if node is None:
             return "", True
         node = node.get_actual()
-        fields = [("name", node.name)]
+        fields = [("name", self.ctx.name(node))]
         if isinstance(node, (Var, Value)):
             fields.append(("id", self.ctx.node_id(node)))
         name = (
@@ -252,7 +304,7 @@ class FormatVisitor:
 
     # C++: codon/cir/util/format.cpp:605
     def fields(self, node):
-        fields = [("name", node.name)]
+        fields = [("name", self.ctx.name(node))]
         if isinstance(node, (Var, Value)):
             fields.append(("id", self.ctx.node_id(node)))
         if isinstance(node, Value) and self.types:
@@ -447,6 +499,48 @@ class FormatVisitor:
                 type(value).__name__, list(vars(value).items()), level, references=references
             )
         raise TypeError(f"unsupported IR dump value {type(value).__name__}")
+
+
+# C++: codon/cir/util/format.cpp:750
+def iter_dump(node, annotate_fields=True, include_attributes=False, indent=None, types=False):
+    """C++: formatChunks. Emit identical compact module text per declaration."""
+    visitor = FormatVisitor(node, annotate_fields, include_attributes, indent, types)
+    if not isinstance(node, Module) or indent:
+        yield visitor.value(node, full=True)[0]
+        return
+    visitor.seen_nodes.add(id(node))
+    yield "Module("
+    first = True
+    for key, value in visitor.fields(node):
+        if key in ("types", "vars"):
+            if not value:
+                continue
+            if not first:
+                yield ", "
+            first = False
+            if annotate_fields:
+                yield key + "="
+            yield "["
+            for idx, item in enumerate(value):
+                if idx:
+                    yield ", "
+                yield visitor.value(item)[0]
+            yield "]"
+        else:
+            text = visitor.value(value)[0]
+            if not text:
+                continue
+            if not first:
+                yield ", "
+            first = False
+            yield (key + "=" if annotate_fields else "") + text
+    if include_attributes:
+        text = visitor.attributes(node, 0)[0]
+        if text:
+            if not first:
+                yield ", "
+            yield text
+    yield ")"
 
 
 # C++: codon/cir/util/format.cpp:750
