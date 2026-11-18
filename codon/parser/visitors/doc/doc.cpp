@@ -291,6 +291,7 @@ std::string DocVisitor::alias(Stmt *stmt, const std::string &name, int target) {
       ctx->shared->symbols.getObject(std::to_string(id))->getString("symbol_id")->str();
   identity.replace(0, identity.find(':'), "alias");
   publish(id, llvm::json::Object{{"kind", "alias"},
+                                 {"imported", cast<ImportStmt>(stmt) != nullptr},
                                  {"target", std::to_string(target)},
                                  {"symbol_id", identity}});
   return std::to_string(id);

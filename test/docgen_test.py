@@ -131,9 +131,23 @@ class DocumentationTest(unittest.TestCase):
         self.assertEqual(symbols[second]['qualified_name'], 'other.Record')
         self.assertEqual(members['Alias']['kind'], 'alias')
         self.assertEqual(members['Alias']['target'], first)
+        self.assertFalse(members['Alias']['imported'])
+        self.assertTrue(members['model']['imported'])
+        self.assertTrue(members['Other']['imported'])
         self.assertEqual(members['read']['return']['target'],
                          next(key for key, value in symbols.items()
                               if value.get('qualified_name') == 'api.Later'))
+        output = self.root / 'rendered'
+        self.render(document, output)
+        page = (output / 'modules/api/index.md').read_text()
+        self.assertIn('id="alias-alias"', page)
+        self.assertNotIn('id="alias-model"', page)
+        self.assertNotIn('id="alias-other"', page)
+        search = json.loads((output / 'api-search-index.json').read_text())
+        qualified = {value['qualified'] for value in search}
+        self.assertIn('api.Alias', qualified)
+        self.assertNotIn('api.model', qualified)
+        self.assertNotIn('api.Other', qualified)
 
     def test_package_discovery(self):
         package = self.source('lib/__init__.py', 'from .models import *\n').parent
@@ -157,6 +171,7 @@ class DocumentationTest(unittest.TestCase):
         exports = [symbols[key] for key in modules['lib']['children']]
         self.assertEqual([(value['kind'], value['name']) for value in exports],
                          [('alias', 'Record')])
+        self.assertTrue(all(value['imported'] for value in exports))
         function = next(value for value in symbols.values()
                         if value.get('qualified_name') == 'lib.api.read')
         self.assertEqual(function['args'][0]['type']['target'], function['return']['target'])
@@ -245,7 +260,10 @@ class DocumentationTest(unittest.TestCase):
         self.assertEqual(outside.read_text(), '{}\n')
 
     def test_project_rendering_and_owned_output(self):
-        package = self.source('lib/__init__.codon', 'from .models import Record as PublicRecord\n').parent
+        package = self.source('lib/__init__.codon', '''\
+            from .models import Record as ImportedRecord
+            PublicRecord = ImportedRecord
+        ''').parent
         self.source('lib/models.py', '''\
             class Base:
                 pass
@@ -276,9 +294,18 @@ class DocumentationTest(unittest.TestCase):
         self.assertIn('https://example.com/src/v1/lib/models.py#L', page)
         self.assertIn('/reference/api/classes/lib/models/Record/', page)
         self.assertNotIn('exaloop/codon', page)
-        self.assertIn('PublicRecord', (output / 'modules/lib/index.md').read_text())
+        alias_page = (output / 'modules/lib/index.md').read_text()
+        self.assertIn('<article class="api-card api-card-alias"', alias_page)
+        self.assertIn('<header class="api-card-header">', alias_page)
+        self.assertIn('<span class="api-card-name">PublicRecord</span>', alias_page)
+        self.assertIn('class="api-permalink"', alias_page)
+        self.assertIn('<div class="api-card-body">', alias_page)
+        self.assertIn('<div class="api-member-source">Alias of ', alias_page)
+        self.assertIn('<code>ImportedRecord</code></a>', alias_page)
+        self.assertNotIn('id="alias-importedrecord"', alias_page)
         search = json.loads((output / 'api-search-index.json').read_text())
         self.assertTrue(any(value['qualified'] == 'lib.PublicRecord' for value in search))
+        self.assertFalse(any(value['qualified'] == 'lib.ImportedRecord' for value in search))
         self.assertFalse((output / 'modules/internal/types').exists())
         (package / 'internal.codon').unlink()
         self.render(self.extract(package, '--root', self.root), output, *arguments)

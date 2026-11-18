@@ -1252,6 +1252,9 @@ def build_api_reference_index():
                 continue
             qualified = f"{module_name}.{value['name']}" if module_name else value["name"]
             target = symbol_reference(value)
+            if value.get("imported"):
+                add_api_alias(qualified, target)
+                continue
             add_api_reference(
                 qualified, module_name,
                 target.url_parts if target else (["modules", *module_name.split(".")] if module_name else []),
@@ -2630,7 +2633,7 @@ def render_module_contents(
     emitted_functions = set()
 
     for v in children:
-        if not is_public(v):
+        if not is_public(v) or v.get("imported"):
             continue
 
         kind = v.get("kind")
@@ -2675,15 +2678,23 @@ def render_module_contents(
             target = alias_target(v)
             reference = symbol_reference(target)
             label = parse_type(v["type"]) if v.get("type") else target.get("qualified_name", target.get("name", v["name"]))
-            f.write(f'<section class="api-card" id="alias-{slug_component(v["name"])}">\n')
+            write_card_start(
+                v["name"],
+                "alias",
+                get_tags(v),
+                f,
+                "alias-" + slug_component(v["name"]),
+            )
             write_signature(f'{v["name"]} = {label}', f)
             if reference:
                 href = relative_url(module_url_parts(current_module), reference.url_parts)
                 if reference.anchor:
                     href += "#" + reference.anchor
-                f.write(f'<a href="{escape(href)}">{escape(label)}</a>\n')
+                f.write('<div class="api-member-source">Alias of ')
+                f.write(f'<a href="{escape(href)}"><code>{escape(label)}</code></a>')
+                f.write('</div>\n')
             write_docstr(v, f, current_module)
-            f.write('</section>\n')
+            write_card_end(f)
 
 
 # =============================================================================

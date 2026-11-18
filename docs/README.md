@@ -79,9 +79,11 @@ the JSON for reference resolution but do not become part of the project's API
 catalog. Exclusions affect discovery, not import parsing: an excluded module can
 still be read as a dependency. Imports must resolve to available Codon-compatible
 source. Public names are those without a leading underscore; class pages also
-include special methods. Re-exports and type aliases link to their definitions
-when those definitions are in the documented project. Class extensions are
-attached by identity, not by an unqualified class name.
+include special methods. Import bindings, including re-exports, are retained for
+reference resolution but omitted from API entries and search results. Explicit
+type aliases link to their definitions when those definitions are in the
+documented project. Class extensions are attached by identity, not by an
+unqualified class name.
 
 Use `--stdlib` only when generating Codon's own reference. It selects the existing
 stdlib title, route, sidebar, and source URL defaults. For legacy JSON it also
@@ -102,8 +104,9 @@ applications add `base` and `args`; literals are explicitly tagged, so `64` cann
 be confused with a symbol key. Unsupported or unresolved annotations retain
 their source text as `expression` records. Functions use `return` and retain
 argument kinds, defaults, generic parameters, and asynchronous status. Classes
-include bases and member identities. Aliases have a `target`, and specialized
-type aliases also retain their annotation in `type`.
+include bases and member identities. Aliases have a `target` and an `imported`
+flag identifying bindings introduced by import statements. Specialized type
+aliases also retain their annotation in `type`.
 
 The renderer accepts schema v2 and the old unversioned mapping. Legacy input
 requires source roots as positional arguments and accepts both `return` and
