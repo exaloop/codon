@@ -37,12 +37,14 @@ python -m meister run scratch.codon
 specified). `run` transfers that same module to Codon's native optimizer and
 ORC JIT. Both accept `--library /path/to/libcodonc` before the source filename,
 or use `CODON_LIBRARY`. `run` passes arguments after the filename to the program.
+For Codon programs that import Python, set `CODON_PYTHON` to the CPython shared
+library, as with native Codon.
 
 `llvm.py` wraps native handles; `llvisitor.py` implements CIR lowering. Inline
 `@llvm` bodies are parsed and linked into the live module in the same LLVM
-context. This is the first end-to-end slice, verified on `scratch.codon` only.
-Try/except/finally lowering, residual pipeline nodes, DSL plugins, incremental
-JIT cells, and standalone or Python-extension emission are not covered.
+context. Try/except/else/finally lowering also uses Codon's native unwinder.
+Residual pipeline nodes, DSL plugins, incremental JIT cells, and standalone
+or Python-extension emission are not covered.
 
 ## CIR dumps
 

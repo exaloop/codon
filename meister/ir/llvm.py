@@ -5,6 +5,7 @@ from ctypes import (
     CDLL,
     POINTER,
     RTLD_GLOBAL,
+    PyDLL,
     byref,
     c_char_p,
     c_double,
@@ -68,19 +69,24 @@ class Library:
     def function(self, name, result, *args):
         return self._bind("LLVM" + name, result, args)
 
-    def codon_function(self, name, result, *args):
-        return self._bind("codon_llvm_" + name, result, args)
+    def codon_function(self, name, result, *args, keep_gil=False):
+        return self._bind("codon_llvm_" + name, result, args, keep_gil=keep_gil)
 
-    def _bind(self, full_name, result, args):
-        if full_name not in self._functions:
+    def exception_offset(self):
+        return self._bind("seq_exc_offset", c_int64, ())()
+
+    def _bind(self, full_name, result, args, *, keep_gil=False):
+        key = full_name, keep_gil
+        if key not in self._functions:
+            dll = PyDLL(str(self.path), handle=self._dll._handle) if keep_gil else self._dll
             try:
-                fn = getattr(self._dll, full_name)
+                fn = getattr(dll, full_name)
             except AttributeError as error:
                 raise LLVMError(f"{self.path} does not export {full_name}") from error
             fn.restype = result
             fn.argtypes = args
-            self._functions[full_name] = fn
-        return self._functions[full_name]
+            self._functions[key] = fn
+        return self._functions[key]
 
     def message(self, pointer):
         if not pointer:
@@ -117,6 +123,10 @@ class _Handle:
 
 
 class Type(_Handle):
+    @property
+    def return_type(self):
+        return Type(self._owner, self._call("GetReturnType", P, ()))
+
     def __str__(self):
         return self._owner.lib.message(self._call("PrintTypeToString", P, ()))
 
@@ -384,7 +394,10 @@ class Module:
     def run(self, args, *, debug):
         """Run through Codon's optimizer and ORC, transferring LLVM ownership."""
         argv = (S * len(args))(*map(fsencode, args))
-        run = self.lib.codon_function("run", P, P, P, I, I, POINTER(S))
+        # Codon can import Python through the runtime. If it opens the host
+        # interpreter, Py_Initialize is a no-op and the current thread must
+        # still hold the GIL when generated code calls the Python C API.
+        run = self.lib.codon_function("run", P, P, P, I, I, POINTER(S), keep_gil=True)
         mod, ctx = self._as_parameter_, self.context._as_parameter_
         if self.debug_builder:
             self.debug_builder.finalize()
@@ -623,6 +636,7 @@ class IRBuilder(_Handle):
     create_sub = _instruction("Sub", P, P)
     create_mul = _instruction("Mul", P, P)
     create_and = _instruction("And", P, P)
+    create_or = _instruction("Or", P, P)
     create_xor = _instruction("Xor", P, P)
     create_lshr = _instruction("LShr", P, P)
     create_trunc = _instruction("Trunc", P, P)

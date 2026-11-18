@@ -2,11 +2,13 @@
 """Lower Meister CIR into live LLVM IR using Codon's LLVM distribution."""
 
 from collections import Counter
+from copy import copy
 from types import SimpleNamespace
 
 from .. import ir
 from ..ast.nodes import Node
 from . import llvm
+from .llvisitor_eh import ExceptionState, lower_try_catch
 from .util import irtools
 from .util.visitor import ConstVisitor
 
@@ -25,6 +27,8 @@ class LLVMVisitor(ConstVisitor):
         self.field_offset_resolvers = {}
         self.virtual_lookup_types, self.virtual_targets = {}, {}
         self.loops = []
+        self.trycatch, self.finally_, self.catches = [], [], []
+        self.next_sequence_number = 0
         self.coro = None
         self.version = version
         self.db = self.unit = None
@@ -165,6 +169,10 @@ class LLVMVisitor(ConstVisitor):
                 if member_info and not polymorphic
                 else src
             )
+            if field_src is None:
+                # C++ Type::getSrcInfo() is a value, even for inferred types
+                # with no source location. Python stores None in that case.
+                field_src = Node.SrcInfo()
             members.append(
                 self.db.member_type(
                     result,
@@ -297,7 +305,7 @@ class LLVMVisitor(ConstVisitor):
             return
         typ = self.get_llvm_type(var.type)
         if not self.is_storable(typ):
-            self.vars[var.id] = self.dummy(typ)
+            self.vars.setdefault(var.id, self.dummy(typ))
             return
         name = var.name if var.external else ("._" if var.name.startswith("L") else ".") + var.name
         storage = self.mod.add_global(
@@ -306,7 +314,7 @@ class LLVMVisitor(ConstVisitor):
             None if var.external else typ.null(),
             linkage=llvm.Linkage.EXTERNAL if var.external else llvm.Linkage.PRIVATE,
         )
-        self.vars[var.id] = storage
+        self.vars.setdefault(var.id, storage)
         if var.external:
             storage.set_unnamed_addr(local=True)
         else:
@@ -442,16 +450,20 @@ class LLVMVisitor(ConstVisitor):
         self.b.set_insert_point(entry)
         for idx, (var, arg) in enumerate(zip(fn.args, self.fn.args, strict=True), 1):
             typ = self.get_llvm_type(var.type)
-            storage = self.vars[var.id] = self.b.create_alloca(typ)
+            storage = self.b.create_alloca(typ)
+            self.vars.setdefault(var.id, storage)
             if self.is_storable(typ):
                 self.b.create_store(arg, storage)
             self.declare_local(var, storage, entry, idx)
         for var in fn:
             typ = self.get_llvm_type(var.type)
             if typ.is_void:
-                self.vars[var.id] = self.dummy(typ)
+                self.vars.setdefault(var.id, self.dummy(typ))
             else:
-                storage = self.vars[var.id] = self.b.create_alloca(typ)
+                storage = self.b.create_alloca(typ)
+                # C++ insertVar uses emplace. A dominated loop/catch variable
+                # can already refer to a global or an earlier local slot.
+                self.vars.setdefault(var.id, storage)
                 self.declare_local(var, storage, entry)
 
         start = self.fn.append_block("start")
@@ -770,7 +782,10 @@ class LLVMVisitor(ConstVisitor):
 
     # C++: codon/cir/llvm/llvisitor.cpp:2635
     def visit_BytesConst(self, node):
-        data = node.val if isinstance(node.val, bytes) else node.val.encode("latin1")
+        # The lexer decodes raw bytes with UTF-8 + surrogateescape.
+        data = (
+            node.val if isinstance(node.val, bytes) else node.val.encode("utf-8", "surrogateescape")
+        )
         return self.literal_data(".bytes", self.i8, data, len(data))
 
     def literal_data(self, name, typ, data, meta):
@@ -830,9 +845,57 @@ class LLVMVisitor(ConstVisitor):
         self.b.set_insert_point(self.block)
         if targets:
             return self.emit_virtual_call(node, typ, args, targets, dynamic_id)
-        result = self.b.create_call(fn, args, typ=typ)
+        result = self.call(fn, args, typ=typ)
         ret = self.get_llvm_type(node.type)
         return result if self.is_storable(ret) else self.dummy(ret)
+
+    # C++: codon/cir/llvm/llvisitor.cpp:1499
+    def call(self, fn, args=(), *, typ=None):
+        self.b.set_insert_point(self.block)
+        region = self.innermost_try_catch()
+        if region is None:
+            return self.b.create_call(fn, args, typ=typ)
+        normal = self.fn.append_block("invoke.normal")
+        unwind = (
+            region.exception_block
+            if self.trycatch and region is self.trycatch[-1]
+            else region.finally_exception_block
+        )
+        result = self.b.create_invoke(fn, normal, unwind, args, typ=typ)
+        self.block = normal
+        return result
+
+    # C++: codon/cir/llvm/llvisitor.cpp:1524
+    def enter_region(self, stack, data):
+        data = copy(data)
+        data.sequence_number = self.next_sequence_number
+        self.next_sequence_number += 1
+        stack.append(data)
+
+    # C++: codon/cir/llvm/llvisitor.cpp:1564
+    def innermost_try_catch(self):
+        if not self.trycatch:
+            return self.finally_[-1] if self.finally_ else None
+        if (
+            not self.finally_
+            or self.trycatch[-1].sequence_number > self.finally_[-1].sequence_number
+        ):
+            return self.trycatch[-1]
+        return self.finally_[-1]
+
+    # C++: codon/cir/llvm/llvisitor.cpp:1467
+    def pad_type(self):
+        return self.mod.struct_type((self.ptr, self.i32))
+
+    # C++: codon/cir/llvm/llvisitor.cpp:1449
+    def throw_func(self):
+        fn = self.mod.get_or_insert_function("seq_throw", self.void.function((self.ptr,)))
+        fn.add_attribute("noreturn")
+        return fn
+
+    # C++: codon/cir/llvm/llvisitor.cpp:2851
+    def visit_TryCatchFlow(self, node):
+        lower_try_catch(self, node)
 
     # C++: codon/cir/llvm/llvisitor.cpp:3510
     def specialize_virtual_call(self, fn, typ):
@@ -902,8 +965,10 @@ class LLVMVisitor(ConstVisitor):
         for idx, target in targets:
             dest = self.fn.append_block("dispatch.call")
             selection.add_case(self.i64.const_int(idx), dest)
-            b.set_insert_point(dest)
-            incoming.append((b.create_call(target, args, typ=typ), dest))
+            self.block = dest
+            value = self.call(target, args, typ=typ)
+            incoming.append((value, self.block))
+            b.set_insert_point(self.block)
             b.create_br(done)
         b.set_insert_point(missing)
         b.create_unreachable()
@@ -926,10 +991,21 @@ class LLVMVisitor(ConstVisitor):
     def visit_ReturnInstr(self, node):
         value = self.process(node.value) if node.value else None
         self.b.set_insert_point(self.block)
+        tc = self.innermost_try_catch()
         if self.coro:
             if self.coro.async_:
                 self.b.create_store(value, self.coro.promise)
-            self.b.create_br(self.coro.exit)
+            if tc:
+                self.b.create_store(self.i8.const_int(ExceptionState.RETURN), tc.exc_flag)
+                self.b.create_br(tc.finally_block)
+            else:
+                self.b.create_br(self.coro.exit)
+        elif tc:
+            self.b.create_store(self.i8.const_int(ExceptionState.RETURN), tc.exc_flag)
+            if tc.ret_store:
+                assert value, "no return value storage"
+                self.b.create_store(value, tc.ret_store)
+            self.b.create_br(tc.finally_block)
         elif value:
             self.b.create_ret(value)
         else:
@@ -943,21 +1019,37 @@ class LLVMVisitor(ConstVisitor):
             self.b.set_insert_point(self.block)
             if value:
                 self.b.create_store(value, self.coro.promise)
-            self.b.create_br(self.coro.exit)
+            if tc := self.innermost_try_catch():
+                self.b.create_store(self.i8.const_int(ExceptionState.RETURN), tc.exc_flag)
+                self.b.create_br(tc.finally_block)
+            else:
+                self.b.create_br(self.coro.exit)
             self.block = self.fn.append_block("yield.new")
         else:
             self.make_yield(value)
+
+    # C++: codon/cir/llvm/llvisitor.cpp:3585
+    def visit_YieldInInstr(self, node):
+        self.b.set_insert_point(self.block)
+        if node.suspend:
+            suspend = self.mod.intrinsic("llvm.coro.suspend")
+            result = self.b.create_call(suspend, (self.token_none, self.i1.null()))
+            self.block = self.fn.append_block("yieldin.new")
+            switch = self.b.create_switch(result, self.coro.suspend, 2)
+            switch.add_case(self.i8.const_int(0), self.block)
+            switch.add_case(self.i8.const_int(1), self.coro.cleanup)
+            self.b.set_insert_point(self.block)
+        return self.b.create_load(self.get_llvm_type(node.type), self.coro.promise)
 
     # C++: codon/cir/llvm/llvisitor.cpp:3749
     def visit_ThrowInstr(self, node):
         exc_alloc = self.mod.get_or_insert_function("seq_alloc_exc", self.ptr.function((self.ptr,)))
         exc_alloc.add_attribute("nounwind")
-        throw = self.mod.get_or_insert_function("seq_throw", self.void.function((self.ptr,)))
-        throw.add_attribute("noreturn")
+        throw = self.throw_func()
         if node.value:
             obj = self.process(node.value)
         else:
-            obj = self.ptr.null()
+            obj = self.catches[-1].exception if self.catches else self.ptr.null()
             empty = self.fn.append_block("raise.empty")
             active = self.fn.append_block("raise.active")
             self.b.set_insert_point(self.block)
@@ -968,7 +1060,7 @@ class LLVMVisitor(ConstVisitor):
             self.b.create_unreachable()
             self.block = active
         self.b.set_insert_point(self.block)
-        self.b.create_call(throw, (self.b.create_call(exc_alloc, (obj,)),))
+        self.call(throw, (self.b.create_call(exc_alloc, (obj,)),))
 
     # C++: codon/cir/llvm/llvisitor.cpp:3785
     def visit_FlowInstr(self, node):
@@ -1045,8 +1137,9 @@ class LLVMVisitor(ConstVisitor):
         b.create_cond_br(b.create_call(is_done, (it,)), done, test)
         b.set_insert_point(check)
         b.create_cond_br(b.create_call(is_done, (it,)), done, test)
-        b.set_insert_point(test)
-        b.create_call(resume, (it,))
+        self.block = test
+        self.call(resume, (it,))
+        b.set_insert_point(self.block)
         b.create_cond_br(b.create_call(is_done, (it,)), cleanup, body)
         if self.is_storable(typ):
             b.set_insert_point(body)
@@ -1086,33 +1179,39 @@ class LLVMVisitor(ConstVisitor):
 
     def loop_body(self, node, body, update, done):
         self.block = body
-        self.loops.append((node.id, update, done))
+        self.enter_region(self.loops, SimpleNamespace(id=node.id, update=update, done=done))
         self.process(node.body)
         self.loops.pop()
         self.b.set_insert_point(self.block)
         self.b.create_br(update)
 
     # C++: codon/cir/llvm/llvisitor.cpp:2527
-    def loop_blocks(self, node):
+    def loop_data(self, node):
         if node.loop:
-            return next(
-                (update, done) for idx, update, done in reversed(self.loops) if idx == node.loop.id
-            )
-        return self.loops[-1][1:]
+            return next(loop for loop in reversed(self.loops) if loop.id == node.loop.id)
+        return self.loops[-1]
 
     # C++: codon/cir/llvm/llvisitor.cpp:3645
     def visit_BreakInstr(self, node):
-        _, done = self.loop_blocks(node)
-        self.b.set_insert_point(self.block)
-        self.b.create_br(done)
+        loop = self.loop_data(node)
+        self.exit_loop(loop, loop.done, ExceptionState.BREAK)
         self.block = self.fn.append_block("break.new")
 
     # C++: codon/cir/llvm/llvisitor.cpp:3664
     def visit_ContinueInstr(self, node):
-        update, _ = self.loop_blocks(node)
-        self.b.set_insert_point(self.block)
-        self.b.create_br(update)
+        loop = self.loop_data(node)
+        self.exit_loop(loop, loop.update, ExceptionState.CONTINUE)
         self.block = self.fn.append_block("continue.new")
+
+    def exit_loop(self, loop, target, state):
+        self.b.set_insert_point(self.block)
+        if not self.finally_ or self.finally_[-1].sequence_number < loop.sequence_number:
+            self.b.create_br(target)
+        else:
+            tc = self.finally_[-1]
+            self.b.create_store(self.i8.const_int(state), tc.exc_flag)
+            self.b.create_store(self.i64.const_int(loop.sequence_number), tc.loop_sequence)
+            self.b.create_br(tc.finally_block)
 
     # C++: codon/cir/llvm/llvisitor.cpp:3795
     def runtime_type_info_type(self):

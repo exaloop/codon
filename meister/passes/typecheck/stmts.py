@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from ... import ast, cache
 from ...error import TypecheckError
 from .. import scope
+from . import utils
 
 if TYPE_CHECKING:
     from . import TypeVisitor
@@ -106,7 +107,7 @@ def typecheck_comment(_: TypeVisitor, node: ast.CommentStmt) -> ast.Stmt:
 def typecheck_directive(self: TypeVisitor, node: ast.DirectiveStmt) -> ast.Stmt:
     if node.key == "auto_python":
         self.ctx.auto_python = node.value == "1"
-        self.log(f"directive '{node.key}' = {self.ctx.auto_python}")
+        utils.warning(f"directive '{node.key}' = {str(self.ctx.auto_python).lower()}", node.info)
     else:
         raise TypecheckError(node, f"unknown directive '{node.key}'")
     node.done = True

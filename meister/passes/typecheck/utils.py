@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING
 
 from ... import ast, cache
@@ -1581,7 +1582,7 @@ def instantiate_static(ctx: TypeContext, value) -> ast.types.Literal:
 
 
 def warning(message: str, info: ast.Node.SrcInfo):
-    print(f"{info.file}:{info.line}: warning: {message}")
+    print(f"{info.file}:{info.line}: warning: {message}", file=sys.stderr)
 
 
 def get_mro(ctx: TypeContext, class_type: ast.types.Class | None) -> List[ast.types.Type]:

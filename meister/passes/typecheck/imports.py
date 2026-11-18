@@ -74,6 +74,7 @@ def typecheck_import(self: TypeVisitor, node: ast.ImportStmt) -> ast.Stmt:
             python_name = code(node.from_expr)
             if node.what:
                 python_name += "." + code(node.what)
+            utils.warning(f"importing '{python_name}' from Python", node.info)
             name_expr = self.ctx.cache.parse_expr(python_name)
             assert isinstance(name_expr, ast.Expr)
             python_import = ast.ImportStmt(
