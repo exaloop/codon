@@ -90,6 +90,10 @@ def main(argv):
                 types=not args.no_types,
             )
         )
+    elif mode in {"llvm", "run"}:
+        from .ir import codegen
+
+        codegen.main(mode, argv[1:])
     elif mode == "test":
         from . import test
 

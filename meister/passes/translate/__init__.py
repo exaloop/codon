@@ -256,7 +256,7 @@ class TranslateVisitor:
         names, types, items = [], [], []
         visitor = IdVisitor()
         visitor.visit(expr)
-        for name_ in visitor.ids:
+        for name_ in sorted(visitor.ids):
             item = self.ctx.find(name_)
             if item and item.func is None and item.type is None and not item.var.global_:
                 types.append(item.var.type)

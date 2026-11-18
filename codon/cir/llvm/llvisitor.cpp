@@ -11,6 +11,9 @@
 #include <unistd.h>
 #include <utility>
 
+#include "llvm-c/Core.h"
+#include "llvm-c/DebugInfo.h"
+
 #include "codon/cir/dsl/codegen.h"
 #include "codon/cir/llvm/optimize.h"
 #include "codon/cir/module.h"
@@ -274,21 +277,27 @@ llvm::Function *LLVMVisitor::getFunc(const Func *func) {
   return (it != funcs.end()) ? it->second : nullptr;
 }
 
-std::unique_ptr<llvm::Module> LLVMVisitor::makeModule(llvm::LLVMContext &context,
-                                                      const SrcInfo *src) {
+namespace {
+void setModuleTarget(llvm::Module &module, const Options &options) {
   std::string err;
   auto builder = llvm::EngineBuilder();
   builder.setErrorStr(&err);
-  builder.setMArch(options->march);
-  builder.setMCPU(options->mcpu);
-  builder.setMAttrs(options->mattrs);
-  auto target = builder.selectTarget();
+  builder.setMArch(options.march);
+  builder.setMCPU(options.mcpu);
+  builder.setMAttrs(options.mattrs);
+  std::unique_ptr<llvm::TargetMachine> target(builder.selectTarget());
   if (!target) {
     compilationError(err.empty() ? "could not select LLVM target" : err);
   }
+  module.setTargetTriple(target->getTargetTriple().str());
+  module.setDataLayout(target->createDataLayout());
+}
+} // namespace
+
+std::unique_ptr<llvm::Module> LLVMVisitor::makeModule(llvm::LLVMContext &context,
+                                                      const SrcInfo *src) {
   auto M = std::make_unique<llvm::Module>("codon", context);
-  M->setTargetTriple(target->getTargetTriple().str());
-  M->setDataLayout(target->createDataLayout());
+  setModuleTarget(*M, *options);
   B = std::make_unique<llvm::IRBuilder<>>(context);
 
   auto *srcInfo = src ? src : getDefaultSrcInfo();
@@ -1251,10 +1260,12 @@ void LLVMVisitor::compile(const std::string &filename, const std::string &argv0,
   }
 }
 
-void LLVMVisitor::run(const std::vector<std::string> &args,
-                      const std::vector<std::string> &libs, const char *const *envp) {
-  runLLVMPipeline();
-
+namespace {
+void runLLVMModule(std::unique_ptr<llvm::Module> &M,
+                   std::unique_ptr<llvm::LLVMContext> &context, const Options &options,
+                   PluginManager *plugins, const std::vector<std::string> &args,
+                   const std::vector<std::string> &libs,
+                   llvm::function_ref<void()> afterTransfer) {
   Timer t1("llvm/jitlink");
   if (plugins) {
     if (auto error = plugins->loadRuntimeLibraries())
@@ -1294,10 +1305,10 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
           jit->getDataLayout().getGlobalPrefix())));
 
   llvm::cantFail(jit->addIRModule({std::move(M), std::move(context)}));
-  clearLLVMData();
+  afterTransfer();
   auto mainAddr = llvm::cantFail(jit->lookup("main"));
 
-  if (options->debug) {
+  if (options.debug) {
     runtime::setJITErrorCallback([dbp](const runtime::JITError &e) {
       fmt::print(stderr, "{}\n{}", e.getOutput(),
                  dbp->getPrettyBacktrace(e.getBacktrace()));
@@ -1316,6 +1327,58 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
   } catch (const runtime::JITError &e) {
     fmt::print(stderr, "{}\n", e.getOutput());
     std::abort();
+  }
+}
+} // namespace
+
+void LLVMVisitor::run(const std::vector<std::string> &args,
+                      const std::vector<std::string> &libs, const char *const *envp) {
+  runLLVMPipeline();
+  runLLVMModule(M, context, *options, plugins, args, libs, [this] { clearLLVMData(); });
+}
+
+// C ABI for modules built by Meister with LLVM-C. LLVM-C already exports the
+// core builders; these operations need Codon's C++ target/optimizer/JIT setup.
+extern "C" char *codon_llvm_set_host_target(LLVMModuleRef module) {
+  Options options;
+  try {
+    // Initialize the same targets and legacy passes as the native visitor.
+    LLVMVisitor initialize(&options);
+    setModuleTarget(*llvm::unwrap(module), options);
+    return nullptr;
+  } catch (const std::exception &error) {
+    return LLVMCreateMessage(error.what());
+  }
+}
+
+// LLVM-C can create composite types but does not expose DIBuilder::replaceArrays.
+extern "C" LLVMMetadataRef codon_llvm_replace_debug_members(LLVMDIBuilderRef db,
+                                                             LLVMMetadataRef type,
+                                                             LLVMMetadataRef *members,
+                                                             size_t count) {
+  auto *builder = reinterpret_cast<llvm::DIBuilder *>(db);
+  auto *composite = llvm::cast<llvm::DICompositeType>(llvm::unwrap(type));
+  llvm::SmallVector<llvm::Metadata *> elements;
+  for (size_t i = 0; i < count; ++i)
+    elements.push_back(llvm::unwrap(members[i]));
+  builder->replaceArrays(composite, builder->getOrCreateArray(elements));
+  return llvm::wrap(composite);
+}
+
+// Always consumes the context and module, including on failure. The caller
+// must dispose its builder/debug builder before handing the module over.
+extern "C" char *codon_llvm_run(LLVMContextRef ctx, LLVMModuleRef mod, int debug,
+                               int argc, const char *const *argv) {
+  std::unique_ptr<llvm::LLVMContext> context(llvm::unwrap(ctx));
+  std::unique_ptr<llvm::Module> module(llvm::unwrap(mod));
+  Options options;
+  options.debug = debug;
+  try {
+    optimize(module.get(), &options, nullptr);
+    runLLVMModule(module, context, options, nullptr, {argv, argv + argc}, {}, [] {});
+    return nullptr;
+  } catch (const std::exception &error) {
+    return LLVMCreateMessage(error.what());
   }
 }
 

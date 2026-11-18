@@ -18,9 +18,33 @@ The normal debug pipeline registers the same passes in the same order as
 8. Pythonic formatting optimization
 
 The supporting utilities include traversal, cloning, outlining, scheduling,
-intrinsic metadata, and CIR text formatting. LLVM function bodies remain text
-and metadata; `llvisitor` and LLVM emission are not ported. Release/test
-optimization pipelines are outside this port and explicitly unsupported.
+intrinsic metadata, and CIR text formatting. Release/test CIR optimization
+pipelines are outside this port and explicitly unsupported.
+
+## LLVM emission and execution
+
+Build Codon against Exaloop LLVM first. Meister uses `ctypes` to load the
+LLVM-C symbols from that build's `libcodonc`. It does not use a stock LLVM,
+and does not need a separate shared LLVM installation or Python extension.
+
+```sh
+cmake --build build --target codonc --parallel 1
+python -m meister llvm -o /tmp/meister-scratch.ll scratch.codon
+python -m meister run scratch.codon
+```
+
+`llvm` prints verified, unoptimized LLVM IR (stdout if no output file is
+specified). `run` transfers that same module to Codon's native optimizer and
+ORC JIT. Both accept `--library /path/to/libcodonc` before the source filename,
+or use `CODON_LIBRARY`. `run` passes arguments after the filename to the program.
+
+`llvm.py` wraps native handles; `llvisitor.py` implements CIR lowering. Inline
+`@llvm` bodies are parsed and linked into the live module in the same LLVM
+context. This is the first end-to-end slice, verified on `scratch.codon` only.
+Try/except/finally lowering, residual pipeline nodes, DSL plugins, incremental
+JIT cells, and standalone or Python-extension emission are not covered.
+
+## CIR dumps
 
 To dump CIR after the debug pipeline:
 

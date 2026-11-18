@@ -2,6 +2,7 @@
 
 #include "translate.h"
 
+#include <algorithm>
 #include <iterator>
 #include <memory>
 #include <sstream>
@@ -283,7 +284,11 @@ void TranslateVisitor::visit(GeneratorExpr *expr) {
 
   IdVisitor v;
   expr->accept(v);
-  for (auto &i : v.ids) {
+  // Use the same capture order for the private signature and its call, regardless
+  // of the unordered set implementation.
+  std::vector<std::string> captured(v.ids.begin(), v.ids.end());
+  std::sort(captured.begin(), captured.end());
+  for (const auto &i : captured) {
     auto val = ctx->find(i);
     if (val && !val->getFunc() && !val->getType() && !val->getVar()->isGlobal()) {
       types.push_back(val->getVar()->getType());
