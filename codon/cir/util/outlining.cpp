@@ -2,6 +2,7 @@
 
 #include "outlining.h"
 
+#include <algorithm>
 #include <iterator>
 #include <unordered_set>
 #include <utility>
@@ -300,7 +301,17 @@ struct Outliner : public Operator {
     auto shared = getSharedVars();
     shared.insert(globalsToOutline.begin(), globalsToOutline.end());
     auto mod = getModVars();
-    for (auto id : shared) {
+    // Capture order defines the outlined ABI and downstream OpenMP tuple layout.
+    // Names are stable across frontend allocation orders; IDs break local name ties.
+    auto orderedVars = [&](const std::unordered_set<id_t> &vars) {
+      std::vector<id_t> ordered(vars.begin(), vars.end());
+      std::sort(ordered.begin(), ordered.end(), [&](id_t a, id_t b) {
+        return std::tie(M->getVar(a)->getName(), a) <
+               std::tie(M->getVar(b)->getName(), b);
+      });
+      return ordered;
+    };
+    for (auto id : orderedVars(shared)) {
       Var *var = M->getVar(id);
       seqassertn(var, "unknown var id [{}]", var->getSrcInfo());
       remap.emplace_back(var, nullptr);
@@ -331,7 +342,7 @@ struct Outliner : public Operator {
     }
 
     // Make private vars locals of the new function.
-    for (auto id : getPrivateVars()) {
+    for (auto id : orderedVars(getPrivateVars())) {
       Var *var = M->getVar(id);
       seqassertn(var, "unknown var id [{}]", var->getSrcInfo());
       Var *newVar = M->N<Var>(var->getSrcInfo(), var->getType(), /*global=*/false,

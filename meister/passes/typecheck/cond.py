@@ -105,10 +105,9 @@ def typecheck_if(self: TypeVisitor, node: ast.IfStmt) -> ast.Stmt:
     See @c wrapExpr for more details.
     """
 
-    # Call normalization removes generic arguments; retain the isinstance target.
-    # TODO: translation glitch?
+    # Keep the argument cell: normalization replaces its expression before removing generics.
     typ_arg = (
-        node.cond.items[1].value
+        node.cond.items[1]
         if isinstance(node.cond, ast.CallExpr) and len(node.cond.items) > 1
         else None
     )
@@ -155,7 +154,7 @@ def typecheck_if(self: TypeVisitor, node: ast.IfStmt) -> ast.Stmt:
                             ast.AssignStmt(
                                 ast.IdExpr(name),
                                 rhs=ast.CallExpr(
-                                    ast.IdExpr(getter), items=[obj_arg.value, typ_arg]
+                                    ast.IdExpr(getter), items=[obj_arg.value, typ_arg.value]
                                 ),
                             ),
                             node.if_suite,

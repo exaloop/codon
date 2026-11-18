@@ -515,9 +515,8 @@ class Link(Type):
                 case Link(kind=Link.Kind.Unbound, trait=trait) if trait and check(trait):
                     return True
                 case Link(kind=Link.Kind.Unbound, level=level):
-                    if level > self.level:
-                        if undo:
-                            undo.leveled.append((what, level))
+                    if undo is not None and level > self.level:
+                        undo.leveled.append((typ, level))
                         typ.level = self.level
                     return False
                 case Link(kind=Link.Kind.Link, type=type):
@@ -792,8 +791,9 @@ class Class(Type):
         super().__init__(**kwargs)
         if base:
             self.name = base.name
-            self.generics = base.generics
-            self.hidden_generics = base.hidden_generics
+            # C++ copies the Generic values, retaining their shared Type pointers.
+            self.generics = [copy.copy(g) for g in base.generics]
+            self.hidden_generics = [copy.copy(g) for g in base.hidden_generics]
             self.is_tuple = base.is_tuple
             self._cached_name = base._cached_name
         else:

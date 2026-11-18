@@ -1025,11 +1025,9 @@ def transform_ptr(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr | None:
     """
 
     arg = expr.items[0].value = self.visit_expr(expr.items[0].value)
-    head = arg
+    head = utils.get_head_expr(arg)
     while True:
-        try:
-            utils.extract_class_type(self.ctx, head)
-        except (AssertionError, TypeError):
+        if not utils.extract_type(self.ctx, head).cls:
             return None
         if isinstance(head, ast.IdExpr):
             value = self.ctx.find_at(head.value, self.ctx.time)

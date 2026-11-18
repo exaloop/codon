@@ -299,9 +299,9 @@ def transform_for_decorator(self: TypeVisitor, decorator: ast.Expr) -> ast.Expr:
             if str_arg and (arg.name == "openmp" or not arg.name):
                 omp_args = _parse_open_mp(str_arg.get_value(), str_arg.info)
             else:
-                args.append(arg)
-    args += omp_args
-    return self.visit_expr(ast.CallExpr(ast.IdExpr("for_par"), args))
+                args.append(ast.CallExpr.Arg(self.visit_expr(arg.value), name=arg.name))
+    args.extend(ast.CallExpr.Arg(self.visit_expr(arg.value), name=arg.name) for arg in omp_args)
+    return self.visit_expr(ast.CallExpr(self.visit_expr(ast.IdExpr("for_par")), args))
 
 
 def transform_static_for_loop(self: TypeVisitor, stmt: ast.ForStmt):

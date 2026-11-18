@@ -287,7 +287,15 @@ class Outliner(Operator):
         # modified shared variables are pointers.
         shared = self.get_shared_vars() | self.globals_to_outline
         modified = self.get_mod_vars()
-        for identifier in shared:
+
+        # Capture order defines the outlined ABI and downstream OpenMP tuple layout.
+        # Names are stable across frontend allocation orders; IDs break local name ties.
+        def ordered_vars(variables):
+            return sorted(
+                variables, key=lambda identifier: (module.get_var(identifier).name, identifier)
+            )
+
+        for identifier in ordered_vars(shared):
             var = module.get_var(identifier)
             assert var, "unknown var id"
             remap.append((var, None))
@@ -309,7 +317,7 @@ class Outliner(Operator):
         fn.realize(signature, arg_names)
         remap = [(old, arg) for (old, _), arg in zip(remap, fn.args)]
         # Make private variables locals of the new function.
-        for identifier in self.get_private_vars():
+        for identifier in ordered_vars(self.get_private_vars()):
             var = module.get_var(identifier)
             assert var, "unknown var id"
             new = module.n(Var, var.info, var.type, False, False, False, var.name)

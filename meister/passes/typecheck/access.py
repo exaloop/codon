@@ -489,9 +489,7 @@ def get_dispatch(self: TypeVisitor, fn: str) -> ast.types.Function:
 
     # Single overload: just return it
     if len(overloads) == 1:
-        fn_data = utils.get_function(self.ctx, overloads[0])
-        assert fn_data and fn_data.type
-        return fn_data.type
+        return self.ctx[overloads[0]].type.require_func
 
     # Check if dispatch exists
     for method in overloads:

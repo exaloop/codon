@@ -159,15 +159,7 @@ def realize[T](ctx: TypeContext, typ: T, force: bool = False) -> T | None:
         if fn := typ.func:
             if realized := realize_func(ctx, fn, force):
                 # Realize Function[..] type as well
-                class_type = ast.types.Class(
-                    name=realized.name,
-                    generics=list(realized.generics),
-                    hidden_generics=list(realized.hidden_generics),
-                    is_tuple=realized.is_tuple,
-                    _cached_name=realized._cached_name,
-                    cache=realized.cache,
-                    info=realized.info,
-                )
+                class_type = ast.types.Class(base=realized, info=realized.info)
                 realize_type(ctx, class_type)
                 # Needed for return type unification
                 ret_type = fn.ret_type
@@ -344,7 +336,8 @@ def realize_func(
 ) -> ast.types.Function | None:
     fn_data = utils.get_function(ctx, typ)
     assert fn_data
-    imported = utils.get_import_module(ctx, fn_data.module)
+    # Generated dispatchers can have an empty cache module; C++ uses the AST attribute.
+    imported = utils.get_import_module(ctx, typ.ast.get(ast.Attr.Module, str))
     existing = fn_data.realizations.get(typ.realized_name())
     if existing and not force:
         if not existing.ast and not existing.type.ret_type.can_realize():

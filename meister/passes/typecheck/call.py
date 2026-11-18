@@ -107,7 +107,7 @@ def typecheck_call(self: TypeVisitor, node: ast.CallExpr) -> ast.Expr:
     elif callee_fn is None:
         return node
 
-    with utils.with_class_generics(self.ctx, callee_fn, only_mangled=True, instantiate=True):
+    with utils.with_class_generics(self.ctx, callee_fn, func=True, only_mangled=True):
         if not transform_call_args(self, node):
             return node
 
