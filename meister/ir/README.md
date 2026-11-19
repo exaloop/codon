@@ -31,12 +31,20 @@ and does not need a separate shared LLVM installation or Python extension.
 cmake --build build --target codonc --parallel 1
 python -m meister llvm -o /tmp/meister-scratch.ll scratch.codon
 python -m meister run scratch.codon
+python -m meister run -time scratch.codon
 ```
 
 `llvm` prints verified, unoptimized LLVM IR (stdout if no output file is
 specified). `run` transfers that same module to Codon's native optimizer and
 ORC JIT. Both accept `--library /path/to/libcodonc` before the source filename,
 or use `CODON_LIBRARY`. `run` passes arguments after the filename to the program.
+With `-time`, stage wall times and cumulative process peak RSS are reported to
+stderr as stages complete. The main file's parse is reported immediately;
+parse and scope totals from imports and stdlib loading are reported when
+typechecking finishes and are excluded from typecheck time. LLVM optimization, JIT linking, and
+program execution are measured separately. Memory is a process-wide high-water
+mark, not memory allocated exclusively by a stage. Process termination such as
+`sys.exit` can prevent the final execution timing from being reported.
 For Codon programs that import Python, set `CODON_PYTHON` to the CPython shared
 library, as with native Codon.
 

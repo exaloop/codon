@@ -3,6 +3,7 @@
 
 from ctypes import (
     CDLL,
+    CFUNCTYPE,
     POINTER,
     RTLD_GLOBAL,
     PyDLL,
@@ -391,20 +392,29 @@ class Module:
             self._pointer = None
         self.context.close()
 
-    def run(self, args, *, debug):
+    def run(self, args, *, debug, on_stage=None):
         """Run through Codon's optimizer and ORC, transferring LLVM ownership."""
         argv = (S * len(args))(*map(fsencode, args))
         # Codon can import Python through the runtime. If it opens the host
         # interpreter, Py_Initialize is a no-op and the current thread must
         # still hold the GIL when generated code calls the Python C API.
-        run = self.lib.codon_function("run", P, P, P, I, I, POINTER(S), keep_gil=True)
+        callback = None
+        if on_stage is None:
+            run = self.lib.codon_function("run", P, P, P, I, I, POINTER(S), keep_gil=True)
+        else:
+            callback_type = CFUNCTYPE(None, I)
+            callback = callback_type(on_stage)
+            run = self.lib.codon_function(
+                "run_timed", P, P, P, I, I, POINTER(S), callback_type, keep_gil=True
+            )
         mod, ctx = self._as_parameter_, self.context._as_parameter_
         if self.debug_builder:
             self.debug_builder.finalize()
             self.debug_builder.close()
         self.lib.function("DisposeBuilder", None, P)(self.builder)
         self._pointer = self.context._pointer = None
-        error = self.lib.message(run(ctx, mod, debug, len(argv), argv))
+        arguments = (ctx, mod, debug, len(argv), argv)
+        error = self.lib.message(run(*arguments, callback) if callback else run(*arguments))
         if error:
             raise LLVMError(error)
 

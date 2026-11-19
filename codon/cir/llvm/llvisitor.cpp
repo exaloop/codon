@@ -1265,7 +1265,8 @@ void runLLVMModule(std::unique_ptr<llvm::Module> &M,
                    std::unique_ptr<llvm::LLVMContext> &context, const Options &options,
                    PluginManager *plugins, const std::vector<std::string> &args,
                    const std::vector<std::string> &libs,
-                   llvm::function_ref<void()> afterTransfer) {
+                   llvm::function_ref<void()> afterTransfer,
+                   llvm::function_ref<void()> beforeExecution = [] {}) {
   Timer t1("llvm/jitlink");
   if (plugins) {
     if (auto error = plugins->loadRuntimeLibraries())
@@ -1323,6 +1324,7 @@ void runLLVMModule(std::unique_ptr<llvm::Module> &M,
   t1.log();
 
   try {
+    beforeExecution();
     llvm::cantFail(epc->runAsMain(mainAddr, args));
   } catch (const runtime::JITError &e) {
     fmt::print(stderr, "{}\n", e.getOutput());
@@ -1376,6 +1378,27 @@ extern "C" char *codon_llvm_run(LLVMContextRef ctx, LLVMModuleRef mod, int debug
   try {
     optimize(module.get(), &options, nullptr);
     runLLVMModule(module, context, options, nullptr, {argv, argv + argc}, {}, [] {});
+    return nullptr;
+  } catch (const std::exception &error) {
+    return LLVMCreateMessage(error.what());
+  }
+}
+
+// Report boundaries from the native pipeline without moving LLVM ownership
+// between separately linked libraries. Callback 0: LLVM passes complete;
+// callback 1: JIT linking complete, immediately before entering main.
+extern "C" char *codon_llvm_run_timed(LLVMContextRef ctx, LLVMModuleRef mod, int debug,
+                                     int argc, const char *const *argv,
+                                     void (*stage)(int)) {
+  std::unique_ptr<llvm::LLVMContext> context(llvm::unwrap(ctx));
+  std::unique_ptr<llvm::Module> module(llvm::unwrap(mod));
+  Options options;
+  options.debug = debug;
+  try {
+    optimize(module.get(), &options, nullptr);
+    stage(0);
+    runLLVMModule(module, context, options, nullptr, {argv, argv + argc}, {}, [] {},
+                  [stage] { stage(1); });
     return nullptr;
   } catch (const std::exception &error) {
     return LLVMCreateMessage(error.what());

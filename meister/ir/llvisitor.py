@@ -768,6 +768,11 @@ class LLVMVisitor(ConstVisitor):
         return self.string_literal(node.val)
 
     def string_literal(self, text):
+        # The parser keeps the original UTF-8 bytes with surrogateescape.
+        # Codon's str decoder accepts UTF-8 encodings of surrogate code points
+        # (e.g. a source literal of "\\ud800"), as distinct from raw bytes.
+        if not text.isascii():
+            text = text.encode("utf-8", "surrogateescape").decode("utf-8", "surrogatepass")
         points = list(map(ord, text))
         max_char = max(points, default=0)
         kind, typ = (
