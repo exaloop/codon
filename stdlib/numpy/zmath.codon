@@ -89,6 +89,9 @@ def exp(z):
         pass
 
     if isinstance(z, complex):
+        # UCRT's complex ABI differs from the Unix pair-of-scalars ABI.
+        if __windows__:
+            return _exp_impl(z)
         return cexp(z.real, z.imag)
     elif isinstance(z, complex64):
         o = complex64()
@@ -156,6 +159,9 @@ def log(z):
         pass
 
     if isinstance(z, complex):
+        # UCRT's complex ABI differs from the Unix pair-of-scalars ABI.
+        if __windows__:
+            return _log_impl(z)
         return clog(z.real, z.imag)
     elif isinstance(z, complex64):
         o = complex64()
@@ -210,6 +216,9 @@ def sqrt(z):
         pass
 
     if isinstance(z, complex):
+        # UCRT's complex ABI differs from the Unix pair-of-scalars ABI.
+        if __windows__:
+            return _sqrt_impl(z)
         return csqrt(z.real, z.imag)
     elif isinstance(z, complex64):
         o = complex64()
@@ -273,6 +282,9 @@ def cosh(z):
         pass
 
     if isinstance(z, complex):
+        # UCRT's complex ABI differs from the Unix pair-of-scalars ABI.
+        if __windows__:
+            return _cosh_impl(z)
         return ccosh(z.real, z.imag)
     elif isinstance(z, complex64):
         o = complex64()
@@ -338,6 +350,9 @@ def sinh(z):
         pass
 
     if isinstance(z, complex):
+        # UCRT's complex ABI differs from the Unix pair-of-scalars ABI.
+        if __windows__:
+            return _sinh_impl(z)
         return csinh(z.real, z.imag)
     elif isinstance(z, complex64):
         o = complex64()
@@ -406,6 +421,9 @@ def tanh(z):
         pass
 
     if isinstance(z, complex):
+        # UCRT's complex ABI differs from the Unix pair-of-scalars ABI.
+        if __windows__:
+            return _tanh_impl(z)
         return ctanh(z.real, z.imag)
     elif isinstance(z, complex64):
         o = complex64()
@@ -569,6 +587,9 @@ def acos(z):
         pass
 
     if isinstance(z, complex):
+        # UCRT's complex ABI differs from the Unix pair-of-scalars ABI.
+        if __windows__:
+            return _acos_impl(z)
         return cacos(z.real, z.imag)
     elif isinstance(z, complex64):
         o = complex64()
@@ -651,6 +672,9 @@ def acosh(z):
         pass
 
     if isinstance(z, complex):
+        # UCRT's complex ABI differs from the Unix pair-of-scalars ABI.
+        if __windows__:
+            return _acosh_impl(z)
         return cacosh(z.real, z.imag)
     elif isinstance(z, complex64):
         o = complex64()
@@ -695,6 +719,9 @@ def asinh(z):
         pass
 
     if isinstance(z, complex):
+        # UCRT's complex ABI differs from the Unix pair-of-scalars ABI.
+        if __windows__:
+            return _asinh_impl(z)
         return casinh(z.real, z.imag)
     elif isinstance(z, complex64):
         o = complex64()
@@ -863,6 +890,9 @@ def atanh(z):
         pass
 
     if isinstance(z, complex):
+        # UCRT's complex ABI differs from the Unix pair-of-scalars ABI.
+        if __windows__:
+            return _atanh_impl(z)
         return catanh(z.real, z.imag)
     elif isinstance(z, complex64):
         o = complex64()
@@ -934,6 +964,9 @@ def asin(z):
         pass
 
     if isinstance(z, complex):
+        # UCRT's complex ABI differs from the Unix pair-of-scalars ABI.
+        if __windows__:
+            return _asin_impl(z)
         return casin(z.real, z.imag)
     elif isinstance(z, complex64):
         o = complex64()
@@ -958,6 +991,9 @@ def atan(z):
         pass
 
     if isinstance(z, complex):
+        # UCRT's complex ABI differs from the Unix pair-of-scalars ABI.
+        if __windows__:
+            return _atan_impl(z)
         return catan(z.real, z.imag)
     elif isinstance(z, complex64):
         o = complex64()
@@ -982,6 +1018,9 @@ def cos(z):
         pass
 
     if isinstance(z, complex):
+        # UCRT's complex ABI differs from the Unix pair-of-scalars ABI.
+        if __windows__:
+            return _cos_impl(z)
         return ccos(z.real, z.imag)
     elif isinstance(z, complex64):
         o = complex64()
@@ -1005,6 +1044,9 @@ def sin(z):
         pass
 
     if isinstance(z, complex):
+        # UCRT's complex ABI differs from the Unix pair-of-scalars ABI.
+        if __windows__:
+            return _sin_impl(z)
         return csin(z.real, z.imag)
     elif isinstance(z, complex64):
         o = complex64()
@@ -1029,6 +1071,9 @@ def tan(z):
         pass
 
     if isinstance(z, complex):
+        # UCRT's complex ABI differs from the Unix pair-of-scalars ABI.
+        if __windows__:
+            return _tan_impl(z)
         return ctan(z.real, z.imag)
     elif isinstance(z, complex64):
         o = complex64()

@@ -64,19 +64,26 @@ class BuildCodonExt(build_ext):
 
         optimization = '-debug' if self.debug else '-release'
         self.spawn([
-            str(codon_path / "bin" / "codon"), 'build', optimization, "--relocation-model=pic",
+            str(codon_path / "bin" / ("codon.exe" if os.name == "nt" else "codon")), 'build', optimization, "--relocation-model=pic",
             '-pyext', '-o', str(extension_path) + ".o", '-module', ext.name, ext.source])
 
         print('-->', extension_path)
-        ext.runtime_library_dirs = [str(codon_path / "lib" / "codon")]
+        library_dirs = [str(codon_path / "lib" / "codon")]
+        libraries = ["codonrt"]
+        if os.name == "nt":
+            # LLVM objects do not contain MSVC's implicit CRT link directives.
+            libraries += ["libomp", "libopenblas", "msvcrt", "vcruntime", "ucrt",
+                          "oldnames", "legacy_stdio_definitions",
+                          f"python{sys.version_info.major}{sys.version_info.minor}"]
+        ext.runtime_library_dirs = [] if os.name == "nt" else library_dirs
         self.compiler.link_shared_object(
             [str(extension_path) + ".o"],
             str(extension_path),
-            libraries=["codonrt"],
-            library_dirs=ext.runtime_library_dirs,
+            libraries=libraries,
+            library_dirs=library_dirs + ([str(Path(sys.base_prefix) / "libs")] if os.name == "nt" else []),
             runtime_library_dirs=ext.runtime_library_dirs,
-            extra_preargs=['-Wl,-rpath,@loader_path'],
-            # export_symbols=self.get_export_symbols(ext),
+            extra_preargs=[] if os.name == "nt" else ['-Wl,-rpath,@loader_path'],
+            export_symbols=[f"PyInit_{ext.name}"],
             debug=self.debug,
             build_temp=self.build_temp,
         )

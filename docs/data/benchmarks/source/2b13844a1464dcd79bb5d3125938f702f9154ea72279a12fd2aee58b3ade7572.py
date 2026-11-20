@@ -1,0 +1,69 @@
+import numpy as np
+import sys
+import time
+import gc
+import importlib.util
+import resource
+import json
+from threadpoolctl import threadpool_info, threadpool_limits
+thread_limits = threadpool_limits(limits=1)
+spec = importlib.util.spec_from_file_location('kernel_module', '$BENCH_WORK/npbench-final/hdiff/python/kernel.py')
+kernel_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(kernel_module)
+directory = sys.argv[1]
+samples = int(sys.argv[2])
+original_in_field = np.load(directory + '/input-in_field.npy')
+in_field = np.empty_like(original_in_field)
+np.copyto(in_field, original_in_field)
+original_out_field = np.load(directory + '/input-out_field.npy')
+out_field = np.empty_like(original_out_field)
+np.copyto(out_field, original_out_field)
+original_coeff = np.load(directory + '/input-coeff.npy')
+coeff = np.empty_like(original_coeff)
+np.copyto(coeff, original_coeff)
+with open('/proc/self/smaps_rollup') as memory_status:
+    for record in memory_status:
+        if record.startswith('AnonHugePages:'):
+            print('BENCH_HUGEPAGES_KIB', int(record.split()[1]))
+
+def emit(value, filename):
+    if value is None:
+        return
+    if isinstance(value, tuple):
+        for index, item in enumerate(value):
+            emit(item, filename + '_' + str(index))
+    else:
+        np.save(filename, np.asarray(value))
+
+def sample(in_field, out_field, coeff):
+    started = time.perf_counter()
+    result = kernel_module.hdiff(in_field, out_field, coeff)
+    elapsed = time.perf_counter() - started
+    emit(out_field, directory + '/output-out_field')
+    return elapsed
+
+if samples == 0:
+    gc.collect()
+    rss_before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    address_in_field = in_field.ctypes.data
+    address_out_field = out_field.ctypes.data
+    address_coeff = coeff.ctypes.data
+    for iteration in range(32):
+        np.copyto(in_field, original_in_field)
+        assert in_field.ctypes.data == address_in_field
+        np.copyto(out_field, original_out_field)
+        assert out_field.ctypes.data == address_out_field
+        np.copyto(coeff, original_coeff)
+        assert coeff.ctypes.data == address_coeff
+    rss_growth = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - rss_before
+    print('BENCH_MEMORY_RSS', rss_growth)
+else:
+    for iteration in range(samples + 1):
+        gc.collect()
+        np.copyto(in_field, original_in_field)
+        np.copyto(out_field, original_out_field)
+        np.copyto(coeff, original_coeff)
+        elapsed = sample(in_field, out_field, coeff)
+        if iteration > 0:
+            print('BENCH_TIME', elapsed)
+    print('BENCH_RUNTIME', json.dumps(threadpool_info()))

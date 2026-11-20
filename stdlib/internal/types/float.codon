@@ -407,12 +407,11 @@ class float:
         HASH_INF = 314159
         HASH_NAN = 0
         INF = (1.0).cdiv(0.0)
-        NAN = (0.0).cdiv(0.0)
         v = self
 
         if v == INF or v == -INF:
             return HASH_INF if v > 0 else -HASH_INF
-        if v == NAN:
+        if v != v:
             return HASH_NAN
 
         _e = i32(0)

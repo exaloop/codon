@@ -1125,14 +1125,21 @@ def test_omp_ordered(N: int = 1000):
 @test
 def test_threadlocal():
     x: thr.ThreadLocal[int] = 42
+    values: thr.ThreadLocal[List[int]] = []
 
     @par
     for i in range(omp.get_num_threads()):
         x = i**2
+        values = [i, i + 1]
+
+    # Values kept only in TLS must remain visible to the garbage collector.
+    from C import GC_gcollect()
+    GC_gcollect()
 
     @par
     for i in range(omp.get_num_threads()):
         assert x == i**2
+        assert values == [i, i + 1]
 
 test_omp_api()
 test_omp_schedules()

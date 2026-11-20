@@ -652,7 +652,7 @@ def call(f: CallableTrait[[int,int],str]):
     print(f(1, 2))
 def foo(a: int, *b: int, **kw): return f"{a}_{b}_{kw}"
 call(foo(zzz=1.1, ...))
-#: 1_(2,)_(zzz: 1.1)
+#: 1_(2,)_{'zzz': 1.1}
 
 #%% traits_error,barebones
 def t[T](x: T, key: Optional[CallableTrait[[T], S]] = None, S: type = NoneType):

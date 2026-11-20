@@ -17,7 +17,7 @@ namespace pythonic {
 /// for-loops.
 class GeneratorArgumentOptimization : public OperatorPass {
 public:
-  static const std::string KEY;
+  static CODON_API const std::string KEY;
   std::string getKey() const override { return KEY; }
   void handle(CallInstr *v) override;
 };
@@ -27,7 +27,7 @@ class GeneratorLoopFusion : public OperatorPass {
   std::unordered_map<id_t, int> growth;
 
 public:
-  static const std::string KEY;
+  static CODON_API const std::string KEY;
   std::string getKey() const override { return KEY; }
   void run(Module *module) override {
     wrappers.clear();

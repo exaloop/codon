@@ -17,7 +17,7 @@ namespace codon {
 namespace ir {
 namespace transform {
 namespace numpy {
-extern const std::string FUSION_MODULE;
+extern CODON_API const std::string FUSION_MODULE;
 
 class NumPyPass : public OperatorPass {
 public:
@@ -29,7 +29,7 @@ class NumPyExpressionAnalysis : public analyze::Analysis {
   std::string sideEffectsKey;
 
 public:
-  static const std::string KEY;
+  static CODON_API const std::string KEY;
   NumPyExpressionAnalysis(const std::string &reachingDefKey,
                           const std::string &sideEffectsKey)
       : reachingDefKey(reachingDefKey), sideEffectsKey(sideEffectsKey) {}
@@ -41,7 +41,7 @@ class NumPyInlinePass : public NumPyPass {
   std::string expressionsKey;
 
 public:
-  static const std::string KEY;
+  static CODON_API const std::string KEY;
   explicit NumPyInlinePass(const std::string &expressionsKey)
       : expressionsKey(expressionsKey) {}
   std::string getKey() const override { return KEY; }
@@ -56,7 +56,7 @@ private:
   std::string sideEffectsKey;
 
 public:
-  static const std::string KEY;
+  static CODON_API const std::string KEY;
 
   /// Constructs a NumPy fusion pass.
   /// @param expressionsKey the expression analysis' key
@@ -73,7 +73,7 @@ class NumPyLifetimePass : public NumPyPass {
   std::string reachingDefKey;
 
 public:
-  static const std::string KEY;
+  static CODON_API const std::string KEY;
   explicit NumPyLifetimePass(const std::string &reachingDefKey)
       : reachingDefKey(reachingDefKey) {}
   std::string getKey() const override { return KEY; }

@@ -673,7 +673,7 @@ SuiteStmt *TypecheckVisitor::generateUnionDispatchAST(FuncType *type) {
   auto suite = clone(getFunction(type->getFuncName())->ast->getSuite());
 
   bool isCall = extractFuncArgType(type, 1)->is(StdlibTypes::Tuple) &&
-                extractFuncArgType(type, 2)->is(StdlibTypes::NamedTuple);
+                extractFuncArgType(type, 2)->is(StdlibTypes::FixedDict);
   std::vector<std::pair<std::string, Type *>> arguments;
   if (isCall) {
     for (auto &generic : extractFuncArgType(type, 1)->getClass()->generics)
@@ -888,7 +888,8 @@ SuiteStmt *TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
              isHeterogenous(extractFuncArgType(type, 0))) {
     // Special case: do not realize auto-generated heterogenous __getitem__
     E(Error::EXPECTED_TYPE, getSrcInfo(), "iterable");
-  } else if (startswith(ast->name, "Function.__call_internal__")) {
+  } else if (startswith(ast->name, "Function.__call_internal__") ||
+             startswith(ast->name, getMangledFunc("std.internal.dlopen", "_call_c"))) {
     return generateFunctionCallInternalAST(type);
   } else if (startswith(ast->name, "Union.__new__")) {
     return generateUnionNewAST(type);
@@ -900,7 +901,7 @@ SuiteStmt *TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     return generateUnionIteratorAST(type);
   } else if (startswith(ast->name, getMangledMethod("", "Union", "_binary"))) {
     return generateUnionBinaryAST(type);
-  } else if (startswith(ast->name, getMangledMethod("", "NamedTuple", "_namedkeys"))) {
+  } else if (startswith(ast->name, getMangledMethod("", "FixedDict", "_keys"))) {
     return generateNamedKeysAST(type);
   } else if (startswith(ast->name, getMangledMethod("", "__magic__", "mul"))) {
     return generateTupleMulAST(type);
@@ -961,11 +962,36 @@ Expr *TypecheckVisitor::transformNamedTuple(CallExpr *expr) {
 /// @example
 ///   `partial(foo, 1, a=2)` -> `foo(1, a=2, ...)`
 Expr *TypecheckVisitor::transformFunctoolsPartial(CallExpr *expr) {
-  if (expr->empty())
+  auto arguments = expr->items;
+  std::vector<Stmt *> prepends;
+  // Unpack only the prefix to find the proper target.
+  // Remaining arguments must keep their context / eval order
+  while (!arguments.empty() && cast<StarExpr>(arguments.front().getExpr())) {
+    auto *prefix =
+        N<CallExpr>(expr->getExpr(), std::vector<CallArg>{arguments.front()});
+    PartialCallData part;
+    if (!transformCallArgs(prefix, part))
+      return nullptr;
+    arguments.erase(arguments.begin());
+    arguments.insert(arguments.begin(), prefix->items.begin(), prefix->items.end());
+    for (auto &[position, value] : part.emptyExpansions)
+      prepends.push_back(N<ExprStmt>(value));
+  }
+  if (arguments.empty())
     E(Error::CALL_PARTIAL, getSrcInfo());
-  std::vector<CallArg> args(expr->items.begin() + 1, expr->items.end());
+  std::vector<CallArg> args(arguments.begin() + 1, arguments.end());
   args.emplace_back("", N<EllipsisExpr>(EllipsisExpr::PARTIAL));
-  return transform(N<CallExpr>(expr->begin()->value, args));
+  Expr *target = arguments.front().value;
+  if (hasSideEffect(target)) {
+    auto name = getTemporaryVar("partial_fn");
+    prepends.push_back(
+        N<AssignStmt>(N<IdExpr>(name), target, getParamType(target->getType())));
+    target = N<IdExpr>(name);
+  }
+  Expr *call = N<CallExpr>(target, args);
+  if (!prepends.empty())
+    call = N<StmtExpr>(prepends, call);
+  return transform(call);
 }
 
 /// Typecheck superf method. This method provides the access to the previous matching
@@ -1247,7 +1273,7 @@ Expr *TypecheckVisitor::transformHasAttr(CallExpr *expr, bool allow_dynamic) {
       args.emplace_back("", t->is(StdlibTypes::TypeWrap) ? extractClassGeneric(t) : t);
     }
   }
-  for (auto &[n, ne] : extractNamedTuple((*expr)[2].getExpr())) {
+  for (auto &[n, ne] : extractRecord((*expr)[2].getExpr())) {
     ne = transform(ne);
     auto t = extractType(ne);
     args.emplace_back(n, t->is(StdlibTypes::TypeWrap) ? extractClassGeneric(t) : t);
@@ -1269,13 +1295,6 @@ Expr *TypecheckVisitor::transformHasAttr(CallExpr *expr, bool allow_dynamic) {
     if (!cond)
       return transform(N<BoolExpr>(false));
     return transform(cond);
-  } else if (typ->is(StdlibTypes::NamedTuple)) {
-    if (!typ->canRealize())
-      return nullptr;
-    auto id = getIntLiteral(typ);
-    seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}", id);
-    const auto &names = ctx->cache->generatedTupleNames[id];
-    return transform(N<BoolExpr>(in(names, attr)));
   }
 
   // enum_test: __members__ is an ordinary ClassVar, so hasattr must include
@@ -1360,6 +1379,11 @@ Expr *TypecheckVisitor::transformTupleFn(CallExpr *expr) {
   auto cls = extractClassType(expr->begin()->getExpr()->getType());
   if (!cls)
     return nullptr;
+
+  if (!isTypeExpr(expr->begin()->getExpr())) {
+    if (cls->is(getMangledClass("", "FixedDict")))
+      return transform(N<CallExpr>(N<DotExpr>(expr->begin()->getExpr(), "keys")));
+  }
 
   // tuple(ClassType) is a tuple type that corresponds to a class
   if (isTypeExpr(expr->begin()->getExpr())) {
@@ -1766,7 +1790,7 @@ SuiteStmt *TypecheckVisitor::generateSuperDispatchAST(FuncType *type) {
   auto suite = clone(getFunction(type->getFuncName())->ast->getSuite());
 
   seqassert(extractFuncArgType(type, 1)->is(StdlibTypes::Tuple) &&
-                extractFuncArgType(type, 2)->is(StdlibTypes::NamedTuple),
+                extractFuncArgType(type, 2)->is(StdlibTypes::FixedDict),
             "invalid arguments");
   std::vector<CallArg> callArgs;
   callArgs.emplace_back("", N<NoneExpr>());

@@ -65,7 +65,8 @@ public:
             int testFlags = 0,
             const std::unordered_map<std::string, std::string> &defines = {});
   llvm::Error compile();
-  llvm::Expected<std::string> docgen(const std::vector<std::string> &files);
+  llvm::Expected<std::string> docgen(const std::vector<std::string> &files,
+                                     const std::string &moduleRoot = "");
 
   std::unordered_map<std::string, std::string> getEarlyDefines();
 };

@@ -16,7 +16,7 @@ class DevirtualizationPass : public Pass {
   std::string reachingKey;
 
 public:
-  static const std::string KEY;
+  static CODON_API const std::string KEY;
 
   /// @param reachingKey the module's reaching-definition analysis key
   explicit DevirtualizationPass(std::string reachingKey)

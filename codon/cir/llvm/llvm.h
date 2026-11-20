@@ -35,7 +35,9 @@
 #include "llvm/ExecutionEngine/JITLink/JITLinkDylib.h"
 #include "llvm/ExecutionEngine/JITLink/JITLinkMemoryManager.h"
 #include "llvm/ExecutionEngine/JITSymbol.h"
+#if !defined(_WIN32) || defined(CODON_COMPILER_BUILD)
 #include "llvm/ExecutionEngine/MCJIT.h"
+#endif
 #include "llvm/ExecutionEngine/Orc/CompileOnDemandLayer.h"
 #include "llvm/ExecutionEngine/Orc/CompileUtils.h"
 #include "llvm/ExecutionEngine/Orc/Core.h"
@@ -54,6 +56,7 @@
 #include "llvm/ExecutionEngine/Orc/JITTargetMachineBuilder.h"
 #include "llvm/ExecutionEngine/Orc/LLJIT.h"
 #include "llvm/ExecutionEngine/Orc/MachOPlatform.h"
+#include "llvm/ExecutionEngine/Orc/ObjectLinkingLayer.h"
 #include "llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h"
 #include "llvm/ExecutionEngine/Orc/Shared/AllocationActions.h"
 #include "llvm/ExecutionEngine/Orc/Shared/ExecutorAddress.h"
@@ -86,8 +89,13 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/InitializePasses.h"
+// These headers instantiate tool-only static initializers that force all LLVM
+// archives into the host compiler. A Windows SDK plugin must use that host's
+// registries instead of pulling a second LLVM implementation into its DLL.
+#if !defined(_WIN32) || defined(CODON_COMPILER_BUILD)
 #include "llvm/LinkAllIR.h"
 #include "llvm/LinkAllPasses.h"
+#endif
 #include "llvm/Linker/Linker.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Passes/PassBuilder.h"
@@ -109,6 +117,7 @@
 #include "llvm/Support/Program.h"
 #include "llvm/Support/RecyclingAllocator.h"
 #include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/StringSaver.h"
 #include "llvm/Support/SystemUtils.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ToolOutputFile.h"

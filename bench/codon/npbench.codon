@@ -553,7 +553,7 @@ def syrk(M, N, datatype=np.float64):
     A = np.fromfunction(lambda i, j: ((i * j + 1) % N) / N, (N, M),
                         dtype=datatype)
     return alpha, beta, C, A
-run(bench.syr2k, syr2k, M=1000, N=1200)
+run(bench.syrk, syrk, M=1000, N=1200)
 
 
 def trisolv(N, datatype=np.float64):

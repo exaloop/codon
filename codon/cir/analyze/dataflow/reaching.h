@@ -104,7 +104,7 @@ private:
   std::string cfAnalysisKey;
 
 public:
-  static const std::string KEY;
+  static CODON_API const std::string KEY;
 
   /// Initializes a reaching definition analysis.
   /// @param cfAnalysisKey the control-flow analysis key

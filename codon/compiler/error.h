@@ -10,6 +10,16 @@
 #include "codon/parser/ast/error.h"
 #include <fmt/format.h>
 
+#if defined(_WIN32)
+#if defined(CODON_COMPILER_BUILD)
+#define CODON_API __declspec(dllexport)
+#else
+#define CODON_API __declspec(dllimport)
+#endif
+#else
+#define CODON_API
+#endif
+
 template <>
 struct fmt::formatter<codon::SourceFile> : fmt::formatter<std::string_view> {
   template <typename Context>
@@ -128,7 +138,7 @@ class ParserErrorInfo : public llvm::ErrorInfo<ParserErrorInfo> {
   ParserErrors errors;
 
 public:
-  static char ID;
+  static CODON_API char ID;
 
   explicit ParserErrorInfo(const ErrorMessage &msg) : errors(msg) {}
   explicit ParserErrorInfo(const std::vector<ErrorMessage> &msgs) : errors(msgs) {}
@@ -189,7 +199,7 @@ public:
     return llvm::inconvertibleErrorCode();
   }
 
-  static char ID;
+  static CODON_API char ID;
 };
 
 class PluginErrorInfo : public llvm::ErrorInfo<PluginErrorInfo> {
@@ -207,7 +217,7 @@ public:
     return llvm::inconvertibleErrorCode();
   }
 
-  static char ID;
+  static CODON_API char ID;
 };
 
 class IOErrorInfo : public llvm::ErrorInfo<IOErrorInfo> {
@@ -225,7 +235,7 @@ public:
     return llvm::inconvertibleErrorCode();
   }
 
-  static char ID;
+  static CODON_API char ID;
 };
 
 template <class... TA> std::string Eformat(const TA &...args) { return ""; }

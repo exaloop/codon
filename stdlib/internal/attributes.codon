@@ -37,6 +37,10 @@ def llvm_nofree():
     pass
 
 @__attribute__
+def llvm_c_call():
+    pass
+
+@__attribute__
 def nocapture():
     pass
 

@@ -1765,7 +1765,12 @@ def test_expm1():
     assert np.expm1(-2 * np.pi) == -0.998132557268292
     assert np.expm1(2 * np.pi) == 534.4916555247646
     assert np.isclose(np.expm1(0 + 1.5j), -0.929262798332297 + 0.9974949866040544j)
-    assert np.expm1(1.5 + 1j) == (1.4214669388876962 + 3.771211315620157j)
+    expected = 1.4214669388876962 + 3.771211315620157j
+    actual = np.expm1(1.5 + 1j)
+    # UCRT and Unix libm can round the last bit differently. Check each
+    # component within one representable step, including cancellation in real.
+    assert abs(actual.real - expected.real) <= np.spacing(expected.real)
+    assert abs(actual.imag - expected.imag) <= np.spacing(expected.imag)
 
 test_expm1()
 

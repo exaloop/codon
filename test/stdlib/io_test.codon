@@ -1,5 +1,6 @@
 import gzip
 import bz2
+import os
 import sys
 from internal.types.str import (
     _encoding_matches,
@@ -18,7 +19,7 @@ from internal.file import (
 from C import remove(cobj) -> i32
 
 FIXTURE = "test/stdlib/data/io_fixture.txt"
-PREFIX = "build/io-test"
+PREFIX = "build/io-test-" + str(os.getpid())
 
 
 def _latin1_value() -> str:
@@ -227,7 +228,7 @@ def test_regular_file_basics():
         assert reader.read() == "alpha\nbeta\ngamma\n"
 
     path = PREFIX + "-basic.txt"
-    writer = open(path, "w")
+    writer = open(path, "w", newline="\n")
     assert writer.write("alpha\nbeta\ngamma\n") == 17
     writer.flush()
     assert writer.seekable()
@@ -1748,6 +1749,10 @@ def test_compressed_modes_and_closed_errors():
         assert reader.seek(0, 2) == 6
         assert reader.read() == ""
 
+    # Windows treats /dev/full as a regular path on the current drive. It can
+    # open successfully when that directory exists, without failing on close.
+    if sys.platform == "win32":
+        return
     try:
         failed_writer = bz2.open("/dev/full", "wb")
     except IOError:

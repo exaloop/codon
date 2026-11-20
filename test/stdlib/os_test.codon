@@ -169,7 +169,7 @@ def test_environment():
         if static.platform() == "win32":
             os.environ[key.lower()] = "case-insensitive"
             assert os.environ[key] == "case-insensitive"
-            assert key in os.environ.keys()
+            assert key in list(os.environ.keys())
             assert key.lower() not in list(os.environ)
             assert path.expandvars("%" + key.lower() + "%") == "case-insensitive"
         del os.environ[key]

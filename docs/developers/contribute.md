@@ -1,3 +1,7 @@
+---
+title: Contribute
+---
+
 Thank you for considering contributing to Codon! This page contains some helpful information for getting started.
 The best place to ask questions or get feedback is [our Discord](https://discord.gg/HeWRhagCmP).
 

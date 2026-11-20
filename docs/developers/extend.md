@@ -1,3 +1,7 @@
+---
+title: Extend Codon
+---
+
 Codon supports plugins that can be loaded dynamically. Plugins can
 contain IR passes that can be inserted into the Codon IR pass pipeline,
 as well as LLVM passes to be used during backend code generation.

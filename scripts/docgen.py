@@ -1,6 +1,7 @@
-# Generates API reference for Codon standard library
+# Generates API references from codon doc output
 # See CI workflow for usage
 
+import argparse
 import collections
 import html
 import json
@@ -11,14 +12,12 @@ import markdown
 import textwrap
 
 from pathlib import Path
-from importlib.resources import files
+from urllib.parse import quote, urlsplit
 
 
 # =============================================================================
 # Configuration
 # =============================================================================
-
-GITHUB_STDLIB_URL = "https://github.com/exaloop/codon/blob/master/stdlib"
 
 TAG_TOOLTIPS = {
     "llvm": "Implemented with inline LLVM IR",
@@ -49,19 +48,53 @@ TAG_TOOLTIPS = {
 # Input
 # =============================================================================
 
-if len(sys.argv) < 4:
-    raise SystemExit(
-        "usage: generate_api.py API.json OUTPUT_DIR ROOT [ROOT ...]"
-    )
-
-json_path = os.path.abspath(sys.argv[1])
-out_path = os.path.abspath(sys.argv[2])
-roots = [os.path.abspath(root) for root in sys.argv[3:]]
+parser = argparse.ArgumentParser(description="Render Codon API JSON as Docusaurus pages")
+parser.add_argument("input", help="JSON produced by codon doc")
+parser.add_argument("output", help="Generated API directory")
+parser.add_argument("roots", nargs="*", help="Source roots (required for legacy JSON)")
+parser.add_argument("--project", help="Project display name")
+parser.add_argument("--route", help="API route prefix")
+parser.add_argument("--source-url", help="Source URL prefix; may contain {revision}")
+parser.add_argument("--source-revision", default="main")
+parser.add_argument("--sidebar", help="Docusaurus sidebar identifier")
+parser.add_argument("--stdlib", action="store_true", help="Apply Codon stdlib presentation rules")
+options = parser.parse_args()
+PROJECT = options.project or ("Standard Library" if options.stdlib else "Library")
+API_ROUTE = (options.route or ("/libraries/api" if options.stdlib else "/api")).rstrip("/")
+if not API_ROUTE.startswith("/") or any(
+    part in {".", ".."} or not re.fullmatch(r"[A-Za-z0-9_.-]+", part)
+    for part in API_ROUTE[1:].split("/")
+):
+    parser.error("--route must be an absolute URL path without query or fragment")
+SOURCE_URL = options.source_url
+if SOURCE_URL is None and options.stdlib:
+    SOURCE_URL = "https://github.com/exaloop/codon/blob/master/stdlib"
+if SOURCE_URL:
+    SOURCE_URL = SOURCE_URL.replace("{revision}", quote(options.source_revision, safe=""))
+    if urlsplit(SOURCE_URL).scheme not in {"http", "https"} or not urlsplit(SOURCE_URL).netloc:
+        parser.error("--source-url must be an HTTP(S) URL")
+SIDEBAR = options.sidebar or ("docs" if options.stdlib else None)
+json_path = os.path.abspath(options.input)
+out_path = os.path.abspath(options.output)
+roots = [str(Path(root).resolve()) for root in options.roots]
 
 print(f"Generating documentation for {json_path} ...")
 
 with open(json_path) as f:
-    j = json.load(f)
+    document = json.load(f)
+
+if "schema_version" in document:
+    if document["schema_version"] != 2:
+        raise SystemExit(f"unsupported API schema: {document['schema_version']}")
+    j = document["symbols"]
+else:
+    j = document
+
+if not roots:
+    if document.get("module_root"):
+        roots = [document["module_root"]]
+    else:
+        parser.error("legacy documentation JSON requires at least one source root")
 
 print("Load done!")
 
@@ -69,28 +102,6 @@ print("Load done!")
 # =============================================================================
 # General helpers
 # =============================================================================
-
-def load_material_icon(path):
-    """
-    Load an SVG icon bundled with Material for MkDocs.
-
-    Example:
-        load_material_icon("fontawesome/brands/github")
-    """
-    icon = (
-        files("material")
-        / "templates"
-        / ".icons"
-        / f"{path}.svg"
-    )
-
-    return icon.read_text(encoding="utf-8")
-
-
-GITHUB_ICON = load_material_icon(
-    "fontawesome/brands/github"
-)
-
 
 def escape(value):
     return html.escape(str(value), quote=True)
@@ -101,7 +112,7 @@ def normalize_path(path):
 
 
 def relative_to_any_root(path):
-    path = Path(path)
+    path = Path(path).resolve()
 
     for root in roots:
         try:
@@ -109,7 +120,14 @@ def relative_to_any_root(path):
         except ValueError:
             pass
 
-    return normalize_path(str(path))
+    return None
+
+
+def source_link(source_rel, line=None):
+    if not SOURCE_URL or not source_rel:
+        return None
+    result = SOURCE_URL.rstrip("/") + "/" + quote(source_rel, safe="/")
+    return result + (f"#L{line}" if line else "")
 
 
 def slug_component(value):
@@ -142,6 +160,9 @@ def is_magic_method(v):
 def parse_type(value):
     if value is None:
         return "?"
+
+    if isinstance(value, dict):
+        return value.get("text", "?")
 
     if isinstance(value, str) and not value.isdigit():
         return value
@@ -176,8 +197,19 @@ def parse_type(value):
 def parse_fn(v):
     result = ""
 
-    args = v.get("args", [])
-    generics = v.get("generics", [])
+    hidden = {arg["name"] for arg in v.get("args", []) if arg.get("hidden")}
+    parameters = [arg for arg in v.get("args", []) if not arg.get("hidden")]
+    generic_parameters = {arg["name"]: arg for arg in parameters if arg.get("generic")}
+    args = [arg for arg in parameters if not arg.get("generic")]
+    generics = [name for name in v.get("generics", []) if name not in hidden]
+
+    def parameter_text(arg):
+        part = arg.get("name") or "_"
+        if arg.get("type"):
+            part += ": " + parse_type(arg["type"])
+        if "default" in arg:
+            part += " = " + str(arg["default"])
+        return part
 
     if generics:
         argument_names = {
@@ -193,39 +225,46 @@ def parse_fn(v):
         ]
 
         if standalone_generics:
-            result += "[" + ", ".join(standalone_generics) + "]"
+            result += "[" + ", ".join(
+                parameter_text(generic_parameters[name]) if name in generic_parameters else name
+                for name in standalone_generics
+            ) + "]"
 
     result += "("
 
     arguments = []
-
-    for arg in args:
-        part = arg.get("name") or "_"
-
-        if arg.get("type"):
-            part += ": " + parse_type(arg["type"])
-
-        if "default" in arg:
-            part += " = " + str(arg["default"])
-
-        arguments.append(part)
+    keyword_boundary = False
+    for index, arg in enumerate(args):
+        kind = arg.get("kind")
+        if kind == "keyword_only" and not keyword_boundary:
+            arguments.append("*")
+            keyword_boundary = True
+        arguments.append(parameter_text(arg))
+        if arg.get("name", "").startswith("*"):
+            keyword_boundary = True
+        if kind == "positional_only" and (
+            index + 1 == len(args) or args[index + 1].get("kind") != kind
+        ):
+            arguments.append("/")
 
     result += ", ".join(arguments)
     result += ")"
 
-    if v.get("ret"):
-        result += " -> " + parse_type(v["ret"])
+    return_type = v.get("return", v.get("ret"))
+    if return_type:
+        result += " -> " + parse_type(return_type)
 
     return result
 
 
 def class_signature(v, display_name):
     generics = v.get("generics", [])
-
+    signature = f"class {display_name}"
     if generics:
-        return f'class {display_name}[{", ".join(generics)}]'
-
-    return f"class {display_name}"
+        signature += f'[{", ".join(generics)}]'
+    if v.get("bases"):
+        signature += "(" + ", ".join(map(parse_type, v["bases"])) + ")"
+    return signature
 
 
 # =============================================================================
@@ -250,7 +289,7 @@ def member_anchor(owner_anchor, name):
 
 def write_permalink(anchor, f, label):
     """
-    Custom API permalink. This does not depend on MkDocs heading anchors.
+    Custom API permalink. This does not depend on generated heading anchors.
     """
     f.write(
         f'<a class="api-permalink" '
@@ -275,6 +314,8 @@ def write_permalink(anchor, f, label):
 
 def get_tags(v):
     tags = []
+    if v.get("async"):
+        tags.append("async")
 
     if "extern" in v:
         tags.append(str(v["extern"]))
@@ -343,15 +384,17 @@ actual_modules = {}
 for module_id, value in j.items():
     if value.get("kind") != "module":
         continue
+    if value.get("owned") is False:
+        continue
 
     source_rel = relative_to_any_root(
         value["path"]
     )
 
-    if not source_rel.endswith(".codon"):
+    if not source_rel or Path(source_rel).suffix not in {".codon", ".py"}:
         continue
 
-    without_ext = source_rel[:-6]
+    without_ext = str(Path(source_rel).with_suffix(""))
     parts = without_ext.split("/")
 
     is_init = parts[-1] == "__init__"
@@ -361,7 +404,7 @@ for module_id, value in j.items():
     else:
         module_parts = parts
 
-    module_name = ".".join(module_parts)
+    module_name = value.get("name", ".".join(module_parts))
 
     info = ModuleInfo(
         module_id=module_id,
@@ -372,8 +415,9 @@ for module_id, value in j.items():
 
     existing = actual_modules.get(module_name)
 
-    if existing is None or is_init:
-        actual_modules[module_name] = info
+    if existing is not None and existing.source_rel != source_rel:
+        raise SystemExit(f"duplicate module {module_name!r}: {existing.source_rel}, {source_rel}")
+    actual_modules[module_name] = info
 
 
 # =============================================================================
@@ -436,20 +480,11 @@ def output_path_for_page(name):
         )
 
     parts = name.split(".")
-
-    if name in package_names:
-        return os.path.join(
-            out_path,
-            "modules",
-            *parts,
-            "index.md",
-        )
-
     return os.path.join(
         out_path,
         "modules",
-        *parts[:-1],
-        parts[-1] + ".md",
+        *parts,
+        "index.md",
     )
 
 
@@ -581,7 +616,9 @@ for module_name, info in actual_modules.items():
 
         # Be tolerant of a parent class that was not encountered as a direct
         # child during the first pass, as long as the JSON still contains it.
-        if class_info is None and parent_id in j:
+        if class_info is None and parent_id in j and (
+            options.stdlib or parent_id in module_for_object
+        ):
             parent = j[parent_id]
 
             if (
@@ -799,7 +836,7 @@ def suppress_into(source, target):
 
 
 for name, candidates in classes_by_unqualified_name.items():
-    if len(candidates) < 2:
+    if not options.stdlib or document.get("schema_version") or len(candidates) < 2:
         continue
 
     top_level_candidates = [
@@ -1002,6 +1039,22 @@ api_references = {}
 api_aliases = {}
 
 
+def alias_target(value):
+    seen = set()
+    while value.get("kind") == "alias" and value.get("target") not in seen:
+        target = value.get("target")
+        seen.add(target)
+        value = j.get(target, {})
+    return value
+
+
+def symbol_reference(value):
+    target = alias_target(value)
+    class_info = class_info_for_value(target)
+    name = class_info.qualified_name if class_info else target.get("qualified_name", target.get("name"))
+    return api_references.get(name) or api_aliases.get(name)
+
+
 def add_api_reference(
     name,
     module_name,
@@ -1079,7 +1132,7 @@ def build_api_reference_index():
                 add_api_reference(
                     qualified_name,
                     module_name,
-                    (["modules", *module_name.split(".")] if module_name else ["modules"]),
+                    (["modules", *module_name.split(".")] if module_name else []),
                     anchor=function_anchor(name),
                     kind="function",
                 )
@@ -1088,7 +1141,7 @@ def build_api_reference_index():
                 add_api_reference(
                     qualified_name,
                     module_name,
-                    (["modules", *module_name.split(".")] if module_name else ["modules"]),
+                    (["modules", *module_name.split(".")] if module_name else []),
                     anchor=variable_anchor(name),
                     kind="variable",
                 )
@@ -1192,6 +1245,23 @@ def build_api_reference_index():
             )
             add_api_alias(alias, class_reference)
 
+    for module_name, info in actual_modules.items():
+        for child_id in j[info.module_id].get("children", []):
+            value = j.get(str(child_id), {})
+            if value.get("kind") != "alias" or not is_public(value):
+                continue
+            qualified = f"{module_name}.{value['name']}" if module_name else value["name"]
+            target = symbol_reference(value)
+            if value.get("imported"):
+                add_api_alias(qualified, target)
+                continue
+            add_api_reference(
+                qualified, module_name,
+                target.url_parts if target else (["modules", *module_name.split(".")] if module_name else []),
+                anchor=target.anchor if target else "alias-" + slug_component(value["name"]),
+                kind=target.kind if target else "alias",
+            )
+
 
 def api_reference_url(reference):
     """Return a URL relative to the API Reference root."""
@@ -1236,13 +1306,14 @@ def write_search_index():
         "api-search-index.json",
     )
 
-    with open(path, "w") as f:
+    with open_generated(path) as f:
         json.dump(
             entries,
             f,
             ensure_ascii=False,
             separators=(",", ":"),
         )
+        f.write("\n")
 
 
 build_api_reference_index()
@@ -1266,7 +1337,7 @@ API_REFERENCE_RE = re.compile(
 def module_url_parts(module_name):
     """Return URL components for a module page."""
     if not module_name:
-        return ["modules"]
+        return []
     return ["modules", *module_name.split(".")]
 
 
@@ -1488,25 +1559,30 @@ def write_docstr(
 
 
 def write_frontmatter(title, f):
-    title = title.replace('"', '\\"')
+    route_parts = list(Path(f.name).relative_to(out_path).with_suffix("").parts)
+    if route_parts[-1] == "index":
+        route_parts.pop()
+    route = API_ROUTE + "/" + "/".join(route_parts)
 
     f.write("---\n")
-    f.write(f'title: "{title}"\n')
+    f.write(f'title: {json.dumps(title)}\n')
+    f.write(f'slug: "{route.rstrip("/")}/"\n')
+    f.write("hide_title: true\n")
+    f.write("hide_table_of_contents: true\n")
+    if SIDEBAR:
+        f.write(f"displayed_sidebar: {json.dumps(SIDEBAR)}\n")
+    f.write("pagination_prev: null\npagination_next: null\n")
+    f.write("custom_edit_url: null\n")
     f.write("---\n\n")
 
 
 def write_signature(signature, f):
     f.write(
-        '<div class="api-signature" markdown="1">\n\n'
+        '<div class="api-signature">\n'
+        '<pre><code class="language-python">'
     )
-
-    f.write(
-        "``` { .python .no-copy }\n"
-    )
-
-    f.write(signature)
-    f.write("\n```\n\n")
-    f.write("</div>\n\n")
+    f.write(escape(signature))
+    f.write("</code></pre>\n</div>\n\n")
 
 
 def write_section_heading(
@@ -1617,11 +1693,7 @@ def write_page_header(
         f,
     )
 
-    source_url = (
-        f"{GITHUB_STDLIB_URL}/{source_rel}"
-        if source_rel
-        else None
-    )
+    source_url = source_link(source_rel)
 
     f.write(
         '<header class="api-page-header">\n'
@@ -1639,7 +1711,7 @@ def write_page_header(
 
     f.write(
         '<span class="api-page-kind">'
-        f'{"Standard library package" if is_package else "Standard library module"}'
+        f'{"Standard library " if options.stdlib else ""}{"Package" if is_package else "Module"}'
         '</span>\n'
     )
 
@@ -1652,14 +1724,6 @@ def write_page_header(
         )
 
         f.write(
-            '<span class="api-source-icon" '
-            'aria-hidden="true">'
-        )
-
-        f.write(GITHUB_ICON)
-
-        f.write(
-            '</span>'
             '<span class="api-source-text">'
             'View source'
             '</span>'
@@ -2035,7 +2099,7 @@ def write_member_variants(
                     '</a>'
                 )
             else:
-                f.write('<code>stdlib</code>')
+                f.write(f'<code>{escape(PROJECT)}</code>')
 
             f.write("</div>\n")
 
@@ -2368,18 +2432,14 @@ def write_class_breadcrumbs(class_info, f):
 def write_class_page_header(class_info, f):
     write_class_breadcrumbs(class_info, f)
 
-    source_url = (
-        f"{GITHUB_STDLIB_URL}/{class_info.source_rel}"
-        if class_info.source_rel
-        else None
-    )
+    source_url = source_link(class_info.source_rel, class_info.value.get("source", {}).get("line"))
 
     f.write('<header class="api-page-header">\n')
     f.write(
         f'<h1 class="api-page-title">{escape(class_info.name)}</h1>\n'
     )
     f.write('<div class="api-page-meta">\n')
-    f.write('<span class="api-page-kind">Standard library class</span>\n')
+    f.write(f'<span class="api-page-kind">{"Standard library class" if options.stdlib else "Class"}</span>\n')
 
     if class_info.qualified_name != class_info.name:
         f.write(
@@ -2393,10 +2453,8 @@ def write_class_page_header(class_info, f):
             f'href="{escape(source_url)}" '
             'target="_blank" rel="noopener noreferrer">'
         )
-        f.write('<span class="api-source-icon" aria-hidden="true">')
-        f.write(GITHUB_ICON)
         f.write(
-            '</span><span class="api-source-text">View source</span></a>\n'
+            '<span class="api-source-text">View source</span></a>\n'
         )
 
     f.write('</div>\n')
@@ -2575,7 +2633,7 @@ def render_module_contents(
     emitted_functions = set()
 
     for v in children:
-        if not is_public(v):
+        if not is_public(v) or v.get("imported"):
             continue
 
         kind = v.get("kind")
@@ -2615,6 +2673,28 @@ def render_module_contents(
                 f,
                 current_module,
             )
+
+        elif kind == "alias":
+            target = alias_target(v)
+            reference = symbol_reference(target)
+            label = parse_type(v["type"]) if v.get("type") else target.get("qualified_name", target.get("name", v["name"]))
+            write_card_start(
+                v["name"],
+                "alias",
+                get_tags(v),
+                f,
+                "alias-" + slug_component(v["name"]),
+            )
+            write_signature(f'{v["name"]} = {label}', f)
+            if reference:
+                href = relative_url(module_url_parts(current_module), reference.url_parts)
+                if reference.anchor:
+                    href += "#" + reference.anchor
+                f.write('<div class="api-member-source">Alias of ')
+                f.write(f'<a href="{escape(href)}"><code>{escape(label)}</code></a>')
+                f.write('</div>\n')
+            write_docstr(v, f, current_module)
+            write_card_end(f)
 
 
 # =============================================================================
@@ -2748,7 +2828,7 @@ def write_class_catalog(f, current_parts=None):
 
 
 def write_modules_index(f):
-    write_frontmatter("Standard Library Modules", f)
+    write_frontmatter(f"{PROJECT} Modules", f)
 
     f.write('<nav class="api-breadcrumbs" aria-label="Breadcrumb">\n')
     f.write('<a href="../" class="api-breadcrumb-link">API Reference</a>\n')
@@ -2762,7 +2842,7 @@ def write_modules_index(f):
     f.write('<h1 class="api-page-title">Modules</h1>\n')
     f.write(
         '<div class="api-page-description">'
-        'Codon standard library modules and packages.'
+        f'{escape(PROJECT)} modules and packages.'
         '</div>\n'
     )
     f.write('</header>\n\n')
@@ -2771,7 +2851,7 @@ def write_modules_index(f):
 
 
 def write_classes_index(f):
-    write_frontmatter("Standard Library Classes", f)
+    write_frontmatter(f"{PROJECT} Classes", f)
 
     f.write('<nav class="api-breadcrumbs" aria-label="Breadcrumb">\n')
     f.write('<a href="../" class="api-breadcrumb-link">API Reference</a>\n')
@@ -2786,7 +2866,7 @@ def write_classes_index(f):
     f.write(
         '<div class="api-page-description">'
         'Complete class APIs, including methods contributed by '
-        '<code>@extend</code> blocks across the standard library.'
+        f'<code>@extend</code> blocks across {escape(PROJECT)}.'
         '</div>\n'
     )
     f.write('</header>\n\n')
@@ -2837,11 +2917,47 @@ os.makedirs(
     exist_ok=True,
 )
 
+manifest_path = Path(out_path) / ".codon-doc-manifest.json"
+previous_files = set()
+if manifest_path.is_symlink():
+    raise SystemExit("unsafe documentation manifest symlink")
+if manifest_path.exists():
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("version") != 1 or not isinstance(manifest.get("files"), list):
+        raise SystemExit("invalid documentation output manifest")
+    previous_files = set(manifest["files"])
+
+
+def generated_path(relative):
+    path = Path(out_path) / relative
+    if Path(relative).is_absolute() or ".." in Path(relative).parts or path.is_symlink():
+        raise SystemExit(f"unsafe generated path: {relative}")
+    if not path.resolve().is_relative_to(Path(out_path).resolve()):
+        raise SystemExit(f"generated path escapes output directory: {relative}")
+    return path
+
+
+expected_files = {"index.md", "modules/index.md", "classes/index.md", "api-search-index.json"}
+expected_files.update(str(Path(output_path_for_page(name)).relative_to(out_path)) for name in all_page_names)
+expected_files.update(str(Path(output_path_for_class(info)).relative_to(out_path)) for info in public_classes)
+for relative in expected_files | previous_files:
+    path = generated_path(relative)
+    if relative in expected_files and path.exists() and relative not in previous_files:
+        raise SystemExit(f"refusing to overwrite untracked output file: {path}")
+
+generated_files = set()
+
+
+def open_generated(path):
+    relative = str(Path(path).relative_to(out_path))
+    generated_files.add(relative)
+    return generated_path(relative).open("w", encoding="utf-8")
+
 root_path = output_path_for_page("")
 
-with open(root_path, "w") as f:
+with open_generated(root_path) as f:
     write_frontmatter(
-        "Standard Library Reference",
+        f"{PROJECT} Reference",
         f,
     )
 
@@ -2849,11 +2965,11 @@ with open(root_path, "w") as f:
         '<header class="api-page-header api-root-header">\n'
     )
     f.write(
-        '<h1 class="api-page-title">Standard Library Reference</h1>\n'
+        f'<h1 class="api-page-title">{escape(PROJECT)} Reference</h1>\n'
     )
     f.write(
         '<div class="api-page-description">'
-        'Codon standard library modules and APIs.'
+        f'{escape(PROJECT)} modules and APIs.'
         '</div>\n'
     )
     f.write('</header>\n\n')
@@ -2868,6 +2984,7 @@ with open(root_path, "w") as f:
         f,
         [],
     )
+    render_module_contents(actual_modules.get(""), f, "")
 
 
 # =============================================================================
@@ -2885,7 +3002,7 @@ os.makedirs(
     exist_ok=True,
 )
 
-with open(modules_index_path, "w") as f:
+with open_generated(modules_index_path) as f:
     write_modules_index(f)
 
 
@@ -2904,7 +3021,7 @@ os.makedirs(
     exist_ok=True,
 )
 
-with open(classes_index_path, "w") as f:
+with open_generated(classes_index_path) as f:
     write_classes_index(f)
 
 
@@ -2916,7 +3033,7 @@ for class_info in public_classes:
         exist_ok=True,
     )
 
-    with open(output_file, "w") as f:
+    with open_generated(output_file) as f:
         write_frontmatter(
             class_info.qualified_name,
             f,
@@ -2940,6 +3057,8 @@ write_search_index()
 # =============================================================================
 
 for page_name in sorted(all_page_names):
+    if not page_name:
+        continue
     info = actual_modules.get(page_name)
     is_package = page_name in package_names
     output_file = output_path_for_page(page_name)
@@ -2949,7 +3068,7 @@ for page_name in sorted(all_page_names):
         exist_ok=True,
     )
 
-    with open(output_file, "w") as f:
+    with open_generated(output_file) as f:
         write_frontmatter(
             page_name,
             f,
@@ -2973,6 +3092,9 @@ for page_name in sorted(all_page_names):
             f,
         )
 
+for relative in previous_files - generated_files:
+    generated_path(relative).unlink(missing_ok=True)
+manifest_path.write_text(json.dumps({"version": 1, "files": sorted(generated_files)}, indent=2) + "\n", encoding="utf-8")
 
 print(
     f"Generated {len(all_page_names)} module pages and "

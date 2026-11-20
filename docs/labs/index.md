@@ -1,42 +1,26 @@
 ---
 title: Labs
+hide_title: true
 ---
 
-<h1 align="center">
-  <img src="../img/codon-labs-dark.svg" class="labs-logo-dark" width="70%" />
-  <img src="../img/codon-labs-light.svg" class="labs-logo-light" width="70%" />
-</h1>
+<img src="/img/codon-labs-dark.svg" alt="Codon Labs" class="labs-logo labs-logo-dark" width="280" />
+<img src="/img/codon-labs-light.svg" alt="Codon Labs" class="labs-logo labs-logo-light" width="280" />
+
+# Labs
 
 Labs are short, self-contained guides on various features and applications
 of Codon. Each lab includes a written guide as well as a video guide, and
 labs cover a variety of topics ranging from introductory to advanced use
 cases and domain-specific applications. Check out the catalog of labs below!
 
-!!! example "Stay tuned"
-
-    **More labs are coming soon!**
-
 ## Explore labs
 
-<div class="lab-grid">
+### [Getting started with Codon](catalog/start.md)
 
-  <div class="lab-wrap">
-    <a class="lab" id="lab-start" href="catalog/start">
-      <h3>🧪 Getting Started with Codon</h3>
-      <div class="lab-tags">
-        <span class="lab-tag-new">✨ New</span>
-        <span class="lab-tag-difficulty">🚀 Intro</span>
-        <span class="lab-tag-time">⌛ 2 mins</span>
-      </div>
-      <hr />
-      <p>Learn how to install Codon and run your first program.</p>
-    </a>
-    <div class="lab-img">
-      <img src="../img/card-labs-light.svg" class="lab-icon-dark" width="120" />
-    </div>
-  </div>
+<p class="lab-meta">INTRODUCTORY &middot; 2 MINUTES</p>
 
-</div>
+Learn how to install Codon and run your first program, with a video walkthrough
+and runnable examples. More labs are coming soon.
 
 ## Contribute a lab
 

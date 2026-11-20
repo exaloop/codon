@@ -1,9 +1,19 @@
+import os
+from pathlib import Path
+
+if os.name == "nt":
+    _dll_directory = os.add_dll_directory(str(Path(os.environ["CODON_DIR"]) / "lib" / "codon"))
+
 import myext as m
 import myext2 as m2
 
 def test_native_exceptions():
+    # Supplying None as CPython's fourth argument populates winerror on Windows.
+    # Build the reference with no Windows error code, as in Codon's OSError.
+    missing = FileNotFoundError(2, "missing", "source")
+    missing.filename2 = "target"
     expected = [
-        FileNotFoundError(2, "missing", "source", None, "target"),
+        missing,
         UnicodeDecodeError("utf-8", b"a\xff", 1, 2, "invalid start byte"),
         UnicodeEncodeError("ascii", "\u00e9", 0, 1, "ordinal not in range(128)"),
         UnicodeTranslateError("\u1234", 0, 1, "invalid"),

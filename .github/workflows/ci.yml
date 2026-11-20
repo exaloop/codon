@@ -14,7 +14,7 @@ on:
 jobs:
   unicode_tables:
     name: Verify Unicode Tables
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -160,7 +160,7 @@ jobs:
   build:
     name: Build Codon
     if: always()
-    needs: [compile, test]
+    needs: [compile, test, build_windows]
     strategy:
       matrix:
         include:
@@ -180,7 +180,8 @@ jobs:
         env:
           COMPILE_RESULT: ${{ needs.compile.result }}
           TEST_RESULT: ${{ needs.test.result }}
-        run: test "$COMPILE_RESULT" = success && test "$TEST_RESULT" = success
+          WINDOWS_RESULT: ${{ needs.build_windows.result }}
+        run: test "$COMPILE_RESULT" = success && test "$TEST_RESULT" = success && test "$WINDOWS_RESULT" = success
 
   publish:
     name: Publish Codon
@@ -204,16 +205,229 @@ jobs:
           name: codon-python
           path: dist/
 
+      - name: Download Windows SDKs
+        uses: actions/download-artifact@v8
+        with:
+          pattern: codon-windows-*.zip
+          path: release/
+          merge-multiple: true
+
       - name: Create Release and Upload SDKs
         if: contains(github.ref, 'tags/v')
         uses: ncipollo/release-action@v1
         with:
-          artifacts: release/codon-*.tar.gz
-          artifactContentType: application/gzip
+          artifacts: release/codon-*.tar.gz,release/codon-windows-*.zip
           artifactErrorsFailBuild: true
 
       - name: Publish PyPI Package
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  compile_windows:
+    name: Compile Codon (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            arch: windows-x86_64
+            msvc_arch: amd64
+            python_arch: x64
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    needs: unicode_tables
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      CMAKE_POLICY_VERSION_MINIMUM: '3.5'
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+          architecture: ${{ matrix.python_arch }}
+
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc_arch }}
+
+      - name: Install build and test dependencies
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          python -m pip install --only-binary=:all: ninja numpy==2.3.4 cython setuptools wheel astunparse
+          ninja --version
+
+      - name: Download LLVM release
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $archive = "$env:RUNNER_TEMP/llvm-codon-${{ matrix.arch }}.zip"
+          curl.exe --fail --location --retry 5 --output $archive `
+            "https://github.com/exaloop/llvm-project/releases/download/codon/llvm-codon-${{ matrix.arch }}.zip"
+          New-Item -ItemType Directory -Force C:/opt | Out-Null
+          # The release contains llvm-codon/, including Clang and GC-patched libomp.
+          tar -xf $archive -C C:/opt
+
+      - name: Build Codon
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          clang --version
+          cmake -S . -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DLLVM_DIR=C:/opt/llvm-codon/lib/cmake/llvm `
+            -DCMAKE_C_COMPILER=C:/opt/llvm-codon/bin/clang.exe `
+            -DCMAKE_CXX_COMPILER=C:/opt/llvm-codon/bin/clang++.exe `
+            -DCMAKE_C_COMPILER_TARGET=${{ matrix.target }} `
+            -DCMAKE_CXX_COMPILER_TARGET=${{ matrix.target }} `
+            -DCODON_GPU=OFF
+          cmake --build build --config Release --parallel 2
+          cmake --install build --prefix codon-deploy
+
+      - name: Package Test Bundle
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $files = @('build/codon.exe', 'build/codon_test.exe', 'build/stdlib', 'build/codon-utf8.manifest')
+          $files += @(Get-ChildItem build -File |
+            Where-Object { $_.Extension -in '.dll', '.lib' } |
+            ForEach-Object { "build/$($_.Name)" })
+          if (Test-Path build/lib/codon) { $files += 'build/lib/codon' }
+          tar -czf "codon-tests-${{ matrix.arch }}.tar.gz" @files
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Compress-Archive -Path codon-deploy -DestinationPath codon-${{ matrix.arch }}.zip -Force
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: codon-${{ matrix.arch }}.zip
+          path: codon-${{ matrix.arch }}.zip
+          if-no-files-found: error
+
+      - name: Upload Test Bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: codon-tests-${{ matrix.arch }}
+          path: codon-tests-${{ matrix.arch }}.tar.gz
+          retention-days: 3
+          if-no-files-found: error
+
+  test_windows:
+    name: Test Codon (${{ matrix.platform.arch }}, shard ${{ matrix.shard }})
+    needs: compile_windows
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+        platform:
+          - os: windows-latest
+            arch: windows-x86_64
+            msvc_arch: amd64
+            python_arch: x64
+    runs-on: ${{ matrix.platform.os }}
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      CMAKE_POLICY_VERSION_MINIMUM: '3.5'
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+          architecture: ${{ matrix.platform.python_arch }}
+
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.platform.msvc_arch }}
+
+      - name: Install test dependencies
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          python -m pip install --only-binary=:all: ninja numpy==2.3.4 cython setuptools wheel astunparse
+
+      - name: Download LLVM release
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $archive = "$env:RUNNER_TEMP/llvm-codon-${{ matrix.platform.arch }}.zip"
+          curl.exe --fail --location --retry 5 --output $archive `
+            "https://github.com/exaloop/llvm-project/releases/download/codon/llvm-codon-${{ matrix.platform.arch }}.zip"
+          New-Item -ItemType Directory -Force C:/opt | Out-Null
+          tar -xf $archive -C C:/opt
+
+      - name: Download SDK
+        uses: actions/download-artifact@v8
+        with:
+          name: codon-${{ matrix.platform.arch }}.zip
+
+      - name: Download Test Bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: codon-tests-${{ matrix.platform.arch }}
+
+      - name: Restore Build
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          Expand-Archive -Path "codon-${{ matrix.platform.arch }}.zip" -DestinationPath . -Force
+          tar -xzf "codon-tests-${{ matrix.platform.arch }}.tar.gz"
+          New-Item -ItemType Directory -Force "test-results/${{ matrix.platform.arch }}" | Out-Null
+
+      - name: Install Python JIT package
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $env:CODON_DIR = "$PWD/codon-deploy"
+          python -m pip install --no-build-isolation "$env:CODON_DIR/python"
+
+      - name: Run test shard
+        shell: bash
+        env:
+          CODON_BUILD_DIR: build
+          CODON_DIR: codon-deploy
+          CODON_TEST_WORKERS: '1'
+        run: |
+          set -o pipefail
+          bash .github/ci/test.sh "$PWD" "${{ matrix.platform.arch }}" "${{ matrix.shard }}" 4 \
+            2>&1 | tee test-results/${{ matrix.platform.arch }}/shard-${{ matrix.shard }}.log
+
+      - name: Upload Windows test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-${{ matrix.platform.arch }}-${{ matrix.shard }}
+          path: test-results/${{ matrix.platform.arch }}/
+          if-no-files-found: ignore
+
+  build_windows:
+    name: Build and Test Codon (${{ matrix.arch }})
+    if: always()
+    needs: [compile_windows, test_windows]
+    strategy:
+      matrix:
+        arch: [windows-x86_64]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Require Successful Windows Build and Tests
+        env:
+          COMPILE_RESULT: ${{ needs.compile_windows.result }}
+          TEST_RESULT: ${{ needs.test_windows.result }}
+        run: test "$COMPILE_RESULT" = success && test "$TEST_RESULT" = success
 
   build_documentation:
     name: Build Docs
@@ -230,17 +444,18 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+
+      - name: Install documentation dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install properdocs \
-                                mkdocs-autorefs \
-                                mkdocs-macros-plugin \
-                                mkdocs-material \
-                                mkdocs-material-extensions \
-                                mkdocs-redirects
-          sudo apt-get update
-          sudo apt-get install -y pngquant
+          python -m pip install -r docs/requirements.txt
+          npm ci --prefix docs
 
       - name: Download Artifact
         uses: actions/download-artifact@v8
@@ -252,17 +467,27 @@ jobs:
         run: |
           mv downloaded-artifact/* .
           tar -xvzf codon-linux-x86_64.tar.gz
+          export CODON_PATH="$PWD/codon-deploy-linux-x86_64/lib/codon/stdlib"
+          python test/docgen_test.py --codon codon-deploy-linux-x86_64/bin/codon -v
           codon-deploy-linux-x86_64/bin/codon doc codon-deploy-linux-x86_64/lib/codon/stdlib > docs.json
-          python scripts/docgen.py docs.json docs/libraries/api "$PWD/codon-deploy-linux-x86_64/lib/codon/stdlib"
+          python scripts/docgen.py docs.json docs/libraries/api --stdlib
 
-      - name: Build MkDocs site
-        run: properdocs build --strict
+      - name: Build and validate Docusaurus site
+        run: npm run build --prefix docs
+
+      - name: Upload documentation site
+        uses: actions/upload-artifact@v7
+        with:
+          name: codon-docs
+          path: docs/build/
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Deploy to GitHub Pages
-        if: github.ref == 'refs/heads/master'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./site
+          publish_dir: ./docs/build
           force_orphan: true
           cname: docs.exaloop.io

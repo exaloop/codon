@@ -158,7 +158,7 @@ private:
   int64_t diff = 0;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a synthetic assignment.
   /// @param source the node that gave rise to this instruction
@@ -256,7 +256,7 @@ private:
   std::list<Predecessor> preds;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a synthetic phi instruction.
   /// @param source the node that gave rise to this instruction
@@ -457,7 +457,7 @@ struct CFResult : public Result {
 /// Control-flow analysis that runs on all functions.
 class CFAnalysis : public Analysis {
 public:
-  static const std::string KEY;
+  static CODON_API const std::string KEY;
   std::string getKey() const override { return KEY; }
 
   std::unique_ptr<Result> run(const Module *m) override;

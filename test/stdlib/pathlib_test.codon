@@ -184,7 +184,7 @@ def test_filesystem():
     try:
         assert root.is_dir() and root.exists()
         assert not file.exists() and not file.is_file()
-        assert file.write_text("caf\u00e9\n") == 5
+        assert file.write_text("caf\u00e9\n", newline="\n") == 5
         assert file.read_text() == "caf\u00e9\n"
         assert file.read_bytes() == b"caf\xc3\xa9\n"
         assert binary.write_bytes(b"\0\xff\n") == 3
@@ -321,7 +321,9 @@ def test_mutation_failures():
         assert not (root / "missing").exists()
         try:
             (file / "child").unlink(missing_ok=True)
-            assert False
+            # Windows reports ERROR_PATH_NOT_FOUND when a parent is a file,
+            # which missing_ok suppresses just as Python pathlib does.
+            assert __windows__
         except OSError:
             pass
         try:

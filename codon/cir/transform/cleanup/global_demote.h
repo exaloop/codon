@@ -17,7 +17,7 @@ private:
   int numDemotions;
 
 public:
-  static const std::string KEY;
+  static CODON_API const std::string KEY;
 
   /// Constructs a global variable demotion pass
   GlobalDemotionPass() : Pass(), numDemotions(0) {}

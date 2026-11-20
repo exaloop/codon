@@ -405,12 +405,6 @@ os.environ.update(None)
 #! 'NoneType' object is not iterable
 #! during the realization of update
 
-#%% os_fullpathname_posix
-import os
-os._getfullpathname(".")
-#! Windows full-path resolution is only available on Windows
-#! during the realization of _getfullpathname
-
 #%% unicode_decode_format_first,barebones
 import internal.static as static
 formatter = static.function.realized(UnicodeDecodeError.__str__, type._force_cast(cobj(), UnicodeDecodeError))

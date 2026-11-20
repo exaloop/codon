@@ -1,0 +1,61 @@
+import numpy as np
+import sys
+import time
+import npbench_lib as kernel_module
+from C import GC_gcollect() -> None
+from C import GC_get_total_bytes() -> int
+from C import GC_get_heap_size() -> int
+from C import GC_get_free_bytes() -> int
+directory = sys.argv[1]
+samples = int(sys.argv[2])
+original_path = np.load(directory + '/input-path.npy', dtype=np.int32, ndim=2)
+path = np.empty_like(original_path)
+np.copyto(path, original_path)
+with open('/proc/self/smaps_rollup') as memory_status:
+    for record in memory_status:
+        if record.startswith('AnonHugePages:'):
+            print('BENCH_HUGEPAGES_KIB', int(record.split()[1]))
+
+def emit(value, filename):
+    if value is None:
+        return
+    elif isinstance(value, tuple):
+        index = 0
+        for item in value:
+            emit(item, filename + '_' + str(index))
+            index += 1
+    else:
+        np.save(filename, np.asarray(value))
+
+@noinline
+def sample(path):
+    started = time.perf_counter()
+    result = kernel_module.floyd_warshall(path)
+    elapsed = time.perf_counter() - started
+    emit(path, directory + '/output-path')
+    return elapsed
+
+if samples == 0:
+    GC_gcollect()
+    allocated_before = GC_get_total_bytes()
+    heap_before = GC_get_heap_size()
+    address_path = int(path.data)
+    for iteration in range(32):
+        np.copyto(path, original_path)
+        assert int(path.data) == address_path
+    allocated = GC_get_total_bytes() - allocated_before
+    heap_growth = GC_get_heap_size() - heap_before
+    print('BENCH_MEMORY', allocated, heap_growth)
+    assert allocated < 65536
+    assert heap_growth == 0
+else:
+    for iteration in range(samples + 1):
+        GC_gcollect()
+        if iteration > 0:
+            print('BENCH_GC', GC_get_heap_size(), GC_get_heap_size() - GC_get_free_bytes())
+        np.copyto(path, original_path)
+        elapsed = sample(path)
+        if iteration > 0:
+            print('BENCH_TIME', elapsed)
+    GC_gcollect()
+    print('BENCH_GC', GC_get_heap_size(), GC_get_heap_size() - GC_get_free_bytes())

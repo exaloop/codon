@@ -1,5 +1,46 @@
 // Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
+#if defined(_WIN32) && !defined(CODON_CLI_IN_COMPILER)
+// On Windows, LLVM is statically linked into both codon.exe and codonc.dll, so
+// each binary owns a separate llvm::cl CommandLine registry. The CLI driver
+// below must therefore be compiled INTO codonc (CODON_CLI_IN_COMPILER), where
+// the cl::opt flag globals it parses live; codon.exe is this thin shim that
+// forwards to it. `jupyter` mode stays exe-side since it depends on
+// codon_jupyter, not on codonc's compile flags.
+#include <string>
+#include <vector>
+
+#include "codon/cir/llvm/llvm.h"
+#include "codon/util/jupyter.h"
+
+extern "C" int codon_cli_main(int argc, const char **argv);
+
+namespace {
+int jupyterMode(const std::vector<const char *> &args) {
+  llvm::cl::list<std::string> plugins("plugin",
+                                      llvm::cl::desc("Load specified plugin"));
+  llvm::cl::opt<std::string> input(llvm::cl::Positional,
+                                   llvm::cl::desc("<connection file>"),
+                                   llvm::cl::init("connection.json"));
+  llvm::cl::ParseCommandLineOptions(args.size(), args.data());
+  return codon::startJupyterKernel(args[0], plugins, input);
+}
+} // namespace
+
+int main(int argc, const char **argv) {
+  if (argc > 1 && std::string(argv[1]) == "jupyter") {
+    std::vector<const char *> args{argv[0]};
+    for (int i = 2; i < argc; i++)
+      args.push_back(argv[i]);
+    std::string argv0 = std::string(argv[0]) + " jupyter";
+    args[0] = argv0.data();
+    return jupyterMode(args);
+  }
+  return codon_cli_main(argc, argv);
+}
+
+#else // full CLI driver (compiled into codonc on Windows, into codon.exe elsewhere)
+
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -19,7 +60,9 @@
 #include "codon/compiler/options.h"
 #include "codon/parser/common.h"
 #include "codon/util/common.h"
+#ifndef CODON_CLI_IN_COMPILER
 #include "codon/util/jupyter.h"
+#endif
 
 namespace {
 void versMsg(llvm::raw_ostream &out) {
@@ -112,40 +155,82 @@ enum BuildKind {
 int docMode(const std::vector<const char *> &args, const std::string &argv0) {
   llvm::cl::opt<std::string> input(llvm::cl::Positional,
                                    llvm::cl::desc("<input directory or file>"),
-                                   llvm::cl::init("-"));
+                                   llvm::cl::Required);
+  llvm::cl::opt<std::string> root("root",
+                                  llvm::cl::desc("Package/import root directory"));
+  llvm::cl::list<std::string> exclusions(
+      "exclude", llvm::cl::desc("Exclude a file or directory relative to --root"));
   llvm::cl::ParseCommandLineOptions(static_cast<int>(args.size()), args.data());
   std::vector<std::string> files;
-  auto collectPaths = [&files](const std::string &path) {
-    llvm::sys::fs::file_status status;
-    llvm::sys::fs::status(path, status);
-    if (!llvm::sys::fs::exists(status)) {
-      codon::compilationError(fmt::format("'{}' does not exist", path), "", 0, 0, 0, -1,
-                              false);
-    }
-    if (llvm::sys::fs::is_regular_file(status)) {
-      files.emplace_back(path);
-    } else if (llvm::sys::fs::is_directory(status)) {
-      std::error_code ec;
-      for (llvm::sys::fs::recursive_directory_iterator it(path, ec), e; it != e;
-           it.increment(ec)) {
-        auto status = it->status();
-        if (!status)
-          continue;
-        if (status->type() == llvm::sys::fs::file_type::regular_file)
-          if (!codon::ast::endswith(it->path(), "__init_test__.codon"))
-            files.emplace_back(it->path());
-      }
-    }
+  auto fail = [](const std::string &message) {
+    codon::compilationError(message, "", 0, 0, 0, -1, false);
+    return EXIT_FAILURE;
   };
-
-  if (args.size() > 1)
-    collectPaths(args[1]);
-
-  auto options = codon::Options::getDefault(args[0]);
+  namespace fs = std::filesystem;
+  fs::path moduleRoot;
+  try {
+    auto target = fs::canonical(input.getValue());
+    moduleRoot = root.empty()
+                     ? (fs::is_directory(target) ? target : target.parent_path())
+                     : fs::canonical(root.getValue());
+    if (root.empty())
+      while (fs::exists(moduleRoot / "__init__.codon") ||
+             fs::exists(moduleRoot / "__init__.py"))
+        moduleRoot = moduleRoot.parent_path();
+    if (!fs::is_directory(moduleRoot))
+      return fail("documentation root must be a directory");
+    auto contains = [](const fs::path &parent, const fs::path &child) {
+      auto relative = child.lexically_relative(parent);
+      return !relative.empty() && *relative.begin() != "..";
+    };
+    if (!contains(moduleRoot, target))
+      return fail("documentation input must be inside --root");
+    std::vector<fs::path> excluded;
+    for (const auto &exclusion : exclusions)
+      excluded.push_back(fs::weakly_canonical(moduleRoot / exclusion));
+    auto isExcluded = [&](const fs::path &path) {
+      auto name = path.filename().string();
+      if ((!name.empty() && name.front() == '.') || name == "__pycache__" ||
+          name == "__init_test__.codon" || name == "__init_test__.py")
+        return true;
+      return std::any_of(excluded.begin(), excluded.end(),
+                         [&](const auto &prefix) { return contains(prefix, path); });
+    };
+    auto isSource = [](const fs::path &path) {
+      return path.extension() == ".codon" || path.extension() == ".py";
+    };
+    if (fs::is_regular_file(target)) {
+      if (!isSource(target))
+        return fail("documentation input must be a .codon or .py source file");
+      if (!isExcluded(target))
+        files.push_back(target.generic_string());
+    } else if (fs::is_directory(target)) {
+      for (fs::recursive_directory_iterator it(target), end; it != end; ++it) {
+        if (isExcluded(it->path())) {
+          it.disable_recursion_pending();
+          continue;
+        }
+        if (it->is_regular_file() && isSource(it->path())) {
+          auto source = fs::canonical(it->path());
+          if (!contains(moduleRoot, source))
+            return fail(fmt::format("source '{}' is outside --root", source.string()));
+          files.push_back(source.generic_string());
+        }
+      }
+    } else {
+      return fail("documentation input must be a regular file or directory");
+    }
+  } catch (const fs::filesystem_error &error) {
+    return fail(error.what());
+  }
+  if (files.empty())
+    return fail("no documentation source files found");
+  auto options = codon::Options::getDefault(argv0);
   auto compiler = std::make_unique<codon::Compiler>(*options);
   bool failed = false;
   std::sort(files.begin(), files.end());
-  auto result = compiler->docgen(files);
+  files.erase(std::unique(files.begin(), files.end()), files.end());
+  auto result = compiler->docgen(files, moduleRoot.generic_string());
   llvm::handleAllErrors(result.takeError(),
                         [&failed](const codon::error::ParserErrorInfo &e) {
                           display(e);
@@ -372,7 +457,11 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
     extension = ".s";
     break;
   case BuildKind::Library:
+#ifdef _WIN32
+    extension = ".dll";
+#else
     extension = isMacOS() ? ".dylib" : ".so";
+#endif
     break;
   case BuildKind::Executable:
   case BuildKind::Detect:
@@ -430,6 +519,9 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
   return EXIT_SUCCESS;
 }
 
+#ifndef CODON_CLI_IN_COMPILER
+// When the driver is compiled into codonc, `jupyter` mode is handled by the
+// codon.exe shim above, keeping codonc independent of codon_jupyter.
 int jupyterMode(const std::vector<const char *> &args) {
   llvm::cl::list<std::string> plugins("plugin",
                                       llvm::cl::desc("Load specified plugin"));
@@ -440,6 +532,7 @@ int jupyterMode(const std::vector<const char *> &args) {
   int code = codon::startJupyterKernel(args[0], plugins, input);
   return code;
 }
+#endif // CODON_CLI_IN_COMPILER
 
 void showCommandsAndExit() {
   codon::compilationError("Available commands: codon <run|build|doc>");
@@ -458,7 +551,11 @@ int otherMode(const std::vector<const char *> &args) {
   return EXIT_SUCCESS;
 }
 
+#ifdef CODON_CLI_IN_COMPILER
+extern "C" int codon_cli_main(int argc, const char **argv) {
+#else
 int main(int argc, const char **argv) {
+#endif
   if (argc < 2)
     showCommandsAndExit();
 
@@ -487,9 +584,13 @@ int main(int argc, const char **argv) {
     args[0] = argv0.data();
     return jitMode(args);
   }
+#ifndef CODON_CLI_IN_COMPILER
   if (mode == "jupyter") {
     args[0] = argv0.data();
     return jupyterMode(args);
   }
+#endif
   return otherMode({argv, argv + argc});
 }
+
+#endif // _WIN32 shim

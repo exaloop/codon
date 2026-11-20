@@ -36,7 +36,7 @@ if (
 ):
     print(
         "Cannot find Codon.",
-        'Please either install Codon (/bin/bash -c "$(curl -fsSL https://exaloop.io/install.sh)"),',
+        "Please install the Codon SDK: https://docs.exaloop.io/start/install/",
         "or set CODON_DIR if Codon is not in PATH or installed in ~/.codon",
         file=sys.stderr,
     )
@@ -45,7 +45,10 @@ codon_path = codon_path.resolve()
 print("Codon: " + str(codon_path))
 
 
-if sys.platform == "darwin":
+if sys.platform == "win32":
+    libraries = ["codonrt", "codonc"]
+    linker_args = []
+elif sys.platform == "darwin":
     libraries=["codonrt", "codonc"]
     linker_args = ["-Wl,-rpath," + str(codon_path / "lib" / "codon")]
 else:
@@ -68,7 +71,7 @@ jit_extension = Extension(
     sources=["codon/jit.pyx"],
     libraries=libraries,
     language="c",
-    extra_compile_args=["-w"],
+    extra_compile_args=["/w"] if sys.platform == "win32" else ["-w"],
     extra_link_args=linker_args,
     include_dirs=[str(codon_path / "include")],
     library_dirs=[str(codon_path / "lib" / "codon")],

@@ -30,83 +30,83 @@ namespace ir {
 /// CIR object representing a program.
 class Module : public AcceptorExtend<Module, Node> {
 public:
-  static const std::string BOOL_NAME;
-  static const std::string FLOAT_NAME;
-  static const std::string FLOAT32_NAME;
-  static const std::string FLOAT16_NAME;
-  static const std::string BFLOAT16_NAME;
-  static const std::string FLOAT128_NAME;
-  static const std::string STRING_NAME;
-  static const std::string BYTES_NAME;
+  static CODON_API const std::string BOOL_NAME;
+  static CODON_API const std::string FLOAT_NAME;
+  static CODON_API const std::string FLOAT32_NAME;
+  static CODON_API const std::string FLOAT16_NAME;
+  static CODON_API const std::string BFLOAT16_NAME;
+  static CODON_API const std::string FLOAT128_NAME;
+  static CODON_API const std::string STRING_NAME;
+  static CODON_API const std::string BYTES_NAME;
 
-  static const std::string EQ_MAGIC_NAME;
-  static const std::string NE_MAGIC_NAME;
-  static const std::string LT_MAGIC_NAME;
-  static const std::string GT_MAGIC_NAME;
-  static const std::string LE_MAGIC_NAME;
-  static const std::string GE_MAGIC_NAME;
+  static CODON_API const std::string EQ_MAGIC_NAME;
+  static CODON_API const std::string NE_MAGIC_NAME;
+  static CODON_API const std::string LT_MAGIC_NAME;
+  static CODON_API const std::string GT_MAGIC_NAME;
+  static CODON_API const std::string LE_MAGIC_NAME;
+  static CODON_API const std::string GE_MAGIC_NAME;
 
-  static const std::string POS_MAGIC_NAME;
-  static const std::string NEG_MAGIC_NAME;
-  static const std::string INVERT_MAGIC_NAME;
-  static const std::string ABS_MAGIC_NAME;
+  static CODON_API const std::string POS_MAGIC_NAME;
+  static CODON_API const std::string NEG_MAGIC_NAME;
+  static CODON_API const std::string INVERT_MAGIC_NAME;
+  static CODON_API const std::string ABS_MAGIC_NAME;
 
-  static const std::string ADD_MAGIC_NAME;
-  static const std::string SUB_MAGIC_NAME;
-  static const std::string MUL_MAGIC_NAME;
-  static const std::string MATMUL_MAGIC_NAME;
-  static const std::string TRUE_DIV_MAGIC_NAME;
-  static const std::string FLOOR_DIV_MAGIC_NAME;
-  static const std::string MOD_MAGIC_NAME;
-  static const std::string POW_MAGIC_NAME;
-  static const std::string LSHIFT_MAGIC_NAME;
-  static const std::string RSHIFT_MAGIC_NAME;
-  static const std::string AND_MAGIC_NAME;
-  static const std::string OR_MAGIC_NAME;
-  static const std::string XOR_MAGIC_NAME;
+  static CODON_API const std::string ADD_MAGIC_NAME;
+  static CODON_API const std::string SUB_MAGIC_NAME;
+  static CODON_API const std::string MUL_MAGIC_NAME;
+  static CODON_API const std::string MATMUL_MAGIC_NAME;
+  static CODON_API const std::string TRUE_DIV_MAGIC_NAME;
+  static CODON_API const std::string FLOOR_DIV_MAGIC_NAME;
+  static CODON_API const std::string MOD_MAGIC_NAME;
+  static CODON_API const std::string POW_MAGIC_NAME;
+  static CODON_API const std::string LSHIFT_MAGIC_NAME;
+  static CODON_API const std::string RSHIFT_MAGIC_NAME;
+  static CODON_API const std::string AND_MAGIC_NAME;
+  static CODON_API const std::string OR_MAGIC_NAME;
+  static CODON_API const std::string XOR_MAGIC_NAME;
 
-  static const std::string IADD_MAGIC_NAME;
-  static const std::string ISUB_MAGIC_NAME;
-  static const std::string IMUL_MAGIC_NAME;
-  static const std::string IMATMUL_MAGIC_NAME;
-  static const std::string ITRUE_DIV_MAGIC_NAME;
-  static const std::string IFLOOR_DIV_MAGIC_NAME;
-  static const std::string IMOD_MAGIC_NAME;
-  static const std::string IPOW_MAGIC_NAME;
-  static const std::string ILSHIFT_MAGIC_NAME;
-  static const std::string IRSHIFT_MAGIC_NAME;
-  static const std::string IAND_MAGIC_NAME;
-  static const std::string IOR_MAGIC_NAME;
-  static const std::string IXOR_MAGIC_NAME;
+  static CODON_API const std::string IADD_MAGIC_NAME;
+  static CODON_API const std::string ISUB_MAGIC_NAME;
+  static CODON_API const std::string IMUL_MAGIC_NAME;
+  static CODON_API const std::string IMATMUL_MAGIC_NAME;
+  static CODON_API const std::string ITRUE_DIV_MAGIC_NAME;
+  static CODON_API const std::string IFLOOR_DIV_MAGIC_NAME;
+  static CODON_API const std::string IMOD_MAGIC_NAME;
+  static CODON_API const std::string IPOW_MAGIC_NAME;
+  static CODON_API const std::string ILSHIFT_MAGIC_NAME;
+  static CODON_API const std::string IRSHIFT_MAGIC_NAME;
+  static CODON_API const std::string IAND_MAGIC_NAME;
+  static CODON_API const std::string IOR_MAGIC_NAME;
+  static CODON_API const std::string IXOR_MAGIC_NAME;
 
-  static const std::string RADD_MAGIC_NAME;
-  static const std::string RSUB_MAGIC_NAME;
-  static const std::string RMUL_MAGIC_NAME;
-  static const std::string RMATMUL_MAGIC_NAME;
-  static const std::string RTRUE_DIV_MAGIC_NAME;
-  static const std::string RFLOOR_DIV_MAGIC_NAME;
-  static const std::string RMOD_MAGIC_NAME;
-  static const std::string RPOW_MAGIC_NAME;
-  static const std::string RLSHIFT_MAGIC_NAME;
-  static const std::string RRSHIFT_MAGIC_NAME;
-  static const std::string RAND_MAGIC_NAME;
-  static const std::string ROR_MAGIC_NAME;
-  static const std::string RXOR_MAGIC_NAME;
+  static CODON_API const std::string RADD_MAGIC_NAME;
+  static CODON_API const std::string RSUB_MAGIC_NAME;
+  static CODON_API const std::string RMUL_MAGIC_NAME;
+  static CODON_API const std::string RMATMUL_MAGIC_NAME;
+  static CODON_API const std::string RTRUE_DIV_MAGIC_NAME;
+  static CODON_API const std::string RFLOOR_DIV_MAGIC_NAME;
+  static CODON_API const std::string RMOD_MAGIC_NAME;
+  static CODON_API const std::string RPOW_MAGIC_NAME;
+  static CODON_API const std::string RLSHIFT_MAGIC_NAME;
+  static CODON_API const std::string RRSHIFT_MAGIC_NAME;
+  static CODON_API const std::string RAND_MAGIC_NAME;
+  static CODON_API const std::string ROR_MAGIC_NAME;
+  static CODON_API const std::string RXOR_MAGIC_NAME;
 
-  static const std::string INT_MAGIC_NAME;
-  static const std::string FLOAT_MAGIC_NAME;
-  static const std::string BOOL_MAGIC_NAME;
-  static const std::string STR_MAGIC_NAME;
-  static const std::string REPR_MAGIC_NAME;
-  static const std::string CALL_MAGIC_NAME;
+  static CODON_API const std::string INT_MAGIC_NAME;
+  static CODON_API const std::string FLOAT_MAGIC_NAME;
+  static CODON_API const std::string BOOL_MAGIC_NAME;
+  static CODON_API const std::string STR_MAGIC_NAME;
+  static CODON_API const std::string REPR_MAGIC_NAME;
+  static CODON_API const std::string CALL_MAGIC_NAME;
 
-  static const std::string GETITEM_MAGIC_NAME;
-  static const std::string SETITEM_MAGIC_NAME;
-  static const std::string ITER_MAGIC_NAME;
-  static const std::string LEN_MAGIC_NAME;
+  static CODON_API const std::string GETITEM_MAGIC_NAME;
+  static CODON_API const std::string SETITEM_MAGIC_NAME;
+  static CODON_API const std::string ITER_MAGIC_NAME;
+  static CODON_API const std::string LEN_MAGIC_NAME;
 
-  static const std::string NEW_MAGIC_NAME;
-  static const std::string INIT_MAGIC_NAME;
+  static CODON_API const std::string NEW_MAGIC_NAME;
+  static CODON_API const std::string INIT_MAGIC_NAME;
 
 private:
   struct Arena {
@@ -142,7 +142,7 @@ private:
   ast::Cache *cache = nullptr;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs an CIR module.
   /// @param name the module name

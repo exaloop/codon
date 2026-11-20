@@ -18,7 +18,7 @@ namespace ir {
 /// block.
 class Instr : public AcceptorExtend<Instr, Value> {
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   using AcceptorExtend::AcceptorExtend;
 
@@ -35,7 +35,7 @@ private:
   Value *rhs;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs an assign instruction.
   /// @param lhs the left-hand side
@@ -80,7 +80,7 @@ private:
   bool polymorphic;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a load instruction.
   /// @param val the value being manipulated
@@ -131,7 +131,7 @@ private:
   bool polymorphic;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a load instruction.
   /// @param lhs the value being manipulated
@@ -187,7 +187,7 @@ private:
   std::vector<Value *> args;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a call instruction.
   /// @param callee the function
@@ -259,7 +259,7 @@ private:
   int64_t count;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a stack allocation instruction.
   /// @param ptrType the type of the array pointer
@@ -297,7 +297,7 @@ private:
   bool suspend;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a yield in instruction.
   /// @param type the type of the value being yielded in
@@ -333,7 +333,7 @@ private:
   Value *falseValue;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a ternary instruction.
   /// @param cond the condition
@@ -379,7 +379,7 @@ protected:
 /// Base for control flow instructions
 class ControlFlowInstr : public AcceptorExtend<ControlFlowInstr, Instr> {
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
   using AcceptorExtend::AcceptorExtend;
 };
 
@@ -390,7 +390,7 @@ private:
   Value *loop;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a break instruction.
   /// @param loop the loop being broken, nullptr if immediate ancestor
@@ -415,7 +415,7 @@ private:
   Value *loop;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a continue instruction.
   /// @param loop the loop being continued, nullptr if immediate ancestor
@@ -440,7 +440,7 @@ private:
   Value *value;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   explicit ReturnInstr(Value *value = nullptr, std::string name = "")
       : AcceptorExtend(std::move(name)), value(value) {}
@@ -467,7 +467,7 @@ private:
   bool final;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   explicit YieldInstr(Value *value = nullptr, bool final = false, std::string name = "")
       : AcceptorExtend(std::move(name)), value(value), final(final) {}
@@ -502,7 +502,7 @@ private:
   bool generator;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   explicit AwaitInstr(Value *value, Type *type, bool generator = false,
                       std::string name = "")
@@ -544,7 +544,7 @@ private:
   Value *fallback;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   explicit ThrowInstr(Value *value = nullptr, std::string name = "")
       : AcceptorExtend(std::move(name)), value(value), fallback(nullptr) {}
@@ -579,7 +579,7 @@ private:
   Value *val;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a flow value.
   /// @param flow the flow

@@ -32,7 +32,7 @@ private:
   bool globalAssignmentHasSideEffects;
 
 public:
-  static const std::string KEY;
+  static CODON_API const std::string KEY;
 
   /// Constructs a side effect analysis.
   /// @param globalAssignmentHasSideEffects true if global variable assignment

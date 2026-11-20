@@ -27,7 +27,7 @@ struct ValueBuilder;
 /// DSL type.
 class CustomType : public AcceptorExtend<CustomType, ir::Type> {
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   using AcceptorExtend::AcceptorExtend;
 
@@ -47,7 +47,7 @@ public:
 /// DSL constant.
 class CustomConst : public AcceptorExtend<CustomConst, Const> {
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   using AcceptorExtend::AcceptorExtend;
 
@@ -70,7 +70,7 @@ public:
 /// DSL flow.
 class CustomFlow : public AcceptorExtend<CustomFlow, Flow> {
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   using AcceptorExtend::AcceptorExtend;
 
@@ -106,7 +106,7 @@ public:
 /// DSL instruction.
 class CustomInstr : public AcceptorExtend<CustomInstr, Instr> {
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   using AcceptorExtend::AcceptorExtend;
 

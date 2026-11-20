@@ -1,3 +1,7 @@
+---
+title: Embed Codon JIT
+---
+
 Codon has a JIT that can be embedded in and called from C++ applications.
 The Codon distribution contains all the necessary headers and shared
 libraries for compiling and linking against the Codon compiler library,
@@ -7,23 +11,40 @@ which includes the JIT.
 
 ``` cpp
 #include <iostream>
+#include <utility>
 
 #include "codon/compiler/jit.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/raw_ostream.h"
 
 int main(int argc, char **argv) {
+  auto options = codon::Options::getDefault(argv[0]);
+  options->jit = true;
+  options->capture = true;
   std::string mode = "";
   std::string stdlib = "/path/to/.codon/lib/codon/stdlib";
-  std::string code = "sum(i**2 for i in range(10))";
+  std::string code = "print(sum(value * value for value in range(10)))";
 
-  codon::jit::JIT jit(argv[0], mode, stdlib);
-  llvm::cantFail(jit.init());
-  std::cout << llvm::cantFail(jit.execute(code)) << std::endl;
+  codon::jit::JIT jit(*options, mode, stdlib);
+  if (auto error = jit.init()) {
+    llvm::logAllUnhandledErrors(std::move(error), llvm::errs(), "Codon: ");
+    return 1;
+  }
+  auto output = jit.execute(code);
+  if (!output) {
+    llvm::logAllUnhandledErrors(output.takeError(), llvm::errs(), "Codon: ");
+    return 1;
+  }
+  std::cout << *output;
+  return 0;
 }
 ```
 
 The `codon::jit::JIT` constructor takes three arguments:
 
-- `argv[0]`: as received by `main()`
+- `options`: a `codon::Options` configuration. `getDefault(argv[0])` supplies
+  defaults and the executable location used for library discovery; the
+  example then enables JIT compilation and output capture.
 - `mode`: currently supports either an empty string or `"jupyter"`, where the
   latter adds support for the
   [`_repr_mimebundle_`](https://ipython.readthedocs.io/en/latest/whatsnew/version5.html#define-repr-mimebundle)
@@ -31,9 +52,11 @@ The `codon::jit::JIT` constructor takes three arguments:
 - `stdlib`: path to Codon standard library; `~/.codon/lib/codon/stdlib` if using
   a standard Codon installation
 
-Next, the `init()` method is used to initialize the JIT. Note that JIT methods make
-use of [LLVM's error handling](https://llvm.org/docs/ProgrammersManual.html#error-handling),
-hence the use of [`llvm::cantFail()`](https://llvm.org/doxygen/namespacellvm.html#aa1e1474f15df639f0d874b21f15666f7).
+The `init()` method initializes the JIT. Its methods use
+[LLVM's error handling](https://llvm.org/docs/ProgrammersManual.html#error-handling),
+so the example checks both initialization and execution errors before using
+their results. This lets the host report a compilation or execution failure
+without assuming every submitted program is valid.
 
 Lastly, code can be executed using the `execute()` method, which captures and returns
 the output of the provided code string.
@@ -42,12 +65,15 @@ The program can be compiled as follows:
 
 ``` bash
 export CODON_DIR=~/.codon  # or wherever Codon is installed
-g++ -std=c++20 -I${CODON_DIR}/include \
-               -L${CODON_DIR}/lib/codon \
-               -Wl,-rpath,${CODON_DIR}/lib/codon \
-               -lcodonc \
-               test.cpp
+c++ -std=c++20 test.cpp -I"${CODON_DIR}/include" \
+  -L"${CODON_DIR}/lib/codon" \
+  -Wl,-rpath,"${CODON_DIR}/lib/codon" \
+  -lcodonc -o jit-example
 ```
+
+After setting `stdlib` to the installed standard-library directory, running
+`./jit-example` prints `285`. The headers and compiler library should come
+from the same Codon SDK, since this C++ interface is version-dependent.
 
 ## JIT API
 
@@ -103,8 +129,12 @@ building on the code above, we can do the following:
 ``` cpp
 auto *f = llvm::cantFail(jit.compile(code));
 auto *p = llvm::cantFail(jit.address(f));
-reinterpret_cast<void (*)()>(p)();  // prints 285
+reinterpret_cast<void (*)()>(p)();  // executes the compiled input
 ```
+
+The function pointer remains usable only while its JIT and associated code
+resources remain alive. Unloading a resource tracker invalidates pointers
+into the code it owns.
 
 ### `execute`
 
@@ -120,9 +150,12 @@ to those described above. Returns captured output of the code string.
 
 ## Controlling memory usage
 
-Memory allocated by Codon during parsing and type checking is automatically released between
-JIT invocations. Memory allocated by LLVM during compilation can be controlled via
-`llvm::orc::ResourceTracker` as described above.
+Stateful JIT sessions retain definitions that later inputs may use, so their
+memory use can grow as new types and functions are compiled. Forgetful mode
+is useful when inputs are independent and do not need that persistent state.
+LLVM code resources can be managed through `llvm::orc::ResourceTracker` as
+described above; unloading them also ends the lifetime of their function
+pointers.
 
 Codon IR provides a mechanism to release allocated IR nodes via an arena interface:
 

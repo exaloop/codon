@@ -12,7 +12,7 @@ namespace pythonic {
 /// Lowers literal formatting operations to parsed formatter calls.
 class FormattingOptimization : public OperatorPass {
 public:
-  static const std::string KEY;
+  static CODON_API const std::string KEY;
   std::string getKey() const override { return KEY; }
   void handle(CallInstr *v) override;
 };

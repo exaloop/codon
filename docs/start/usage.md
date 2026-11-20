@@ -1,5 +1,11 @@
+---
+title: Usage
+---
+
 The `codon` command includes several subcommands for compiling
-and executing code.
+and executing code on Linux, macOS, and Windows x86-64. The commands below use
+a POSIX shell unless marked as PowerShell; Codon's subcommands and flags are
+the same on all three platforms.
 
 ## `codon run`
 
@@ -63,8 +69,23 @@ codon build -exe -o hello -release program.py
 codon build -o hello -release program.py
 ```
 
-Codon uses a C++ compiler to link the actual executable after compilation.
-Extra linker flags can be passed with the `-linker-flags` argument. For example:
+On Windows, use an explicit `.exe` output name and the `.\` relative path prefix
+when running it from PowerShell:
+
+```powershell
+codon build -release -o hello.exe program.py
+.\hello.exe
+```
+
+The Windows linker uses `clang` and `lld-link` with an initialized MSVC/Windows
+SDK environment, as described in the [installation guide](install.mdx). Keep
+the Codon SDK's `bin` directory on `PATH` when running generated executables so
+Windows can find their runtime DLLs. An executable alone is not a self-contained
+deployment of those libraries.
+
+Codon uses a system compiler driver to link the actual executable after compilation.
+Extra linker flags can be passed with the `-linker-flags` argument. For example,
+on Linux or macOS:
 
 ``` bash
 # includes /foo/bar in the executable's rpath
@@ -76,7 +97,7 @@ to `-linker-flags`.
 
 #### Position-independent executables
 
-Use `--pie` to build a position-independent executable (PIE):
+On Linux or macOS, use `--pie` to build a position-independent executable (PIE):
 
 ``` bash
 codon build -release --pie -o program program.py
@@ -112,22 +133,32 @@ codon build -o hello.so -release program.py
 The `-linker-flags` flag described above also applies when compiling to
 a shared library.
 
-!!! info
+On Windows, use a DLL filename, for example
+`codon build -lib -release -o hello.dll program.py`. Windows does not use ELF or
+Mach-O rpaths; dependent runtime DLLs must be discoverable by the Windows loader.
 
-    When compiling to a shared library, the program's main code will be
-    included and executed when the library is loaded as a *global constructor*.
-    This allows you to include any necessary initialization code in the
-    main program. This behavior can be controlled via the `-global-ctor=<yes|no|auto>`
-    flag, which enables e.g. global constructor creation when compiling to other
-    output types like object files.
+:::info
 
-!!! info
 
-    If you intend to call a Codon-generated shared library from C or C++,
-    be sure to mark relevant functions with `@export` to ensure they are
-    made visible by the linker. Exported functions can be called as regular
-    C functions (i.e. they follow the C ABI).
-    [Learn more &#x2192;](../integrations/cpp/codon-from-cpp.md)
+When compiling to a shared library, the program's main code will be
+included and executed when the library is loaded as a *global constructor*.
+This allows you to include any necessary initialization code in the
+main program. This behavior can be controlled via the `-global-ctor=<yes|no|auto>`
+flag, which enables e.g. global constructor creation when compiling to other
+output types like object files.
+
+:::
+
+:::info
+
+
+If you intend to call a Codon-generated shared library from C or C++,
+be sure to mark relevant functions with `@export` to ensure they are
+made visible by the linker. Exported functions can be called as regular
+C functions (i.e. they follow the C ABI).
+[Learn more &#x2192;](../integrations/cpp/codon-from-cpp.md)
+
+:::
 
 ### Compile to object file
 
@@ -148,6 +179,9 @@ codon build -obj -o hello.o -release program.py
 codon build -o hello.o -release program.py
 ```
 
+On Windows, `.obj` filenames are also recognized, for example
+`codon build -obj -release -o hello.obj program.py`.
+
 ### Compile to assembly code
 
 The `-asm` flag can be used to generate assembly code:
@@ -156,7 +190,7 @@ The `-asm` flag can be used to generate assembly code:
 # compile 'program.py' to assembly file 'program.s'
 codon build -asm program.py
 
-# compile 'program.py' to assembly file 'hello.o'
+# compile 'program.py' to assembly file 'hello.s'
 codon build -asm -o hello.s program.py
 
 # compile 'program.py' to assembly file 'hello.s' with optimizations
@@ -205,10 +239,107 @@ codon build -pyext -o hello.o -release program.py
 codon build -pyext -o hello.o -release -module mymodule program.py
 ```
 
-!!! info
+:::info
 
-    When using `-pyext`, you will also often want to use the `--relocation-model=pic`
-    flag to generate position-independent code.
+
+When using `-pyext`, you will also often want to use the `--relocation-model=pic`
+flag to generate position-independent code.
+
+:::
+
+## `codon doc`
+
+`codon doc` extracts API information from a source file or library, including
+docstrings, signatures, class members, and source locations. Its JSON output can
+feed a custom documentation tool or Codon's reference-page renderer, which also
+generates the [standard library reference](../libraries/api/index.md).
+
+### Extracting a library's API
+
+Documentation lives alongside the code as module, class, and function docstrings.
+Type annotations and default values become part of the generated signatures,
+while docstrings provide the explanation and can contain Markdown formatting.
+For example, a module at `src/mylib/numeric.codon` might contain:
+
+```python
+"""Numeric utilities for working with bounded values."""
+
+def clamp(value: float, lower: float = 0.0, upper: float = 1.0) -> float:
+		"""Limit `value` to the inclusive interval from `lower` to `upper`.
+
+		Values already within the interval are returned unchanged.
+		"""
+		return min(max(value, lower), upper)
+```
+
+From that project's directory, the following command extracts the package's API
+without running its code:
+
+```bash
+codon doc src/mylib --root src --exclude mylib/tests > api.json
+```
+
+Here, `--root src` establishes the import root, so the example module is named
+`mylib.numeric` rather than `numeric`. The root also provides an import search
+location. When omitted, it is inferred from the input path and surrounding
+package directories containing `__init__.codon` or `__init__.py`. A single source
+file is also a valid input, such as `codon doc src/mylib/numeric.codon --root src`.
+
+Directory inputs are searched recursively for `.codon` and `.py` files, with
+Python sources subject to Codon's supported syntax. Other file types, hidden
+paths, `__pycache__`, and `__init_test__.codon` or `__init_test__.py` are skipped.
+Each `--exclude` names a file or directory subtree relative to the root, rather
+than a glob pattern; multiple exclusions can be supplied by repeating the flag.
+
+Imported dependencies remain available for resolving references, but only the
+discovered input modules receive documentation pages. An excluded module may
+therefore still be read when another module imports it. Extraction does not
+execute decorators or infer APIs created at runtime, and annotations that cannot
+be resolved retain their source text instead of requiring a successful type check.
+
+### Rendering a reference
+
+The renderer is provided as `scripts/docgen.py` in the Codon source repository.
+It requires Python 3.11 or later and the packages listed in
+`docs/requirements.txt`; building the compiler from source is not necessary.
+From a Codon checkout, a dedicated environment can be prepared with:
+
+```bash
+python3 -m venv build/docs-venv
+build/docs-venv/bin/python -m pip install -r docs/requirements.txt
+```
+
+With the extracted JSON available, the renderer can generate pages for an
+existing documentation site:
+
+```bash
+build/docs-venv/bin/python scripts/docgen.py \
+	/path/to/project/api.json /path/to/site/docs/reference \
+	--project "My Library" --route /reference \
+	--source-url 'https://github.com/example/mylib/blob/{revision}/src' \
+	--source-revision v1.0
+```
+
+`--project` supplies the display name and `--route` sets the API's URL prefix.
+The source URL corresponds to the extraction root, which is why this example
+ends in `/src`; `{revision}` is replaced with the URL-encoded value of
+`--source-revision`. Source links are omitted when no source URL is supplied.
+For Codon's own reference, `--stdlib` selects its standard title, routes, sidebar,
+and source links instead of the generic project defaults.
+
+The output consists of Markdown with embedded HTML and Docusaurus frontmatter,
+along with an API search index. Codon's documentation site supplies the API styles
+and search interface; another site can integrate the generated content with its
+own presentation. Public names appear in the reference, with special methods
+included on class pages. Re-exports and type aliases link to their definitions
+when those definitions are part of the documented library, and `@extend` methods
+are collected on the corresponding class page.
+
+Regeneration updates files recorded in `.codon-doc-manifest.json` and removes
+stale generated pages while leaving unrelated files alone. Existing files that
+are not tracked by the manifest are protected from being overwritten, so output
+from an older generator can be moved to a backup directory before the first run
+with the new renderer.
 
 ## `codon jit`
 
@@ -218,22 +349,24 @@ Codon's [Python JIT decorator](../integrations/python/codon-from-python.md) and
 [Jupyter kernel](../integrations/jupyter.md).
 However, it is intended to be used as a debugging utility rather than as a general usage mode.
 
-!!! warning
+:::warning
 
-    `codon jit` is intended to be used as a debugging utility for Codon's JIT compilation
-    capabilities. The interface may change between Codon versions.
+
+`codon jit` is intended to be used as a debugging utility for Codon's JIT compilation
+capabilities. The interface may change between Codon versions.
+
+:::
 
 `codon jit` can be passed a file name to read from, or `-` to read from standard input.
 For example:
 
 ```bash
 echo 'print("hello world")' | codon jit -
-# >>> Codon JIT v0.19.0 <<<
-# hello world
-# [done]
 ```
 
-It can also be used as a REPL if no file is provided. JIT inputs can be separated with the string `#%%`.
+This prints the JIT's version banner and the program's output. It can also be
+used as a REPL if no file is provided. JIT inputs can be separated with the
+string `#%%`.
 
 ## Using Codon in an existing Python codebase
 
@@ -241,6 +374,29 @@ Codon provides a Python package called `codon-jit` that can be installed with `p
 supports JIT compilation on a per-function basis within an existing Python codebase.
 
 Learn more in the [Python JIT docs](../integrations/python/codon-from-python.md).
+
+## Measuring performance
+
+`codon run` includes compilation before executing a program. For repeated
+end-to-end measurements, building once separates that preparation from the
+execution being measured:
+
+``` bash
+codon build -release -o program program.py
+time ./program
+```
+
+For a particular operation within a program, `time.perf_counter()` can bracket
+the work while leaving input preparation outside the timed region. A useful
+comparison uses the same inputs, checks the results, and distinguishes startup,
+I/O and Python-conversion costs from the computation itself. Several runs help
+reveal variation from scheduling and caching; a single speedup figure rarely
+describes every input size or machine.
+
+Release mode enables optimization without changing the default Python-style
+numerical semantics. Options such as `-numerics=c`, `-fast-math` and
+`-disable-exceptions` make additional behavioral trade-offs, so they belong
+in a benchmark only when the application can accept those changes.
 
 ## Additional options
 

@@ -276,7 +276,8 @@ Stmt *TypecheckVisitor::transformCVarImport(const std::string &name, Expr *type,
 /// Transform a dynamic C import.
 /// @example
 ///   `from C import lib.foo(int) -> float as f` ->
-///   `f = _dlsym(lib, "foo", Fn=Function[[int], float]); f`
+///   `f = _dlsym_c(lib, "foo", Fn=Function[[int], float]); f`
+/// The callable adapter preserves the platform C ABI for the loaded pointer.
 /// No return type implies void return type.
 Stmt *TypecheckVisitor::transformCDLLImport(Expr *dylib, const std::string &name,
                                             const std::vector<Param> &args, Expr *ret,
@@ -300,7 +301,7 @@ Stmt *TypecheckVisitor::transformCDLLImport(Expr *dylib, const std::string &name
   Expr *c = clone(dylib);
   return transform(N<AssignStmt>(
       N<IdExpr>(altName.empty() ? name : altName),
-      N<CallExpr>(N<IdExpr>("_dlsym"),
+      N<CallExpr>(N<IdExpr>(isFunction ? "_dlsym_c" : "_dlsym"),
                   std::vector<CallArg>{CallArg(c), CallArg(N<StringExpr>(name)),
                                        CallArg{"Fn", type}})));
 }

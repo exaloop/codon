@@ -15,6 +15,12 @@
 #include <fmt/format.h>
 #include <fmt/ostream.h>
 
+#ifdef _WIN32
+// POSIX provides a global `id_t` (via <sys/types.h>) that some headers reference
+// unqualified (e.g. std::hash specializations); Windows has none, so supply it.
+using id_t = std::int64_t;
+#endif
+
 namespace codon {
 namespace ir {
 
@@ -27,7 +33,7 @@ class Module;
 class IdMixin {
 private:
   /// the global id counter
-  static id_t currentId;
+  static CODON_API id_t currentId;
 
 protected:
   /// the instance's id
@@ -61,7 +67,7 @@ public:
   // RTTI is implemented using a port of LLVM's Extensible RTTI
   // For more details, see
   // https://llvm.org/docs/HowToSetUpLLVMStyleRTTI.html#rtti-for-open-class-hierarchies
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a node.
   /// @param name the node's name
@@ -297,7 +303,7 @@ private:
 public:
   using AcceptorExtend<Derived, Node>::AcceptorExtend;
 
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// @return the logical value of the node
   Derived *getActual() {

@@ -15,7 +15,7 @@ private:
   Type *type;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   /// Constructs a constant.
   /// @param type the type
@@ -36,7 +36,7 @@ private:
   ValueType val;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   using AcceptorExtend<TemplatedConst<ValueType>, Const>::getModule;
   using AcceptorExtend<TemplatedConst<ValueType>, Const>::getSrcInfo;
@@ -64,7 +64,7 @@ private:
   std::string val;
 
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   TemplatedConst(std::string v, Type *type, std::string name = "")
       : Const(type, std::move(name)), val(std::move(v)) {}
@@ -78,14 +78,14 @@ public:
 
 class StringConst : public AcceptorExtend<StringConst, TemplatedConst<std::string>> {
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   using AcceptorExtend<StringConst, TemplatedConst<std::string>>::AcceptorExtend;
 };
 
 class BytesConst : public AcceptorExtend<BytesConst, TemplatedConst<std::string>> {
 public:
-  static const char NodeId;
+  static CODON_API const char NodeId;
 
   using AcceptorExtend<BytesConst, TemplatedConst<std::string>>::AcceptorExtend;
 };

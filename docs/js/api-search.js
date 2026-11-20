@@ -1,5 +1,10 @@
-(() => {
-  let searchIndex = null;
+let searchIndex = null;
+let controller;
+
+export function onRouteDidUpdate() {
+  controller?.abort();
+  controller = new AbortController();
+  const {signal} = controller;
 
   function normalize(value) {
     return value
@@ -428,7 +433,8 @@
 
     input.addEventListener(
       "input",
-      update
+      update,
+      {signal}
     );
 
     input.addEventListener(
@@ -437,7 +443,8 @@
         if (input.value.trim()) {
           update();
         }
-      }
+      },
+      {signal}
     );
 
     input.addEventListener(
@@ -486,7 +493,8 @@
           closeResults();
           input.blur();
         }
-      }
+      },
+      {signal}
     );
 
     document.addEventListener(
@@ -498,7 +506,8 @@
         ) {
           closeResults();
         }
-      }
+      },
+      {signal}
     );
 
     /*
@@ -524,7 +533,8 @@
 
         event.preventDefault();
         input.focus();
-      }
+      },
+      {signal}
     );
 
     /*
@@ -561,36 +571,13 @@
         scroll.addEventListener(
           "scroll",
           update,
-          { passive: true }
+          { passive: true, signal }
         );
 
         update();
       });
   }
 
-  /*
-   * Material's instant navigation can replace page contents without
-   * performing a normal browser reload. document$ is Material's
-   * page-change observable when available.
-   */
-  if (typeof document$ !== "undefined") {
-    document$.subscribe(() => {
-      initApiSearch();
-      initApiClassScroll();
-    });
-  } else if (
-    document.readyState === "loading"
-  ) {
-    document.addEventListener(
-      "DOMContentLoaded",
-      initApiSearch
-    );
-    document.addEventListener(
-      "DOMContentLoaded",
-      initApiClassScroll
-    );
-  } else {
-    initApiSearch();
-    initApiClassScroll();
-  }
-})();
+  initApiSearch();
+  initApiClassScroll();
+}

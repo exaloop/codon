@@ -55,4 +55,4 @@ from internal.types.str import *
 from internal.format import *
 
 # from openmp import Ident as __OMPIdent, for_par
-from internal.dlopen import dlsym as _dlsym
+from internal.dlopen import dlsym as _dlsym, dlsym_c as _dlsym_c

@@ -6,6 +6,22 @@ import itertools
 import internal.static as static
 
 @test
+def test_lapack_pivot_width(dtype: type):
+    # An LP64/ILP64 mismatch reads two 32-bit pivots as one 64-bit value and
+    # reverses the determinant sign even for an identity matrix.
+    assert abs(alg.det(np.eye(3, dtype=dtype)) - 1) < 1e-6
+    swapped = np.array([[0, 1], [1, 0]], dtype=dtype)
+    assert abs(alg.det(swapped) + 1) < 1e-6
+    sign, logarithm = alg.slogdet(swapped)
+    assert abs(sign + 1) < 1e-6
+    assert abs(logarithm) < 1e-6
+
+test_lapack_pivot_width(float)
+test_lapack_pivot_width(float32)
+test_lapack_pivot_width(complex)
+test_lapack_pivot_width(complex64)
+
+@test
 def test_lstsq_plan_state(dtype: type, real_dtype: type):
     from numpy.linalg.blas import fint
     from numpy.linalg.linalg import GelsdParams

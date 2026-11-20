@@ -1,0 +1,117 @@
+import numpy as np
+import sys
+import time
+import npbench_lib as kernel_module
+from C import GC_gcollect() -> None
+from C import GC_get_total_bytes() -> int
+from C import GC_get_heap_size() -> int
+from C import GC_get_free_bytes() -> int
+directory = sys.argv[1]
+samples = int(sys.argv[2])
+alpha = 1.5
+beta = 1.2
+original_A = np.load(directory + '/input-A.npy', dtype=np.float64, ndim=2)
+A = np.empty_like(original_A)
+np.copyto(A, original_A)
+original_u1 = np.load(directory + '/input-u1.npy', dtype=np.float64, ndim=1)
+u1 = np.empty_like(original_u1)
+np.copyto(u1, original_u1)
+original_v1 = np.load(directory + '/input-v1.npy', dtype=np.float64, ndim=1)
+v1 = np.empty_like(original_v1)
+np.copyto(v1, original_v1)
+original_u2 = np.load(directory + '/input-u2.npy', dtype=np.float64, ndim=1)
+u2 = np.empty_like(original_u2)
+np.copyto(u2, original_u2)
+original_v2 = np.load(directory + '/input-v2.npy', dtype=np.float64, ndim=1)
+v2 = np.empty_like(original_v2)
+np.copyto(v2, original_v2)
+original_w = np.load(directory + '/input-w.npy', dtype=np.float64, ndim=1)
+w = np.empty_like(original_w)
+np.copyto(w, original_w)
+original_x = np.load(directory + '/input-x.npy', dtype=np.float64, ndim=1)
+x = np.empty_like(original_x)
+np.copyto(x, original_x)
+original_y = np.load(directory + '/input-y.npy', dtype=np.float64, ndim=1)
+y = np.empty_like(original_y)
+np.copyto(y, original_y)
+original_z = np.load(directory + '/input-z.npy', dtype=np.float64, ndim=1)
+z = np.empty_like(original_z)
+np.copyto(z, original_z)
+
+def emit(value, filename):
+    if value is None:
+        return
+    elif isinstance(value, tuple):
+        index = 0
+        for item in value:
+            emit(item, filename + '_' + str(index))
+            index += 1
+    else:
+        np.save(filename, np.asarray(value))
+
+@noinline
+def sample(alpha, beta, A, u1, v1, u2, v2, w, x, y, z):
+    started = time.perf_counter()
+    result = kernel_module.gemver(alpha, beta, A, u1, v1, u2, v2, w, x, y, z)
+    elapsed = time.perf_counter() - started
+    emit(A, directory + '/output-A')
+    emit(w, directory + '/output-w')
+    emit(x, directory + '/output-x')
+    return elapsed
+
+if samples == 0:
+    GC_gcollect()
+    allocated_before = GC_get_total_bytes()
+    heap_before = GC_get_heap_size()
+    address_A = int(A.data)
+    address_u1 = int(u1.data)
+    address_v1 = int(v1.data)
+    address_u2 = int(u2.data)
+    address_v2 = int(v2.data)
+    address_w = int(w.data)
+    address_x = int(x.data)
+    address_y = int(y.data)
+    address_z = int(z.data)
+    for iteration in range(32):
+        np.copyto(A, original_A)
+        assert int(A.data) == address_A
+        np.copyto(u1, original_u1)
+        assert int(u1.data) == address_u1
+        np.copyto(v1, original_v1)
+        assert int(v1.data) == address_v1
+        np.copyto(u2, original_u2)
+        assert int(u2.data) == address_u2
+        np.copyto(v2, original_v2)
+        assert int(v2.data) == address_v2
+        np.copyto(w, original_w)
+        assert int(w.data) == address_w
+        np.copyto(x, original_x)
+        assert int(x.data) == address_x
+        np.copyto(y, original_y)
+        assert int(y.data) == address_y
+        np.copyto(z, original_z)
+        assert int(z.data) == address_z
+    allocated = GC_get_total_bytes() - allocated_before
+    heap_growth = GC_get_heap_size() - heap_before
+    print('BENCH_MEMORY', allocated, heap_growth)
+    assert allocated < 65536
+    assert heap_growth == 0
+else:
+    for iteration in range(samples + 1):
+        GC_gcollect()
+        if iteration > 0:
+            print('BENCH_GC', GC_get_heap_size(), GC_get_heap_size() - GC_get_free_bytes())
+        np.copyto(A, original_A)
+        np.copyto(u1, original_u1)
+        np.copyto(v1, original_v1)
+        np.copyto(u2, original_u2)
+        np.copyto(v2, original_v2)
+        np.copyto(w, original_w)
+        np.copyto(x, original_x)
+        np.copyto(y, original_y)
+        np.copyto(z, original_z)
+        elapsed = sample(alpha, beta, A, u1, v1, u2, v2, w, x, y, z)
+        if iteration > 0:
+            print('BENCH_TIME', elapsed)
+    GC_gcollect()
+    print('BENCH_GC', GC_get_heap_size(), GC_get_heap_size() - GC_get_free_bytes())

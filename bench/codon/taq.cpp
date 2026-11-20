@@ -20,8 +20,11 @@ template <typename It> double stdev(It begin, It end) {
   auto n = std::distance(begin, end);
   double sum = std::accumulate(begin, end, 0.0);
   double mean = sum / n;
-  double sq_sum = std::inner_product(begin, end, begin, 0.0);
-  double stdev = std::sqrt(sq_sum / n - mean * mean);
+  double sq_sum = std::accumulate(begin, end, 0.0, [mean](double total, double value) {
+    double difference = value - mean;
+    return total + difference * difference;
+  });
+  double stdev = std::sqrt(sq_sum / (n - 1));
   return stdev;
 }
 
@@ -43,7 +46,7 @@ std::vector<int> find_peaks(const std::vector<double> &y) {
   std::vector<double> avg_filter(t);
   std::vector<double> std_filter(t);
   avg_filter[lag] = mean(y.begin(), y.begin() + lag);
-  avg_filter[lag] = stdev(y.begin(), y.begin() + lag);
+  std_filter[lag] = stdev(y.begin(), y.begin() + lag);
 
   for (int i = lag; i < t; i++) {
     if (std::abs(y[i] - avg_filter[i - 1]) > threshold * std_filter[i - 1]) {

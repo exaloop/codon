@@ -303,9 +303,8 @@ class _Environ:
             else:
                 for key, value in other:
                     self[key] = value
-        keys = kwargs.__keys__()
-        for i in static.range(static.len(kwargs.args)):
-            self[keys[i]] = kwargs.args[i]
+        for key, value in kwargs.items():
+            self[key] = value
 
     def __ior__(self, other):
         self.update(other)

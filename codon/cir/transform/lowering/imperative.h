@@ -11,7 +11,7 @@ namespace lowering {
 
 class ImperativeForFlowLowering : public OperatorPass {
 public:
-  static const std::string KEY;
+  static CODON_API const std::string KEY;
   std::string getKey() const override { return KEY; }
   void handle(ForFlow *v) override;
 };

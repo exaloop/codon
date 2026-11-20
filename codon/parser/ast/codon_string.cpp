@@ -354,6 +354,7 @@ const char *attributeName(int key) {
     ATTRIBUTE_NAME(ExprStarArgument);
     ATTRIBUTE_NAME(ExprKwStarArgument);
     ATTRIBUTE_NAME(ExprOrderedCall);
+    ATTRIBUTE_NAME(ExprCapture);
     ATTRIBUTE_NAME(ExprExternVar);
     ATTRIBUTE_NAME(ExprNoUndefCheck);
     ATTRIBUTE_NAME(ExprDominatedUsed);

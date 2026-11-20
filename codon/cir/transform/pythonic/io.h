@@ -12,7 +12,7 @@ namespace pythonic {
 /// Pass to optimize print str.cat(...) or file.write(str.cat(...)).
 class IOCatOptimization : public OperatorPass {
 public:
-  static const std::string KEY;
+  static CODON_API const std::string KEY;
   std::string getKey() const override { return KEY; }
   void handle(CallInstr *v) override;
 };

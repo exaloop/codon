@@ -1763,7 +1763,8 @@ def test_num_from_str_extended():
 
 @test
 def test_files(open_fn, append_allowed: bool = True):
-    path = 'build/testfile.txt'
+    import os
+    path = 'build/testfile-' + str(os.getpid()) + '.txt'
     f = open_fn(path, 'wt')
     f.write('hello\nworld\n')
     f.close()

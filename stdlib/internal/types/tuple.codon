@@ -77,32 +77,69 @@ class Tuple:
 
 
 @extend
-class NamedTuple:
-    def __getitem__(self, key: Literal[str]):
-        return getattr(self, key)
-
-    def __contains__(self, key: Literal[str]):
-        return hasattr(self, key)
-
-    def _get(kw, key: Literal[str], default):
-        if hasattr(kw, key):
-            return getattr(kw, key)
-        else:
-            return default
-
-    def get(self, key: Literal[str], default = None):
-        return NamedTuple._get(self, key, default)
-
+class FixedDict:
     @__generated__
-    def _namedkeys(N: Literal[int]):
-        # Compiler generated
+    def _index(_KeysId: Literal[int], key: Literal[str]):
         pass
 
-    def __keys__(self):
-        return NamedTuple._namedkeys(N)
+    @__generated__
+    def _keys(_KeysId: Literal[int]):
+        pass
+
+    def __len__(self):
+        return static.len(self._values)
+
+    def __bool__(self):
+        return len(self) != 0
+
+    def keys(self):
+        return FixedDict._keys(_KeysId)
+
+    def values(self):
+        return self._values
+
+    def items(self):
+        return tuple((self.keys()[index], self._values[index])
+                     for index in static.range(static.len(self._values)))
+
+    def __iter__(self):
+        return self.keys().__iter__()
+
+    def __getitem__(self, key: str):
+        compile_error("fixed dictionary lookup requires a compile-time string key")
+
+    def __getitem__(self, key: Literal[str]):
+        index: Literal[int] = FixedDict._index(_KeysId, key)
+        if index < 0:
+            compile_error("unknown fixed dictionary key: " + key)
+        else:
+            return self._values[index]
+
+    def __contains__(self, key: str):
+        for index in static.range(static.len(self._values)):
+            if self.keys()[index] == key:
+                return True
+        return False
+
+    def __contains__(self, key: Literal[str]) -> Literal[bool]:
+        return FixedDict._index(_KeysId, key) >= 0
+
+    def get(self, key: str, default=None):
+        compile_error("fixed dictionary lookup requires a compile-time string key")
+
+    def get(self, key: Literal[str], default=None):
+        index: Literal[int] = FixedDict._index(_KeysId, key)
+        if index < 0:
+            return default
+        else:
+            return self._values[index]
 
     def __repr__(self):
-        keys = self.__keys__()
-        values = [v.__repr__() for v in self.args]
-        s = ', '.join(f"{keys[i]}: {values[i]}" for i in range(len(keys)))
-        return f"({s})"
+        keys = self.keys()
+        fragments_per_entry: Literal[int] = 4
+        entries = tuple((', ' if index else '', repr(keys[index]),
+                         ': ', repr(self._values[index]))
+                        for index in static.range(static.len(self._values)))
+        fragments = tuple(entries[index // fragments_per_entry][index % fragments_per_entry]
+                          for index in static.range(fragments_per_entry * static.len(entries)))
+        return str.cat('{', *fragments, '}')

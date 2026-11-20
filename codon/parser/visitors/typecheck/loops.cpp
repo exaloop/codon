@@ -261,7 +261,7 @@ Expr *TypecheckVisitor::transformForDecorator(Expr *decorator) {
 ///          i: Literal[int] = 1; <suite>; break
 ///        while loop:
 ///          i = x; <suite>; break
-///        loop = False   # also set to False on break
+///        break
 /// If a loop is flat, while wrappers are removed.
 /// A separate suite is generated for each static iteration.
 std::pair<bool, Stmt *> TypecheckVisitor::transformStaticForLoop(const ForStmt *stmt) {
@@ -296,13 +296,24 @@ std::pair<bool, Stmt *> TypecheckVisitor::transformStaticForLoop(const ForStmt *
   Stmt *loop = nullptr;
   if (!stmt->flat) {
     ctx->blockLevel++;
-    auto a = N<AssignStmt>(N<IdExpr>(loopVar), N<BoolExpr>(false));
-    a->setUpdate();
-    block->addStmt(a);
-    loop = transform(N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(loopVar), N<BoolExpr>(true)),
-                                  N<WhileStmt>(N<IdExpr>(loopVar), block)));
+    if (stmt->getElse()) {
+      auto end = N<BreakStmt>();
+      end->setDone();
+      block->addStmt(end);
+    } else {
+      auto end = N<AssignStmt>(N<IdExpr>(loopVar), N<BoolExpr>(false));
+      end->setUpdate();
+      block->addStmt(end);
+    }
+    auto result = N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(loopVar), N<BoolExpr>(true)),
+                               N<WhileStmt>(N<IdExpr>(loopVar), block));
+    if (stmt->getElse())
+      result->addStmt(N<IfStmt>(N<IdExpr>(loopVar), clean_clone(stmt->getElse())));
+    loop = transform(result);
     ctx->blockLevel--;
   } else {
+    if (stmt->getElse())
+      block->addStmt(clean_clone(stmt->getElse()));
     loop = transform(block);
   }
   return {false, loop};
@@ -372,7 +383,8 @@ TypecheckVisitor::transformStaticLoopCall(Expr *varExpr, SuiteStmt **varSuite,
       // Maybe heterogenous?
       if (!iter->getType()->canRealize())
         return {true, true, nullptr, {}}; // wait until the tuple is fully realizable
-      if (!isHeterogenous(iter->getClassType()) && !allowNonHeterogenous)
+      if (!isHeterogenous(iter->getClassType()) && !allowNonHeterogenous &&
+          (iter->getClassType()->size() || cast<IdExpr>(varExpr)))
         return {false, false, nullptr, {}};
       block = populateStaticHeterogenousTupleLoop(iter, vars);
       preamble = block.back();
