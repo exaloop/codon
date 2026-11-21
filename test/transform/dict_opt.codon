@@ -93,3 +93,61 @@ def test_wrapped_dict():
     assert x.do_op_count == 1
     assert x.d == {'a': 312.5, 'b': 207}
 test_wrapped_dict()
+
+@test
+def test_distinct_variable_keys():
+    keys = [1000001, 0]
+    target_key = keys[0]
+    source_key = keys[1]
+    mapping = WrappedDict[int, int]()
+    mapping[target_key] = 99
+    mapping[source_key] = 0
+
+    mapping[target_key] = mapping[source_key] + 1
+    assert mapping.d == {1000001: 1, 0: 0}
+    assert mapping.do_op_throws_count == 0
+
+    del mapping.d[target_key]
+    mapping[target_key] = mapping[source_key] + 1
+    assert mapping.d == {1000001: 1, 0: 0}
+    assert mapping.do_op_throws_count == 0
+
+    mapping[target_key] = mapping.get(source_key, 41) + 1
+    assert mapping.d == {1000001: 1, 0: 0}
+    del mapping.d[source_key]
+    mapping[target_key] = mapping.get(source_key, 41) + 1
+    assert mapping.d == {1000001: 42}
+    assert mapping.do_op_count == 0
+
+    try:
+        mapping[target_key] = mapping[source_key] + 1
+        assert False
+    except KeyError:
+        pass
+    assert mapping.d == {1000001: 42}
+    assert mapping.do_op_throws_count == 0
+
+    mapping[target_key] = mapping[target_key] + 1
+    mapping[target_key] = mapping.get(target_key, 0) + 1
+    assert mapping.d == {1000001: 44}
+    assert mapping.do_op_throws_count == 1
+    assert mapping.do_op_count == 1
+test_distinct_variable_keys()
+
+@test
+def test_distinct_variable_dicts():
+    target = WrappedDict[int, int]()
+    source = WrappedDict[int, int]()
+    target[0] = 99
+    source[0] = 0
+
+    target[0] = source[0] + 1
+    assert target.d == {0: 1}
+    assert source.d == {0: 0}
+    assert target.do_op_throws_count == 0
+
+    target[0] = source.get(0, 41) + 1
+    assert target.d == {0: 1}
+    assert source.d == {0: 0}
+    assert target.do_op_count == 0
+test_distinct_variable_dicts()

@@ -253,7 +253,7 @@ public:
     if (tx || ty)
       return tx && ty && tx->is(const_cast<Type *>(ty));
 
-    MatchVisitor v(checkName);
+    MatchVisitor v(checkName, varIdMatch);
     x->accept(v);
     y->accept(v);
 
@@ -288,7 +288,7 @@ const char AnyVar::NodeId = 0;
 const char AnyFunc::NodeId = 0;
 
 bool match(Node *a, Node *b, bool checkNames, bool varIdMatch) {
-  return MatchVisitor(checkNames).process(a, b);
+  return MatchVisitor(checkNames, varIdMatch).process(a, b);
 }
 
 } // namespace util

@@ -10,6 +10,8 @@ TEST_F(CIRCoreTest, MatchingEquivalentVar) {
   auto *third = module->Nr<Var>(module->getFloatType());
   ASSERT_TRUE(util::match(first, second));
   ASSERT_FALSE(util::match(first, third));
+  ASSERT_TRUE(util::match(first, first, false, true));
+  ASSERT_FALSE(util::match(first, second, false, true));
 }
 
 TEST_F(CIRCoreTest, MatchingNonEquivalentVar) {
@@ -118,6 +120,8 @@ TEST_F(CIRCoreTest, MatchingVarValue) {
   auto *first = module->Nr<VarValue>(module->Nr<Var>(module->getIntType()));
   auto *second = module->Nr<VarValue>(module->Nr<Var>(module->getIntType()));
   ASSERT_TRUE(util::match(first, second));
+  ASSERT_FALSE(util::match(first, second, false, true));
+  ASSERT_TRUE(util::match(first, module->Nr<VarValue>(first->getVar()), false, true));
   first->setVar(module->Nr<Var>(module->getFloatType()));
   ASSERT_FALSE(util::match(first, second));
 }
@@ -126,8 +130,25 @@ TEST_F(CIRCoreTest, MatchingPointerValue) {
   auto *first = module->Nr<PointerValue>(module->Nr<Var>(module->getIntType()));
   auto *second = module->Nr<PointerValue>(module->Nr<Var>(module->getIntType()));
   ASSERT_TRUE(util::match(first, second));
+  ASSERT_FALSE(util::match(first, second, false, true));
+  ASSERT_TRUE(
+      util::match(first, module->Nr<PointerValue>(first->getVar()), false, true));
   first->setVar(module->Nr<Var>(module->getFloatType()));
   ASSERT_FALSE(util::match(first, second));
+}
+
+TEST_F(CIRCoreTest, MatchingNestedVarIdentity) {
+  auto *type = cast<RecordType>(module->unsafeGetMemberedType("**internal**"));
+  type->realize({module->getIntType()}, {"key"});
+  auto *firstVar = module->Nr<Var>(type);
+  auto *secondVar = module->Nr<Var>(type);
+  auto *first = module->Nr<ExtractInstr>(module->Nr<VarValue>(firstVar), "key");
+  auto *same = module->Nr<ExtractInstr>(module->Nr<VarValue>(firstVar), "key");
+  auto *second = module->Nr<ExtractInstr>(module->Nr<VarValue>(secondVar), "key");
+
+  ASSERT_TRUE(util::match(first, second));
+  ASSERT_TRUE(util::match(first, same, false, true));
+  ASSERT_FALSE(util::match(first, second, false, true));
 }
 
 TEST_F(CIRCoreTest, MatchingSeriesFlow) {
