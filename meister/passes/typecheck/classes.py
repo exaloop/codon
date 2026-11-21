@@ -1446,10 +1446,9 @@ def codegen_magic(
 
 def generate_kw_id(self: TypeVisitor, names: List[str] | None = None) -> int:
     if names:
-        key = ";".join(names)
-        # Each set of names generates different tuple (i.e., `KwArgs[foo, bar]` is not the
-        # same as `KwArgs[bar, baz]`). Cache the names and use an integer for each name
-        # combination.
+        key = "".join(f"{len(name.encode('utf-8', 'surrogateescape'))}:{name}" for name in names)
+        # Each ordered sequence of names gets its own tuple layout. Cache each
+        # sequence and use its integer ID in the corresponding FixedDict type.
         if key not in self.ctx.cache.generated_kw_tuples:
             self.ctx.cache.generated_tuple_names.append(names)
             self.ctx.cache.generated_kw_tuples[key] = len(self.ctx.cache.generated_kw_tuples) + 1

@@ -74,6 +74,7 @@ class Attr(Enum):
     TryPyVar = 254
     LocalRenames = 255
     MaybeLiteral = 256
+    ExprCapture = 257
 
 
 class Node:

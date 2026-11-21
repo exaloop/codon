@@ -299,7 +299,7 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
 
     is_class_member = self.ctx.in_class
     if node.has(ast.Attr.ForceRealize) and (not self.ctx.is_global or is_class_member):
-        raise TypecheckError(node, "builtin must be a top-level statement")
+        raise TypecheckError(node, "builtin function must be a top-level statement")
 
     # All overloads share the same canonical name except for the number at the
     # end (e.g., `foo.1:0`, `foo.1:1` etc.)
@@ -461,6 +461,16 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
                     if is_class_member:
                         del new_context.bases[1:]
                     visitor = TypeVisitor(ctx=new_context)
+                    if isinstance(default, ast.DictExpr) and isinstance(param.type, ast.IdExpr):
+                        item = self.ctx.find_at(param.type.value, self.ctx.time)
+                        if (
+                            item
+                            and utils.extract_type(self.ctx, item.type)
+                            == ast.types.Stdlib.FixedDict
+                        ):
+                            default.expected_type = utils.get_stdlib_type(
+                                self.ctx, ast.types.Stdlib.FixedDict
+                            )
                     assignment = ast.AssignStmt(
                         ast.IdExpr(default_name),
                         rhs=default,

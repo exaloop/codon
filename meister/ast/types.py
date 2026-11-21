@@ -68,7 +68,7 @@ class Stdlib:
     Generator = mangle(cls="Generator")
     Int = mangle(cls="Int")
     List = mangle(cls="List", module="std.internal.types.collections.list")
-    NamedTuple = mangle(cls="NamedTuple")
+    FixedDict = mangle(cls="FixedDict")
     NDArray = mangle(cls="ndarray", module="std.numpy.ndarray")
     NoneType = mangle(cls="NoneType")
     Object = mangle(cls="object")
@@ -1011,20 +1011,7 @@ class Class(Type):
     def to_string(self, mode: int) -> str:
         if canonical := self.canonical_optional():
             return canonical.to_string(mode)
-        if self.name == Stdlib.NamedTuple:
-            if (tid := self[0].int) is not None:
-                assert 0 <= tid < len(self.cache.generated_tuple_names), f"bad id: {tid}"
-                names = self.cache.generated_tuple_names[tid]
-                if not names:
-                    return self.name
-                values = [
-                    f"{field_name}={self[1].require_cls.generics[idx].to_string(mode)}"
-                    for idx, field_name in enumerate(names)
-                ]
-                return f"{self.name}[{','.join(values)}]"
-            else:
-                return f"{self.name}[{self[0].to_string(mode)}]"
-        elif self.name == "Partial" and self[3].cls and mode != 2:
+        if self.name == "Partial" and self[3].cls and mode != 2:
             # Name: function[full_args](instantiated_args...)
             known = self.partial_mask
             function = self.partial_func
@@ -1055,9 +1042,12 @@ class Class(Type):
             # unused *args (by default always 0 in mask)
             if positional and positional[-1] != Stdlib.Tuple:
                 values.append(positional[-1])
-            kwargs = self[2].to_string(mode)
-            if len(kwargs) > 10:  # if **kwargs is used
-                values.append(kwargs[11:-1])  # chop off NamedTuple[...]
+            if keywords := self[2].cls:
+                shape, fields = keywords[0].int, keywords[1].cls
+                if shape is not None and fields is not None:
+                    assert 0 <= shape < len(self.cache.generated_tuple_names), f"bad id: {shape}"
+                    for index, name in enumerate(self.cache.generated_tuple_names[shape]):
+                        values.append(f"{name}={fields.generics[index].to_string(mode)}")
             fn_name = function.ast.name
             if mode == 0:
                 fn_name = self.cache.rev(fn_name)

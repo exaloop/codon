@@ -14,6 +14,41 @@ from .util.visitor import ConstVisitor
 
 
 class LLVMVisitor(ConstVisitor):
+    mod: llvm.Module
+    b: llvm.IRBuilder
+    layout: llvm.DataLayout
+    debug: bool
+    standalone: bool
+    fn: llvm.Function | None
+    block: llvm.BasicBlock | None
+    vars: dict[int, llvm.Value]
+    funcs: dict[int, llvm.Function]
+    types: dict[ir.Type, llvm.Type]
+    function_names: dict[int, str]
+    function_name_counts: Counter[str]
+    field_offset_resolvers: dict[tuple[int, int], int | llvm.Function]
+    virtual_lookup_types: dict[str, ir.RefType]
+    virtual_targets: dict[tuple[int, int], list[tuple[int, llvm.Function]] | tuple[()]]
+    loops: list[SimpleNamespace]
+    trycatch: list[SimpleNamespace]
+    finally_: list[SimpleNamespace]
+    catches: list[SimpleNamespace]
+    next_sequence_number: int
+    coro: SimpleNamespace | None
+    version: str
+    db: llvm.DebugBuilder | None
+    unit: llvm.Metadata | None
+    default_source: Node.SrcInfo
+    i1: llvm.Type
+    i8: llvm.Type
+    i16: llvm.Type
+    i32: llvm.Type
+    i64: llvm.Type
+    ptr: llvm.Type
+    void: llvm.Type
+    token_none: llvm.Value
+    str_type: llvm.Type
+
     # C++: codon/cir/llvm/llvisitor.cpp:95
     def __init__(self, module, *, debug=True, standalone=False, version):
         self.mod = module
@@ -290,7 +325,7 @@ class LLVMVisitor(ConstVisitor):
     def dummy(self, typ):
         return self.token_none if typ.is_void else typ.undef()
 
-    # C++: codon/cir/llvm/llvisitor.cpp:143
+    # C++: codon/cir/llvm/llvisitor.cpp:159
     def register_global(self, var):
         if not var.global_:
             return
@@ -317,7 +352,9 @@ class LLVMVisitor(ConstVisitor):
         self.vars.setdefault(var.id, storage)
         if var.external:
             storage.set_unnamed_addr(local=True)
-        else:
+        elif not (var.tls and "windows" in self.mod.target):
+            # CodeView cannot describe LLVM's emulated TLS storage.
+            # Referring to the original symbol leaves an undefined COFF label.
             src = self.source(var)
             expr = self.db.global_variable(
                 self.unit,
@@ -594,15 +631,19 @@ class LLVMVisitor(ConstVisitor):
             "seq_personality", self.i32.function((self.i32, self.i32, self.i64, self.ptr, self.ptr))
         )
 
-    # C++: codon/cir/llvm/llvisitor.cpp:1585
+    # C++: codon/cir/llvm/llvisitor.cpp:2096
     def visit_Module(self, node):
         self.db = self.mod.create_debug_builder()
         self.unit = self.db.compile_unit(
             self.debug_file(self.source(node)), f"codon version {self.version}", not self.debug
         )
         self.mod.add_warning_flag("Debug Info Version", self.i32.const_int(3))
-        if "darwin" in self.mod.target or "macos" in self.mod.target:
+        target = self.mod.target
+        if "darwin" in target or "macos" in target:
             self.mod.add_warning_flag("Dwarf Version", self.i32.const_int(2))
+        # Windows uses CodeView for the PDB that provides symbolized backtraces.
+        if "windows" in target:
+            self.mod.add_warning_flag("CodeView", self.i32.const_int(1))
         self.register_global(node.argv_var)
         self.register_global(node.argc_var)
         for var in node:
@@ -695,11 +736,12 @@ class LLVMVisitor(ConstVisitor):
         if m.function("seq_free"):
             self.free_func()
 
-    # C++: codon/cir/llvm/llvisitor.cpp:1482
+    # C++: codon/cir/llvm/llvisitor.cpp:1965
     def type_idx_var(self, typ):
         name = f"codon.typeidx.{typ.name if typ else '<all>'}"
-        if result := self.mod.global_variable(name):
-            return result
+        # Module::getGlobalVariable skips local linkage by default.
+        if existing := self.mod.global_variable(name, allow_local=False):
+            return existing
         idx = 0 if typ is None else self.type_idx(typ)
         result = self.mod.add_global(
             name,
@@ -836,14 +878,18 @@ class LLVMVisitor(ConstVisitor):
         self.b.create_store(rhs, addr)
         return lhs
 
-    # C++: codon/cir/llvm/llvisitor.cpp:3432
+    # C++: codon/cir/llvm/llvisitor.cpp:4113
     def visit_CallInstr(self, node):
+        self.b.set_insert_point(self.block)
         if isinstance(node.callee, ir.VarValue):
             fn = node.callee.var.get_actual()
             if isinstance(fn, ir.InternalFunc) and fn.is_type_query():
                 assert not node.args
                 return self.codegen_type_query(fn)
-        fn = self.process(node.callee)
+        # Direct calls use the logical signature, without lowering the callee as
+        # a first-class function value.
+        direct = irtools.get_func(node.callee)
+        fn = self.get_func(direct) if direct else self.process(node.callee)
         typ = self.get_llvm_func_type(node.callee.type)
         fn, targets, dynamic_id = self.specialize_virtual_call(fn, typ)
         args = [self.process(arg) for arg in node]

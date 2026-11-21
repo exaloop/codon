@@ -294,7 +294,8 @@ def transform_cdll_import(
     Transform a dynamic C import.
     @example
     `from C import lib.foo(int) -> float as f` ->
-    `f = _dlsym(lib, "foo", Fn=Function[[int], float]); f`
+    `f = _dlsym_c(lib, "foo", Fn=Function[[int], float]); f`
+    The callable adapter preserves the platform C ABI for the loaded pointer.
     No return type implies void return type.
     """
     if is_function:
@@ -316,7 +317,7 @@ def transform_cdll_import(
         assert ret
         type_expr = ret.clone()
     call = ast.CallExpr(
-        ast.IdExpr("_dlsym"),
+        ast.IdExpr("_dlsym_c" if is_function else "_dlsym"),
         items=[dylib.clone(), ast.StringExpr(name), ast.CallExpr.Arg(type_expr, name="Fn")],
     )
     assignment = ast.AssignStmt(ast.IdExpr(alt_name or name), rhs=call)

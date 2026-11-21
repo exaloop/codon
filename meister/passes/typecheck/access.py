@@ -624,15 +624,6 @@ def get_class_member(
         result = ast.CallExpr(ast.DotExpr(expr, member="_getattr"), items=[ast.StringExpr(member)])
         return self.visit_expr(result), True
 
-    # Case: NamedTuple support
-    if class_type == ast.types.Stdlib.NamedTuple:
-        tuple_id = class_type[0].require_int
-        assert 0 <= tuple_id < len(self.ctx.cache.generated_tuple_names)
-        for idx, name in enumerate(self.ctx.cache.generated_tuple_names[tuple_id]):
-            if name == member:
-                result = ast.IndexExpr(ast.DotExpr(expr, member="args"), index=ast.IntExpr(idx))
-                return self.visit_expr(result), True
-
     # Case: __getattr__ support. Ensure that only Literal[str] arguments are accepted.
     unbound = utils.instantiate_unbound(self.ctx)
     unbound._static_kind = ast.types.Type.Behaviour.String

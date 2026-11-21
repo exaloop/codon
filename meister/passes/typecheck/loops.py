@@ -315,7 +315,7 @@ def transform_static_for_loop(self: TypeVisitor, stmt: ast.ForStmt):
     i: Literal[int] = 1; <suite>; break
     while loop:
     i = x; <suite>; break
-    loop = False   # also set to False on break
+    break
     If a loop is flat, while wrappers are removed.
     A separate suite is generated for each static iteration.
     """
@@ -340,20 +340,28 @@ def transform_static_for_loop(self: TypeVisitor, stmt: ast.ForStmt):
     block = ast.SuiteStmt(preamble, *items)
     if not stmt.flat:
         with self.ctx.substitute("block_level", self.ctx.block_level + 1):
-            block.add(
-                ast.AssignStmt(
-                    ast.IdExpr(loop_var), rhs=ast.BoolExpr(False), update=ast.AssignStmt.Mode.Update
+            if stmt.else_suite:
+                block.add(ast.BreakStmt(done=True))
+            else:
+                block.add(
+                    ast.AssignStmt(
+                        ast.IdExpr(loop_var),
+                        rhs=ast.BoolExpr(False),
+                        update=ast.AssignStmt.Mode.Update,
+                    )
                 )
+            result = ast.SuiteStmt(
+                ast.AssignStmt(ast.IdExpr(loop_var), rhs=ast.BoolExpr(True)),
+                ast.WhileStmt(ast.IdExpr(loop_var), suite=block),
             )
-            # var [: Static] := expr; suite...
-            loop_result = self.visit_stmt(
-                ast.SuiteStmt(
-                    ast.AssignStmt(ast.IdExpr(loop_var), rhs=ast.BoolExpr(True)),
-                    ast.WhileStmt(ast.IdExpr(loop_var), suite=block),
+            if stmt.else_suite:
+                result.add(
+                    ast.IfStmt(ast.IdExpr(loop_var), if_suite=stmt.else_suite.clone(clean=True))
                 )
-            )
+            loop_result = self.visit_stmt(result)
     else:
-        # Close the loop
+        if stmt.else_suite:
+            block.add(stmt.else_suite.clone(clean=True))
         loop_result = self.visit_stmt(block)
     return False, loop_result
 
@@ -418,6 +426,7 @@ def transform_static_loop_call(
         if (
             not utils.is_heterogenous(self.ctx, iterator.type.require_cls)
             and not allow_non_heterogenous
+            and (len(iterator.type.require_cls) or isinstance(var, ast.IdExpr))
         ):
             return False, False, None, []
         assert iterator

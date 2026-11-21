@@ -627,7 +627,7 @@ def generate_union_dispatch_ast(ctx, fn):
     visitor = TypeVisitor(ctx)
     union = fn[0].require_union
     suite = utils.get_function(ctx, fn.func_name).ast.suite.clone()
-    is_call = fn[1] == ast.types.Stdlib.Tuple and fn[2] == ast.types.Stdlib.NamedTuple
+    is_call = fn[1] == ast.types.Stdlib.Tuple and fn[2] == ast.types.Stdlib.FixedDict
     arguments = []
     if is_call:
         arguments.extend(("", typ) for typ in fn[1].require_cls)
@@ -843,7 +843,9 @@ def generate_special_ast(ctx: TypeContext, function: ast.types.Function) -> ast.
     ):
         # Special case: do not realize auto-generated heterogenous __getitem__
         raise TypecheckError(ctx.node_stack[-1], "expected iterable expression")
-    if ast_node.name.startswith("Function.__call_internal__"):
+    if ast_node.name.startswith(
+        ("Function.__call_internal__", ast.types.mangle("std.internal.dlopen", func="_call_c"))
+    ):
         return generate_function_call_internal_ast(function)
     if ast_node.name.startswith("Union.__new__"):
         return generate_union_new_ast(function)
@@ -855,7 +857,7 @@ def generate_special_ast(ctx: TypeContext, function: ast.types.Function) -> ast.
         return generate_union_iterator_ast(ctx, function)
     if ast_node.name.startswith(ast.types.mangle(cls="Union", func="_binary")):
         return generate_union_binary_ast(ctx, function)
-    if ast_node.name.startswith(ast.types.mangle("", "NamedTuple", "_namedkeys")):
+    if ast_node.name.startswith(ast.types.mangle("", "FixedDict", "_keys")):
         return generate_named_keys_ast(ctx, function)
     if ast_node.name.startswith(ast.types.mangle("", "__magic__", "mul")):
         return generate_tuple_mul_ast(function)
@@ -925,18 +927,39 @@ def transform_named_tuple(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr:
     return self.visit_expr(ast.IdExpr(name), enforce_type=True)
 
 
-def transform_functools_partial(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr:
+def transform_functools_partial(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr | None:
     """
     Transform partial calls (Python syntax).
     @example
     `partial(foo, 1, a=2)` -> `foo(1, a=2, ...)`
     """
 
-    if not expr.items:
+    from .call import transform_call_args
+
+    arguments = list(expr.items)
+    prepends = []
+    # Unpack only the prefix to find the proper target.
+    # Remaining arguments must keep their context and evaluation order.
+    while arguments and isinstance(arguments[0].value, ast.StarExpr):
+        prefix = ast.CallExpr(expr.expr, [arguments[0]])
+        part = utils.PartialCallData()
+        if not transform_call_args(self, prefix, part):
+            return None
+        arguments[:1] = prefix.items
+        prepends.extend(ast.ExprStmt(value) for _, value in part.empty_expansions)
+    if not arguments:
         raise TypecheckError(expr, "partial() takes 1 or more arguments")
-    args = list(expr.items[1:])
+    args = arguments[1:]
     args.append(ast.CallExpr.Arg(ast.EllipsisExpr(ast.EllipsisExpr.Kind.Partial)))
-    return self.visit_expr(ast.CallExpr(expr.items[0].value, args))
+    target = arguments[0].value
+    if utils.has_side_effect(target):
+        name = utils.get_temporary_var(self.ctx, "partial_fn")
+        prepends.append(ast.AssignStmt(ast.IdExpr(name), target, utils.get_param_type(target.type)))
+        target = ast.IdExpr(name)
+    call = ast.CallExpr(target, args)
+    if prepends:
+        call = ast.StmtExpr(prepends, expr=call)
+    return self.visit_expr(call)
 
 
 def transform_super_f(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr:
@@ -1267,7 +1290,7 @@ def transform_has_attr(
             if arg_type == ast.types.Stdlib.TypeWrap:
                 arg_type = arg_type.require_cls[0]
             arg_types.append(("", arg_type))
-    for name, named_expr in utils.extract_named_tuple(self.ctx, expr.items[2].value):
+    for name, named_expr in utils.extract_record(self.ctx, expr.items[2].value):
         named_expr = self.visit_expr(named_expr)
         named_type = utils.extract_type(self.ctx, named_expr)
         if named_type == ast.types.Stdlib.TypeWrap:
@@ -1289,13 +1312,6 @@ def transform_has_attr(
                 branch if condition is None else ast.BinaryExpr(condition, op="||", rexpr=branch)
             )
         return self.visit_expr(ast.BoolExpr(False) if condition is None else condition)
-
-    if typ == ast.types.Stdlib.NamedTuple:
-        if not typ.can_realize():
-            return None
-        tuple_id = typ[0].require_int
-        assert 0 <= tuple_id < len(self.ctx.cache.generated_tuple_names)
-        return self.visit_expr(ast.BoolExpr(attr in self.ctx.cache.generated_tuple_names[tuple_id]))
 
     # enum_test: __members__ is an ordinary ClassVar, so hasattr must include
     # class variables just as attribute lookup does (also through instances).
@@ -1399,7 +1415,11 @@ def transform_tuple_fn(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr:
 
     for arg in expr.items:
         arg.value = self.visit_expr(arg.value)
-    cls_type = utils.extract_class_type(self.ctx, expr.items[0].value)
+    cls_type = utils.extract_type(self.ctx, expr.items[0].value).cls
+    if not cls_type:
+        return expr
+    if not utils.is_type_expr(expr.items[0].value) and cls_type == ast.types.Stdlib.FixedDict:
+        return self.visit_expr(ast.CallExpr(ast.DotExpr(expr.items[0].value, "keys")))
     # tuple(ClassType) is a tuple type that corresponds to a class
     if utils.is_type_expr(expr.items[0].value):
         if infer.realize(self.ctx, cls_type) is None:
@@ -1823,6 +1843,9 @@ def generate_super_dispatch_ast(ctx, fn):
     attr = utils.extract_func_generic(fn).str
     if attr is None:
         return None
+    assert (
+        fn[1] == ast.types.Stdlib.Tuple and fn[2] == ast.types.Stdlib.FixedDict
+    ), "invalid arguments"
     lexical = fn[0].require_cls[0].require_cls
     args = [ast.CallExpr.Arg(ast.NoneExpr())]
     args.extend(ast.CallExpr.Arg(ast.NoneExpr(type=typ)) for typ in fn[1].require_cls)

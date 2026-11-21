@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from ... import ast, cache
 from ...bridge import List, cast
 from ...error import TypecheckError
-from . import classes, infer, ops, special, utils
+from . import classes, collections, infer, ops, special, utils
 
 if TYPE_CHECKING:
     from . import TypeVisitor
@@ -58,7 +58,7 @@ def typecheck_call(self: TypeVisitor, node: ast.CallExpr) -> ast.Expr:
     """
     Typecheck a call expression. This is the most complex expression to typecheck.
     @example
-    `fn(1, 2, x=3, y=4)` -> `func(a=1, x=3, args=(2,), kwargs=KwArgs(y=4), T=int)`
+    `fn(1, 2, x=3, y=4)` -> `func(a=1, x=3, args=(2,), kwargs={'y': 4}, T=int)`
     `fn(arg1, ...)`      -> `(_v = Partial.N10(arg1); _v)`
     See @c transformCallArgs , @c getCalleeFn , @c callReorderArguments ,
     @c typecheckCallArgs , @c transformSpecialCall and @c wrapExpr for more details.
@@ -107,8 +107,17 @@ def typecheck_call(self: TypeVisitor, node: ast.CallExpr) -> ast.Expr:
     elif callee_fn is None:
         return node
 
+    # Handle before going through the arguments to handle literals/fixed dicts.
+    if (
+        not partial.is_partial
+        and not node.has(ast.Attr.ExprNoSpecial)
+        and isinstance(node.expr, ast.IdExpr)
+        and node.expr.value == ast.types.mangle("std.functools", func="partial")
+    ):
+        return special.transform_functools_partial(self, node) or node
+
     with utils.with_class_generics(self.ctx, callee_fn, func=True, only_mangled=True):
-        if not transform_call_args(self, node):
+        if not transform_call_args(self, node, partial):
             return node
 
     # Early dispatch modifier
@@ -138,27 +147,31 @@ def typecheck_call(self: TypeVisitor, node: ast.CallExpr) -> ast.Expr:
                 node.expr.type.partial if node.expr.type else None,
             )
         # partials have dangling ellipsis that messes up with the unbound check below
-        do_dispatch = matching is None or not matching or partial.is_partial
+        pending_dicts = any(isinstance(arg.value, ast.DictExpr) for arg in node.items)
+        do_dispatch = not matching or (
+            partial.is_partial and (len(matching) != 1 or not pending_dicts)
+        )
         if not do_dispatch and matching is not None and len(matching) > 1:
             for arg in node.items:
-                if utils.is_unbound(arg.value):
+                if not isinstance(arg.value, ast.DictExpr) and utils.is_unbound(arg.value):
                     return node  # typecheck this later once we know the argument
         if not do_dispatch:
             parent_class = callee_fn.func_parent.cls if callee_fn.func_parent else None
             assert matching
             instantiated = utils.instantiate(self.ctx, matching[0], parent_class)
             callee_fn = instantiated.require_func
-            identifier = ast.IdExpr(callee_fn.func_name, type=callee_fn)
-            if isinstance(node.expr, ast.IdExpr):
-                node.expr = identifier
-            elif isinstance(node.expr, ast.StmtExpr):
-                expr = node.expr
-                while isinstance(expr.expr, ast.StmtExpr):
-                    expr = expr.expr
-                expr.expr = identifier
-            else:
-                node.expr = ast.StmtExpr(ast.ExprStmt(node.expr), expr=identifier)
-            node.expr.type = callee_fn
+            if not pending_dicts:
+                identifier = ast.IdExpr(callee_fn.func_name, type=callee_fn)
+                if isinstance(node.expr, ast.IdExpr):
+                    node.expr = identifier
+                elif isinstance(node.expr, ast.StmtExpr):
+                    expr = node.expr
+                    while isinstance(expr.expr, ast.StmtExpr):
+                        expr = expr.expr
+                    expr.expr = identifier
+                else:
+                    node.expr = ast.StmtExpr(ast.ExprStmt(node.expr), expr=identifier)
+                node.expr.type = callee_fn
         elif matching is not None and not matching:
             arg_names = [
                 str(arg.value.type.literal.runtime_type)
@@ -283,7 +296,7 @@ def validate_call(expr: ast.CallExpr):
     expr.set(ast.Attr.Validated)
 
 
-def transform_call_args(self: TypeVisitor, expr: ast.CallExpr):
+def transform_call_args(self: TypeVisitor, expr: ast.CallExpr, part: utils.PartialCallData):
     """
     Transform call arguments. Expand *args and **kwargs to the list of @c CallArg
     objects.
@@ -296,7 +309,7 @@ def transform_call_args(self: TypeVisitor, expr: ast.CallExpr):
         if isinstance(arg.value, ast.StarExpr):
             # Case: *args expansion
             star = arg.value
-            star.expr = self.visit_expr(star.expr)
+            star.expr = extract_call_arg(self, star.expr)
 
             while (tuple_type := star.expr.cls) and tuple_type == ast.types.Stdlib.Optional:
                 star.expr = self.visit_expr(
@@ -307,9 +320,16 @@ def transform_call_args(self: TypeVisitor, expr: ast.CallExpr):
             tuple_type = star.expr.cls
             if not tuple_type:
                 return False
+            if tuple_type == ast.types.Stdlib.FixedDict:
+                star.expr = self.visit_expr(ast.CallExpr(ast.DotExpr(star.expr, "keys")))
+                tuple_type = star.expr.cls
+                if not tuple_type:
+                    return False
             if not tuple_type.is_tuple:
                 raise TypecheckError(star, f"argument after * must be a tuple, not '{tuple_type}'")
             fields = utils.get_class_fields(self.ctx, tuple_type)
+            if not fields and utils.has_side_effect(star.expr):
+                part.empty_expansions.append((arg_idx, star.expr))
             head = star.expr
             lead = None
             if utils.has_side_effect(head):
@@ -327,7 +347,7 @@ def transform_call_args(self: TypeVisitor, expr: ast.CallExpr):
         elif isinstance(arg.value, ast.KeywordStarExpr):
             # Case: **kwargs expansion
             kwstar = arg.value
-            kwstar.expr = self.visit_expr(kwstar.expr)
+            kwstar.expr = extract_call_arg(self, kwstar.expr)
 
             while (named_type := kwstar.expr.cls) and named_type == ast.types.Stdlib.Optional:
                 kwstar.expr = self.visit_expr(
@@ -342,22 +362,22 @@ def transform_call_args(self: TypeVisitor, expr: ast.CallExpr):
                 lead = ast.AssignExpr(ast.IdExpr(var), expr=head)
                 head = ast.IdExpr(var)
             inserted = []
-            if named_type == ast.types.Stdlib.NamedTuple:
-                tuple_id = named_type[0].require_int
-                assert 0 <= tuple_id < len(self.ctx.cache.generated_tuple_names)
-                names = self.ctx.cache.generated_tuple_names[tuple_id]
-                for field_idx, name in enumerate(names):
-                    base = (lead if lead and field_idx == 0 else head).clone()
-                    field = self.visit_expr(
-                        ast.DotExpr(ast.DotExpr(base, member="args"), member=f"item{field_idx + 1}")
+            fixed = named_type == ast.types.Stdlib.FixedDict
+            if named_type.is_tuple:
+                fields = utils.get_record_fields(self.ctx, named_type)
+                if not fields and lead:
+                    part.empty_expansions.append((arg_idx, kwstar.expr))
+                for field in fields:
+                    if fixed and not field.name:
+                        raise TypecheckError(
+                            kwstar,
+                            "empty fixed dictionary keys cannot be expanded as keyword arguments",
+                        )
+                    field_expr = self.visit_expr(
+                        utils.get_record_field((lead or head).clone(), field)
                     )
-                    inserted.append(ast.CallExpr.Arg(field, name=name))
-            elif named_type.is_tuple:
-                fields = utils.get_class_fields(self.ctx, named_type)
-                for field_idx, field in enumerate(fields):
-                    base = (lead if lead and field_idx == 0 else head).clone()
-                    field_expr = self.visit_expr(ast.DotExpr(base, member=field.name))
                     inserted.append(ast.CallExpr.Arg(field_expr, name=field.name))
+                    lead = None
             else:
                 raise TypecheckError(
                     kwstar, f"argument after ** must be a named tuple, not '{named_type}'"
@@ -366,7 +386,11 @@ def transform_call_args(self: TypeVisitor, expr: ast.CallExpr):
             arg_idx += len(inserted)
         else:
             # Case: normal argument (no expansion)
-            arg.value = self.visit_expr(arg.value)
+            if isinstance(arg.value, ast.DictExpr):
+                # Defer nested literals.
+                collections.prepare_dict_literal(self, arg.value)
+            else:
+                arg.value = extract_call_arg(self, arg.value)
             arg_idx += 1
 
     # Check if some argument names are reused after the expansion
@@ -377,6 +401,22 @@ def transform_call_args(self: TypeVisitor, expr: ast.CallExpr):
                 raise TypecheckError(expr, f"keyword argument repeated: {arg.name}")
             seen.add(arg.name)
     return True
+
+
+def extract_call_arg(self: TypeVisitor, expr: ast.Expr) -> ast.Expr:
+    """Save an argument and preserve static annotations."""
+    name = expr.get(ast.Attr.ExprCapture, str, "")
+    if name:
+        expr.erase(ast.Attr.ExprCapture)
+    expr = self.visit_expr(expr)
+    if not name:
+        return expr
+    return self.visit_expr(
+        ast.StmtExpr(
+            ast.AssignStmt(ast.IdExpr(name), expr, utils.get_param_type(expr.type)),
+            expr=ast.IdExpr(name),
+        )
+    )
 
 
 def transform_optional_call(self, expr, typ):
@@ -464,17 +504,19 @@ def get_callee_fn(
         )
         stmts = []
         args = [ast.CallExpr.Arg(arg.value, name=arg.name) for arg in expr.items]
+        init_args = [ast.CallExpr.Arg(arg.value, name=arg.name) for arg in args]
         if custom_new:
-            for arg in args:
-                tmp = ast.IdExpr(utils.get_temporary_var(self.ctx, "ctor_arg"))
-                star, kwstar = (
-                    isinstance(arg.value, ast.StarExpr),
-                    isinstance(arg.value, ast.KeywordStarExpr),
-                )
+            for arg, saved_arg in zip(args, init_args):
+                # Custom __new__ and __init__ share the same evaluated arguments.
+                name = utils.get_temporary_var(self.ctx, "ctor_arg")
+                star = isinstance(arg.value, ast.StarExpr)
+                kwstar = isinstance(arg.value, ast.KeywordStarExpr)
                 value = arg.value.expr if star or kwstar else arg.value
-                stmts.append(ast.AssignStmt(tmp.clone(), value))
-                arg.value = (
-                    ast.StarExpr(tmp) if star else ast.KeywordStarExpr(tmp) if kwstar else tmp
+                # Preserve Literal and FixedDict annotations until the argument is bound.
+                value.set(ast.Attr.ExprCapture, name)
+                saved = ast.IdExpr(name)
+                saved_arg.value = (
+                    ast.StarExpr(saved) if star else ast.KeywordStarExpr(saved) if kwstar else saved
                 )
         # The generated allocator still takes no arguments; __init__ receives them.
         var = ast.IdExpr(utils.get_temporary_var(self.ctx, "ctr"))
@@ -489,7 +531,7 @@ def get_callee_fn(
         # A __new__ may return another type, in which case its
         # result must not be initialized as T.
         if not (custom_new and not inits):
-            init = ast.ExprStmt(ast.CallExpr(ast.DotExpr(var.clone(), "__init__"), args))
+            init = ast.ExprStmt(ast.CallExpr(ast.DotExpr(var.clone(), "__init__"), init_args))
             # a factory may return another type, in which case its result must not be initialized as T
             stmts.append(
                 ast.IfStmt(
@@ -558,11 +600,20 @@ def call_reorder_arguments(
     CallArg has a set name. Form *args/**kwargs tuples if needed, and use partial
     and default values where needed.
     @example
-    `foo(1, 2, baz=3, baf=4)` -> `foo(a=1, baz=2, args=(3, ), kwargs=KwArgs(baf=4))`
+    `foo(1, 2, baz=3, baf=4)` -> `foo(a=1, baz=2, args=(3, ), kwargs={'baf': 4})`
     """
 
-    if callee_fn.ast.has(ast.Attr.NoArgReorder):
-        return None
+    no_reorder = callee_fn.ast.has(ast.Attr.NoArgReorder)
+    pending_dicts = any(isinstance(arg.value, ast.DictExpr) for arg in expr.items)
+    expanded_dicts = False
+
+    def expand_dict(argument):
+        nonlocal expanded_dicts
+        if isinstance(argument.value, ast.DictExpr):
+            argument.value = extract_call_arg(self, argument.value)
+            expanded_dicts = True
+
+    retry_dispatch = utils.is_dispatch(expr.expr.type) and not utils.is_dispatch(callee_fn)
 
     in_order = True
     ordered = []
@@ -603,13 +654,37 @@ def call_reorder_arguments(
     # Reorder arguments if needed
     # Stores partial *args/**kwargs expression
     part.kw_args = None
-    if expr.has(ast.Attr.ExprOrderedCall):
+    if no_reorder:
+        for argument in expr.items:
+            expand_dict(argument)
+    elif expr.has(ast.Attr.ExprOrderedCall):
         args = expr.items
     else:
         # Handle reordered arguments
         _, (star_pos, kwstar_pos, slots, partial) = utils.reorder_named_args(
             self.ctx, callee_fn, expr.items, part.known
         )
+        with utils.with_class_generics(self.ctx, callee_fn, func=True):
+            if pending_dicts:
+                value_index = 0
+                for slot_index, slot in enumerate(slots):
+                    parameter = callee_fn.ast.items[slot_index]
+                    if parameter.is_generic():
+                        continue
+                    expected = callee_fn[value_index]
+                    value_index += 1
+                    if slot_index in {star_pos, kwstar_pos} and parameter.type:
+                        expected = utils.extract_type(
+                            self.ctx, self.visit_expr(parameter.type.clone())
+                        )
+                    for index in slot:
+                        literal = expr.items[index].value
+                        if isinstance(literal, ast.DictExpr) and not literal.expected_type:
+                            literal.expected_type = expected
+                for argument in expr.items:
+                    expand_dict(argument)
+        if retry_dispatch and expanded_dicts:
+            slots = []
         partial_idx, generic_idx = 0, 0
         for slot_idx, slot in enumerate(slots):
             # Get the argument name to be used later
@@ -672,7 +747,7 @@ def call_reorder_arguments(
                     kwargs_expr = self.visit_expr(
                         ast.DotExpr(ast.IdExpr(part.var), member="kwargs")
                     )
-                    for name, named_expr in utils.extract_named_tuple(self.ctx, kwargs_expr):
+                    for name, named_expr in utils.extract_record(self.ctx, kwargs_expr):
                         kwstar_names.append(name)
                         if name in new_keywords:
                             source_idx = new_keywords.pop(name)
@@ -777,6 +852,41 @@ def call_reorder_arguments(
                 args.append(ast.CallExpr.Arg(source, name=real_name))
                 add_reordered(slot[0])
 
+    if part.empty_expansions:
+        call = expr.clone()
+        statements = []
+        while isinstance(call.expr, ast.StmtExpr):
+            statements.extend(call.expr.items)
+            call.expr = call.expr.expr
+        # Preserve the saved partial's captures when retrying argument expansion.
+        if part.var:
+            call.expr = ast.IdExpr(part.var)
+        if utils.has_side_effect(call.expr):
+            temporary = utils.get_temporary_var(self.ctx, "fixed.callee")
+            statements.append(ast.AssignStmt(ast.IdExpr(temporary), call.expr))
+            call.expr = ast.IdExpr(temporary)
+        previous = 0
+        for position, value in part.empty_expansions:
+            for index in range(previous, position):
+                temporary = utils.get_temporary_var(self.ctx, "fixed.argument")
+                argument = call.items[index].value
+                # Preserve Literal annotations.
+                statements.append(
+                    ast.AssignStmt(
+                        ast.IdExpr(temporary), argument, utils.get_param_type(argument.type)
+                    )
+                )
+                call.items[index].value = ast.IdExpr(temporary)
+            previous = position
+            statements.append(ast.ExprStmt(value))
+        return self.visit_expr(ast.StmtExpr(statements, expr=call))
+    if retry_dispatch and expanded_dicts:
+        if any(isinstance(arg.value, ast.DictExpr) for arg in expr.items):
+            return expr  # still need inference
+        return self.visit_expr(expr)
+    if no_reorder:
+        return None
+
     # Do reordering
     if not in_order:
         prepends = []
@@ -821,7 +931,7 @@ def call_reorder_arguments(
         keyword_id = classes.generate_kw_id(self, kwstar_names)
         kwstar_expr = self.visit_expr(
             ast.CallExpr(
-                ast.IdExpr(ast.types.Stdlib.NamedTuple),
+                ast.IdExpr(ast.types.Stdlib.FixedDict),
                 items=[ast.TupleExpr(kwstar_args), ast.IntExpr(keyword_id)],
             )
         )
@@ -845,8 +955,7 @@ def call_reorder_arguments(
             # use ()
             part.args = self.visit_expr(ast.TupleExpr())
         if part.kw_args is None:
-            # use NamedTuple()
-            part.kw_args = self.visit_expr(ast.CallExpr(ast.IdExpr(ast.types.Stdlib.NamedTuple)))
+            part.kw_args = self.visit_expr(ast.CallExpr(ast.IdExpr(ast.types.Stdlib.FixedDict)))
 
     # Unify function type generics with the provided generics
     assert (expr.has(ast.Attr.ExprOrderedCall) and not type_args) or (
@@ -948,7 +1057,7 @@ def typecheck_call_args(
                         tuple_id = arg.value.type.require_cls[0].require_int
                         arg.value = self.visit_expr(
                             ast.CallExpr(
-                                ast.IdExpr(ast.types.mangle(cls="NamedTuple", func="__new__")),
+                                ast.IdExpr(ast.types.mangle(cls="FixedDict", func="__new__")),
                                 items=[tuple_expr, ast.IntExpr(tuple_id)],
                             )
                         )
@@ -1047,6 +1156,14 @@ def transform_special_call(self: TypeVisitor, expr: ast.CallExpr):
     name = identifier.value
     if name == ast.types.mangle(func="superf"):
         return True, special.transform_super_f(self, expr)
+    if name == ast.types.mangle(cls="FixedDict", func="_index"):
+        function = identifier.type.require_func
+        shape, key = (utils.extract_func_generic(function, index) for index in range(2))
+        if not shape.can_realize() or not key.can_realize():
+            return True, None
+        names = self.ctx.cache.generated_tuple_names[shape.require_int]
+        name = key.require_str
+        return True, self.visit_expr(ast.IntExpr(names.index(name) if name in names else -1))
     if name == ast.types.mangle(func="super") and not expr.items:
         return True, special.transform_super(self)
     if name == ast.types.mangle(func="__ptr__"):
@@ -1073,8 +1190,6 @@ def transform_special_call(self: TypeVisitor, expr: ast.CallExpr):
         return False, special.transform_static_print_fn(self, expr)
     if name == ast.types.mangle("std.collections", func="namedtuple"):
         return True, special.transform_named_tuple(self, expr)
-    if name == ast.types.mangle("std.functools", func="partial"):
-        return True, special.transform_functools_partial(self, expr)
     if name == ast.types.mangle("std.internal.static", func="has_rtti"):
         return True, special.transform_has_rtti_fn(self, expr)
     if name == ast.types.mangle("std.internal.static", cls="function", func="realized"):
@@ -1128,7 +1243,7 @@ def generate_partial_call(
     if args is None:
         args = ast.TupleExpr([ast.TupleExpr()])
     if kwargs is None:
-        kwargs = ast.CallExpr(ast.IdExpr(ast.types.Stdlib.NamedTuple))
+        kwargs = ast.CallExpr(ast.IdExpr(ast.types.Stdlib.FixedDict))
     if not isinstance(mask, str):
         mask = "".join(str(flag.value) for flag in mask)
     return ast.CallExpr(

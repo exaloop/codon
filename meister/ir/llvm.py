@@ -495,9 +495,15 @@ class Module:
             ),
         )
 
-    def global_variable(self, name):
+    def global_variable(self, name, *, allow_local=True):
         pointer = self.lib.function("GetNamedGlobal", P, P, S)(self, name.encode())
-        return Value(self, pointer) if pointer else None
+        if not pointer:
+            return None
+        if not allow_local:
+            linkage = self.lib.function("GetLinkage", I, P)(pointer)
+            if linkage in (Linkage.INTERNAL, Linkage.PRIVATE):
+                return None
+        return Value(self, pointer)
 
     def add_global(self, name, typ, initializer=None, *, constant=False, linkage=Linkage.EXTERNAL):
         value = Value(self, self.lib.function("AddGlobal", P, P, P, S)(self, typ, name.encode()))

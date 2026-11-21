@@ -439,6 +439,24 @@ def typecheck_index(self: TypeVisitor, node: ast.IndexExpr) -> ast.Expr:
     if expr_type is None:
         return node  # Wait until the type becomes known
 
+    if expr_type == ast.types.Stdlib.FixedDict and (name := node.index.type.str) is not None:
+        if not expr_type[0].can_realize():
+            return node
+        fields = utils.get_record_fields(self.ctx, expr_type)
+        field = next((field for field in fields if field.name == name), None)
+        if field is None:
+            raise TypecheckError(node, f"unknown fixed dictionary key: {name}")
+        temporary = utils.get_temporary_var(self.ctx, "fixed.lookup")
+        return self.visit_expr(
+            ast.StmtExpr(
+                ast.SuiteStmt(
+                    ast.AssignStmt(ast.IdExpr(temporary), rhs=node.expr),
+                    ast.ExprStmt(node.index),
+                ),
+                utils.get_record_field(ast.IdExpr(temporary), field),
+            )
+        )
+
     # Case: static tuple access
     # Note: needs untransformed origIndex to parse statics nicely
     is_static_tuple, tuple_expression = transform_static_tuple_index(
@@ -874,7 +892,8 @@ def transform_binary_is(self: TypeVisitor, expr: ast.BinaryExpr) -> ast.Expr | N
         if has_side_right:
             statements.append(ast.ExprStmt(expr.rexpr))
         wrapped = ast.StmtExpr(statements, expr=value) if statements else value
-        return self.visit_expr(wrapped)
+        # C++ revisits the wrapped expression after lowering the comparison.
+        return self.visit_expr(self.visit_expr(wrapped))
 
     # Case: `is None` expressions
     if isinstance(expr.rexpr, ast.NoneExpr):

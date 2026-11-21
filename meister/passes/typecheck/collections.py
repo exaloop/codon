@@ -68,6 +68,9 @@ def typecheck_dict(self: TypeVisitor, node: ast.DictExpr) -> ast.Node:
     """
 
     node.type = utils.instantiate_unbound(self.ctx)
+    if node.expected_type == ast.types.Stdlib.FixedDict:
+        prepare_dict_literal(self, node, fixed=True)
+        return transform_fixed_dict(self, node.items) or node
     result = transform_comprehension(
         self,
         ast.types.Stdlib.Dict,
@@ -79,6 +82,78 @@ def typecheck_dict(self: TypeVisitor, node: ast.DictExpr) -> ast.Node:
         result.set(ast.Attr.ExprDict)
         return result
     return node
+
+
+def prepare_dict_literal(self: TypeVisitor, expr: ast.Expr, fixed: bool = False) -> ast.Expr:
+    """Preserve literal containers until their dictionary context is known.
+
+    Visit other expressions now for source-order bindings (fixed_dict_nested_call_context).
+    """
+    if isinstance(expr, ast.TupleExpr):
+        if fixed and isinstance(expr, ast.DictExpr):
+            expr.expected_type = utils.get_stdlib_type(self.ctx, ast.types.Stdlib.FixedDict)
+        for index, item in enumerate(expr.items):
+            expr.items[index] = prepare_dict_literal(self, item, fixed)
+        expr.type = utils.instantiate_unbound(self.ctx)
+        return expr
+    if isinstance(expr, (ast.StarExpr, ast.KeywordStarExpr)):
+        expr.expr = prepare_dict_literal(self, expr.expr, fixed)
+        return expr
+    return self.visit_expr(expr)
+
+
+def transform_fixed_dict(self: TypeVisitor, items: List[ast.Expr]) -> ast.Expr | None:
+    names = []
+    values = []
+    statements = []
+    positions = {}
+
+    def append(name, value):
+        if name not in positions:
+            positions[name] = len(names)
+            names.append(name)
+            values.append(None)
+        values[positions[name]] = value
+
+    for item in items:
+        if isinstance(item, ast.KeywordStarExpr):
+            value = self.visit_expr(item.expr.clone())
+            typ = value.cls
+            if not typ:
+                return None
+            if typ != ast.types.Stdlib.FixedDict:
+                raise TypecheckError(
+                    item, "fixed dictionary literals can only expand fixed dictionaries"
+                )
+            if not typ[0].can_realize():
+                return None
+            fields = utils.get_record_fields(self.ctx, typ)
+            temporary = utils.get_temporary_var(self.ctx, "fixed.spread")
+            statements.append(ast.AssignStmt(ast.IdExpr(temporary), rhs=value))
+            for field in fields:
+                append(field.name, utils.get_record_field(ast.IdExpr(temporary), field))
+            continue
+
+        pair = item if isinstance(item, ast.TupleExpr) else item.orig
+        if not isinstance(pair, ast.TupleExpr) or len(pair.items) != 2:
+            raise TypecheckError(item, "fixed dictionary literals require string-keyed entries")
+        key = self.visit_expr(pair.items[0].clone())
+        if not key.type:
+            return None
+        literal = isinstance(key, ast.StringExpr) and key.is_simple
+        constant = key.type.str
+        if not literal and constant is None:
+            raise TypecheckError(key, "fixed dictionary keys must be compile-time strings")
+        name = constant if constant is not None else key.get_value()
+        temporary = utils.get_temporary_var(self.ctx, "fixed.entry")
+        statements.append(ast.AssignStmt(ast.IdExpr(temporary), rhs=item.clone()))
+        append(name, ast.IndexExpr(ast.IdExpr(temporary), index=ast.IntExpr(1)))
+
+    call = ast.CallExpr(
+        ast.IdExpr(ast.types.Stdlib.FixedDict),
+        [ast.TupleExpr(values), ast.IntExpr(classes.generate_kw_id(self, names))],
+    )
+    return self.visit_expr(ast.StmtExpr(statements, expr=call))
 
 
 def typecheck_generator(self: TypeVisitor, node: ast.GeneratorExpr) -> ast.Node:
@@ -309,6 +384,10 @@ def transform_comprehension(
                 item_type = item.expr.type.require_cls[0]
         elif is_dict and isinstance(item, ast.KeywordStarExpr):
             item.expr = self.visit_expr(ast.CallExpr(ast.DotExpr(item.expr, member="items")))
+            # Empty tuples contribute no key/value constraints.
+            if item.expr.cls == ast.types.Stdlib.Tuple and not len(item.expr.cls):
+                continue
+            item.expr = self.visit_expr(ast.CallExpr(ast.DotExpr(item.expr, member="__iter__")))
             if item.expr and item.expr.type and item.expr.type == "Generator":
                 item_type = item.expr.type.require_cls[0]
         else:
@@ -336,6 +415,7 @@ def transform_comprehension(
     if not done:
         return None
 
+    collection_template = utils.instantiate(self.ctx, root, element_types)
     stmts = []
     var = ast.IdExpr(utils.get_temporary_var(self.ctx, "cont"))
     ctr_args = []
@@ -343,8 +423,6 @@ def transform_comprehension(
     if type_name == ast.types.Stdlib.List and items:
         ctr_args.append(ast.CallExpr.Arg(ast.IntExpr(len(items))))
     ctr = ast.IdExpr(root.name if is_dict else type_name)
-    # Instantiate Dict's class template, not the alias.
-    collection_template = utils.instantiate(self.ctx, root, element_types)
     ctr.type = utils.instantiate_type_var(self.ctx, collection_template)
     stmts.append(ast.AssignStmt(var.clone(), rhs=ast.CallExpr(ctr, items=ctr_args)))
     for item in items:
@@ -367,6 +445,9 @@ def transform_comprehension(
             )
         elif is_dict and isinstance(item, ast.KeywordStarExpr):
             # Expand kwstar-expression by iterating over it: see the example above
+            if item.expr.cls == ast.types.Stdlib.Tuple and not len(item.expr.cls):
+                stmts.append(ast.ExprStmt(item.expr))
+                continue
             loop_var = ast.IdExpr(utils.get_temporary_var(self.ctx, "it"))
             item.expr.set(ast.Attr.ExprStarSequenceItem)
             args = [

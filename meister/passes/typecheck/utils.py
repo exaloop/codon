@@ -28,10 +28,12 @@ def unify(ctx: TypeContext, left: ast.types.Type, right: ast.types.Type):
     return left
 
 
-@dataclass
+@dataclass(init=False)
 class PartialCallData:
     """Holds partial call information for a CallExpr."""
 
+    # Unpacking side effects.
+    empty_expansions: List[Tuple[int, ast.Expr]]
     # true if the call is partial
     is_partial: bool = False
     # set if calling a partial type itself
@@ -41,6 +43,14 @@ class PartialCallData:
     # partial *args/**kwargs expressions
     args: ast.Expr | None = None
     kw_args: ast.Expr | None = None
+
+    def __init__(self):
+        self.empty_expansions = []
+        self.is_partial = False
+        self.var = ""
+        self.known = ""
+        self.args = None
+        self.kw_args = None
 
 
 def best_method(
@@ -80,6 +90,8 @@ def matching_methods(
 
     # Pick the last method that accepts the given arguments.
     results = []
+    pending_literals = any(isinstance(arg.value, ast.DictExpr) for arg in args)
+    fixed = [True] * len(args) if pending_literals else []
     for method in methods:
         if not method:
             continue  # avoid overloads that have not been seen yet
@@ -88,8 +100,23 @@ def matching_methods(
         if not partial and not (typ and typ.partial) and not accepts_call_shape(ctx, method, args):
             continue
         fn = instantiate(ctx, method, typ).func
-        if fn and match_callable(ctx, fn, args, captured=partial, instantiated=True) >= 0:
+        candidate_fixed = [] if pending_literals else None
+        if fn and match_callable(
+            ctx, fn, args, captured=partial, instantiated=True, fixed_literals=candidate_fixed
+        ) >= 0:
             results.append(method)
+            for index in range(len(fixed)):
+                fixed[index] = (
+                    fixed[index] and index < len(candidate_fixed) and candidate_fixed[index]
+                )
+    # Ordinary dict interpretation wins if any viable overload accepts it.
+    # Keep only the representation hint; parameter binding does the expansion.
+    for index, arg in enumerate(args):
+        if isinstance(arg.value, ast.DictExpr) and (len(results) != 1 or fixed[index]):
+            arg.value.expected_type = get_stdlib_type(
+                ctx,
+                ast.types.Stdlib.FixedDict if results and fixed[index] else ast.types.Stdlib.Dict,
+            )
     return results
 
 
@@ -160,7 +187,16 @@ def get_call_arg_type(ctx, fn, param_idx, value_idx, actual):
 _callable_probes = []
 
 
-def can_call(ctx, fn, args, partial=None, preserve_unions=None, undo=None, probing=False):
+def can_call(
+    ctx,
+    fn,
+    args,
+    partial=None,
+    preserve_unions=None,
+    undo=None,
+    probing=False,
+    fixed_dict_args=None,
+):
     """
     Match the same slots, coercions and defaults as a real call.
 
@@ -172,7 +208,26 @@ def can_call(ctx, fn, args, partial=None, preserve_unions=None, undo=None, probi
     from . import TypeVisitor
 
     if undo is None:
-        return match_callable(ctx, fn, args, captured=partial, preserve_unions=preserve_unions)
+        return match_callable(
+            ctx, fn, args, captured=partial, preserve_unions=preserve_unions,
+            fixed_literals=fixed_dict_args,
+        )
+    if fixed_dict_args is not None:
+        fixed_dict_args[:] = [False] * len(args)
+
+    def argument_type(index, expected):
+        value = args[index].value
+        if isinstance(value, ast.DictExpr):
+            literal_type = value.expected_type or expected
+            fixed = literal_type == ast.types.Stdlib.FixedDict
+            if fixed_dict_args is not None:
+                fixed_dict_args[index] = fixed
+            return instantiate(
+                ctx,
+                get_stdlib_type(ctx, ast.types.Stdlib.FixedDict if fixed else ast.types.Stdlib.Dict),
+            )
+        return value.type
+
     if preserve_unions is not None:
         preserve_unions[:] = [False] * len(args)
     captured = get_partial_arg_types(fn, partial)
@@ -235,13 +290,17 @@ def can_call(ctx, fn, args, partial=None, preserve_unions=None, undo=None, probi
                         if key not in supplied:
                             names.append(key)
                             values.append(value)
+                annotation = (
+                    extract_type(ctx, visitor.visit_expr(param.type.clone()))
+                    if param.type
+                    else None
+                )
                 for index in slot:
-                    values.append(args[index].value.type)
+                    values.append(argument_type(index, annotation))
                     if si == kwstar:
                         names.append(args[index].name)
-                if param.type:
+                if annotation:
                     # Typed variadics coerce each element before building their tuple.
-                    annotation = extract_type(ctx, visitor.visit_expr(param.type.clone()))
                     for index, value in enumerate(values):
                         converted = wrap(value, annotation)
                         if not converted:
@@ -255,11 +314,11 @@ def can_call(ctx, fn, args, partial=None, preserve_unions=None, undo=None, probi
                         generate_kw_id(visitor, names), cache=ctx.cache
                     )
                     actual = instantiate(
-                        ctx, get_stdlib_type(ctx, ast.types.Stdlib.NamedTuple), [identifier, actual]
+                        ctx, get_stdlib_type(ctx, ast.types.Stdlib.FixedDict), [identifier, actual]
                     )
             elif slot:
                 index = slot[0]
-                actual = args[index].value.type
+                actual = argument_type(index, expected)
                 if (
                     preserve_unions is not None
                     and actual.union
@@ -315,6 +374,7 @@ def match_callable(
     captured=None,
     preserve_unions=None,
     instantiated=False,
+    fixed_literals=None,
 ):
     """
     Shared entry for CallableTrait, Callable adapters, and static call probes.
@@ -347,7 +407,7 @@ def match_callable(
         elif cls.func:
             fn = cls.func if instantiated else instantiate(ctx, cls).func
         if fn:
-            score = can_call(ctx, fn, args, part, preserve_unions, changes, probing)
+            score = can_call(ctx, fn, args, part, preserve_unions, changes, probing, fixed_literals)
             if score < 0:
                 return -1
             if not probing and return_type and fn.can_realize():
@@ -842,13 +902,13 @@ def unpack_tuple_types(
             return result
         case ast.CallExpr():
             value = extract_class_type(visitor.ctx, expr.type)
-            tuple_values = value[1].require_cls
             if (
-                value != ast.types.Stdlib.NamedTuple
-                or not tuple_values
+                value != ast.types.Stdlib.FixedDict
+                or not (tuple_values := value[1].cls)
                 or not value[0].can_realize()
             ):
                 return None
+            assert tuple_values.name.startswith("Tuple"), "bad FixedDict argument"
             tuple_id = value[0].require_int
             assert 0 <= tuple_id < len(visitor.ctx.cache.generated_tuple_names)
             names = visitor.ctx.cache.generated_tuple_names[tuple_id]
@@ -861,14 +921,34 @@ def unpack_tuple_types(
             return None
 
 
-def extract_named_tuple(ctx: TypeContext, expr: ast.Expr) -> List[Tuple[str, ast.Expr]]:
-    assert expr.type
-    tuple_id = expr.type.require_cls[0].require_int
-    assert 0 <= tuple_id < len(ctx.cache.generated_tuple_names)
-    names = ctx.cache.generated_tuple_names[tuple_id]
+@dataclass
+class RecordField:
+    name: str
+    path: Tuple[str, ...]
+
+
+def get_record_fields(ctx: TypeContext, cls: ast.types.Class) -> List[RecordField]:
+    if cls == ast.types.Stdlib.FixedDict:
+        shape = cls[0].require_int
+        assert 0 <= shape < len(ctx.cache.generated_tuple_names), f"bad id: {shape}"
+        return [
+            RecordField(name, ("_values", f"item{index + 1}"))
+            for index, name in enumerate(ctx.cache.generated_tuple_names[shape])
+        ]
+    return [RecordField(field.name, (field.name,)) for field in get_class_fields(ctx, cls)]
+
+
+def get_record_field(expr: ast.Expr, field: RecordField) -> ast.Expr:
+    for member in field.path:
+        expr = ast.DotExpr(expr, member)
+    return expr
+
+
+def extract_record(ctx: TypeContext, expr: ast.Expr) -> List[Tuple[str, ast.Expr]]:
+    assert expr.cls
     return [
-        (name, ast.IndexExpr(ast.DotExpr(expr, member="args"), index=ast.IntExpr(idx)))
-        for idx, name in enumerate(names)
+        (field.name, get_record_field(expr, field))
+        for field in get_record_fields(ctx, expr.cls)
     ]
 
 
@@ -1538,9 +1618,9 @@ def find_typecheck_errors(ctx: TypeContext, node: ast.Stmt) -> ParserErrors:
             self.unfinished = []
 
         def visit(self, node):
-            if node and not node.done:
+            if isinstance(node, ast.Expr) and not node.done:
                 self.unfinished.append(node)
-            else:
+            elif node and not (isinstance(node, ast.Stmt) and node.done):
                 super().visit(node)
 
     v = UnfinishedVisitor()
@@ -1548,7 +1628,7 @@ def find_typecheck_errors(ctx: TypeContext, node: ast.Stmt) -> ParserErrors:
     errors = []
     for unfinished_node in v.unfinished:
         content = ctx.cache.get_content(unfinished_node.info)
-        message = "cannot typecheck " + (repr(content) if content else "expression")
+        message = f"cannot typecheck '{content}'" if content else "cannot typecheck the expression"
         errors.append(ErrorMessage(message, unfinished_node.info))
     return ParserErrors(errors)
 

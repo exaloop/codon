@@ -57,8 +57,9 @@ class FrontendOptions:
             # codon/config/config.h
             "__codon_version_major__": "0",
             "__codon_version_minor__": "20",
-            "__codon_version_micro__": "6",
+            "__codon_version_micro__": "7",
             "__apple__": str(int(sys.platform == "darwin")),
+            "__windows__": str(int(sys.platform == "win32")),
         }
 
 
@@ -944,15 +945,15 @@ class Filesystem:
 
     def get_root(self, source_path: Path):
         is_stdlib = False
-        source = str(source_path)
+        source = source_path.as_posix()
         root = ""
         for path in self.get_stdlib_paths():
-            if source.startswith(str(path)):
-                root = str(path)
+            if source.startswith(path.as_posix()):
+                root = path.as_posix()
                 is_stdlib = True
                 break
         module0 = self.get_module0().parent
-        module0_string = "" if str(module0) == "." else str(module0)
+        module0_string = "" if module0.as_posix() == "." else module0.as_posix()
         if not is_stdlib and module0_string and source.startswith(module0_string):
             root = module0_string
         extension = ".codon"
