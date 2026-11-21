@@ -110,6 +110,7 @@ class StageTimings:
 
 def main(mode, argv):
     parser = argparse.ArgumentParser(prog=f"python -m meister {mode}")
+    parser.add_argument("-release", "--release", action="store_true", help="enable release optimizations")
     parser.add_argument("--library", help="path to libcodonc from the Exaloop LLVM build")
     if mode == "run":
         parser.add_argument("-time", action="store_true", help="report timings and peak memory")
@@ -128,6 +129,7 @@ def main(mode, argv):
     # Resolve stdlib files relative to the native executable so the source and
     # generated tables have the same filenames as those used by Codon.
     cc = Cache(str(library.parent / "codon"))
+    cc.options.debug = not args.release
     cc.fs.set_module0(file)
     timing = StageTimings() if mode == "run" and args.time else None
     if timing:
@@ -152,6 +154,7 @@ def main(mode, argv):
         node = cc.parse(file=file)
     # Use the native build's define order; it is observable in CIR/LLVM dumps.
     defines = native.get_early_defines() or cc.options.get_early_defines()
+    defines["__debug__"] = str(int(cc.options.debug))
     if timing:
         with timing.stage("typecheck"):
             node = typecheck_program(cc, node, file=file, early_defines=defines)

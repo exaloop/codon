@@ -2,6 +2,8 @@
 
 from enum import IntEnum
 
+from ...ast.types import mangle
+
 
 class SideEffectStatus(IntEnum):
     """C++: codon/cir/util/side_effect.h:12.
@@ -16,3 +18,12 @@ class SideEffectStatus(IntEnum):
     NO_SIDE_EFFECT = 1
     NO_CAPTURE = 2
     UNKNOWN = 3
+
+
+# C++: codon/cir/util/side_effect.cpp. These are the frontend's mangled attributes.
+NON_PURE_ATTR = mangle("std.internal.attributes", func="nonpure")
+PURE_ATTR = mangle("", func="pure")
+NO_SIDE_EFFECT_ATTR = mangle("std.internal.attributes", func="no_side_effect")
+NO_CAPTURE_ATTR = mangle("std.internal.attributes", func="nocapture")
+DERIVES_ATTR = mangle("", func="derives")
+SELF_CAPTURES_ATTR = mangle("std.internal.attributes", func="self_captures")

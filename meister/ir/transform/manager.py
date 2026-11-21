@@ -55,11 +55,7 @@ class AnalysisMetadata:
 
 @dataclass(init=False, eq=False)
 class PassManager:
-    """C++: codon/cir/transform/manager.h:22, manager.cpp. Pass scheduling and cached analyses.
-
-    Only the requested normal-debug standard pipeline is ported. Release/test
-    standard pipelines are deliberately unsupported rather than approximated.
-    """
+    """C++: codon/cir/transform/manager.h:22, manager.cpp. Pass scheduling and cached analyses."""
 
     options: object
     km: KeyManager
@@ -187,11 +183,9 @@ class PassManager:
 
     # C++: codon/cir/transform/manager.cpp:161
     def register_standard_passes(self):
-        """C++: manager.cpp:161. Preserve the debug pipeline's registration order."""
+        """C++: manager.cpp:161. Register the standard CIR pipeline."""
         if getattr(self.options, "pmempty", False):
             return
-        if not self.options.debug or getattr(self.options, "test", False):
-            raise NotImplementedError("release/test IR pipelines are not ported")
         from .lowering.async_for import AsyncForLowering
         from .lowering.await_ import AwaitLowering
         from .lowering.imperative import ImperativeForFlowLowering
@@ -201,14 +195,77 @@ class PassManager:
         from .parallel.openmp import OpenMPPass
         from .pythonic.format import FormattingOptimization
 
+        lowerings = (PipelineLowering, ImperativeForFlowLowering, MissingReturnLowering, ThrowLowering)
+        if self.options.debug and not getattr(self.options, "test", False):
+            for cls in (*lowerings, AsyncForLowering, AwaitLowering, OpenMPPass, FormattingOptimization):
+                self.register_pass(cls())
+            return
+
+        from ..analyze.dataflow.capture import CaptureAnalysis
+        from ..analyze.dataflow.cfg import CFAnalysis
+        from ..analyze.dataflow.dominator import DominatorAnalysis
+        from ..analyze.dataflow.reaching import RDAnalysis
+        from ..analyze.module.global_vars import GlobalVarsAnalyses
+        from ..analyze.module.side_effect import SideEffectAnalysis
+        from .cleanup.devirtualize import DevirtualizationPass
+        from .folding.folding import FoldingPassGroup
+        from .numpy.fusion import NumPyExpressionAnalysis, NumPyFusionPass
+        from .numpy.indexing import NumPyBoundsCheckElisionPass
+        from .numpy.inline import NumPyInlinePass
+        from .numpy.lifetime import NumPyLifetimePass
+        from .pythonic.dict import DictArithmeticOptimization
+        from .pythonic.enumerate import EnumerateOptimization
+        from .pythonic.generator import GeneratorArgumentOptimization, GeneratorLoopFusion
+        from .pythonic.io import IOCatOptimization
+        from .pythonic.list import ListAdditionOptimization
+        from .pythonic.str import StrAdditionOptimization
+
+        # Pythonic optimizations and lowering.
         for cls in (
-            PipelineLowering,
-            ImperativeForFlowLowering,
-            MissingReturnLowering,
-            ThrowLowering,
-            AsyncForLowering,
-            AwaitLowering,
-            OpenMPPass,
+            DictArithmeticOptimization,
+            ListAdditionOptimization,
+            StrAdditionOptimization,
+            GeneratorArgumentOptimization,
+            EnumerateOptimization,
+            IOCatOptimization,
             FormattingOptimization,
+            *lowerings,
         ):
             self.register_pass(cls())
+
+        # Folding and array analyses.
+        cfg = self.register_analysis(CFAnalysis())
+        rd = self.register_analysis(RDAnalysis(cfg), (cfg,))
+        dom = self.register_analysis(DominatorAnalysis(cfg), (cfg,))
+        cap = self.register_analysis(CaptureAnalysis(rd, dom), (rd, dom))
+        globals_ = self.register_analysis(GlobalVarsAnalyses())
+        se1 = self.register_analysis(SideEffectAnalysis(cap, True), (cap,))
+        se2 = self.register_analysis(SideEffectAnalysis(cap, False), (cap,))
+        numpy = self.register_analysis(NumPyExpressionAnalysis(rd, se2), (rd, se2))
+
+        analysis_keys = (rd, cfg, globals_, cap)
+        self.register_pass(NumPyInlinePass(numpy), reqs=(numpy,), invalidates=(se1, se2, *analysis_keys))
+        self.register_pass(
+            FoldingPassGroup(se1, rd, globals_, 5, False),
+            reqs=(se1, rd, globals_),
+            invalidates=(se1, *analysis_keys),
+        )
+        self.register_pass(NumPyFusionPass(numpy, se2), reqs=(numpy, se2), invalidates=(se1, *analysis_keys))
+        self.register_pass(GeneratorLoopFusion(), invalidates=(se1, se2, *analysis_keys))
+        self.register_pass(NumPyLifetimePass(rd), reqs=(rd,), invalidates=(se1, se2, *analysis_keys))
+        self.register_pass(ImperativeForFlowLowering())
+        self.register_pass(NumPyBoundsCheckElisionPass(rd), reqs=(rd,), invalidates=(se1, *analysis_keys))
+
+        # Async and parallel lowering.
+        self.register_pass(AsyncForLowering())
+        self.register_pass(AwaitLowering())
+        self.register_pass(OpenMPPass(), invalidates=(cfg, globals_))
+
+        if not self.options.jit:
+            # Don't demote globals in JIT mode, since a later input might use them.
+            self.register_pass(
+                FoldingPassGroup(se2, rd, globals_, 5, True),
+                reqs=(se2, rd, globals_),
+                invalidates=(se2, rd, cfg, globals_),
+            )
+        self.register_pass(DevirtualizationPass(rd), reqs=(rd,), invalidates=(cfg, rd, globals_))

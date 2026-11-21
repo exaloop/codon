@@ -18,7 +18,7 @@ from unittest.mock import patch
 
 from .. import ast as codon_ast
 from .. import ir
-from ..cache import Cache
+from ..cache import Cache, FrontendOptions
 from ..passes import translate
 from .transform import PassManager
 
@@ -412,6 +412,39 @@ class PythonPortTests(unittest.TestCase):
         for metadata in manager.passes.values():
             self.assertIs(metadata.pass_.manager, manager)
         # Deliberately do not call manager.run(). IR correctness is a separate step.
+
+    def test_release_pass_construction(self):
+        release = PassManager(FrontendOptions(debug=False))
+        self.assertEqual(release.execution_order, [
+            "core-pythonic-dict-arithmetic-opt",
+            "core-pythonic-list-addition-opt",
+            "core-pythonic-str-addition-opt",
+            "core-pythonic-generator-argument-opt",
+            "core-pythonic-enumerate-opt",
+            "core-pythonic-io-cat-opt",
+            "core-pythonic-formatting-opt",
+            "core-pipeline-lowering",
+            "core-imperative-for-lowering",
+            "core-missing-return-lowering",
+            "core-throw-lowering",
+            "core-numpy-inline",
+            "core-folding-pass-group",
+            "core-numpy-fusion",
+            "core-pythonic-generator-loop-fusion",
+            "core-numpy-lifetime",
+            "core-imperative-for-lowering:2",
+            "core-numpy-bounds-check-elision",
+            "core-async-for-lowering",
+            "core-await-lowering",
+            "core-parallel-openmp",
+            "core-folding-pass-group:2",
+            "core-devirtualize",
+        ])
+        jit = PassManager(FrontendOptions(debug=False, jit=True))
+        self.assertEqual(
+            jit.execution_order,
+            [key for key in release.execution_order if key != "core-folding-pass-group:2"],
+        )
 
 
 if __name__ == "__main__":

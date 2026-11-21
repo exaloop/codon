@@ -193,7 +193,9 @@ class Operator(Visitor):
                 self.it_stack.append((node, current))
                 self.process(current)
                 self.it_stack.pop()
-                idx = node.series.index(current) + 1
+                if idx >= len(node.series) or node.series[idx] is not current:
+                    idx = node.series.index(current)
+                idx += 1
             self.node_stack.pop()
             return
         self.node_stack.append(node)

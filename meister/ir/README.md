@@ -17,9 +17,11 @@ The normal debug pipeline registers the same passes in the same order as
 7. OpenMP parallel lowering
 8. Pythonic formatting optimization
 
-The supporting utilities include traversal, cloning, outlining, scheduling,
-intrinsic metadata, and CIR text formatting. Release/test CIR optimization
-pipelines are outside this port and explicitly unsupported.
+The release pipeline also runs the Pythonic optimizations, constant
+propagation and folding, dead-code elimination, global demotion,
+devirtualization, and NumPy helper inlining, fusion, lifetime management, and
+bounds-check elision. The pass manager uses the C++ release pass order and
+analysis dependencies.
 
 ## LLVM emission and execution
 
@@ -32,11 +34,16 @@ cmake --build build --target codonc --parallel 1
 python -m meister llvm -o /tmp/meister-scratch.ll scratch.codon
 python -m meister run scratch.codon
 python -m meister run -time scratch.codon
+python -m meister ir -release scratch.codon
+python -m meister llvm -release -o /tmp/meister-release.ll scratch.codon
+python -m meister run -release scratch.codon
 ```
 
 `llvm` prints verified, unoptimized LLVM IR (stdout if no output file is
 specified). `run` transfers that same module to Codon's native optimizer and
-ORC JIT. Both accept `--library /path/to/libcodonc` before the source filename,
+ORC JIT. Use `-release` or `--release` before the filename to enable release
+CIR passes and select release-mode code generation. Both LLVM commands
+accept `--library /path/to/libcodonc` before the source filename,
 or use `CODON_LIBRARY`. `run` passes arguments after the filename to the program.
 With `-time`, stage wall times and cumulative process peak RSS are reported to
 stderr as stages complete. The main file's parse is reported immediately;

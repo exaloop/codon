@@ -55,6 +55,7 @@ def main(argv):
         from .passes.translate import TranslateVisitor
 
         args_parser = argparse.ArgumentParser(description="Dump Codon IR without LLVM generation")
+        args_parser.add_argument("-release", "--release", action="store_true", help="enable release optimizations")
         args_parser.add_argument("file")
         args_parser.add_argument("--indent", type=int, default=2)
         args_parser.add_argument("--no-attributes", action="store_true")
@@ -68,6 +69,7 @@ def main(argv):
         # Like the native compiler's embedded stdlib, local builds include
         # generated tables that are not checked into the source stdlib.
         cc = cache.Cache(root)
+        cc.options.debug = not args.release
         for build in ("build", "build-rel", "build-linux", "build-rel-linux"):
             generated = Path(root).parent / build / "stdlib"
             if generated.is_dir():
