@@ -57,6 +57,17 @@ class function:
         pass
 
     @__generated__
+    def arg_kind(F, i: Literal[int]) -> Literal[str]:
+        """Return the parameter kind at the same index as args(F).
+
+        Kinds are positional_only, positional_or_keyword, var_positional,
+        keyword_only, and var_keyword. Generic parameters are skipped;
+        bound methods and partials retain the underlying function's parameters.
+        An out-of-range index is a compile-time error.
+        """
+        pass
+
+    @__generated__
     def has_type(F, i: Literal[int]):
         pass
 

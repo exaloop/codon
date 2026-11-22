@@ -956,6 +956,73 @@ for method in static.function.overloads(WrappedMethod, '__init__'):
     assert wrapped[0] is instance
     print wrapped[1]  #: 5
 
+#%% static_arg_kind,barebones
+def require_kind(kind: Literal[str], expected: Literal[str]):
+    if kind != expected:
+        compile_error("unexpected parameter kind")
+
+def mixed(Element: type, data, /, option=1, *items, enabled=True, **options):
+    compile_error("metadata inspection must not realize the callback")
+
+print static.function.args(mixed)  #: ('data', 'option', 'items', 'enabled', 'options')
+require_kind(static.function.arg_kind(mixed, 0), 'positional_only')
+require_kind(static.function.arg_kind(mixed, 1), 'positional_or_keyword')
+require_kind(static.function.arg_kind(mixed, 2), 'var_positional')
+require_kind(static.function.arg_kind(mixed, 3), 'keyword_only')
+require_kind(static.function.arg_kind(mixed, 4), 'var_keyword')
+assert static.function.has_default(mixed, 1)
+assert static.function.has_default(mixed, 3)
+
+def transform(data, /):
+    compile_error("metadata inspection must not realize the callback")
+
+def inspect_callback(callback):
+    assert static.function.args(callback) == ('data',)
+    if static.function.arg_kind(callback, 0) != 'positional_only':
+        compile_error("expected positional-only callback")
+    return static.function.arg_kind(callback, 0)
+
+assert inspect_callback(transform) == 'positional_only'
+
+#%% static_arg_kind_bound_method,barebones
+class Callback:
+    def transform(self, data, /, *, enabled=True):
+        compile_error("metadata inspection must not realize the callback")
+
+method = Callback().transform
+print static.function.args(method)  #: ('self', 'data', 'enabled')
+if static.function.arg_kind(method, 0) != 'positional_only':
+    compile_error("expected positional-only self")
+if static.function.arg_kind(method, 1) != 'positional_only':
+    compile_error("expected positional-only data")
+if static.function.arg_kind(method, 2) != 'keyword_only':
+    compile_error("expected keyword-only enabled")
+assert static.function.has_default(method, 2)
+
+#%% static_arg_kind_partial,barebones
+def transform(data, /, scale=1, *, offset=0):
+    compile_error("metadata inspection must not realize the callback")
+
+partial = transform(7, offset=2, ...)
+print static.function.args(partial)  #: ('data', 'scale', 'offset')
+if static.function.arg_kind(partial, 0) != 'positional_only':
+    compile_error("expected positional-only data")
+if static.function.arg_kind(partial, 1) != 'positional_or_keyword':
+    compile_error("expected positional-or-keyword scale")
+if static.function.arg_kind(partial, 2) != 'keyword_only':
+    compile_error("expected keyword-only offset")
+assert static.function.has_default(partial, 1)
+
+#%% static_arg_kind_out_of_range,barebones
+def transform(Element: type, data, /):
+    return data
+static.function.arg_kind(transform, 1) #! argument out of bounds
+
+#%% static_arg_kind_negative_index,barebones
+def transform(data, /):
+    return data
+static.function.arg_kind(transform, -1) #! argument out of bounds
+
 #%% isinstance_inheritance,barebones
 class AX[T]:
     a: T

@@ -1197,6 +1197,8 @@ std::pair<bool, Expr *> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
     return {true, transformStaticFnArgGetType(expr)};
   } else if (isF(ei, "std.internal.static", "function", "args")) {
     return {true, transformStaticFnArgs(expr)};
+  } else if (isF(ei, "std.internal.static", "function", "arg_kind")) {
+    return {true, transformStaticFnArgKind(expr)};
   } else if (isF(ei, "std.internal.static", "function", "has_default")) { // static
     return {true, transformStaticFnHasDefault(expr)};
   } else if (isF(ei, "std.internal.static", "function", "get_default")) {
