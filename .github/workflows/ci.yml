@@ -228,7 +228,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
+          - os: windows-2022
             arch: windows-x86_64
             msvc_arch: amd64
             python_arch: x64
@@ -257,6 +257,7 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: ${{ matrix.msvc_arch }}
+          vsversion: '2022'
 
       - name: Install build and test dependencies
         run: |
@@ -277,7 +278,7 @@ jobs:
       - name: Build Codon
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
-          clang --version
+          C:/opt/llvm-codon/bin/clang.exe --version
           cmake -S . -B build -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
             -DLLVM_DIR=C:/opt/llvm-codon/lib/cmake/llvm `
@@ -328,7 +329,7 @@ jobs:
       matrix:
         shard: [0, 1, 2, 3]
         platform:
-          - os: windows-latest
+          - os: windows-2022
             arch: windows-x86_64
             msvc_arch: amd64
             python_arch: x64
@@ -355,6 +356,7 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: ${{ matrix.platform.msvc_arch }}
+          vsversion: '2022'
 
       - name: Install test dependencies
         run: |
