@@ -218,6 +218,8 @@ void PassManager::registerStandardPasses() {
             seKey1, rdKey, globalKey, /*repeat=*/5, /*runGlobalDemoton=*/false),
         /*insertBefore=*/"", {seKey1, rdKey, globalKey},
         {seKey1, rdKey, cfgKey, globalKey, capKey});
+    registerPass(std::make_unique<pythonic::StrAppendOptimization>(rdKey, domKey), "",
+                 {rdKey, domKey}, {seKey1, seKey2, rdKey, cfgKey, globalKey, capKey});
     registerPass(std::make_unique<numpy::NumPyFusionPass>(numpyKey, seKey2),
                  /*insertBefore=*/"", {numpyKey, seKey2},
                  {seKey1, rdKey, cfgKey, globalKey, capKey});

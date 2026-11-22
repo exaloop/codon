@@ -3713,9 +3713,6 @@ def _unicode_new_uninit(length: int, maxchar: int) -> str:
     if length < 0:
         raise ValueError("negative length")
 
-    if length > LEN_MASK:
-        raise ValueError("string too large")
-
     if maxchar < 0 or maxchar > UNICODE_MAX:
         raise ValueError("invalid code point")
 

@@ -754,6 +754,7 @@ set(CODON_TEST_CPPFILES
     test/cir/parse_code.cpp
     test/cir/transform/enumerate.cpp
     test/cir/transform/format.cpp
+    test/cir/transform/str.cpp
     test/cir/transform/manager.cpp
     test/cir/type.cpp
     test/cir/util/matching.cpp

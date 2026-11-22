@@ -267,11 +267,11 @@ void CFVisitor::visit(const ImperativeForFlow *v) {
       v, const_cast<Var *>(v->getVar()), v->getStep()));
   loopNext->successors_insert(loopCheck);
 
-  loopStack.emplace_back(loopCheck, end, v->getId(), tryCatchStack.size() - 1);
+  loopStack.emplace_back(loopNext, end, v->getId(), tryCatchStack.size() - 1);
   auto *loopBody = graph->newBlock("forBody", true);
   loopCheck->successors_insert(loopBody);
   process(v->getBody());
-  graph->getCurrentBlock()->successors_insert(loopCheck);
+  graph->getCurrentBlock()->successors_insert(loopNext);
   loopStack.pop_back();
 
   graph->setCurrentBlock(end);

@@ -138,3 +138,206 @@ def test_str_optimization():
     assert (a*2 + b*3 + c*4) == 'aabbbcccc'
     assert cat_count == 1
 test_str_optimization()
+
+@test
+def test_private_string_buffer():
+    from internal.types.strbuf import _str_append_seed, _str_append_private, _str_append_finish
+
+    assert _str_append_finish(_str_append_seed('')) == ''
+    original = 'seed'
+    output = _str_append_seed(original)
+    for value in ('', 'a' * 65, '\xe9', '\u4e2d', '\U0001f642'):
+        _str_append_private(output, value)
+    assert original == 'seed'
+    assert _str_append_finish(output) == 'seed' + 'a' * 65 + '\xe9\u4e2d\U0001f642'
+
+test_private_string_buffer()
+
+@noinline
+def append_private(seed: str, token: str, count: int):
+    result = seed
+    for index in range(count):
+        result += token
+    return result
+
+@noinline
+def append_mutable_view(source, seed: str, first: str, count: int):
+    result = seed
+    for i in range(count):
+        if i == 0:
+            result += first
+        else:
+            source.reverse()
+            result += '!'
+    return result
+
+@test
+def test_append_borrowed_storage():
+    from internal.types.strbuf import strbuf
+
+    for as_seed in (False, True):
+        source = strbuf()
+        source.append('ab')
+        view = str(source)
+        seed, first = (view, '') if as_seed else ('', view)
+        assert append_private(view, '!', 0)._ptr == view._ptr
+        assert append_private(seed, first, 1)._ptr == view._ptr
+        # The first reversal is visible; the second is after a copying addition.
+        assert append_mutable_view(source, seed, first, 3) == 'ba!!'
+        assert str(source) == 'ab'
+
+test_append_borrowed_storage()
+
+@test
+def test_append_atomic_storage():
+    from C import GC_get_kind_and_size(cobj, cobj) -> i32
+    from internal.gc import alloc_atomic
+
+    atomic = GC_get_kind_and_size(alloc_atomic(16), cobj())
+    for count in (1, 65):
+        value = append_private('a', 'b', count)
+        assert GC_get_kind_and_size(value._ptr, cobj()) == atomic
+
+test_append_atomic_storage()
+
+@noinline
+def append_branches(count: int):
+    result = ''
+    for index in range(count):
+        if index % 2:
+            result = result + '\u4e2d'
+        else:
+            result += 'a'
+    return result
+
+@noinline
+def append_snapshots(count: int):
+    result = ''
+    history = []
+    for index in range(count):
+        history.append(result)
+        result += 'x'
+    return result, history
+
+@noinline
+def append_slice(count: int):
+    result = 'start'
+    view = result[1:]
+    for index in range(count):
+        result += 'x'
+    return result, view
+
+@noinline
+def append_self(count: int):
+    result = 'a'
+    for index in range(count):
+        result += result
+    return result
+
+@test
+def test_private_append_semantics():
+    seed = 'original'
+    for count in (0, 1, 31, 2000):
+        assert append_private(seed, 'xy', count) == seed + 'xy' * count
+        assert append_private('', '\U0001f642', count) == '\U0001f642' * count
+    assert seed == 'original'
+    assert append_branches(65) == 'a\u4e2d' * 32 + 'a'
+    assert append_snapshots(4) == ('xxxx', ['', 'x', 'xx', 'xxx'])
+    assert append_slice(4) == ('startxxxx', 'tart')
+    assert append_self(5) == 'a' * 32
+
+test_private_append_semantics()
+
+@noinline
+def append_exits(count: int):
+    result = ''
+    index = 0
+    while index < count:
+        index += 1
+        if index == count:
+            break
+        if index % 2:
+            continue
+        result += 'x'
+        if index == 4:
+            return result
+    return result
+
+@noinline
+def append_nested(count: int):
+    result = 'seed'
+    for outer in range(count):
+        for inner in range(3):
+            result += '\u4e2d'
+    return result
+
+@noinline
+def append_piece(index: int, fail_at: int, events: list[int]) -> str:
+    events.append(index)
+    if index == fail_at:
+        raise ValueError('append failed')
+    return chr(97 + index % 26)
+
+@noinline
+def append_effects(seed: str, count: int, fail_at: int, events: list[int]):
+    result = seed
+    for index in range(count):
+        result += append_piece(index, fail_at, events)
+    return result
+
+@noinline
+def append_observed(count: int):
+    result = 'seed'
+    saved = {result: 7}
+    view = result[1:]
+    for index in range(count):
+        result += '\U0001f642'
+    assert saved == {'seed': 7}
+    assert view == 'eed'
+    return result
+
+@noinline
+def append_pointer(count: int):
+    result = 'seed'
+    pointer = __ptr__(result)
+    for index in range(count):
+        result += 'x'
+    assert pointer[0] == 'seed' + 'x' * count
+    return result
+
+@noinline
+def append_caught(count: int, events: list[int]):
+    result = 'seed'
+    try:
+        for index in range(count):
+            result += append_piece(index, 3, events)
+    except ValueError:
+        assert result == 'seedabc'
+    return result
+
+@test
+def test_private_append_boundaries():
+    for count in (0, 1, 2, 3, 4, 5, 65):
+        assert append_exits(count) == 'x' * min(max((count - 1) // 2, 0), 2)
+        assert append_nested(count) == 'seed' + '\u4e2d' * (3 * count)
+        assert append_observed(count) == 'seed' + '\U0001f642' * count
+        assert append_pointer(count) == 'seed' + 'x' * count
+    for seed in ('', 'ascii', '\xe9', '\u4e2d', '\U0001f642'):
+        for token in ('', '\0', 'ascii', '\xe9', '\u4e2d', '\U0001f642'):
+            assert append_private(seed, token, 65) == seed + token * 65
+    events = list[int]()
+    seed = 'seed'
+    assert append_effects(seed, 4, -1, events) == 'seedabcd'
+    assert events == [0, 1, 2, 3]
+    events.clear()
+    try:
+        append_effects(seed, 8, 3, events)
+        assert False
+    except ValueError as error:
+        assert str(error) == 'append failed'
+    assert seed == 'seed' and events == [0, 1, 2, 3]
+    events.clear()
+    assert append_caught(8, events) == 'seedabc'
+    assert events == [0, 1, 2, 3]
+
+test_private_append_boundaries()
