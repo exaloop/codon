@@ -70,6 +70,7 @@ def write(
         setup_global_ctor(module)
     module.optimize(
         debug=options.debug, ctor=CTOR, fast_math=options.fast_math, native=options.native,
+        auto_free=options.auto_free,
     )
     if kind in {"exe", "lib"}:
         link(module, path, shared=kind == "lib", libraries=libraries, flags=linker_flags,

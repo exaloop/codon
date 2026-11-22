@@ -4,6 +4,10 @@
 from contextlib import ExitStack
 from ctypes import CDLL, POINTER, PYFUNCTYPE, Structure, byref
 from os import fsencode
+import sys
+
+from .jit_debug import error_callback
+from .jit_memory import JITMemoryManager
 
 from .llvm import A, I, P, Q, S, Linkage
 
@@ -49,21 +53,23 @@ def root_ranges(roots, alignment):
     return ranges
 
 
-def run(module, args, *, debug, fast_math=False, native=True, on_stage=None):
+def run(module, args, *, debug, fast_math=False, native=True, auto_free=False, on_stage=None):
     if module.debug_builder:
         module.debug_builder.finalize()
-    module.optimize(debug=debug, fast_math=fast_math, native=native)
-    root_name, root_count = define_roots(module)
+    module.optimize(debug=debug, fast_math=fast_math, native=native, auto_free=auto_free)
+    lib = module.lib
+    use_rtdyld = sys.platform == "linux" and module.target.startswith("x86_64-")
+    manager = JITMemoryManager(lib, debug) if use_rtdyld else None
+    root_name, root_count = (None, 0) if manager else define_roots(module)
     word_size = module.data_layout.pointer_size()
     if on_stage:
         on_stage(0)
 
-    lib = module.lib
-    add_roots = lib.runtime_function("seq_gc_add_roots", None, P, P)
-    remove_roots = lib.runtime_function("seq_gc_remove_roots", None, P, P)
     jit = P()
-    # LLJIT creates a process-symbol dylib with its default configuration.
-    lib.check_error(lib.function("OrcCreateLLJIT", P, A, P)(byref(jit), None))
+    builder = lib.function("OrcCreateLLJITBuilder", P)()
+    if manager:
+        manager.attach(builder)
+    lib.check_error(lib.function("OrcCreateLLJIT", P, A, P)(byref(jit), builder))
 
     def lookup(name):
         address = Q()
@@ -73,12 +79,16 @@ def run(module, args, *, debug, fast_math=False, native=True, on_stage=None):
         return address.value
 
     try:
+        if manager:
+            manager.capture(jit)
         dylib = lib.function("OrcLLJITGetMainJITDylib", P, P)(jit)
         add_module = lib.function("OrcLLJITAddLLVMIRModule", P, P, P, P)
         lib.check_error(add_module(jit, dylib, module.transfer()))
         address = lookup("main")
         with ExitStack() as roots:
             if root_count:
+                add_roots = lib.runtime_function("seq_gc_add_roots", None, P, P)
+                remove_roots = lib.runtime_function("seq_gc_remove_roots", None, P, P)
                 table = (Root * root_count).from_address(lookup(root_name))
                 for start, end in root_ranges(table, word_size):
                     add_roots(start, end)
@@ -89,7 +99,8 @@ def run(module, args, *, debug, fast_math=False, native=True, on_stage=None):
             # Keep the GIL and supply the C ABI's argv[argc] sentinel.
             main = PYFUNCTYPE(I, I, POINTER(S))(address)
             argv = (S * (len(args) + 1))(*map(fsencode, args))
-            result = main(len(args), argv)
+            with error_callback(lib, manager, debug):
+                result = main(len(args), argv)
             CDLL(None).fflush(None)
             return result
     finally:

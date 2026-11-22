@@ -12,17 +12,29 @@ the corresponding Codon outputs on Linux.
 | Area | Meister implementation and differences |
 | --- | --- |
 | Loading and configuration | The Python frontend supplies early definitions and stdlib paths. The LLVM and runtime locations can be selected independently. The four C ABI bridge functions formerly used by Meister were removed. `python -m meister test` runs pytest. The standalone AST and CIR comparison tools live under `test/` and load the native compiler only when explicitly invoked. The pytest native reference cases run `codon_test` in subprocesses. |
-| Debug metadata | The LLVM C API replaces a temporary composite type with the final structure after its members are lowered. C++ updates the member array in place. The Python approach supports recursive debug types through LLVM metadata replacement. |
-| JIT linking | LLVM-C creates and owns LLJIT and its thread-safe module. The default LLJIT configuration picks JITLink on the verified Linux x86-64 platform. C++ configures its own linking layer, debugger plugins, and platform registration. Meister calls the normal C entry point with a null-terminated argument vector while holding the Python GIL. |
-| Garbage collection | Meister registers address ranges for writable, non-TLS LLVM globals after ORC resolves them and unregisters the ranges before destroying the JIT. C++ registers whole JIT allocation slabs through its memory manager. The Meister table omits JIT linker allocations and TLS storage. |
-| Exceptions | Both paths use the Codon runtime ABI for caught exceptions. CLI JIT programs use the runtime's standalone unhandled-exception handler. The C++ JIT uses a callback with JIT symbol lookup. Debug backtraces from unhandled Meister JIT exceptions can differ. |
-| LLVM passes | The LLVM C API runs the default O0 pipeline once or the default O3 pipeline twice. Meister ports the debug settings, scalar fast math, host attributes, and OpenMP thread-ID rewrite. The rewrite runs before each O3 pipeline. C++ installs it at a PassBuilder extension point. The native coroutine, allocation-removal, allocation-hoisting, and allocation-autofree passes still differ. This can change optimized IR, assembly, and performance. |
+| Debug metadata | Meister creates an empty composite and replaces its elements through the LLVM C API, matching the construction order in C++ for recursive types. |
+| JIT linking | On Linux x86-64, the LLVM C API exposes allocation and GDB registration through RTDyld. C++ uses an ObjectLinkingLayer with JITLink and its own plugins. Other hosts retain the default LLJIT layer. Meister calls the C entry point with a null-terminated argument vector while holding the Python GIL. |
+| Garbage collection | The Linux RTDyld callbacks register entire writable section mappings as GC roots and unregister each mapping before release. C++ registers writable segments within a contiguous JITLink slab. Other hosts retain the per-global registration path. |
+| Exceptions | Meister uses the existing runtime JITError path through a C callback on Linux x86-64. It keeps the loaded object and symbolizes its frames with the LLVM installation’s llvm-symbolizer. Older runtimes use the standalone handler. C++ uses an in-process symbolizer and JITLink section addresses. |
+| LLVM passes | Meister ports coroutine resume inlining, coroutine unroll guards and branch simplification, OpenMP thread-ID reuse, allocation removal and stack demotion, loop allocation hoisting, and optional allocation autofree. The LLVM C API has no PassBuilder extension callbacks, so these transformations run at module boundaries around the two O3 invocations. C++ schedules them within each O3 pipeline. LLVM analyses for capture and nonzero values also have more information than the corresponding Meister checks. |
 | Native targets and GPU | Linux x86-64 is the verified target. C++ has further CPU-feature selection for ARM and AArch64, target-selection flags, Windows-specific SEH registration and export handling, and a GPU module, PTX, and libdevice pipeline. These paths still require parity work and target-specific verification. |
 | Native output | The build command emits CIR, LLVM IR, bitcode, assembly, objects, executables, shared libraries, and CPython extension objects. It supports native format detection, library dependencies, linker flags, PIE, and global constructors. Linker command ordering, optional toolchain flags, and platform integration can differ. |
 | CPython extensions | Meister emits CPython module and type definitions, slot tables, and exception translation wrappers directly into the LLVM module. Linking the result into a loadable extension is a separate step, as in C++. |
 | Native integrations | Compiler DSL plugins, native optimizer plugins, and the incremental `codon jit` session use C++ compiler APIs. This backend provides whole-program `run` through ORC. |
 
-## Verification
+## LLVM optimization and JIT port verification
+
+- The 64-worker sweep passed 120 focused cases. It covered the ported optimizer and JIT tests, 59 C++ optimizer assertions, and selected core, SIMD, OpenMP, Python bridge, NumPy, and stdlib cases. [64-worker log](../../build/meister-backend-check/llvm-port/pytest64.log)
+- The final focused rerun passed 37 cases, including the ported allocation, coroutine, and OpenMP tests, both backend modes, GDB registration and teardown, source backtraces, and recursive debug types. [Ported-test log](../../build/meister-backend-check/llvm-port/ported-tests.log)
+- The Python unit run passed 149 cases and 3,313 subtests. [Unit log](../../build/meister-backend-check/llvm-port/python-unit.log)
+- The uncaught JIT exception matched C++ stderr and exit status in debug and release after normalizing program-counter addresses. The debug comparison checks frame names, files, lines, and columns. [Backtrace comparison](../../build/meister-backend-check/llvm-port/cpp-backtrace.log)
+
+The existing runtime was relinked with the rebuilt exception object after the
+configured Clang build aborted on this host. The C callback adds access to the
+existing native JIT error handler. The runtime's ELF dependencies and runpath
+match the previous build.
+
+## Verification before the LLVM optimization and JIT port
 
 The verification environment uses the existing uv Python 3.13.2 environment,
 Exaloop LLVM 20.1.7 and the Codon runtime under `StdEnv/2023`.

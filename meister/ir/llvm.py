@@ -30,6 +30,7 @@ class Linkage(IntEnum):
     APPENDING = 7
     INTERNAL = 8
     PRIVATE = 9
+    EXTERNAL_WEAK = 12
 
 
 class Predicate(IntEnum):
@@ -213,6 +214,53 @@ class Type(_Handle):
 
 
 class Value(_Handle):
+    def is_a(self, kind):
+        return bool(self._call("IsA" + kind, P, ()))
+
+    def users(self):
+        lib = self._owner.lib
+        use = self._call("GetFirstUse", P, ())
+        while use:
+            yield Value(self._owner, lib.function("GetUser", P, P)(use))
+            use = lib.function("GetNextUse", P, P)(use)
+
+    def replace_all_uses(self, value):
+        self._call("ReplaceAllUsesWith", None, (P,), value)
+
+    @property
+    def block(self):
+        pointer = self._call("GetInstructionParent", P, ())
+        return BasicBlock(self._owner, pointer) if pointer else None
+
+    @property
+    def indices(self):
+        count = self._call("GetNumIndices", U, ())
+        return tuple(self._call("GetIndices", POINTER(U), ())[:count])
+
+    def phi_incoming(self):
+        for index in range(self._call("CountIncoming", U, ())):
+            yield (
+                Value(self._owner, self._call("GetIncomingValue", P, (U,), index)),
+                BasicBlock(self._owner, self._call("GetIncomingBlock", P, (U,), index)),
+            )
+
+    def enum_attribute(self, name, index=-1, *, call=False):
+        lib = self._owner.lib
+        name = name.encode()
+        kind = lib.function("GetEnumAttributeKindForName", U, S, N)(name, len(name))
+        if kind:
+            getter = "GetCallSiteEnumAttribute" if call else "GetEnumAttributeAtIndex"
+            if attr := self._call(getter, P, (U, U), index, kind):
+                if lib.function("IsTypeAttribute", I, P)(attr):
+                    return 0
+                return lib.function("GetEnumAttributeValue", Q, P)(attr)
+        return None
+
+    def call_attribute(self, name, index=-1):
+        value = self.enum_attribute(name, index, call=True)
+        callee = self.called_function
+        return callee.enum_attribute(name, index) if value is None and callee else value
+
     @property
     def type(self):
         return Type(self._owner, self._call("TypeOf", P, ()))
@@ -360,6 +408,11 @@ class Function(Value):
 
 
 class BasicBlock(_Handle):
+    def successors(self):
+        if term := self.terminator:
+            for index in range(term._call("GetNumSuccessors", U, ())):
+                yield BasicBlock(self._owner, term._call("GetSuccessor", P, (U,), index))
+
     @property
     def terminator(self):
         pointer = self._call("GetBasicBlockTerminator", P, ())
@@ -473,16 +526,21 @@ class Module:
             yield value
             pointer = value._call("GetNextGlobal", P, ())
 
-    def run(self, args, *, debug, fast_math=False, native=True, on_stage=None):
+    def run(self, args, *, debug, fast_math=False, native=True, auto_free=False, on_stage=None):
         """Optimize and execute the module, transferring ownership to ORC."""
         from .jit import run
 
-        return run(self, args, debug=debug, fast_math=fast_math, native=native, on_stage=on_stage)
+        return run(
+            self, args, debug=debug, fast_math=fast_math, native=native, auto_free=auto_free,
+            on_stage=on_stage,
+        )
 
-    def optimize(self, *, debug, ctor=None, fast_math=False, native=True):
+    def optimize(self, *, debug, ctor=None, fast_math=False, native=True, auto_free=False):
         from .optimize import optimize
 
-        optimize(self, debug=debug, ctor=ctor, fast_math=fast_math, native=native)
+        optimize(
+            self, debug=debug, ctor=ctor, fast_math=fast_math, native=native, auto_free=auto_free,
+        )
 
     def write(self, path, kind, *, pic=False):
         if kind == "llvm":
@@ -805,16 +863,14 @@ class DebugBuilder(_Handle):
         return self._make("CreateReferenceType", (U, P), 0x10, base)  # DW_TAG_reference_type
 
     def struct_type(self, name, file, line, size):
+        # Create the same empty composite as C++ before visiting recursive fields.
         name = name.encode()
-        # Keep a temporary type until all fields, including recursive pointers,
-        # have been emitted. LLVM then retargets every metadata use.
-        typ = self._make(
-            "CreateReplaceableCompositeType",
-            (U, S, N, P, P, U, U, Q, U, I, S, N),
-            0x13, name, len(name), file, file, line, 0, size, 0, 0, b"", 0,
+        return self._make(
+            "CreateStructType",
+            (P, S, N, P, U, Q, U, I, P, A, U, U, P, S, N),
+            file, name, len(name), file, line, size, 0, 0, None, None, 0, 0,
+            None, b"", 0,
         )
-        typ.composite = name, file, line, size
-        return typ
 
     def member_type(self, scope, name, file, line, size, offset, typ, flags=0):
         name = name.encode()
@@ -834,16 +890,15 @@ class DebugBuilder(_Handle):
         )
 
     def replace_members(self, typ, members):
-        name, file, line, size = typ.composite
+        module = self._owner
+        lib = module.lib
         members = _array(members)
-        final = self._make(
-            "CreateStructType",
-            (P, S, N, P, U, Q, U, I, P, A, U, U, P, S, N),
-            file, name, len(name), file, line, size, 0, 0, None, members,
-            len(members), 0, None, b"", 0,
-        )
-        typ._call("MetadataReplaceAllUsesWith", None, (P,), final)
-        typ._pointer = final._pointer
+        elements = self._make("GetOrCreateArray", (A, N), members, len(members))
+        tracked = lib.function("MetadataAsValue", P, P, P)(module.context, typ)
+        # DICompositeType::getRawElements is operand 4. MetadataAsValue tracks
+        # uniquing during replacement, as DIBuilder::replaceArrays does.
+        lib.function("ReplaceMDNodeOperandWith", None, P, U, P)(tracked, 4, elements)
+        typ._pointer = lib.function("ValueAsMetadata", P, P)(tracked)
 
     def subroutine_type(self, types):
         types = _array(types)

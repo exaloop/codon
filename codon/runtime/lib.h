@@ -101,6 +101,8 @@ SEQ_FUNC _Unwind_Reason_Code seq_personality(int version, _Unwind_Action actions
                                              _Unwind_Exception *exceptionObject,
                                              _Unwind_Context *context);
 SEQ_FUNC int64_t seq_exc_offset();
+SEQ_FUNC void seq_set_jit_error_callback(
+    void (*callback)(const char *, size_t, const uintptr_t *, size_t));
 
 SEQ_FUNC seq_str_t seq_locale_decimal_point();
 SEQ_FUNC seq_str_t seq_locale_thousands_sep();

@@ -14,6 +14,7 @@
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #ifdef _WIN32
@@ -781,4 +782,24 @@ std::string codon::runtime::makeBacktraceFrameString(uintptr_t pc,
 void codon::runtime::setJITErrorCallback(
     std::function<void(const codon::runtime::JITError &)> callback) {
   jitErrorCallback = callback;
+}
+
+SEQ_FUNC void seq_set_jit_error_callback(
+    void (*callback)(const char *, size_t, const uintptr_t *, size_t)) {
+  if (!callback) {
+    codon::runtime::setJITErrorCallback({});
+    return;
+  }
+  auto owner = std::this_thread::get_id();
+  codon::runtime::setJITErrorCallback(
+      [callback, owner](const codon::runtime::JITError &error) {
+        auto output = error.getOutput();
+        if (std::this_thread::get_id() == owner) {
+          auto frames = error.getBacktrace();
+          callback(output.data(), output.size(), frames.data(), frames.size());
+        } else {
+          fwrite(output.data(), 1, output.size(), stderr);
+        }
+        std::abort();
+      });
 }

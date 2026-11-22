@@ -2,6 +2,11 @@
 """Run the LLVM portion of the compilation pipeline."""
 
 from .llvm import I, N, P, S, U, Linkage, Value
+from .llvm_alloc import (
+    ALLOCATORS, HEAP_ALLOCATORS, allocation_sites, free_noncaptured_allocations,
+    hoist_allocations, remove_allocations,
+)
+from .llvm_coro import cleanup_guards, inline_resumes, optimize_loops
 
 
 def prepare_debug(module, debug, ctor):
@@ -125,22 +130,42 @@ def optimize_openmp_thread_ids(module):
             module.builder.clear_insert_point()
 
 
-def optimize(module, *, debug, ctor, fast_math, native=True):
+def optimize(module, *, debug, ctor, fast_math, native=True, auto_free=False):
     # C++ runs the default O0 pipeline once and the default O3 pipeline twice.
     lib = module.lib
     machine = lib.target_machine() if native else None
     options = lib.function("CreatePassBuilderOptions", P)()
     try:
-        run = lib.function("RunPasses", P, P, S, P, P)
+        run_passes = lib.function("RunPasses", P, P, S, P, P)
+
+        def run(pipeline):
+            lib.check_error(run_passes(module, pipeline, machine, options))
+
         if native and not debug:
             apply_native_target(module)
         for _ in range(1 if debug else 2):
             prepare_debug(module, debug, ctor)
-            if not debug:
-                optimize_openmp_thread_ids(module)
             if fast_math:
                 apply_fast_math(module)
-            lib.check_error(run(module, b"default<O0>" if debug else b"default<O3>", machine, options))
+            if debug:
+                run(b"default<O0>")
+            else:
+                # LLVM-C runs pipelines without exposing PassBuilder callbacks.
+                # Apply the Codon passes before each default O3 pipeline.
+                inline_resumes(module, run)
+                optimize_openmp_thread_ids(module)
+                for function, allocations in allocation_sites(module, ALLOCATORS):
+                    remove_allocations(module, function, allocations)
+                if any(module.function(name) for name in HEAP_ALLOCATORS):
+                    run(b"function(loop-simplify,lcssa)")
+                    for function, allocations in allocation_sites(module, HEAP_ALLOCATORS):
+                        hoist_allocations(module, function, allocations)
+                if auto_free:
+                    for function, allocations in allocation_sites(module, ALLOCATORS):
+                        free_noncaptured_allocations(module, function, allocations)
+                optimize_loops(module)
+                run(b"default<O3>")
+            cleanup_guards(module)
             prepare_debug(module, debug, ctor)
     finally:
         if machine:

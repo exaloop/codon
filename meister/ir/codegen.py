@@ -176,6 +176,7 @@ def parse_args(mode, argv):
     parser.add_argument("-unordered-dict", "--unordered-dict", action="store_true")
     parser.add_argument("-disable-opt", "--disable-opt", action="append", default=[])
     parser.add_argument("-disable-native", "--disable-native", action="store_true")
+    parser.add_argument("-auto-free", "--auto-free", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("-fast-math", "--fast-math", action="store_true")
     if mode == "run":
         parser.add_argument(
@@ -268,6 +269,7 @@ def execute(mode, args):
         autopy=args.auto_python,
         unordereddict=args.unordered_dict,
         fast_math=args.fast_math,
+        auto_free=args.auto_free,
         native=not args.disable_native,
         disabled=tuple(args.disable_opt),
     )
@@ -294,9 +296,12 @@ def execute(mode, args):
     library = llvm.Library(llvm_path(build=runtime.parent, requested=args.library), runtime)
     construct = timing.stage("llvm construct") if timing else nullcontext()
     with construct:
-        # The runtime's standalone exception handler keeps a C++ exception
-        # from unwinding across the ctypes entry point.
-        module = emit_module(cc, library, file, defines, standalone=mode != "llvm")
+        from .jit_debug import has_runtime_callback
+
+        # An older runtime has only the standalone handler. Use it until
+        # the C ABI for the native JITError callback is available.
+        standalone = mode != "llvm" and (mode != "run" or not has_runtime_callback(library))
+        module = emit_module(cc, library, file, defines, standalone=standalone)
     with module:
         if mode == "run":
             from ctypes import CDLL, RTLD_GLOBAL
@@ -312,7 +317,7 @@ def execute(mode, args):
             with timing.stage("llvm pass") if timing else nullcontext():
                 return module.run(
                     [args.file, *args.args], debug=options.debug, fast_math=options.fast_math,
-                    native=options.native,
+                    native=options.native, auto_free=options.auto_free,
                     on_stage=boundary if timing else None,
                 )
         if mode == "build":

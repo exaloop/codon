@@ -49,6 +49,7 @@ class FrontendOptions:
     test: bool = False
     # Apply LLVM fast-math flags to floating-point operations.
     fast_math: bool = False
+    auto_free: bool = False
     native: bool = True
     disabled: tuple[str, ...] = ()
 
