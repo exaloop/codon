@@ -63,7 +63,7 @@ def setup_global_ctor(module):
 
 def write(
     module, path, kind, options, *, libraries=(), linker_flags="", pie=False,
-    ctor="auto", relocation=None,
+    ctor="auto", relocation=None, plugins=None,
 ):
     use_ctor = (ctor == "yes" and kind != "bc") or (ctor == "auto" and kind == "lib")
     if use_ctor:
@@ -74,12 +74,12 @@ def write(
     )
     if kind in {"exe", "lib"}:
         link(module, path, shared=kind == "lib", libraries=libraries, flags=linker_flags,
-             pie=pie, debug=options.debug, relocation=relocation)
+             pie=pie, debug=options.debug, relocation=relocation, plugins=plugins)
     else:
         module.write(path, "obj" if kind == "pyext" else kind, pic=relocation == "pic")
 
 
-def link(module, path, *, shared, libraries, flags, pie, debug, relocation):
+def link(module, path, *, shared, libraries, flags, pie, debug, relocation, plugins=None):
     flags = ["-pie" if flag == "--pie" else flag for flag in shlex.split(flags)]
     if pie:
         flags.append("-pie")
@@ -108,7 +108,11 @@ def link(module, path, *, shared, libraries, flags, pie, debug, relocation):
         command.append(f"-L{runtime_dir}")
         if not windows:
             command.append(f"-Wl,-rpath,{runtime_dir}")
+        if plugins:
+            plugins.add_link_paths(command)
         command.extend(f"-l{name}" for name in libraries)
+        if plugins:
+            plugins.add_link_libraries(command)
         if windows:
             command.extend(("-lcodonrt", "-llibomp", "-llibopenblas"))
             if debug and not shared:

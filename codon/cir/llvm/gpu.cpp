@@ -435,6 +435,7 @@ void remapFunctions(llvm::Module *M) {
       {"llvm.floor.f64", "__nv_floor"},
       {"llvm.fabs.f64", "__nv_fabs"},
       {"llvm.exp.f64", "__nv_exp"},
+      {"llvm.exp2.f64", "__nv_exp2"},
       {"llvm.log.f64", "__nv_log"},
       {"llvm.log2.f64", "__nv_log2"},
       {"llvm.log10.f64", "__nv_log10"},
@@ -481,6 +482,7 @@ void remapFunctions(llvm::Module *M) {
       {"llvm.floor.f32", "__nv_floorf"},
       {"llvm.fabs.f32", "__nv_fabsf"},
       {"llvm.exp.f32", "__nv_expf"},
+      {"llvm.exp2.f32", "__nv_exp2f"},
       {"llvm.log.f32", "__nv_logf"},
       {"llvm.log2.f32", "__nv_log2f"},
       {"llvm.log10.f32", "__nv_log10f"},
@@ -533,6 +535,29 @@ void remapFunctions(llvm::Module *M) {
 
   // functions that need to be generated as they're not available on GPU
   static const std::vector<std::pair<std::string, Codegen>> fillins = {
+      // Device code has no process locale. Use the C locale for number formatting.
+      {"seq_locale_decimal_point",
+       [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {
+         auto *M = B.GetInsertBlock()->getModule();
+         auto *mem = B.CreateCall(makeMalloc(M), B.getInt64(1));
+         B.CreateStore(B.getInt8('.'), mem);
+         auto *ret = B.GetInsertBlock()->getParent()->getReturnType();
+         auto *str = B.CreateInsertValue(llvm::UndefValue::get(ret), mem, 0);
+         B.CreateRet(B.CreateInsertValue(str, B.getInt64(1), 1));
+       }},
+
+      {"seq_locale_thousands_sep",
+       [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {
+         B.CreateRet(llvm::Constant::getNullValue(
+             B.GetInsertBlock()->getParent()->getReturnType()));
+       }},
+
+      {"seq_locale_grouping",
+       [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {
+         B.CreateRet(llvm::Constant::getNullValue(
+             B.GetInsertBlock()->getParent()->getReturnType()));
+       }},
+
       {"memcmp",
        [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {
          // NVPTX has neither libc's memcmp nor LLVM's libc-call folding. Give

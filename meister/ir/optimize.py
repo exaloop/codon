@@ -1,6 +1,7 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 """Run the LLVM portion of the compilation pipeline."""
 
+from . import gpu
 from .llvm import I, N, P, S, U, Linkage, Value
 from .llvm_alloc import (
     ALLOCATORS, HEAP_ALLOCATORS, allocation_sites, free_noncaptured_allocations,
@@ -18,7 +19,7 @@ def prepare_debug(module, debug, ctor):
     attribute_kind = lib.function("GetEnumAttributeKindForName", U, S, N)
     alwaysinline = attribute_kind(b"alwaysinline", len(b"alwaysinline"))
     for fn in module.functions():
-        if fn.name != ctor:
+        if fn.name != ctor and not (module.options and module.options.jit):
             # Keep functions visible to native debug symbol lookup.
             fn.set_linkage(Linkage.EXTERNAL)
         if not fn._call("GetEnumAttributeAtIndex", P, (U, U), -1, alwaysinline):
@@ -131,7 +132,21 @@ def optimize_openmp_thread_ids(module):
 
 
 def optimize(module, *, debug, ctor, fast_math, native=True, auto_free=False):
-    # C++ runs the default O0 pipeline once and the default O3 pipeline twice.
+    device = gpu.prepare(module, fast_math)
+    try:
+        run_optimization_passes(
+            module, debug, ctor, fast_math, native, auto_free, rounds=1 if debug else 2,
+        )
+        if device:
+            run_optimization_passes(device, debug, ctor, fast_math, False, auto_free, rounds=2)
+            gpu.embed(module, device)
+        module.verify()
+    finally:
+        if device:
+            device.close()
+
+
+def run_optimization_passes(module, debug, ctor, fast_math, native, auto_free, *, rounds):
     lib = module.lib
     machine = lib.target_machine() if native else None
     options = lib.function("CreatePassBuilderOptions", P)()
@@ -143,7 +158,7 @@ def optimize(module, *, debug, ctor, fast_math, native=True, auto_free=False):
 
         if native and not debug:
             apply_native_target(module)
-        for _ in range(1 if debug else 2):
+        for _ in range(rounds):
             prepare_debug(module, debug, ctor)
             if fast_math:
                 apply_fast_math(module)
@@ -171,4 +186,3 @@ def optimize(module, *, debug, ctor, fast_math, native=True, auto_free=False):
         if machine:
             lib.function("DisposeTargetMachine", None, P)(machine)
         lib.function("DisposePassBuilderOptions", None, P)(options)
-    module.verify()

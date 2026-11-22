@@ -803,3 +803,15 @@ SEQ_FUNC void seq_set_jit_error_callback(
         std::abort();
       });
 }
+
+SEQ_FUNC void seq_jit_terminate(
+    void *exc, void (*callback)(const char *, size_t, const uintptr_t *, size_t)) {
+  // Do not propagate JITError through the caller's foreign-function boundary.
+  try {
+    seq_terminate(exc);
+  } catch (const codon::runtime::JITError &error) {
+    auto output = error.getOutput();
+    auto frames = error.getBacktrace();
+    callback(output.data(), output.size(), frames.data(), frames.size());
+  }
+}

@@ -27,6 +27,10 @@ class LLVMError(RuntimeError):
 class Linkage(IntEnum):
     EXTERNAL = 0
     AVAILABLE_EXTERNALLY = 1
+    LINK_ONCE_ANY = 2
+    LINK_ONCE_ODR = 3
+    WEAK_ANY = 5
+    WEAK_ODR = 6
     APPENDING = 7
     INTERNAL = 8
     PRIVATE = 9
@@ -86,7 +90,13 @@ class Library:
         else:
             raise LLVMError(f"Unsupported LLVM host architecture {arch}")
         self.arch = target
-        for component in ("TargetInfo", "Target", "TargetMC", "AsmPrinter", "AsmParser"):
+        self.initialize_target(target)
+
+    def initialize_target(self, target, *, asm_parser=True):
+        components = ("TargetInfo", "Target", "TargetMC", "AsmPrinter")
+        if asm_parser:
+            components += ("AsmParser",)
+        for component in components:
             self.function("Initialize" + target + component, None)()
 
     def function(self, name, result, *args):
@@ -122,13 +132,14 @@ class Library:
             finally:
                 self.function("DisposeErrorMessage", None, P)(pointer)
 
-    def target_machine(self, *, pic=False, level=3):
+    def target_machine(self, *, pic=False, level=3, triple=None, cpu=b"", features=b""):
+        triple = triple or self.triple
         target, message = P(), P()
-        if self.function("GetTargetFromTriple", I, S, A, A)(self.triple, byref(target), byref(message)):
+        if self.function("GetTargetFromTriple", I, S, A, A)(triple, byref(target), byref(message)):
             raise LLVMError(self.message(message))
         # LLVMRelocPIC (2), LLVMRelocDefault (0), LLVMCodeModelDefault (0).
         machine = self.function("CreateTargetMachine", P, P, S, S, S, I, I, I)(
-            target, self.triple, b"", b"", level, 2 if pic else 0, 0
+            target, triple, cpu, features, level, 2 if pic else 0, 0
         )
         if not machine:
             raise LLVMError("could not create LLVM target machine")
@@ -447,9 +458,11 @@ class Context:
 class Module:
     """Own the context, module and builder together; all other handles borrow them."""
 
-    def __init__(self, library, name, source):
+    def __init__(self, library, name, source, *, options=None):
         self.lib = library
+        self.options = options
         self.context = Context(library)
+        self._owns_context = True
         self._pointer = None
         self.builder = None
         self.debug_builder = None
@@ -501,9 +514,27 @@ class Module:
             self._close_builders()
             self.lib.function("DisposeModule", None, P)(self)
             self._pointer = None
-        self.context.close()
+        if self._owns_context:
+            self.context.close()
+
+    def clone(self):
+        other = object.__new__(Module)
+        other.lib, other.context, other.options = self.lib, self.context, self.options
+        other._owns_context = False
+        other._pointer = self.lib.function("CloneModule", P, P)(self)
+        other.builder = other.debug_builder = None
+        try:
+            other.builder = IRBuilder(other)
+            other.data_layout = DataLayout(
+                other, self.lib.function("GetModuleDataLayout", P, P)(other)
+            )
+        except BaseException:
+            other.close()
+            raise
+        return other
 
     def transfer(self):
+        assert self._owns_context
         self._close_builders()
         module = self.lib.function("OrcCreateNewThreadSafeModule", P, P, P)(
             self, self.context.thread_safe
@@ -604,11 +635,12 @@ class Module:
         )
         return Metadata(self, pointer)
 
-    def add_warning_flag(self, name, value):
+    def add_module_flag(self, name, value, *, behavior=1):
         metadata = self.lib.function("ValueAsMetadata", P, P)(value)
         name = name.encode()
-        # LLVMModuleFlagBehaviorWarning
-        self.lib.function("AddModuleFlag", None, P, I, S, N, P)(self, 1, name, len(name), metadata)
+        self.lib.function("AddModuleFlag", None, P, I, S, N, P)(
+            self, behavior, name, len(name), metadata
+        )
 
     def create_debug_builder(self):
         assert self.debug_builder is None
@@ -663,6 +695,17 @@ class Module:
         buffer = self.lib.function("CreateMemoryBufferWithMemoryRangeCopy", P, S, N, S)(
             source, len(source), b"<inline LLVM>"
         )
+        self._link_buffer(buffer, "inline LLVM module")
+
+    def link_ir_file(self, path):
+        buffer, message = P(), P()
+        if self.lib.function("CreateMemoryBufferWithContentsOfFile", I, S, A, A)(
+            fsencode(path), byref(buffer), byref(message)
+        ):
+            raise LLVMError(self.lib.message(message))
+        self._link_buffer(buffer, str(path), set_target=True)
+
+    def _link_buffer(self, buffer, source, *, set_target=False):
         module, message = P(), P()
         # On both success and failure LLVMParseIRInContext consumes the buffer.
         if self.lib.function("ParseIRInContext", I, P, P, A, A)(
@@ -671,8 +714,10 @@ class Module:
             raise LLVMError(self.lib.message(message))
         layout = self.lib.function("GetDataLayoutStr", S, P)(self)
         self.lib.function("SetDataLayout", None, P, S)(module, layout)
+        if set_target:
+            self.lib.function("SetTarget", None, P, S)(module, self.target.encode())
         if self.lib.function("LinkModules2", I, P, P)(self, module):
-            raise LLVMError("cannot link inline LLVM module")
+            raise LLVMError(f"cannot link {source}")
 
     def verify(self):
         message = P()

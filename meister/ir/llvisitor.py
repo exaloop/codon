@@ -50,12 +50,14 @@ class LLVMVisitor(ConstVisitor):
     str_type: llvm.Type
 
     # C++: codon/cir/llvm/llvisitor.cpp:95
-    def __init__(self, module, *, debug=True, standalone=False, version):
+    def __init__(self, module, *, debug=True, standalone=False, version, session=None):
         self.mod = module
         self.b = module.builder
         self.layout = module.data_layout
         self.debug = debug
         self.standalone = standalone
+        self.session = session
+        self.typeinfo_updates = []
         self.fn = self.block = None
         self.vars, self.funcs, self.types = {}, {}, {}
         self.function_names, self.function_name_counts = {}, Counter()
@@ -261,6 +263,8 @@ class LLVMVisitor(ConstVisitor):
             return fn.unmangled_name
         if irtools.is_gpu_kernel(fn):
             return fn.name
+        if self.session:
+            return fn.reference_string()
         if fn.id not in self.function_names:
             self.function_names[fn.id] = f"{fn.name}.{self.function_name_counts[fn.name]}"
             self.function_name_counts[fn.name] += 1
@@ -343,15 +347,18 @@ class LLVMVisitor(ConstVisitor):
             self.vars.setdefault(var.id, self.dummy(typ))
             return
         name = var.name if var.external else ("._" if var.name.startswith("L") else ".") + var.name
+        previous = self.session and var.id in self.session.globals
         storage = self.mod.add_global(
             name,
             typ,
-            None if var.external else typ.null(),
-            linkage=llvm.Linkage.EXTERNAL if var.external else llvm.Linkage.PRIVATE,
+            None if var.external or previous else typ.null(),
+            linkage=llvm.Linkage.EXTERNAL if var.external or self.session else llvm.Linkage.PRIVATE,
         )
         self.vars.setdefault(var.id, storage)
         if var.external:
             storage.set_unnamed_addr(local=True)
+        elif previous:
+            storage._call("SetExternallyInitialized", None, (llvm.I,), True)
         elif not (var.tls and "windows" in self.mod.target):
             # CodeView cannot describe LLVM's emulated TLS storage.
             # Referring to the original symbol leaves an undefined COFF label.
@@ -371,6 +378,10 @@ class LLVMVisitor(ConstVisitor):
 
     # C++: codon/cir/llvm/llvisitor.cpp:1759
     def make_llvm_function(self, fn):
+        if self.session and fn.id in self.session.functions:
+            return self.mod.get_or_insert_function(
+                self.function_name(fn), self.get_llvm_func_type(fn.type)
+            )
         if isinstance(fn, ir.LLVMFunc):
             result = self.visit_LLVMFunc(fn)
             self.set_debug_info_for_node(None)
@@ -469,7 +480,8 @@ class LLVMVisitor(ConstVisitor):
         self.coro = None
         self.set_debug_info_for_node(fn)
         self.fn.set_linkage(
-            llvm.Linkage.EXTERNAL if fn.jit or irtools.is_export(fn) else llvm.Linkage.PRIVATE
+            llvm.Linkage.EXTERNAL
+            if fn.jit or self.session or irtools.is_export(fn) else llvm.Linkage.PRIVATE
         )
         if fn.jit:
             self.fn.add_attribute("jit", "")
@@ -632,25 +644,40 @@ class LLVMVisitor(ConstVisitor):
         )
 
     # C++: codon/cir/llvm/llvisitor.cpp:2096
-    def visit_Module(self, node):
+    def initialize_module(self, node):
         self.db = self.mod.create_debug_builder()
         self.unit = self.db.compile_unit(
             self.debug_file(self.source(node)), f"codon version {self.version}", not self.debug
         )
-        self.mod.add_warning_flag("Debug Info Version", self.i32.const_int(3))
+        self.mod.add_module_flag("Debug Info Version", self.i32.const_int(3))
         target = self.mod.target
         if "darwin" in target or "macos" in target:
-            self.mod.add_warning_flag("Dwarf Version", self.i32.const_int(2))
+            self.mod.add_module_flag("Dwarf Version", self.i32.const_int(2))
         # Windows uses CodeView for the PDB that provides symbolized backtraces.
         if "windows" in target:
-            self.mod.add_warning_flag("CodeView", self.i32.const_int(1))
+            self.mod.add_module_flag("CodeView", self.i32.const_int(1))
         self.register_global(node.argv_var)
         self.register_global(node.argc_var)
+        seen = set()
         for var in node:
-            self.register_global(var.get_actual())
+            var = var.get_actual()
+            if var.id not in seen:
+                seen.add(var.id)
+                self.register_global(var)
+        seen.clear()
         for var in node:
-            if isinstance(var.get_actual(), ir.Func):
+            var = var.get_actual()
+            if not isinstance(var, ir.Func) or var.id in seen:
+                continue
+            seen.add(var.id)
+            if not self.session or var.id not in self.session.functions:
                 self.process(var)
+
+    def visit_Module(self, node):
+        self.initialize_module(node)
+        if self.session and self.session.initialized:
+            self.prepare_runtime_type_info(node)
+            return
 
         main = node.main_func
         self.funcs[main.id] = real_main = self.make_llvm_function(main)
@@ -694,7 +721,7 @@ class LLVMVisitor(ConstVisitor):
         b.set_insert_point(exit_)
         b.create_store(ptr, self.vars[node.argv_var.id])
         b.create_store(length, self.vars[node.argc_var.id])
-        flags = int(self.debug) | (4 if self.standalone else 0)
+        flags = int(self.debug) | (2 if self.session else 0) | (4 if self.standalone else 0)
         b.create_call(init, (self.i32.const_int(flags),))
 
         # Put the entire program in a new function, catching uncaught exceptions.
@@ -735,6 +762,8 @@ class LLVMVisitor(ConstVisitor):
             self.realloc_func()
         if m.function("seq_free"):
             self.free_func()
+        if self.session:
+            self.prepare_runtime_type_info(node)
 
     # C++: codon/cir/llvm/llvisitor.cpp:1965
     def type_idx_var(self, typ):
@@ -950,7 +979,7 @@ class LLVMVisitor(ConstVisitor):
 
     # C++: codon/cir/llvm/llvisitor.cpp:3510
     def specialize_virtual_call(self, fn, typ):
-        if not fn.is_call or fn.call_arg_count != 2 or fn.has_uses:
+        if self.session or not fn.is_call or fn.call_arg_count != 2 or fn.has_uses:
             return fn, (), None
         callee = fn.called_function
         receiver = self.virtual_lookup_types.get(callee.name) if callee else None
@@ -1320,8 +1349,13 @@ class LLVMVisitor(ConstVisitor):
             return existing
         m, i, p = self.mod, self.i64, self.ptr
         result = m.add_global(
-            name, self.runtime_type_info_type(), constant=True, linkage=llvm.Linkage.PRIVATE
+            name, self.runtime_type_info_type(), constant=not self.session,
+            linkage=llvm.Linkage.EXTERNAL if self.session else llvm.Linkage.PRIVATE,
         )
+        previous = self.session and info.id in self.session.type_methods
+        method_ids = {idx: method.id for idx, method in info.methods.items()}
+        if previous and self.session.type_methods[info.id] == method_ids:
+            return result
 
         def array(element, values, suffix):
             if not values:
@@ -1425,33 +1459,66 @@ class LLVMVisitor(ConstVisitor):
             or info.base_name == "NoneType"
         )
         inline = self.layout.pointer_size() == 8 and size <= 8 and allow_inline
-        result.set_initializer(
-            m.const_struct(
-                (
-                    i.const_int(info.id),
-                    i.const_int(len(mro)),
-                    array(i, list(map(i.const_int, mro)), ".mro"),
-                    array(i, list(map(i.const_int, offsets)), ".offsets"),
-                    array(i, list(map(i.const_int, sorted(mro))), ".sorted"),
-                    i.const_int(len(slots)),
-                    array(slot_type, slots, ".slots"),
-                    i.const_int(method_count),
-                    array(method_type, methods, ".methods"),
-                    self.i8.const_int(polymorphic),
-                    self.string_literal(info.raw_name),
-                    self.string_literal(info.nice_name),
-                    self.string_literal(info.base_name),
-                    i.const_int(len(params)),
-                    array(i, params, ".params"),
-                    i.const_int(size),
-                    self.i8.const_int(ref),
-                    self.i8.const_int(inline),
-                    i.const_int(exception_offset),
-                    i.const_int(system_exit_offset),
-                )
-            )
+        fields = (
+            i.const_int(info.id),
+            i.const_int(len(mro)),
+            array(i, list(map(i.const_int, mro)), ".mro"),
+            array(i, list(map(i.const_int, offsets)), ".offsets"),
+            array(i, list(map(i.const_int, sorted(mro))), ".sorted"),
+            i.const_int(len(slots)),
+            array(slot_type, slots, ".slots"),
+            i.const_int(method_count),
+            array(method_type, methods, ".methods"),
+            self.i8.const_int(polymorphic),
+            self.string_literal(info.raw_name),
+            self.string_literal(info.nice_name),
+            self.string_literal(info.base_name),
+            i.const_int(len(params)),
+            array(i, params, ".params"),
+            i.const_int(size),
+            self.i8.const_int(ref),
+            self.i8.const_int(inline),
+            i.const_int(exception_offset),
+            i.const_int(system_exit_offset),
         )
+        if previous:
+            self.typeinfo_updates.append((result, fields[7:9]))
+        else:
+            result.set_initializer(m.const_struct(fields))
+        if self.session:
+            self.session.type_methods[info.id] = method_ids
         return result
+
+    def runtime_type_registry(self):
+        name = ".codon.typeinfo.registry"
+        if registry := self.mod.global_variable(name):
+            return registry
+        typ = self.mod.struct_type((self.i64, self.ptr))
+        return self.mod.add_global(name, typ, typ.null() if not self.session.initialized else None)
+
+    def prepare_runtime_type_info(self, node):
+        entries = {
+            typ.runtime_info.id: self.runtime_type_info(typ)
+            for typ in node.types if typ.runtime_info
+        }
+        count = max(entries, default=-1) + 1
+        table_type = self.ptr.array(count)
+        table = self.mod.add_global(
+            ".codon.typeinfo.table", table_type,
+            self.ptr.const_array(entries.get(i, self.ptr.null()) for i in range(count)),
+            constant=True, linkage=llvm.Linkage.PRIVATE,
+        )
+        registry = self.runtime_type_registry()
+        name = f".codon.typeinfo.initialize.{self.session.cache.jit_cell}"
+        initializer = self.mod.add_function(name, self.void.function(()))
+        b = self.b
+        b.set_insert_point(initializer.append_block("entry"))
+        for destination, values in self.typeinfo_updates:
+            for field, value in enumerate(values, start=7):
+                b.create_store(value, b.create_struct_gep(self.runtime_type_info_type(), destination, field))
+        b.create_store(self.mod.const_struct((self.i64.const_int(count), table)), registry)
+        b.create_ret_void()
+        b.clear_insert_point()
 
     # C++: codon/cir/llvm/llvisitor.cpp:4096
     def load_runtime_field(self, info, idx, typ):
@@ -1474,6 +1541,18 @@ class LLVMVisitor(ConstVisitor):
             return b.create_gep(
                 self.i8, obj, (i.const_int(offset + self.object_owner_offset(exact, owner)),)
             )
+        if self.session:
+            resolver = self.mod.function(".codon.field.offset.dynamic")
+            if not resolver:
+                resolver = self.make_dynamic_owner_offset_resolver()
+            info = b.create_load(self.ptr, obj)
+            count = self.load_runtime_field(info, 1, i)
+            offsets = self.load_runtime_field(info, 3, self.ptr)
+            immutable = self.mod.metadata_node()
+            for value in (info, count, offsets):
+                value.set_metadata("invariant.load", immutable)
+            segment = b.create_call(resolver, (count, offsets, i.const_int(owner.runtime_info.id)))
+            return b.create_gep(self.i8, obj, (b.create_add(segment, i.const_int(offset)),))
         key = info.id, owner.runtime_info.id
         if key not in self.field_offset_resolvers:
             # AOT: the closed set of compatible types gives either a constant
@@ -1528,6 +1607,74 @@ class LLVMVisitor(ConstVisitor):
         b.set_insert_point(prev)
         return fn
 
+    def make_dynamic_owner_offset_resolver(self):
+        b, m, i = self.b, self.mod, self.i64
+        prev, loc = b.insert_block, b._call("GetCurrentDebugLocation2", llvm.P, ())
+        b.set_debug_location(None)
+        fn = m.add_function(".codon.field.offset.dynamic", i.function((i, self.ptr, i)))
+        fn.set_linkage(llvm.Linkage.PRIVATE)
+        for attr in ("noinline", "nounwind", "willreturn"):
+            fn.add_attribute(attr)
+        fn.add_attribute("memory", 0)
+        fn.add_attribute("nocapture", index=2)
+        count, offsets, owner = fn.args
+        entry, loop, check, next_, found, missing = map(
+            fn.append_block, ("entry", "field.probe", "field.check", "field.next",
+                              "field.found", "field.missing")
+        )
+        zero, one, two = i.null(), i.const_int(1), i.const_int(2)
+        immutable = m.metadata_node()
+        b.set_insert_point(entry)
+        mask_address = b.create_gep(i, offsets, (count,))
+        mask = b.create_load(i, mask_address)
+        slots = b.create_gep(i, mask_address, (one,))
+        mixed = b.create_mul(owner, i.const_int(0x9E3779B97F4A7C15))
+        hashed = b.create_xor(mixed, b.create_lshr(mixed, i.const_int(32)))
+        start = b.create_and(hashed, mask)
+        b.create_br(loop)
+        b.set_insert_point(loop)
+        position = b.create_phi(i)
+        slot = b.create_gep(i, slots, (b.create_mul(position, two),))
+        offset = b.create_load(i, b.create_gep(i, slot, (one,)))
+        b.create_cond_br(b.create_icmp(llvm.Predicate.EQ, offset, zero), missing, check)
+        b.set_insert_point(check)
+        idx = b.create_load(i, slot)
+        b.create_cond_br(b.create_icmp(llvm.Predicate.EQ, idx, owner), found, next_)
+        b.set_insert_point(next_)
+        advance = b.create_and(b.create_add(position, one), mask)
+        position.add_incoming(((start, entry), (advance, next_)))
+        b.create_cond_br(b.create_icmp(llvm.Predicate.EQ, advance, start), missing, loop)
+        b.set_insert_point(missing)
+        b.create_call(m.intrinsic("llvm.trap"))
+        b.create_unreachable()
+        b.set_insert_point(found)
+        for value in (mask, idx, offset):
+            value.set_metadata("invariant.load", immutable)
+        b.create_ret(offset)
+        b.set_insert_point(prev)
+        b.set_debug_location(llvm.Metadata(m, loc) if loc else None)
+        return fn
+
+    def lookup_runtime_type_info(self, idx):
+        b, m, i, p = self.b, self.mod, self.i64, self.ptr
+        registry = self.runtime_type_registry()
+        typ = registry.value_type
+        count = b.create_load(i, b.create_struct_gep(typ, registry, 0))
+        valid, found, missing = map(
+            self.fn.append_block, ("typeinfo.valid", "typeinfo.found", "typeinfo.missing")
+        )
+        b.create_cond_br(b.create_icmp(llvm.Predicate.ULT, idx, count), valid, missing)
+        b.set_insert_point(valid)
+        table = b.create_load(p, b.create_struct_gep(typ, registry, 1))
+        info = b.create_load(p, b.create_gep(p, table, (idx,)))
+        b.create_cond_br(b.create_is_not_null(info), found, missing)
+        b.set_insert_point(missing)
+        b.create_call(m.intrinsic("llvm.trap"))
+        b.create_unreachable()
+        b.set_insert_point(found)
+        self.block = found
+        return info
+
     # C++: codon/cir/llvm/llvisitor.cpp:4282
     def codegen_type_query(self, fn):
         typ = fn.intrinsic_type
@@ -1574,6 +1721,8 @@ class LLVMVisitor(ConstVisitor):
             case ir.Intrinsic.TYPEINFO:
                 return self.runtime_type_info(typ)
             case ir.Intrinsic.TYPEINFO_LOOKUP:
+                if self.session:
+                    return self.lookup_runtime_type_info(args[0])
                 missing = self.fn.append_block("typeinfo.missing")
                 selection = b.create_switch(args[0], missing, 0)
                 for candidate in fn.module.types:

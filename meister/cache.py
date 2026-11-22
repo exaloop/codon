@@ -52,6 +52,11 @@ class FrontendOptions:
     auto_free: bool = False
     native: bool = True
     disabled: tuple[str, ...] = ()
+    libdevice: str = "/usr/local/cuda/nvvm/libdevice/libdevice.10.bc"
+    gpu_name: str = "sm_30"
+    gpu_features: str = "+ptx42"
+    ptx: str = ""
+    plugins: tuple[str, ...] = ()
 
     def get_early_defines(self) -> Dict[str, str]:
         import sys
@@ -396,6 +401,7 @@ class Cache:
         options: FrontendOptions | None = None,
     ):
         from .passes.typecheck.ctx import TypeContext
+        from .plugins import PluginManager
 
         self.argv0 = argv0
         self.fs = fs or Filesystem(argv0=self.argv0)
@@ -424,6 +430,11 @@ class Cache:
         self.custom_block_stmts = {} if custom_block_stmts is None else custom_block_stmts
         self.custom_expr_stmts = {} if custom_expr_stmts is None else custom_expr_stmts
         self.options = options or FrontendOptions(jit=is_jit, pyext=python_ext, pynum=python_compat)
+        version = self.options.get_early_defines()
+        self.plugins = PluginManager(
+            self.fs, tuple(int(version[f"__codon_version_{part}__"])
+                           for part in ("major", "minor", "micro"))
+        )
         self.jit_cell = jit_cell
         self.generated_tuples = set() if generated_tuples is None else generated_tuples
         self.generated_kw_tuples = {} if generated_kw_tuples is None else generated_kw_tuples
@@ -855,26 +866,16 @@ class Cache:
                     paths.append(self.fs.canonical(path))
 
         def check_plugin(path: Path, requested: str):
-            return
-            raise NotImplementedError
-            # plugin = path / requested
-            # init = plugin / "stdlib" / requested / "__init__.codon"
-            # if self.fs.exists(plugin / "plugin.toml") and self.fs.exists(init):
-            #     failed = False
-            #     if self.compiler and self.compiler.is_plugin_loaded(plugin):
-            #         try:
-            #             self.compiler.load(plugin)
-            #         except Exception:
-            #             # TODO-CONV: Needs to print an error message
-            #             raise NotImplementedError
-            #             failed = True
-            #     if not failed:
-            #         paths.append(self.fs.canonical(init))
+            plugin = path / requested
+            init = plugin / "stdlib" / requested / "__init__.codon"
+            if self.fs.exists(plugin / "plugin.toml") and self.fs.exists(init):
+                self.plugins.load(plugin)
+                paths.append(self.fs.canonical(init))
 
         if not paths:
             # Load a plugin maybe
             check_plugin(parent_relative_to, what)
-        for stdlib_path in self.fs.get_stdlib_paths():
+        for stdlib_path in tuple(self.fs.get_stdlib_paths()):
             path = (stdlib_path / what).with_suffix(".codon")
             if self.fs.exists(path):
                 paths.append(self.fs.canonical(path))
@@ -908,7 +909,7 @@ class Filesystem:
             root = self.executable_path(self.argv0).parent
             for location in ("../lib/codon/stdlib", "../stdlib", "stdlib"):
                 self.add_search_path(str(root / location))
-            for location in ("../lib/codon/plugins", "../plugins"):
+            for location in ("../lib/codon/plugins", "../plugins", "plugins"):
                 self.add_search_path(str(root / location))
 
     def canonical(self, path: Path) -> Path:

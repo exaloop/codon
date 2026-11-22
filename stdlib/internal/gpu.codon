@@ -185,19 +185,22 @@ class Memory[T]:
         return Memory[T](CUdeviceptr(ptr.__int__()))
 
     def _alloc(n: int, T: type):
-        if n == 0:
+        size = n * _sizeof(T)
+        if size == 0:
             return Memory[T](0u64)
         devp = CUdeviceptr()
-        cuda_check(cuMemAlloc(__ptr__(devp), n * _sizeof(T)))
+        cuda_check(cuMemAlloc(__ptr__(devp), size))
         return Memory[T](devp)
 
     def _read(self, p: Ptr[T], n: int):
-        if n:
-            cuda_check(cuMemcpyDtoH(p.as_byte(), self._ptr, u64(n * _sizeof(T))))
+        size = n * _sizeof(T)
+        if size:
+            cuda_check(cuMemcpyDtoH(p.as_byte(), self._ptr, u64(size)))
 
     def _write(self, p: Ptr[T], n: int):
-        if n:
-            cuda_check(cuMemcpyHtoD(self._ptr, p.as_byte(), u64(n * _sizeof(T))))
+        size = n * _sizeof(T)
+        if size:
+            cuda_check(cuMemcpyHtoD(self._ptr, p.as_byte(), u64(size)))
 
     def _free(self):
         if self._ptr:

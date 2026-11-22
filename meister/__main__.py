@@ -92,7 +92,7 @@ def main(argv):
                 types=not args.no_types,
             )
         )
-    elif mode in {"llvm", "run", "build"}:
+    elif mode in {"llvm", "run", "build", "jit"}:
         from .ir import codegen
 
         return codegen.main(mode, argv[1:])

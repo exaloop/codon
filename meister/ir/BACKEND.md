@@ -17,10 +17,32 @@ the corresponding Codon outputs on Linux.
 | Garbage collection | The Linux RTDyld callbacks register entire writable section mappings as GC roots and unregister each mapping before release. C++ registers writable segments within a contiguous JITLink slab. Other hosts retain the per-global registration path. |
 | Exceptions | Meister uses the existing runtime JITError path through a C callback on Linux x86-64. It keeps the loaded object and symbolizes its frames with the LLVM installation’s llvm-symbolizer. Older runtimes use the standalone handler. C++ uses an in-process symbolizer and JITLink section addresses. |
 | LLVM passes | Meister ports coroutine resume inlining, coroutine unroll guards and branch simplification, OpenMP thread-ID reuse, allocation removal and stack demotion, loop allocation hoisting, and optional allocation autofree. The LLVM C API has no PassBuilder extension callbacks, so these transformations run at module boundaries around the two O3 invocations. C++ schedules them within each O3 pipeline. LLVM analyses for capture and nonzero values also have more information than the corresponding Meister checks. |
-| Native targets and GPU | Linux x86-64 is the verified target. C++ has further CPU-feature selection for ARM and AArch64, target-selection flags, Windows-specific SEH registration and export handling, and a GPU module, PTX, and libdevice pipeline. These paths still require parity work and target-specific verification. |
+| Native targets and GPU | Meister clones the module, optimizes the device copy, links CUDA libdevice, lowers runtime and NumPy calls, and emits and embeds NVPTX assembly. It accepts the C++ `-libdevice`, `-gpu-name`, `-gpu-features`, and `-ptx` options. LLVM-C uses linkage changes and GlobalDCE for extraction and leaves identified struct names intact. CPU feature selection outside x86-64 and Windows SEH and export handling still differ. |
 | Native output | The build command emits CIR, LLVM IR, bitcode, assembly, objects, executables, shared libraries, and CPython extension objects. It supports native format detection, library dependencies, linker flags, PIE, and global constructors. Linker command ordering, optional toolchain flags, and platform integration can differ. |
 | CPython extensions | Meister emits CPython module and type definitions, slot tables, and exception translation wrappers directly into the LLVM module. Linking the result into a loadable extension is a separate step, as in C++. |
-| Native integrations | Compiler DSL plugins, native optimizer plugins, and the incremental `codon jit` session use C++ compiler APIs. This backend provides whole-program `run` through ORC. |
+| Plugins | Explicit `-plugin` and import discovery read the existing `plugin.toml`. Runtime libraries load before execution, and builds use the manifest’s runtime search paths and link arguments. Native compiler plugins expose C++ DSL and PassBuilder objects through the Codon compiler ABI. Meister reports an error for those compiler libraries. |
+| Incremental JIT | `python -m meister jit` accepts the same `#%%` cell protocol. A persistent ORC session keeps earlier functions, globals, and RTTI addresses. Later cells publish new type IDs and refresh method tables. The runtime exposes existing output capture and exception formatting through two C entry points. Windows incremental JIT and the Cython and Jupyter JIT bridges still use native compiler integration. |
+
+## GPU and compiler integration verification
+
+The CUDA fixture exercised the Tesla V100 using `sm_70` and `+ptx70`.
+The compiler defaults match C++. The fixture exposed three issues shared with
+C++. Both backends now map scalar `exp2` intrinsics to libdevice and use the
+C locale for device number formatting. The shared CUDA stdlib skips allocation
+and transfers when the byte count is zero.
+
+- Vector addition passed in Meister's debug and release JIT and in an AOT release executable. [Debug JIT](../../build/meister-gpu-check/hello-gpu-debug.log) [Release JIT](../../build/meister-gpu-check/hello-gpu-release.log) [AOT](../../build/meister-gpu-check/hello-gpu-aot.log)
+- Meister and the rebuilt C++ release reference passed all 12 kernel cases with identical output. Their PTX contained the same 88 kernel entry names in each mode. [Meister release CUDA log](../../build/meister-gpu-check/kernels-final-release.log) [C++ release CUDA log](../../build/meister-gpu-check/kernels-final-cpp-release.log)
+- Both debug runs loaded the full PTX module and passed the first six cases. Running cases in separate modules covered 10 cases on each backend. Splitting the NumPy case into six modules covered all 22 operation groups on both. Both backends continued using the GPU for Mandelbrot after several minutes, including with a reduced image and iteration count. Those debug runs were stopped. [Meister debug cases](../../build/meister-gpu-check/debug-cases.log) [C++ debug cases](../../build/meister-gpu-check/debug-cpp-cases.log) [Debug math](../../build/meister-gpu-check/debug-math.log)
+- Runtime plugin imports resolved in JIT and AOT execution. The plugin binaries load for JIT execution. AOT builds use the manifest's linker metadata. [Runtime JIT](../../build/meister-gpu-check/plugin-release.log) [Runtime AOT](../../build/meister-gpu-check/plugin-aot.log)
+- Incremental debug JIT retained function and global values, displayed the last expression, and continued after compile-time and runtime errors. Its backtrace matched the C++ source location. Function IDs and hexadecimal addresses vary by compiler and process. [Meister session](../../build/meister-gpu-check/session-debug.log) [C++ session](../../build/meister-gpu-check/session-cpp-debug.log)
+- The 64-worker run passed 84 selected pytest cases, including the two GPU fixture compile modes, LLVM passes, and C++ GPU, JIT, and plugin assertions. Follow-up tests covered rollback after rejecting an incompatible override, late runtime plugin loading, and the LLVM-C PTX stub rewrite. [64-worker run](../../build/meister-gpu-check/final-pytest64.log) [JIT follow-up](../../build/meister-gpu-check/jit-final-pytest.log) [LLVM-C and manifest follow-up](../../build/meister-gpu-check/api-final-pytest.log)
+
+The existing runtime was rebuilt and relinked with its previous ELF dependencies
+and runpath. The C++ GPU reference library was relinked in the verification
+directory. Meister loads LLVM and the runtime directly in both JIT modes.
+The full pytest sweep was stopped in favor of the 64-worker integration run
+and the on-device checks.
 
 ## LLVM optimization and JIT port verification
 

@@ -62,7 +62,9 @@ def main(argv=None):
     with emit_module(
         cache, llvm.Library(args.library, args.runtime), str(case.path), defines, standalone=True
     ) as module:
-        if not args.compile_only:
+        if args.compile_only:
+            module.optimize(debug=options.debug)
+        else:
             return module.run([str(case.path)], debug=options.debug)
     return 0
 

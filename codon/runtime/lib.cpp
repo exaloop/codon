@@ -874,6 +874,11 @@ std::string codon::runtime::getCapturedOutput() {
   return result;
 }
 
+SEQ_FUNC void seq_jit_get_output(void (*callback)(const char *, size_t)) {
+  auto output = codon::runtime::getCapturedOutput();
+  callback(output.data(), output.size());
+}
+
 SEQ_FUNC void *seq_stdin() { return stdin; }
 
 SEQ_FUNC void *seq_stdout() { return stdout; }

@@ -14,6 +14,7 @@ from ..ast.nodes import Node, NodeError
 from ..parser.pegen import CodonSyntaxError
 from ..parser.tokenize import TokenError
 from ..cache import MAX_REALIZATION_DEPTH, Cache, FrontendOptions
+from ..plugins import PluginError
 from ..passes.translate import TranslateVisitor
 from ..passes.typecheck import typecheck_program
 from ..error import ParserError
@@ -116,7 +117,7 @@ class StageTimings:
 
 def emit_module(cc, library, file, defines, *, standalone=False):
     """Emit and verify an LLVM module. The caller owns the returned module."""
-    module = llvm.Module(library, "codon", file)
+    module = llvm.Module(library, "codon", file, options=cc.options)
     try:
         version = ".".join(
             defines[f"__codon_version_{part}__"] for part in ("major", "minor", "micro")
@@ -144,6 +145,8 @@ def prepare_compiler(runtime, options):
     for path in paths:
         if path.is_dir() and path not in cache.fs.get_stdlib_paths():
             cache.fs.add_search_path(str(path))
+    for plugin in options.plugins:
+        cache.plugins.load(plugin)
     return cache, options.get_early_defines()
 
 
@@ -178,12 +181,18 @@ def parse_args(mode, argv):
     parser.add_argument("-disable-native", "--disable-native", action="store_true")
     parser.add_argument("-auto-free", "--auto-free", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("-fast-math", "--fast-math", action="store_true")
+    gpu = FrontendOptions()
+    parser.add_argument("-libdevice", "--libdevice", default=gpu.libdevice)
+    parser.add_argument("-gpu-name", "--gpu-name", default=gpu.gpu_name)
+    parser.add_argument("-gpu-features", "--gpu-features", default=gpu.gpu_features)
+    parser.add_argument("-ptx", "--ptx", default=gpu.ptx)
+    parser.add_argument("-plugin", "--plugin", action="append", default=[])
     if mode == "run":
         parser.add_argument(
             "-time", "--time", action="store_true", help="report timings and peak memory"
         )
         parser.add_argument("-l", action="append", default=[], metavar="LIBRARY")
-    else:
+    elif mode != "jit":
         parser.add_argument("-o", "--output", type=Path)
     if mode == "build":
         kinds = parser.add_mutually_exclusive_group()
@@ -264,6 +273,7 @@ def execute(mode, args):
     runtime = runtime_path(args.runtime)
     options = FrontendOptions(
         debug=not args.release,
+        jit=mode == "jit",
         pyext=mode == "build" and args.kind == "pyext",
         pynum=args.numerics == "py",
         autopy=args.auto_python,
@@ -272,7 +282,19 @@ def execute(mode, args):
         auto_free=args.auto_free,
         native=not args.disable_native,
         disabled=tuple(args.disable_opt),
+        libdevice=args.libdevice,
+        gpu_name=args.gpu_name,
+        gpu_features=args.gpu_features,
+        ptx=args.ptx,
+        plugins=tuple(args.plugin),
     )
+    if mode == "jit":
+        from . import jit_session
+
+        cache, defines = prepare_compiler(runtime, options)
+        library = llvm.Library(llvm_path(build=runtime.parent, requested=args.library), runtime)
+        configure_python()
+        return jit_session.run(library, cache, defines, user_defines(args.D), args.file)
     file = str(Path(args.file).resolve()) if args.file != "-" else "-"
     source = sys.stdin.read() if args.file == "-" else None
     cc, defines = prepare_compiler(runtime, options)
@@ -310,6 +332,7 @@ def execute(mode, args):
             library.load_runtime()
             for library_path in args.l:
                 CDLL(library_path, mode=RTLD_GLOBAL)
+            cc.plugins.load_runtime_libraries()
 
             def boundary(stage):
                 timing.transition("jit link" if stage == 0 else "run")
@@ -323,7 +346,7 @@ def execute(mode, args):
         if mode == "build":
             build.write(module, args.output, args.kind, options, libraries=args.l,
                         linker_flags=args.linker_flags, pie=args.pie, ctor=args.global_ctor,
-                        relocation=args.relocation_model)
+                        relocation=args.relocation_model, plugins=cc.plugins)
         elif args.output:
             module.write(args.output, "llvm")
         else:
@@ -341,6 +364,6 @@ def main(mode, argv):
                 print(message, file=sys.stderr)
     except (NodeError, CodonSyntaxError, TokenError) as error:
         print(error, file=sys.stderr)
-    except (llvm.LLVMError, OSError, subprocess.CalledProcessError) as error:
+    except (llvm.LLVMError, OSError, PluginError, subprocess.CalledProcessError) as error:
         print(f"error: {error}", file=sys.stderr)
     return 1

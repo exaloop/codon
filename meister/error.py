@@ -14,11 +14,11 @@ class ErrorMessage:
     def __init__(
         self,
         message: str = "",
-        info: ast.Node.SrcInfo | None = None,
+        info: ast.Node.SrcInfo | ast.Node | None = None,
         error_code: int = -1,
     ):
         self.message = message
-        self.info = info or ast.Node.SrcInfo()
+        self.info = info.info if isinstance(info, ast.Node) else info or ast.Node.SrcInfo()
         self.error_code = error_code
 
     @property
