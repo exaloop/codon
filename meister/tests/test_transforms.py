@@ -23,7 +23,7 @@ from ..ir.transform.pythonic.enumerate import EnumerateOptimization
 from ..ir.util.irtools import call, get_func
 from ..ir.util.operator import Operator
 from ..ir.util.side_effect import SideEffectStatus
-from ..test import TestCase as SourceCase
+from .cases import TestCase as SourceCase
 from .cases import ROOT
 from .runner import compile_cir, prepare_compiler
 
@@ -126,14 +126,14 @@ def test_canonicalization_keeps_unchanged_calls():
 
 
 @pytest.fixture
-def compile_source(codon_library, monkeypatch):
+def compile_source(codon_runtime, monkeypatch):
     monkeypatch.setenv("CODON_PATH", str(ROOT / "stdlib"))
     recursion_limit = sys.getrecursionlimit()
 
     def compile_(fixture, *, debug=False, passes=True, code=None):
         options = FrontendOptions(debug=debug)
         options.pmempty = not passes
-        cache, defines = prepare_compiler(codon_library, options)
+        cache, defines = prepare_compiler(codon_runtime, options)
         path = ROOT / "test/cir/fixtures" / fixture
         return compile_cir(cache, defines, SourceCase(path, code=code))
 
@@ -304,7 +304,7 @@ def test_parse_code_definitions_and_import_initialization(compile_source):
 
 @pytest.mark.compiler
 @pytest.mark.parametrize("debug", [True, False], ids=["debug", "release"])
-def test_llvm_type_queries_are_constants(compile_source, codon_library, debug):
+def test_llvm_type_queries_are_constants(compile_source, llvm_library, codon_runtime, debug):
     module = compile_source("intrinsic_queries.codon", debug=debug, code="""\
 class Payload:
     left: int
@@ -320,7 +320,7 @@ def query_atomic(): return int.__atomic__
 def query_contents(): return Payload.__contents_atomic__
 """)
     cache = module.cache
-    with emit_module(cache, Library(codon_library), "intrinsic_queries.codon",
+    with emit_module(cache, Library(llvm_library, codon_runtime), "intrinsic_queries.codon",
                      cache.options.get_early_defines()) as emitted:
         text = str(emitted)
         pointer_size = emitted.data_layout.alloc_size(emitted.pointer_type())

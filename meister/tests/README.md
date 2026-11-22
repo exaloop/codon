@@ -1,20 +1,22 @@
 # Meister tests
 
 From the repository root, use the Python 3.13 uv environment and a CMake build
-configured with Codon's LLVM.
+configured with shared Exaloop LLVM.
 
 ```sh
 uv sync --locked --python 3.13
-cmake --build build --target codon_test --parallel 8
+cmake --build build --target codonrt codon_test --parallel 8
 uv run --locked python -m pytest -n 64 meister
 ```
 
 With an existing environment such as `.venv/bin/python`, use
 `uv run --locked --python .venv/bin/python python -m pytest -n 64 meister`.
 The test dependency group includes NumPy with the version used by native
-Python 3.13 CI. Pytest locates `libcodonc` and `codon_test` in the default
-build directories. Pass `--codon-build /path/to/build` for an out-of-tree
-build. Use the same linker toolchain on `PATH` that you used to build Codon
+Python 3.13 CI. Meister fixtures use the shared LLVM and Codon runtime described in the
+[backend instructions](../ir/README.md#llvm-emission-and-execution). Use
+`--codon-build /path/to/build` for a separate runtime build and
+`--llvm-library /path/to/libLLVM.so` to select LLVM explicitly. Pytest finds
+`codon_test` separately for the optional native reference cases. Use the same linker toolchain on `PATH` that you used to build Codon
 for native tests that link executables. The runner derives `CODON_PYTHON`
 from the active interpreter unless it is set explicitly.
 

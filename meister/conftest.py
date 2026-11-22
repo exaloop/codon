@@ -6,6 +6,7 @@ import sys
 
 import pytest
 
+from .ir.toolchain import llvm_path, runtime_path
 from .tests.cases import ROOT
 from .tests.support import build_directory, native_binary, native_cases
 
@@ -13,6 +14,7 @@ from .tests.support import build_directory, native_binary, native_cases
 def pytest_addoption(parser):
     group = parser.getgroup("codon")
     group.addoption("--codon-build", type=Path, help="directory containing built Codon artifacts")
+    group.addoption("--llvm-library", type=Path, help="shared LLVM library used by Meister")
     group.addoption("--codon-timeout", type=float, help="optional time limit in seconds per case")
 
 
@@ -35,17 +37,24 @@ def pytest_generate_tests(metafunc):
 
 
 @pytest.fixture(scope="session")
-def codon_library(pytestconfig):
-    build = build_directory(pytestconfig)
-    for filename in ("libcodonc.so", "libcodonc.dylib", "libcodonc.dll", "codonc.dll"):
-        library = build / filename
-        if library.is_file():
-            return library
-    pytest.skip(f"build the codonc CMake target in {build}")
+def codon_runtime(pytestconfig):
+    build = pytestconfig.getoption("--codon-build")
+    try:
+        return runtime_path(build)
+    except FileNotFoundError as error:
+        pytest.skip(str(error))
+
+
+@pytest.fixture(scope="session")
+def llvm_library(pytestconfig, codon_runtime):
+    try:
+        return llvm_path(pytestconfig.getoption("--llvm-library"), build=codon_runtime.parent)
+    except FileNotFoundError as error:
+        pytest.skip(str(error))
 
 
 @pytest.fixture
-def codon_workdir(tmp_path, codon_library):
+def codon_workdir(tmp_path, codon_runtime):
     """Make fixture input visible while isolating all relative output paths."""
     (tmp_path / "build").mkdir()
     if sys.platform == "win32":
@@ -55,7 +64,7 @@ def codon_workdir(tmp_path, codon_library):
         (tmp_path / "test").symlink_to(ROOT / "test", target_is_directory=True)
         (tmp_path / "stdlib").symlink_to(ROOT / "stdlib", target_is_directory=True)
         for filename in ("libcodonrt.so", "libcodonrt.dylib"):
-            target = codon_library.parent / filename
+            target = codon_runtime.parent / filename
             if target.exists():
                 (tmp_path / filename).symlink_to(target)
     return tmp_path

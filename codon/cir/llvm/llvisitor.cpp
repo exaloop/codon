@@ -23,8 +23,6 @@
 #include <unistd.h>
 #endif
 
-#include "llvm-c/Core.h"
-#include "llvm-c/DebugInfo.h"
 
 #include "codon/cir/dsl/codegen.h"
 #include "codon/cir/llvm/optimize.h"
@@ -1513,72 +1511,6 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
                       const std::vector<std::string> &libs, const char *const *envp) {
   runLLVMPipeline();
   runLLVMModule(M, context, *options, plugins, args, libs, [this] { clearLLVMData(); });
-}
-
-// C ABI for modules built by Meister with LLVM-C. LLVM-C already exports the
-// core builders; these operations need Codon's C++ target/optimizer/JIT setup.
-extern "C" char *codon_llvm_set_host_target(LLVMModuleRef module) {
-  Options options;
-  try {
-    // Initialize the same targets and legacy passes as the native visitor.
-    LLVMVisitor initialize(&options);
-    setModuleTarget(*llvm::unwrap(module), options);
-    return nullptr;
-  } catch (const std::exception &error) {
-    return LLVMCreateMessage(error.what());
-  }
-}
-
-// LLVM-C can create composite types but does not expose DIBuilder::replaceArrays.
-extern "C" LLVMMetadataRef codon_llvm_replace_debug_members(LLVMDIBuilderRef db,
-                                                             LLVMMetadataRef type,
-                                                             LLVMMetadataRef *members,
-                                                             size_t count) {
-  auto *builder = reinterpret_cast<llvm::DIBuilder *>(db);
-  auto *composite = llvm::cast<llvm::DICompositeType>(llvm::unwrap(type));
-  llvm::SmallVector<llvm::Metadata *> elements;
-  for (size_t i = 0; i < count; ++i)
-    elements.push_back(llvm::unwrap(members[i]));
-  builder->replaceArrays(composite, builder->getOrCreateArray(elements));
-  return llvm::wrap(composite);
-}
-
-// Always consumes the context and module, including on failure. The caller
-// must dispose its builder/debug builder before handing the module over.
-extern "C" char *codon_llvm_run(LLVMContextRef ctx, LLVMModuleRef mod, int debug,
-                               int argc, const char *const *argv) {
-  std::unique_ptr<llvm::LLVMContext> context(llvm::unwrap(ctx));
-  std::unique_ptr<llvm::Module> module(llvm::unwrap(mod));
-  Options options;
-  options.debug = debug;
-  try {
-    optimize(module.get(), &options, nullptr);
-    runLLVMModule(module, context, options, nullptr, {argv, argv + argc}, {}, [] {});
-    return nullptr;
-  } catch (const std::exception &error) {
-    return LLVMCreateMessage(error.what());
-  }
-}
-
-// Report boundaries from the native pipeline without moving LLVM ownership
-// between separately linked libraries. Callback 0: LLVM passes complete;
-// callback 1: JIT linking complete, immediately before entering main.
-extern "C" char *codon_llvm_run_timed(LLVMContextRef ctx, LLVMModuleRef mod, int debug,
-                                     int argc, const char *const *argv,
-                                     void (*stage)(int)) {
-  std::unique_ptr<llvm::LLVMContext> context(llvm::unwrap(ctx));
-  std::unique_ptr<llvm::Module> module(llvm::unwrap(mod));
-  Options options;
-  options.debug = debug;
-  try {
-    optimize(module.get(), &options, nullptr);
-    stage(0);
-    runLLVMModule(module, context, options, nullptr, {argv, argv + argc}, {}, [] {},
-                  [stage] { stage(1); });
-    return nullptr;
-  } catch (const std::exception &error) {
-    return LLVMCreateMessage(error.what());
-  }
 }
 
 #define ALLOC_FAMILY "seq_alloc"

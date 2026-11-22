@@ -9,7 +9,7 @@ import sys
 import sysconfig
 import time
 
-from ..test import library_candidates
+from ..ir.toolchain import BUILD_NAMES
 from .cases import ROOT
 
 
@@ -17,10 +17,11 @@ def build_directory(config):
     override = config.getoption("--codon-build")
     if override:
         return override.resolve()
-    if library := os.environ.get("CODON_LIBRARY"):
-        return Path(library).resolve().parent
-    library = next((path for path in library_candidates(ROOT) if path.is_file()), None)
-    return library.parent if library else ROOT / "build"
+    executable = "codon_test.exe" if sys.platform == "win32" else "codon_test"
+    return next(
+        (ROOT / name for name in BUILD_NAMES if (ROOT / name / executable).is_file()),
+        ROOT / "build",
+    )
 
 
 def native_binary(config):

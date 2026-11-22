@@ -12,27 +12,9 @@ import traceback
 from contextlib import contextmanager
 from pathlib import Path
 
-if __package__:
-    from . import ast, cache, parser
-else:
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from meister import ast, cache, parser
-
-
-class TestCase:
-    def __init__(self, path, name="", code=None, line=0, barebones=False):
-        self.path = path
-        self.name = name
-        self.code = code
-        self.line = line
-        self.barebones = barebones
-
-    @property
-    def label(self):
-        if self.code is None:
-            return str(self.path)
-        name = self.name or f"line-{self.line + 1}"
-        return f"{self.path}:{self.line + 1}:{name}"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from meister import ast, cache, parser
+from meister.tests.cases import split_test_file
 
 
 class Result:
@@ -112,41 +94,6 @@ class NativeCodon:
         )
 
 
-def split_test_file(path):
-    text = path.read_text(encoding="utf-8")
-    lines = text.splitlines()
-    if not any(line.startswith("#%%") for line in lines):
-        return [TestCase(path)]
-
-    cases = []
-    code = []
-    name = ""
-    start_line = 0
-    saw_marker = False
-    barebones = False
-
-    for line_number, line in enumerate(lines):
-        if line.startswith("#%%"):
-            if saw_marker:
-                cases.append(TestCase(path, name, "".join(code), start_line, barebones))
-            elif not saw_marker and code:
-                cases.append(TestCase(path, "", "".join(code), start_line))
-
-            metadata = line[4:].split(",")
-            name = metadata[0] if metadata else ""
-            # C++: test/main.cpp:405 selects the stdlib from this marker.
-            barebones = len(metadata) > 1 and metadata[1] == "barebones"
-            code = [line + "\n"]
-            start_line = line_number
-            saw_marker = True
-        else:
-            code.append(line + "\n")
-
-    if code:
-        cases.append(TestCase(path, name, "".join(code), start_line, barebones))
-    return cases
-
-
 def discover_tests(path):
     if path.is_file():
         paths = [path]
@@ -164,7 +111,7 @@ def run_python(case, typecheck, early_defines=None, indent=2, prepared=None):
     recursion_limit = sys.getrecursionlimit()
     try:
         if typecheck:
-            from .passes.typecheck import typecheck_program
+            from meister.passes.typecheck import typecheck_program
 
             # One Codon realization uses many Python visitor frames.
             sys.setrecursionlimit(max(recursion_limit, cache.MAX_REALIZATION_DEPTH * 100))
@@ -214,7 +161,7 @@ def default_test_path(root):
 
 
 def prepare_python(typecheck, early_defines):
-    from .passes.typecheck import load_std_library
+    from meister.passes.typecheck import load_std_library
 
     cc = cache.Cache("codon")
     preamble = ast.SuiteStmt()

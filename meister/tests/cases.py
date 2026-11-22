@@ -4,10 +4,58 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
-from ..test import TestCase, split_test_file
-
-
 ROOT = Path(__file__).resolve().parents[2]
+
+
+class TestCase:
+    def __init__(self, path, name="", code=None, line=0, barebones=False):
+        self.path = path
+        self.name = name
+        self.code = code
+        self.line = line
+        self.barebones = barebones
+
+    @property
+    def label(self):
+        if self.code is None:
+            return str(self.path)
+        name = self.name or f"line-{self.line + 1}"
+        return f"{self.path}:{self.line + 1}:{name}"
+
+
+def split_test_file(path):
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    if not any(line.startswith("#%%") for line in lines):
+        return [TestCase(path)]
+
+    cases = []
+    code = []
+    name = ""
+    start_line = 0
+    saw_marker = False
+    barebones = False
+
+    for line_number, line in enumerate(lines):
+        if line.startswith("#%%"):
+            if saw_marker:
+                cases.append(TestCase(path, name, "".join(code), start_line, barebones))
+            elif not saw_marker and code:
+                cases.append(TestCase(path, "", "".join(code), start_line))
+
+            metadata = line[4:].split(",")
+            name = metadata[0] if metadata else ""
+            # C++: test/main.cpp:405 selects the stdlib from this marker.
+            barebones = len(metadata) > 1 and metadata[1] == "barebones"
+            code = [line + "\n"]
+            start_line = line_number
+            saw_marker = True
+        else:
+            code.append(line + "\n")
+
+    if code:
+        cases.append(TestCase(path, name, "".join(code), start_line, barebones))
+    return cases
 
 
 @dataclass(frozen=True)

@@ -30,41 +30,46 @@ command, and fixture layout.
 
 ## LLVM emission and execution
 
-Build Codon against Exaloop LLVM first. Meister uses `ctypes` to load the
-LLVM-C symbols from that build's `libcodonc`. It does not use a stock LLVM,
-and does not need a separate shared LLVM installation or Python extension.
+Meister loads Exaloop LLVM 20 through the LLVM C API in `libLLVM.so`.
+Build LLVM with `-DLLVM_BUILD_LLVM_DYLIB=ON` and install the shared library.
+Build or install the Codon runtime and OpenMP, including the stdlib and its
+generated tables. In a checkout, Meister discovers LLVM from `LLVM_DIR` in
+`build/CMakeCache.txt` and loads the runtime from `build/`.
 
 ```sh
-cmake --build build --target codonc --parallel 1
-python -m meister llvm -o /tmp/meister-scratch.ll scratch.codon
-python -m meister run scratch.codon
-python -m meister run -time scratch.codon
-python -m meister ir -release scratch.codon
-python -m meister llvm -release -o /tmp/meister-release.ll scratch.codon
-python -m meister run -release scratch.codon
+uv run --no-sync python -m meister run scratch.codon arg
+uv run --no-sync python -m meister run -release -time scratch.codon
+uv run --no-sync python -m meister build -release -exe -o scratch scratch.codon
+uv run --no-sync python -m meister build -debug -llvm -o scratch.ll scratch.codon
+uv run --no-sync python -m meister build -lib -o libscratch.so scratch.codon
 ```
 
-`llvm` prints verified, unoptimized LLVM IR (stdout if no output file is
-specified). `run` transfers that same module to Codon's native optimizer and
-ORC JIT. Use `-release` or `--release` before the filename to enable release
-CIR passes and select release-mode code generation. Both LLVM commands
-accept `--library /path/to/libcodonc` before the source filename,
-or use `CODON_LIBRARY`. `run` passes arguments after the filename to the program.
-With `-time`, stage wall times and cumulative process peak RSS are reported to
-stderr as stages complete. The main file's parse is reported immediately;
-parse and scope totals from imports and stdlib loading are reported when
-typechecking finishes and are excluded from typecheck time. LLVM optimization, JIT linking, and
-program execution are measured separately. Memory is a process-wide high-water
-mark, not memory allocated exclusively by a stage. Process termination such as
-`sys.exit` can prevent the final execution timing from being reported.
-For Codon programs that import Python, set `CODON_PYTHON` to the CPython shared
-library, as with native Codon.
+To select the libraries directly, set `MEISTER_LLVM_LIBRARY` and
+`MEISTER_RUNTIME` or pass `--library /path/to/libLLVM.so` and
+`--runtime /path/to/libcodonrt.so` before the source file. The runtime
+especially needs to locate its OpenMP dependency through the loader. Set
+`CODON_PATH` for a relocated stdlib and use the toolchain environment that
+built LLVM and the runtime. On this cluster that environment is
+`module load StdEnv/2023`.
 
-`llvm.py` wraps native handles; `llvisitor.py` implements CIR lowering. Inline
-`@llvm` bodies are parsed and linked into the live module in the same LLVM
-context. Try/except/else/finally lowering also uses Codon's native unwinder.
-Residual pipeline nodes, DSL plugins, incremental JIT cells, and standalone
-or Python-extension emission are not covered.
+`run` compiles with ORC LLJIT and passes arguments after the filename to the
+program. `-time` reports exclusive stage times and process peak RSS.
+Meister defaults `CODON_PYTHON` to the shared library of the active Python
+interpreter for JIT programs that import Python. A separately launched native
+binary uses its own environment.
+
+`build` accepts `-cir`, `-llvm`, `-bc`, `-asm`, `-obj`, `-exe`, `-lib`
+and `-pyext`. It can infer the format from `-o` and defaults to executable
+output. `-lib` initializes the Codon program when the shared library loads,
+following the default C++ behavior. Executable and shared-library linking
+uses the system compiler driver, which can be selected with `CXX`.
+`-pyext` emits an object for an extension build system to link with
+`libcodonrt`. Use `--relocation-model=pic` and `-module NAME` when
+building an extension for import under that name.
+
+`llvm` remains a raw LLVM IR dump, with stdout as its default output.
+`build -llvm` writes the optimized module for the selected mode.
+See the [backend report](BACKEND.md) for C++ differences and verification.
 
 ## CIR dumps
 
@@ -103,12 +108,12 @@ Compare typechecking, translation and the final debug pipeline output without
 LLVM emission (intermediate passes are not dumped or compared):
 
 ```sh
-python -m meister.ir.compare scratch.codon --output /tmp/scratch-ir-stages
-python -m meister.ir.compare test/parser/typecheck --jobs 6 --timeout 300 \
+python test/meister_ir_compare.py scratch.codon --output /tmp/scratch-ir-stages
+python test/meister_ir_compare.py test/parser/typecheck --jobs 6 --timeout 300 \
   --output /tmp/typecheck-ir-suite
-python -m meister.ir.compare test/parser --jobs 4 --timeout 1200 \
+python test/meister_ir_compare.py test/parser --jobs 4 --timeout 1200 \
   --output /tmp/parser-ir-suite
-python -m meister.ir.compare test/core --jobs 3 --timeout 1200 \
+python test/meister_ir_compare.py test/core --jobs 3 --timeout 1200 \
   --output /tmp/core-ir-suite
 ```
 
@@ -116,8 +121,8 @@ Directory runs include every immediate `*.codon` file and every `#%%` case, with
 fixture's original filename, line offset and barebones setting. Each case runs
 in an isolated worker. Negative cases rejected by both frontends are reported
 separately; internal failures, crashes, timeouts, and translation/pass failures
-are mismatches, not compiler rejections. The existing `meister/test.py` driver
-is unchanged.
+are mismatches, not compiler rejections. The AST comparison command is
+`python test/meister_ast_compare.py`. Both are separate native reference tools.
 
 The typechecker suite has been checked without skipping cases: 380 cases have
 matching typed ASTs, translated IR, and final debug IR; another 246 are rejected

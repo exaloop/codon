@@ -1,101 +1,72 @@
-# TODO: review / fix
+# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
+"""Generate the CIR wrappers for a Python extension."""
 
-# Generate Python bindings for Cython-like access.
-def populate_python_module(self: Cache):
-    from .visitors.translate.translate import TranslateVisitor
-    from .visitors.typecheck.typecheck import TypecheckVisitor
+from ... import ast, ir
+from ...ast.ir import PyFunction, PyGetSet, PyType
+from ...ir.util import irtools
+from . import infer, utils
 
-    cython_iter = "_PyWrap.IterWrap"
-    if not self.python_ext:
-        return
-    if self.py_module is None:
-        self.py_module = PyModule()
-    visitor = TypecheckVisitor(self.type_ctx)
-
-    # needs copy as below fns can mutate this
-    classes = self.classes.copy()
-    for class_name in classes:
-        python_type = visitor.cythonize_class(class_name)
-        if python_type.name:
-            self.py_module.types.append(python_type)
-
-    # Handle __iternext__ wrappers
-    for class_name in self.classes[cython_iter].realizations:
-        python_type = visitor.cythonize_iterator(class_name)
-        self.py_module.types.append(python_type)
-
-    # needs copy as below fns can mutate this
-    functions = self.functions.copy()
-    for function_name in functions:
-        python_function = visitor.cythonize_function(function_name)
-        if python_function.name:
-            self.py_module.functions.append(python_function)
-
-    # Handle pending realizations!
-    # copy it as it might be modified
-    pending = self.pending_realizations.copy()
-    for key in pending:
-        TranslateVisitor(self.codegen_ctx).translate_stmts(self.functions[key[0]].ast)
+MODULE = "std.internal.python"
+WRAPPER = "_PyWrap"
+ITERATOR = "_PyWrap.IterWrap"
 
 
-def cythonize_class(tc: TypeVisitor, name: str) -> object:
+def wrapper_name(method):
+    return ast.types.mangle(MODULE, WRAPPER, method)
+
+
+def cythonize_class(ctx, name):
     """*** Cython-like code generation ****"""
-    cython_module = "std.internal.python"
-    cython_wrap = "_PyWrap"
-    cache_class = self.get_class(name)
-    imported = self.get_import_module(cache_class.module)
-    module = self.ctx.cache.module
+    cache_class = utils.get_class(ctx, name)
+    imported = utils.get_import_module(ctx, cache_class.module)
     # 1. Replace to_py / from_py with _PyWrap.wrap_to_py/from_py
     if (
         imported.name
         or "__to_py__" not in cache_class.methods
         or "__from_py__" not in cache_class.methods
     ):
-        return module.make_py_type("", "")
-    python_type = module.make_py_type(self.get_unmangled_name(name), cache_class.ast.get_docstr())
-    type_item = self.ctx.force_find(name)
-    class_type = self.extract_type(type_item.get_type())
+        return PyType("", "")
+    python_type = PyType(utils.get_unmangled_name(ctx, name), cache_class.ast.get_docstr())
+    class_type = utils.extract_type(ctx, ctx[name].type)
     if not class_type.can_realize():
-        raise TypeError(f"cannot realize '{self.get_unmangled_name(name)}' for Python export")
-    realized_type = self.realize(class_type)
+        raise TypeError(f"cannot realize '{utils.get_unmangled_name(ctx, name)}' for Python export")
+    realized_type = infer.realize(ctx, class_type)
     assert realized_type is not None, f"cannot realize '{name}'"
-    for method_name, wrapper_name in (
+    for method_name, method_wrapper in (
         ("__to_py__", "wrap_to_py"),
         ("__from_py__", "wrap_from_py"),
     ):
         overload_root = cache_class.methods[method_name]
-        # default first overload!
-        # default first overload!
-        function_name = self.get_overloads(overload_root)[0]
-        function = self.get_function(function_name)
+        # Use the first (original) overload.
+        function_name = utils.get_overloads(ctx, overload_root)[0]
+        function = utils.get_function(ctx, function_name)
         wrapper_args = [ast.IdExpr(function.ast.items[0].name)]
         if method_name == "__from_py__":
             wrapper_args.append(ast.IdExpr(name))
         function.ast.suite = ast.SuiteStmt(
             ast.ReturnStmt(
                 expr=ast.CallExpr(
-                    ast.IdExpr(ast.types.mangle(cython_module, cython_wrap, wrapper_name)),
+                    ast.IdExpr(wrapper_name(method_wrapper)),
                     items=wrapper_args,
                 )
             )
         )
     for method_name in ("__from_py__", "__to_py__"):
-        function_name = self.get_overloads(cache_class.methods[method_name])[0]
-        function = self.get_function(function_name)
+        function_name = utils.get_overloads(ctx, cache_class.methods[method_name])[0]
+        function = utils.get_function(ctx, function_name)
         old_ir: object | None = None
         if function.realizations:
             old_ir = next(iter(function.realizations.values())).ir
         function.realizations.clear()
-        transformed_type = self.realize(function.type)
+        transformed_type = infer.realize(ctx, function.type)
         assert transformed_type is not None, f"cannot re-realize '{function_name}'"
         new_ir = next(iter(function.realizations.values())).ir
         if old_ir is not None:
-            args = [module.new_var_value(arg) for arg in old_ir.args()]
-            call = module.make_call(new_ir, args)
-            old_ir.set_body(module.make_series([call]))
-    type_hook = self.get_function(ast.types.mangle(cython_module, cython_wrap, "py_type"))
-    for realization in type_hook.realizations.values():
-        generic = self.extract_func_generic(realization.type)
+            args = [ctx.cache.module.nr(ir.VarValue, arg) for arg in old_ir.args]
+            old_ir.body = irtools.series(irtools.call(new_ir, args))
+    type_hook = utils.get_function(ctx, wrapper_name("py_type"))
+    for _, realization in sorted(type_hook.realizations.items()):
+        generic = utils.extract_func_generic(realization.type)
         if generic.unify(realized_type, None) >= 0:
             python_type.type_ptr_hook = realization.ir
             break
@@ -149,187 +120,145 @@ def cythonize_class(tc: TypeVisitor, name: str) -> object:
         "__iter__": "iter",
         "__del__": "del_",
     }
-    for method_name, overload_root in methods.items():
-        overloads = self.get_overloads(overload_root)
+    for method_name, overload_root in sorted(methods.items()):
+        overloads = utils.get_overloads(ctx, overload_root)
         canonical_name = overloads[-1]
-        function = self.get_function(canonical_name)
+        function = utils.get_function(ctx, canonical_name)
         if len(overloads) == 1 and function.ast.has(ast.Attr.AutoGenerated):
             continue
         is_method = function.ast.has(ast.Attr.Method)
         is_property = function.ast.has(ast.Attr.Property)
-        call_name = ast.types.mangle(cython_module, cython_wrap, "wrap_multiple")
+        call_name = wrapper_name("wrap_multiple")
         is_magic = False
         if method_name.startswith("__") and method_name.endswith("__"):
             # always use FASTCALL for now; works even for 0- or 1- arg methods
             magic_name = method_name[2:-2]
             if magic_name == "new" and cache_class.ast.has(ast.Attr.Tuple):
                 magic_name = "init"
-            wrapper_class = self.get_class(ast.types.mangle(cython_module, cython_wrap))
+            wrapper_class = utils.get_class(ctx, ast.types.mangle(MODULE, WRAPPER))
             if f"wrap_magic_{magic_name}" in wrapper_class.methods:
-                call_name = ast.types.mangle(cython_module, cython_wrap, f"wrap_magic_{magic_name}")
+                call_name = wrapper_name(f"wrap_magic_{magic_name}")
                 is_magic = True
         if is_property:
-            call_name = ast.types.mangle(cython_module, cython_wrap, "wrap_get")
+            call_name = wrapper_name("wrap_get")
         generics = [realized_type]
         if is_property:
-            generics.append(self.instantiate_static(self.get_unmangled_name(canonical_name)))
+            generics.append(utils.instantiate_static(ctx, utils.get_unmangled_name(ctx, canonical_name)))
         elif not is_magic:
-            generics.append(self.instantiate_static(method_name))
-            generics.append(self.instantiate_static(int(is_method)))
-        call_function = self.get_function(call_name)
-        ir_function = self.realize_ir_func(call_function.type, generics)
+            generics.append(utils.instantiate_static(ctx, method_name))
+            generics.append(utils.instantiate_static(ctx, int(is_method)))
+        call_function = utils.get_function(ctx, call_name)
+        ir_function = realize_ir_func(ctx, call_function.type, generics)
         if ir_function is None:
             continue
         if is_property:
             python_type.getset.append(
-                module.make_py_get_set(
-                    self.get_unmangled_name(canonical_name), "", ir_function, None
+                PyGetSet(
+                    utils.get_unmangled_name(ctx, canonical_name), "", ir_function, None
                 )
             )
         elif method_name in special_attributes:
-            setattr(python_type, special_attributes[method_name], ir_function)
+            python_type.slots[special_attributes[method_name]] = ir_function
         elif method_name == "__init__" or (
             cache_class.ast.has(ast.Attr.Tuple) and method_name == "__new__"
         ):
-            python_type.init = ir_function
+            python_type.slots["init"] = ir_function
         else:
-            method_kind = module.PyMethod if is_method else module.PyClass
-            python_function = module.make_py_function(
+            method_kind = PyFunction.METHOD if is_method else PyFunction.CLASS
+            python_function = PyFunction(
                 method_name, function.ast.get_docstr(), ir_function, method_kind, 2
             )
             python_function.keywords = True
             python_type.methods.append(python_function)
     comparisons = {"__lt__", "__le__", "__eq__", "__ne__", "__gt__", "__ge__"}
     if any(method.name in comparisons for method in python_type.methods):
-        compare_item = self.ctx.force_find(ast.types.mangle(cython_module, cython_wrap, "wrap_cmp"))
-        compare_function = compare_item.type.get_func()
-        python_type.cmp = self.realize_ir_func(compare_function, [realized_type])
+        compare_function = ctx[wrapper_name("wrap_cmp")].type.func
+        python_type.slots["cmp"] = realize_ir_func(ctx, compare_function, [realized_type])
     if len(cache_class.realizations) != 1:
         raise TypeError(f"cannot pythonize generic class '{name}'")
     class_realization = next(iter(cache_class.realizations.values()))
     python_type.type = class_realization.ir
-    assert not class_realization.type.is_type(ast.types.Stdlib.Tuple), "tuples not yet done"
+    assert class_realization.type != ast.types.Stdlib.Tuple, "tuples not yet done"
     for member_name, _ in class_realization.fields:
         # TODO: handle PyMember for tuples
         # Generate getters & setters
-        generics = [realized_type, self.instantiate_static(member_name)]
-        getter_item = self.get_function(ast.types.mangle(cython_module, cython_wrap, "wrap_get"))
-        getter = self.realize_ir_func(getter_item.type, generics)
+        generics = [realized_type, utils.instantiate_static(ctx, member_name)]
+        getter_item = utils.get_function(ctx, wrapper_name("wrap_get"))
+        getter = realize_ir_func(ctx, getter_item.type, generics)
         setter: object | None = None
         if not cache_class.ast.has(ast.Attr.Tuple):
-            setter_item = self.get_function(
-                ast.types.mangle(cython_module, cython_wrap, "wrap_set")
-            )
-            setter = self.realize_ir_func(setter_item.type, generics)
-        python_type.getset.append(module.make_py_get_set(member_name, "", getter, setter))
+            setter_item = utils.get_function(ctx, wrapper_name("wrap_set"))
+            setter = realize_ir_func(ctx, setter_item.type, generics)
+        python_type.getset.append(PyGetSet(member_name, "", getter, setter))
     return python_type
 
 
-def cythonize_iterator(tc: TypeVisitor, name: str) -> object:
-    cython_module = "std.internal.python"
-    cython_wrap = "_PyWrap"
-    cython_iterator = "_PyWrap.IterWrap"
-    module = self.ctx.cache.module
-    python_type = module.make_py_type(name, "")
-    iterator_class = self.ctx.cache.classes[cython_iterator]
+def cythonize_iterator(ctx, name):
+    python_type = PyType(name, "")
+    iterator_class = ctx.cache.classes[ITERATOR]
     class_realization = iterator_class.realizations[name]
     iterator_type = class_realization.type
-    type_hook = self.get_function(ast.types.mangle(cython_module, cython_wrap, "py_type"))
-    for realization in type_hook.realizations.values():
-        if self.extract_func_generic(realization.type).unify(iterator_type, None) >= 0:
+    type_hook = utils.get_function(ctx, wrapper_name("py_type"))
+    for _, realization in sorted(type_hook.realizations.items()):
+        if utils.extract_func_generic(realization.type).unify(iterator_type, None) >= 0:
             python_type.type_ptr_hook = realization.ir
             break
     for method_name in ("_iter", "_iternext"):
-        overload = self.get_overloads(iterator_class.methods[method_name])[0]
-        function = self.get_function(overload)
+        overload = utils.get_overloads(ctx, iterator_class.methods[method_name])[0]
+        function = utils.get_function(ctx, overload)
         if method_name == "_iter":
-            instantiated = self.instantiate(function.type, iterator_type)
+            instantiated = utils.instantiate(ctx, function.type, iterator_type.cls)
         else:
-            underlying = self.extract_class_generic(iterator_type).get_class()
+            underlying = iterator_type.require_cls.generics[0].type.cls
             if underlying is None:
                 continue
-            iter_methods = self.find_method(underlying, "__iter__", False)
-            matches = self.matching_methods(
-                underlying,
-                iter_methods,
-                [self._typed(ast.NoneExpr(), underlying)],
-            )
-            if not matches:
+            method = utils.best_method(ctx, underlying, "__iter__", [underlying])
+            if method is None:
                 continue
-            found_type = self.instantiate(matches[0], underlying)
-            realized_found = self.realize(found_type)
-            if realized_found is None:
+            realized_iter = infer.realize(ctx, utils.instantiate(ctx, method, underlying))
+            if realized_iter is None:
                 continue
-            instantiated = self.instantiate(function.type, iterator_type)
-            instantiated_function = instantiated.get_func()
-            self.unify(
-                self.extract_func_generic(instantiated_function),
-                realized_found.get_func().get_ret_type(),
-            )
-        realized = self.realize(instantiated)
+            instantiated = utils.instantiate(ctx, function.type, iterator_type.cls)
+            utils.unify(ctx, utils.extract_func_generic(instantiated.func), realized_iter.func.ret_type)
+        realized = infer.realize(ctx, instantiated)
         if realized is not None:
-            realized_function = realized.get_func()
-            cache_function = self.get_function(realized_function.get_func_name())
+            realized_function = realized.func
+            cache_function = utils.get_function(ctx, realized_function.func_name)
             ir_function = cache_function.realizations[realized.realized_name()].ir
-            setattr(
-                python_type,
-                "iter" if method_name == "_iter" else "iternext",
-                ir_function,
-            )
+            python_type.slots["iter" if method_name == "_iter" else "iternext"] = ir_function
     python_type.type = class_realization.ir
     return python_type
 
 
-def cythonize_function(tc: TypeVisitor, name: str) -> object:
-    cython_module = "std.internal.python"
-    cython_wrap = "_PyWrap"
-    module = self.ctx.cache.module
-    function = self.get_function(name)
+def cythonize_function(ctx, name):
+    function = utils.get_function(ctx, name)
     if function.is_toplevel:
-        wrapper_name = ast.types.mangle(cython_module, cython_wrap, "wrap_multiple")
+        wrapper = utils.get_function(ctx, wrapper_name("wrap_multiple"))
         generics = [
-            self.get_stdlib_type(ast.types.Stdlib.NoneType),
-            self.instantiate_static(function.ast.name),
-            self.instantiate_static(0),
+            utils.get_stdlib_type(ctx, ast.types.Stdlib.NoneType),
+            utils.instantiate_static(ctx, function.ast.name),
+            utils.instantiate_static(ctx, 0),
         ]
-        wrapper = self.get_function(wrapper_name)
-        ir_function = self.realize_ir_func(wrapper.type, generics)
+        ir_function = realize_ir_func(ctx, wrapper.type, generics)
         if ir_function is not None:
-            python_function = module.make_py_function(
-                self.get_unmangled_name(name),
+            python_function = PyFunction(
+                utils.get_unmangled_name(ctx, name),
                 function.ast.get_docstr(),
                 ir_function,
-                module.PyToplevel,
+                PyFunction.TOPLEVEL,
                 len(function.ast.items),
             )
             python_function.keywords = True
             return python_function
-    return module.make_py_function("", "")
+    return PyFunction("", "")
 
 
-def realize_ir_func(
-    self: TypeVisitor,
-    function: ast.types.Function,
-    generics: List[ast.types.Type] | None = None,
-) -> object | None:
-    if not generics:
-        generics = []
-    # TODO: used by cytonization. Probably needs refactoring.
-    instantiated = utils.instantiate(self.ctx, function)
-    instantiated_function = instantiated.get_func()
+def realize_ir_func(ctx, function, generics):
+    # C++: codon/parser/visitors/typecheck/infer.cpp, realizeIRFunc.
+    instantiated = utils.instantiate(ctx, function)
     undo = ast.types.Type.UnifyContext()
-    for idx, generic in enumerate(generics):
-        instantiated_function.func_generics[idx].type.unify(generic, undo)
-    if not realize(instantiated):
+    for generic, typ in zip(instantiated.require_func.func_generics, generics):
+        generic.type.unify(typ, undo)
+    if infer.realize(ctx, instantiated) is None:
         return None
-    # copy it as it might be modified
-    pending = set(self.ctx.cache.pending_realizations)
-    from ..translate.translate import TranslateVisitor
-
-    for key, _ in pending:
-        pending_function = utils.get_function(self.ctx, key)
-        cloned = pending_function.ast.clone()
-        TranslateVisitor(self.ctx.cache.codegen_ctx).translate_stmts(cloned)
-    source_function = utils.get_function(self.ctx, function.ast.name)
-    realized = source_function.realizations[instantiated.realized_name()]
-    return realized.ir
+    return utils.get_function(ctx, function.ast.name).realizations[instantiated.realized_name()].ir

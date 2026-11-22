@@ -27,13 +27,14 @@ def fixture_parameters():
 
 @pytest.mark.compiler
 @pytest.mark.parametrize("fixture", list(fixture_parameters()))
-def test_codon_fixture(fixture, codon_library, codon_workdir, pytestconfig):
+def test_codon_fixture(fixture, codon_runtime, llvm_library, codon_workdir, pytestconfig):
     case = fixture.case
     expected, rejected = expectations(case)
     if rejected:
         expected = meister_diagnostics().get((case.path, case.name), expected)
     command = [
-        sys.executable, "-m", "meister.tests.runner", str(case.path), "--library", str(codon_library)
+        sys.executable, "-m", "meister.tests.runner", str(case.path),
+        "--library", str(llvm_library), "--runtime", str(codon_runtime),
     ]
     if case.code is not None:
         command += ["--section", str(case.line)]
@@ -46,7 +47,7 @@ def test_codon_fixture(fixture, codon_library, codon_workdir, pytestconfig):
     if fixture.suite == "OptTests" and case.path.stem in {"escapes", "inlining", "outlining"}:
         command.append("--fixture-passes")
     result = run_process(
-        command, cwd=codon_workdir, env=compiler_environment(codon_library.parent),
+        command, cwd=codon_workdir, env=compiler_environment(codon_runtime.parent),
         capture_output=True, timeout=pytestconfig.getoption("--codon-timeout"),
     )
     stdout = result.stdout.decode("utf-8", errors="surrogateescape")

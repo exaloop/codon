@@ -92,14 +92,14 @@ def main(argv):
                 types=not args.no_types,
             )
         )
-    elif mode in {"llvm", "run"}:
+    elif mode in {"llvm", "run", "build"}:
         from .ir import codegen
 
-        codegen.main(mode, argv[1:])
+        return codegen.main(mode, argv[1:])
     elif mode == "test":
-        from . import test
+        import pytest
 
-        test.main(argv[1:])
+        return pytest.main([root, *argv[1:]])
     else:
         print(f"Invalid mode: {mode}")
 
@@ -172,4 +172,4 @@ def main(argv):
 #         pass
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    raise SystemExit(main(sys.argv[1:]))

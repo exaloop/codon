@@ -3,10 +3,8 @@
 
 from ctypes import (
     CDLL,
-    CFUNCTYPE,
     POINTER,
     RTLD_GLOBAL,
-    PyDLL,
     byref,
     c_char_p,
     c_double,
@@ -28,6 +26,7 @@ class LLVMError(RuntimeError):
 
 class Linkage(IntEnum):
     EXTERNAL = 0
+    AVAILABLE_EXTERNALLY = 1
     APPENDING = 7
     INTERNAL = 8
     PRIVATE = 9
@@ -61,33 +60,78 @@ P, A, S, U, Q, I, N, D = (
 
 
 class Library:
-    def __init__(self, path):
+    def __init__(self, path, runtime):
         self.path = path
-        # ORC resolves runtime symbols through the current process.
-        self._dll = CDLL(str(path), mode=RTLD_GLOBAL)
+        self.runtime_path = runtime
+        self._dll = CDLL(str(path))
+        self._runtime = None
         self._functions = {}
+        self.triple = self.message(self.function("GetDefaultTargetTriple", P)()).encode()
+        arch = self.triple.split(b"-", 1)[0].decode()
+        if arch.startswith(("i386", "i486", "i586", "i686", "x86")):
+            target = "X86"
+        elif arch.startswith(("aarch64", "arm64")):
+            target = "AArch64"
+        elif arch.startswith(("arm", "thumb")):
+            target = "ARM"
+        elif arch.startswith(("powerpc", "ppc")):
+            target = "PowerPC"
+        elif arch.startswith("riscv"):
+            target = "RISCV"
+        elif arch == "s390x":
+            target = "SystemZ"
+        elif arch == "loongarch64":
+            target = "LoongArch"
+        else:
+            raise LLVMError(f"Unsupported LLVM host architecture {arch}")
+        self.arch = target
+        for component in ("TargetInfo", "Target", "TargetMC", "AsmPrinter", "AsmParser"):
+            self.function("Initialize" + target + component, None)()
 
     def function(self, name, result, *args):
-        return self._bind("LLVM" + name, result, args)
+        return self._bind(self._dll, "LLVM" + name, result, args)
 
-    def codon_function(self, name, result, *args, keep_gil=False):
-        return self._bind("codon_llvm_" + name, result, args, keep_gil=keep_gil)
+    def load_runtime(self):
+        if self._runtime is None:
+            self._runtime = CDLL(str(self.runtime_path), mode=RTLD_GLOBAL)
+        return self._runtime
+
+    def runtime_function(self, name, result, *args):
+        return self._bind(self.load_runtime(), name, result, args)
 
     def exception_offset(self):
-        return self._bind("seq_exc_offset", c_int64, ())()
+        return self.runtime_function("seq_exc_offset", c_int64)()
 
-    def _bind(self, full_name, result, args, *, keep_gil=False):
-        key = full_name, keep_gil
-        if key not in self._functions:
-            dll = PyDLL(str(self.path), handle=self._dll._handle) if keep_gil else self._dll
+    def _bind(self, dll, name, result, args):
+        if name not in self._functions:
             try:
-                fn = getattr(dll, full_name)
+                fn = getattr(dll, name)
             except AttributeError as error:
-                raise LLVMError(f"{self.path} does not export {full_name}") from error
+                raise LLVMError(f"{dll._name} does not export {name}") from error
             fn.restype = result
             fn.argtypes = args
-            self._functions[key] = fn
-        return self._functions[key]
+            self._functions[name] = fn
+        return self._functions[name]
+
+    def check_error(self, error):
+        if error:
+            pointer = self.function("GetErrorMessage", P, P)(error)
+            try:
+                raise LLVMError(string_at(pointer).decode(errors="replace"))
+            finally:
+                self.function("DisposeErrorMessage", None, P)(pointer)
+
+    def target_machine(self, *, pic=False, level=3):
+        target, message = P(), P()
+        if self.function("GetTargetFromTriple", I, S, A, A)(self.triple, byref(target), byref(message)):
+            raise LLVMError(self.message(message))
+        # LLVMRelocPIC (2), LLVMRelocDefault (0), LLVMCodeModelDefault (0).
+        machine = self.function("CreateTargetMachine", P, P, S, S, S, I, I, I)(
+            target, self.triple, b"", b"", level, 2 if pic else 0, 0
+        )
+        if not machine:
+            raise LLVMError("could not create LLVM target machine")
+        return machine
 
     def message(self, pointer):
         if not pointer:
@@ -332,7 +376,8 @@ class BasicBlock(_Handle):
 class Context:
     def __init__(self, library):
         self.lib = library
-        self._pointer = library.function("ContextCreate", P)()
+        self.thread_safe = library.function("OrcCreateNewThreadSafeContext", P)()
+        self._pointer = library.function("OrcThreadSafeContextGetContext", P, P)(self.thread_safe)
 
     @property
     def _as_parameter_(self):
@@ -342,7 +387,7 @@ class Context:
 
     def close(self):
         if self._pointer:
-            self.lib.function("ContextDispose", None, P)(self)
+            self.lib.function("OrcDisposeThreadSafeContext", None, P)(self.thread_safe)
             self._pointer = None
 
 
@@ -361,9 +406,16 @@ class Module:
             )
             source = source.encode()
             library.function("SetSourceFileName", None, P, S, N)(self, source, len(source))
-            err = library.message(library.codon_function("set_host_target", P, P)(self))
-            if err:
-                raise LLVMError(err)
+            library.function("SetTarget", None, P, S)(self, library.triple)
+            machine = library.target_machine()
+            try:
+                layout = library.function("CreateTargetDataLayout", P, P)(machine)
+                try:
+                    library.function("SetModuleDataLayout", None, P, P)(self, layout)
+                finally:
+                    library.function("DisposeTargetData", None, P)(layout)
+            finally:
+                library.function("DisposeTargetMachine", None, P)(machine)
             self.builder = IRBuilder(self)
             self.data_layout = DataLayout(self, library.function("GetModuleDataLayout", P, P)(self))
         except BaseException:
@@ -382,41 +434,75 @@ class Module:
     def __exit__(self, *_):
         self.close()
 
+    def _close_builders(self):
+        if self.debug_builder:
+            self.debug_builder.finalize()
+            self.debug_builder.close()
+            self.debug_builder = None
+        if self.builder:
+            self.lib.function("DisposeBuilder", None, P)(self.builder)
+            self.builder = None
+
     def close(self):
         if self._pointer:
-            if self.debug_builder:
-                self.debug_builder.close()
-            if self.builder:
-                self.lib.function("DisposeBuilder", None, P)(self.builder)
+            self._close_builders()
             self.lib.function("DisposeModule", None, P)(self)
             self._pointer = None
         self.context.close()
 
-    def run(self, args, *, debug, on_stage=None):
-        """Run through Codon's optimizer and ORC, transferring LLVM ownership."""
-        argv = (S * len(args))(*map(fsencode, args))
-        # Codon can import Python through the runtime. If it opens the host
-        # interpreter, Py_Initialize is a no-op and the current thread must
-        # still hold the GIL when generated code calls the Python C API.
-        callback = None
-        if on_stage is None:
-            run = self.lib.codon_function("run", P, P, P, I, I, POINTER(S), keep_gil=True)
+    def transfer(self):
+        self._close_builders()
+        module = self.lib.function("OrcCreateNewThreadSafeModule", P, P, P)(
+            self, self.context.thread_safe
+        )
+        self._pointer = None
+        self.context.close()
+        return module
+
+    def functions(self):
+        pointer = self.lib.function("GetFirstFunction", P, P)(self)
+        while pointer:
+            function = Function(self, pointer)
+            yield function
+            pointer = function._call("GetNextFunction", P, ())
+
+    def globals(self):
+        pointer = self.lib.function("GetFirstGlobal", P, P)(self)
+        while pointer:
+            value = Value(self, pointer)
+            yield value
+            pointer = value._call("GetNextGlobal", P, ())
+
+    def run(self, args, *, debug, fast_math=False, native=True, on_stage=None):
+        """Optimize and execute the module, transferring ownership to ORC."""
+        from .jit import run
+
+        return run(self, args, debug=debug, fast_math=fast_math, native=native, on_stage=on_stage)
+
+    def optimize(self, *, debug, ctor=None, fast_math=False, native=True):
+        from .optimize import optimize
+
+        optimize(self, debug=debug, ctor=ctor, fast_math=fast_math, native=native)
+
+    def write(self, path, kind, *, pic=False):
+        if kind == "llvm":
+            message = P()
+            if self.lib.function("PrintModuleToFile", I, P, S, A)(self, fsencode(path), byref(message)):
+                raise LLVMError(self.lib.message(message))
+        elif kind == "bc":
+            if self.lib.function("WriteBitcodeToFile", I, P, S)(self, fsencode(path)):
+                raise LLVMError(f"could not write LLVM bitcode to {path}")
         else:
-            callback_type = CFUNCTYPE(None, I)
-            callback = callback_type(on_stage)
-            run = self.lib.codon_function(
-                "run_timed", P, P, P, I, I, POINTER(S), callback_type, keep_gil=True
-            )
-        mod, ctx = self._as_parameter_, self.context._as_parameter_
-        if self.debug_builder:
-            self.debug_builder.finalize()
-            self.debug_builder.close()
-        self.lib.function("DisposeBuilder", None, P)(self.builder)
-        self._pointer = self.context._pointer = None
-        arguments = (ctx, mod, debug, len(argv), argv)
-        error = self.lib.message(run(*arguments, callback) if callback else run(*arguments))
-        if error:
-            raise LLVMError(error)
+            machine = self.lib.target_machine(pic=pic)
+            try:
+                # LLVMAssemblyFile (0) or LLVMObjectFile (1).
+                message = P()
+                if self.lib.function("TargetMachineEmitToFile", I, P, P, S, I, A)(
+                    machine, self, fsencode(path), int(kind == "obj"), byref(message)
+                ):
+                    raise LLVMError(self.lib.message(message))
+            finally:
+                self.lib.function("DisposeTargetMachine", None, P)(machine)
 
     def int_type(self, width):
         return Type(self, self.lib.function("IntTypeInContext", P, P, U)(self.context, width))
@@ -720,25 +806,15 @@ class DebugBuilder(_Handle):
 
     def struct_type(self, name, file, line, size):
         name = name.encode()
-        return self._make(
-            "CreateStructType",
-            (P, S, N, P, U, Q, U, I, P, A, U, U, P, S, N),
-            file,
-            name,
-            len(name),
-            file,
-            line,
-            size,
-            0,
-            0,
-            None,
-            None,
-            0,
-            0,
-            None,
-            b"",
-            0,
+        # Keep a temporary type until all fields, including recursive pointers,
+        # have been emitted. LLVM then retargets every metadata use.
+        typ = self._make(
+            "CreateReplaceableCompositeType",
+            (U, S, N, P, P, U, U, Q, U, I, S, N),
+            0x13, name, len(name), file, file, line, 0, size, 0, 0, b"", 0,
         )
+        typ.composite = name, file, line, size
+        return typ
 
     def member_type(self, scope, name, file, line, size, offset, typ, flags=0):
         name = name.encode()
@@ -758,9 +834,16 @@ class DebugBuilder(_Handle):
         )
 
     def replace_members(self, typ, members):
+        name, file, line, size = typ.composite
         members = _array(members)
-        replace = self._owner.lib.codon_function("replace_debug_members", P, P, P, A, N)
-        typ._pointer = replace(self, typ, members, len(members))
+        final = self._make(
+            "CreateStructType",
+            (P, S, N, P, U, Q, U, I, P, A, U, U, P, S, N),
+            file, name, len(name), file, line, size, 0, 0, None, members,
+            len(members), 0, None, b"", 0,
+        )
+        typ._call("MetadataReplaceAllUsesWith", None, (P,), final)
+        typ._pointer = final._pointer
 
     def subroutine_type(self, types):
         types = _array(types)

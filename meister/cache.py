@@ -47,21 +47,25 @@ class FrontendOptions:
     unordereddict: bool = False
     # Compiler fixtures use the optimization pipeline in both debug and release.
     test: bool = False
+    # Apply LLVM fast-math flags to floating-point operations.
+    fast_math: bool = False
+    native: bool = True
+    disabled: tuple[str, ...] = ()
 
     def get_early_defines(self) -> Dict[str, str]:
         import sys
 
+        # Match the insertion order observed in the C++ compiler's dumps.
         return {
-            "__debug__": str(int(self.debug)),
-            "__py_numerics__": str(int(self.pynum)),
-            "__py_extension__": str(int(self.pyext)),
-            "__dict_unordered__": str(int(self.unordereddict)),
-            # codon/config/config.h
-            "__codon_version_major__": "0",
-            "__codon_version_minor__": "20",
-            "__codon_version_micro__": "7",
-            "__apple__": str(int(sys.platform == "darwin")),
             "__windows__": str(int(sys.platform == "win32")),
+            "__apple__": str(int(sys.platform == "darwin")),
+            "__codon_version_minor__": "20",
+            "__codon_version_major__": "0",
+            "__codon_version_micro__": "7",
+            "__dict_unordered__": str(int(self.unordereddict)),
+            "__py_extension__": str(int(self.pyext)),
+            "__py_numerics__": str(int(self.pynum)),
+            "__debug__": str(int(self.debug)),
         }
 
 
@@ -769,20 +773,19 @@ class Cache:
         """C++: cache.cpp:305. Generate Python bindings for Cython-like access."""
         if not self.options.pyext:
             return
-        from .passes.typecheck import TypeVisitor, cython, special
+        from .passes.typecheck import cython, special
 
         if self.py_module is None:
             self.py_module = ast.ir.PyModule()
-        visitor = TypeVisitor(self.type_ctx)
         # Copies: cythonization may mutate class/function caches.
-        for name in list(self.classes):
-            item = cython.cythonize_class(visitor, name)
+        for name in sorted(self.classes):
+            item = cython.cythonize_class(self.type_ctx, name)
             if item.name:
                 self.py_module.types.append(item)
-        for name in list(self.classes["_PyWrap.IterWrap"].realizations):
-            self.py_module.types.append(cython.cythonize_iterator(visitor, name))
-        for name in list(self.functions):
-            item = cython.cythonize_function(visitor, name)
+        for name in sorted(self.classes[cython.ITERATOR].realizations):
+            self.py_module.types.append(cython.cythonize_iterator(self.type_ctx, name))
+        for name in sorted(self.functions):
+            item = cython.cythonize_function(self.type_ctx, name)
             if item.name:
                 self.py_module.functions.append(item)
         special.prepare_vtables(self.type_ctx)
