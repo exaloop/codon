@@ -3709,9 +3709,15 @@ class str:
         ret {} {}
 
 
-def _unicode_new_uninit(length: int, maxchar: int) -> str:
+def _check_str_length(length: int) -> None:
     if length < 0:
         raise ValueError("negative length")
+    if length > LEN_MASK:
+        raise ValueError("string too large")
+
+
+def _unicode_new_uninit(length: int, maxchar: int) -> str:
+    _check_str_length(length)
 
     if maxchar < 0 or maxchar > UNICODE_MAX:
         raise ValueError("invalid code point")

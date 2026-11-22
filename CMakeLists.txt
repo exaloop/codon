@@ -294,12 +294,11 @@ elseif(WIN32)
             # stdlib/os/_win32.codon calls _dosmaperr, which only the static CRT
             # provides (ucrtbase.dll does not export it).
             -Wl,/EXPORT:_dosmaperr=seq_win_dosmaperr
-            # test/types.cpp and test/stdlib/json_test.codon call GC_gcollect
-            # directly. It comes from the static gc archive, which
-            # WINDOWS_EXPORT_ALL_SYMBOLS does not re-export, so expose it here and
-            # keep everything on codonrt's single GC instance.
+            # Tests call these GC functions directly. Re-export them from the
+            # static gc archive so JIT/AOT code uses codonrt's collector instance.
             -Wl,/INCLUDE:GC_gcollect -Wl,/EXPORT:GC_gcollect
             -Wl,/EXPORT:GC_get_total_bytes
+            -Wl,/EXPORT:GC_get_kind_and_size
             )
 else()
   add_dependencies(codonrt openblas_64)

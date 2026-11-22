@@ -12,6 +12,7 @@ namespace {
 struct AppendCounter : ir::util::Operator {
   std::unordered_map<std::string, int> appends;
   std::unordered_map<std::string, int> additions;
+  std::unordered_map<std::string, int> cats;
 
   void handle(ir::CallInstr *call) override {
     auto *function = ir::util::getFunc(call->getCallee());
@@ -20,6 +21,8 @@ struct AppendCounter : ir::util::Operator {
     const auto &parent = getParentFunc()->getUnmangledName();
     if (function->getUnmangledName() == "_str_append_private")
       ++appends[parent];
+    if (function->getUnmangledName() == "cat")
+      ++cats[parent];
     if (function->getUnmangledName() == "__add__" &&
         call->getType()->is(call->getModule()->getStringType()))
       ++additions[parent];
@@ -37,6 +40,17 @@ def private_loop(seed: str, token: str, count: int):
     result = seed
     for index in range(count):
         result += token
+    return result
+def compound_loop(seed: str, a: str, b: str, count: int):
+    result = seed
+    for index in range(count):
+        result += a + b
+    return result
+def observed_compound_loop(seed: str, a: str, b: str, count: int):
+    result = seed
+    for index in range(count):
+        print(result)
+        result += a + b
     return result
 def branch_loop(count: int):
     result = ''
@@ -125,6 +139,8 @@ def called_loop(count: int):
         result += 'a'
     return result
 print(private_loop('seed', 'a', 3))
+print(compound_loop('seed', 'a', 'b', 3))
+print(observed_compound_loop('seed', 'a', 'b', 3))
 print(branch_loop(3))
 print(snapshot_loop(3))
 print(self_loop(3))
@@ -143,6 +159,10 @@ print(called_loop(3))
   counter.process(compiler.getModule());
   EXPECT_EQ(1, counter.appends["private_loop"]);
   EXPECT_EQ(0, counter.additions["private_loop"]);
+  EXPECT_EQ(1, counter.appends["compound_loop"]);
+  EXPECT_EQ(0, counter.cats["compound_loop"]);
+  EXPECT_EQ(0, counter.appends["observed_compound_loop"]);
+  EXPECT_EQ(1, counter.cats["observed_compound_loop"]);
   EXPECT_EQ(2, counter.appends["branch_loop"]);
   EXPECT_EQ(0, counter.additions["branch_loop"]);
   EXPECT_EQ(1, counter.appends["exit_loop"]);

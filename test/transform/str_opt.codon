@@ -153,6 +153,36 @@ def test_private_string_buffer():
 
 test_private_string_buffer()
 
+@test
+def test_string_length_limit():
+    from internal.types.str import LEN_MASK, _unicode_new_uninit
+    from internal.types.strbuf import strbuf, _strbuf_grown_capacity
+
+    # Exercise the last growth step without allocating its backing storage.
+    assert _strbuf_grown_capacity((LEN_MASK + 1) // 2, LEN_MASK) == LEN_MASK
+    try:
+        _unicode_new_uninit(LEN_MASK + 1, 127)
+        assert False
+    except ValueError as e:
+        assert str(e) == 'string too large'
+    try:
+        strbuf(LEN_MASK + 1)
+        assert False
+    except ValueError as e:
+        assert str(e) == 'string too large'
+
+    buf = strbuf(1)
+    buf.n = LEN_MASK  # Only the logical length is needed to reject this append.
+    data = buf.data
+    try:
+        buf.append('x')
+        assert False
+    except ValueError as e:
+        assert str(e) == 'string too large'
+    assert buf.data == data and buf.m == 1 and buf.n == LEN_MASK
+
+test_string_length_limit()
+
 @noinline
 def append_private(seed: str, token: str, count: int):
     result = seed
@@ -286,6 +316,13 @@ def append_effects(seed: str, count: int, fail_at: int, events: list[int]):
     return result
 
 @noinline
+def append_compound(seed: str, count: int, fail_at: int, events: list[int]):
+    result = seed
+    for i in range(count):
+        result += append_piece(2*i, fail_at, events) + append_piece(2*i + 1, fail_at, events)
+    return result
+
+@noinline
 def append_observed(count: int):
     result = 'seed'
     saved = {result: 7}
@@ -327,6 +364,16 @@ def test_private_append_boundaries():
             assert append_private(seed, token, 65) == seed + token * 65
     events = list[int]()
     seed = 'seed'
+    assert append_compound(seed, 3, -1, events) == 'seedabcdef'
+    assert events == [0, 1, 2, 3, 4, 5]
+    events.clear()
+    try:
+        append_compound(seed, 3, 1, events)
+        assert False
+    except ValueError as error:
+        assert str(error) == 'append failed'
+    assert events == [0, 1]
+    events.clear()
     assert append_effects(seed, 4, -1, events) == 'seedabcd'
     assert events == [0, 1, 2, 3]
     events.clear()

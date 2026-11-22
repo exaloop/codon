@@ -7,8 +7,9 @@ class strbuf:
     kind: int
 
     def __init__(self, capacity: int = 16, kind: int = 0):
-        from internal.types.str import _kind_width
+        from internal.types.str import _check_str_length, _kind_width
 
+        _check_str_length(capacity)
         self.data = Ptr[u8](capacity * _kind_width(kind))
         self.n = 0
         self.m = capacity
@@ -45,20 +46,27 @@ class strbuf:
         return str(self.data, _make_meta(self.n, self.kind))
 
 
+def _strbuf_grown_capacity(capacity: int, needed: int) -> int:
+    from internal.types.str import LEN_MASK, _check_str_length
+
+    _check_str_length(needed)
+    capacity = max(capacity, 1)
+    while capacity < needed:
+        capacity *= 2
+    # The capacity itself is packed into the temporary copy destination's metadata.
+    return min(capacity, LEN_MASK)
+
+
 def _strbuf_append(output, value: str) -> None:
     from internal.gc import realloc
-    from internal.types.str import _kind_width, _make_meta, _unicode_copy_range
+    from internal.types.str import _kind_width, _make_meta, _meta_len, _unicode_copy_range
 
-    adding = value.__len__()
+    adding = _meta_len(value._meta)
     needed = output.n + adding
     new_kind = output.kind if output.kind >= value._kind() else value._kind()
 
     if needed > output.m or new_kind != output.kind:
-        capacity = output.m
-        if capacity == 0:
-            capacity = 1
-        while capacity < needed:
-            capacity *= 2
+        capacity = _strbuf_grown_capacity(output.m, needed)
 
         # Zero capacity owns no allocation: the pointer can be null or borrowed.
         if output.m != 0 and new_kind == output.kind:
