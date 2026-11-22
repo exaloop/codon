@@ -720,31 +720,30 @@ class Generic:
         self.static_kind = static_kind
 
     def generalize(self, level: int):
-        if self.static_kind is Type.Behaviour.Runtime and isinstance(self.type, Literal):
-            value = self.type.runtime_type.generalize(level)
+        if self.is_runtime and (literal := self.type.literal):
+            value = literal.runtime_type.generalize(level)
         else:
             value = self.type.generalize(level)
         return Generic(self.name, value, self.id, self.static_kind)
 
     def instantiate(self, level: int, ctx: Type.InstantiateContext):
         value: Type | None = None
-        if self.static_kind is Type.Behaviour.Runtime and isinstance(self.type, Literal):
-            value = self.type.runtime_type.instantiate(level, ctx)
+        if self.is_runtime and (literal := self.type.literal):
+            value = literal.runtime_type.instantiate(level, ctx)
         else:
             value = self.type.instantiate(level, ctx)
         return Generic(self.name, value, self.id, self.static_kind)
 
     def to_string(self, mode: int) -> str:
         assert self.type, "generic type is null"
-        if self.static_kind is Type.Behaviour.Runtime and isinstance(self.type, Literal):
-            if mode != 2:
-                return self.type.runtime_type.to_string(mode)
+        if self.is_runtime and mode != 2 and (literal := self.type.literal):
+            return literal.runtime_type.to_string(mode)
         return self.type.to_string(mode)
 
     def realized_name(self) -> str:
         assert self.type, "generic type is null"
-        if self.static_kind is Type.Behaviour.Runtime and isinstance(self.type, Literal):
-            return self.type.runtime_type.realized_name()
+        if self.is_runtime and (literal := self.type.literal):
+            return literal.runtime_type.realized_name()
         return self.type.realized_name()
 
     def __str__(self):

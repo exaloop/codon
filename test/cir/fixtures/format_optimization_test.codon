@@ -1,0 +1,28 @@
+def format_optimization_probe(value: int):
+    return 'abc{:04d}xyz'.format(value) + value.__format__('04d')
+class FormatOptimizationValue:
+    value: int
+    def __init__(self, value: int):
+        self.value = value
+def format_optimization_compound(value: FormatOptimizationValue, items: List[int], mapping: Dict[str, str]):
+    return '{0.value}:{1[0]}:{2[key]}'.format(value, items, mapping)
+def format_optimization_bad_member(value: FormatOptimizationValue):
+    return '{0.value}:{0.missing}'.format(value)
+def format_optimization_bad_element(value: int):
+    return '{0[0]}'.format(value)
+def format_optimization_dynamic(format: str, value: int):
+    return format.format(value)
+def format_optimization_malformed(value: int):
+    return '{'.format(value)
+class FormatOptimizationCustom:
+    def __format__(self, spec: str):
+        return spec
+def format_optimization_custom(value: FormatOptimizationCustom):
+    return '{}'.format(value) + value.__format__('tag')
+format_optimization_probe(42)
+format_optimization_compound(FormatOptimizationValue(42), [7], {'key': 'value'})
+format_optimization_bad_member(FormatOptimizationValue(42))
+format_optimization_bad_element(42)
+format_optimization_dynamic('{}', 42)
+format_optimization_malformed(42)
+format_optimization_custom(FormatOptimizationCustom())

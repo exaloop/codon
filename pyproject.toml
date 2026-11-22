@@ -1,6 +1,27 @@
 [project]
 name = "Codon"
+version = "0.20.7"
 requires-python = ">=3.12"
+
+[dependency-groups]
+test = [
+    "numpy==2.3.4",
+    "pytest>=8.3,<10",
+    "pytest-xdist>=3.6,<4",
+]
+
+[tool.uv]
+package = false
+default-groups = ["test"]
+
+[tool.pytest.ini_options]
+testpaths = ["meister"]
+python_files = ["test_*.py"]
+markers = [
+    "compiler: compile Codon fixtures with Meister and run them when requested",
+    "numpy: Codon NumPy compiler fixtures",
+    "native: assertions run by the native GoogleTest binary",
+]
 
 [tool.ruff]
 line-length = 100

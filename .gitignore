@@ -55,6 +55,7 @@ Thumbs.db
 .vscode
 .cache
 .ipynb_checkpoints
+*.lock
 
 # CMake generated files #
 #########################
@@ -63,6 +64,8 @@ jit/codon/version.py
 
 # Testing files #
 #################
+/.pytest_cache/
+/.venv/
 temp/
 playground/
 scratch*.*

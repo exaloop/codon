@@ -352,7 +352,8 @@ class ScopingVisitor(ast.NodeVisitor):
         """
         # No shadowing od global/nonlocal allowed
         if self.ctx.fn_scope is None:
-            raise ScopeError(node, f"'{node.var}' outside a function")
+            keyword = "nonlocal" if node.non_local else "global"
+            raise ScopeError(node, f"'{keyword}' outside function")
         if node.var in self.ctx.map or node.var in self.ctx.captures:
             raise ScopeError(node, f"name '{node.var}' is assigned to before global declaration")
         self.bind_name(node.var, node)

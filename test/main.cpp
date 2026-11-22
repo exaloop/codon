@@ -8,6 +8,7 @@
 #include <gc.h>
 #include <iostream>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -616,54 +617,35 @@ auto getTypeTests(const vector<string> &files) {
   return cases;
 }
 
+// Shared with the Python test collector so new file tests are registered on both sides.
+static vector<string> getFixtureFiles(const string &suite) {
+  std::ifstream manifest(string(TEST_DIR) + "/fixtures.tsv");
+  if (!manifest)
+    throw std::runtime_error("could not open test/fixtures.tsv");
+
+  vector<string> files;
+  for (string line; getline(manifest, line);) {
+    if (!line.empty() && line.back() == '\r')
+      line.pop_back();
+    auto tab = line.find('\t');
+    if (tab != string::npos && line.substr(0, tab) == suite)
+      files.push_back(line.substr(tab + 1));
+  }
+  if (files.empty())
+    throw std::runtime_error("no files in fixture suite " + suite);
+  return files;
+}
+
 // clang-format off
 INSTANTIATE_TEST_SUITE_P(
     TypeTests, SeqTest,
-    testing::ValuesIn(getTypeTests({
-      "parser/typecheck/test_access.codon",
-      "parser/typecheck/test_assign.codon",
-      "parser/typecheck/test_basic.codon",
-      "parser/typecheck/test_call.codon",
-      "parser/typecheck/test_class.codon",
-      "parser/typecheck/test_collections.codon",
-      "parser/typecheck/test_cond.codon",
-      "parser/typecheck/test_ctx.codon",
-      "parser/typecheck/test_error.codon",
-      "parser/typecheck/test_function.codon",
-      "parser/typecheck/test_import.codon",
-      "parser/typecheck/test_infer.codon",
-      "parser/typecheck/test_loops.codon",
-      "parser/typecheck/test_op.codon",
-      "parser/typecheck/test_parser.codon",
-      "parser/typecheck/test_python.codon",
-      "parser/typecheck/test_typecheck.codon",
-      "parser/typecheck/test_poly.codon"
-    })),
+    testing::ValuesIn(getTypeTests(getFixtureFiles("TypeTests"))),
     getTypeTestNameFromParam);
 
 INSTANTIATE_TEST_SUITE_P(
     CoreTests, SeqTest,
     testing::Combine(
-      testing::Values(
-        "core/helloworld.codon",
-        "core/arithmetic.codon",
-        "core/numerics.codon",
-        "core/parser.codon",
-        "core/generics.codon",
-        "core/generators.codon",
-        "core/gc.codon",
-        "core/exceptions.codon",
-        "core/containers.codon",
-        "core/trees.codon",
-        "core/range.codon",
-        "core/bltin.codon",
-        "core/arguments.codon",
-        "core/match.codon",
-        "core/serialization.codon",
-        "core/pipeline.codon",
-        "core/empty.codon",
-        "core/vec_simd.codon"
-      ),
+      testing::ValuesIn(getFixtureFiles("CoreTests")),
       testing::Values(true, false),
       testing::Values(""),
       testing::Values(""),
@@ -677,37 +659,7 @@ INSTANTIATE_TEST_SUITE_P(
 INSTANTIATE_TEST_SUITE_P(
     StdlibTests, SeqTest,
     testing::Combine(
-      testing::Values(
-        "stdlib/llvm_test.codon",
-        "stdlib/str_test.codon",
-        "stdlib/bytearray_test.codon",
-        "stdlib/enum_test.codon",
-        "stdlib/re_test.codon",
-        "stdlib/math_test.codon",
-        "stdlib/cmath_test.codon",
-        "stdlib/datetime_test.codon",
-        "stdlib/getopt_test.codon",
-        "stdlib/argparse_test.codon",
-        "stdlib/itertools_test.codon",
-        "stdlib/json_test.codon",
-        "stdlib/bisect_test.codon",
-        "stdlib/random_test.codon",
-        "stdlib/statistics_test.codon",
-        "stdlib/sort_test.codon",
-        "stdlib/heapq_test.codon",
-        "stdlib/operator_test.codon",
-        "stdlib/asyncio_test.codon",
-        "stdlib/io_test.codon",
-        "stdlib/sys_test.codon",
-        "stdlib/os_test.codon",
-        "stdlib/expanduser_test.codon",
-        "stdlib/pathlib_test.codon",
-        "stdlib/ntpath_test.codon",
-        "stdlib/win32_os_test.codon",
-        "stdlib/unicode_test.codon",
-        "stdlib/functools_test.codon",
-        "python/pybridge.codon"
-      ),
+      testing::ValuesIn(getFixtureFiles("StdlibTests")),
       testing::Values(true, false),
       testing::Values(""),
       testing::Values(""),
@@ -721,12 +673,7 @@ INSTANTIATE_TEST_SUITE_P(
 INSTANTIATE_TEST_SUITE_P(
     CNumericsTests, SeqTest,
     testing::Combine(
-      testing::Values(
-        "core/numerics.codon",
-        "stdlib/math_test.codon",
-        "numpy/test_routines.codon",
-        "numpy/fusion/test_producers.codon"
-      ),
+      testing::ValuesIn(getFixtureFiles("CNumericsTests")),
       testing::Values(true, false),
       testing::Values(""),
       testing::Values(""),
@@ -740,21 +687,7 @@ INSTANTIATE_TEST_SUITE_P(
 INSTANTIATE_TEST_SUITE_P(
     OptTests, SeqTest,
     testing::Combine(
-        testing::Values(
-            "transform/canonical.codon",
-            "transform/dict_opt.codon",
-            "transform/enumerate.codon",
-            "transform/escapes.codon",
-            "transform/folding.codon",
-            "transform/for_lowering.codon",
-            "transform/format.codon",
-            "transform/io_opt.codon",
-            "transform/inlining.codon",
-            "transform/list_opt.codon",
-            "transform/omp.codon",
-            "transform/outlining.codon",
-            "transform/str_opt.codon"
-        ),
+        testing::ValuesIn(getFixtureFiles("OptTests")),
         testing::Values(true, false),
         testing::Values(""),
         testing::Values(""),
@@ -768,9 +701,7 @@ INSTANTIATE_TEST_SUITE_P(
   INSTANTIATE_TEST_SUITE_P(
     GpuTests, SeqTest,
     testing::Combine(
-        testing::Values(
-            "transform/kernels.codon"
-        ),
+        testing::ValuesIn(getFixtureFiles("GpuTests")),
         testing::Values(true, false),
         testing::Values(""),
         testing::Values(""),
@@ -784,65 +715,7 @@ INSTANTIATE_TEST_SUITE_P(
 INSTANTIATE_TEST_SUITE_P(
     NumPyTests, SeqTest,
     testing::Combine(
-        testing::Values(
-            "numpy/fusion/test_axis_edges.codon",
-            "numpy/fusion/test_axis_reductions.codon",
-            "numpy/fusion/test_basic.codon",
-            "numpy/fusion/test_broadcasting.codon",
-            "numpy/fusion/test_control_flow.codon",
-            "numpy/fusion/test_destinations.codon",
-            "numpy/fusion/test_div_mod.codon",
-            "numpy/fusion/test_forwarded_reductions.codon",
-            "numpy/fusion/test_forwarding.codon",
-            "numpy/fusion/test_highway_broadcast.codon",
-            "numpy/fusion/test_inlining.codon",
-            "numpy/fusion/test_last_use.codon",
-            "numpy/fusion/test_matmul_special.codon",
-            "numpy/fusion/test_matmul_values.codon",
-            "numpy/fusion/test_mean_where.codon",
-            "numpy/fusion/test_mixed_types.codon",
-            "numpy/fusion/test_ops_complex128.codon",
-            "numpy/fusion/test_ops_complex64.codon",
-            "numpy/fusion/test_ops_float16.codon",
-            "numpy/fusion/test_ops_float32.codon",
-            "numpy/fusion/test_ops_float64.codon",
-            "numpy/fusion/test_ops_int16.codon",
-            "numpy/fusion/test_ops_int32.codon",
-            "numpy/fusion/test_ops_int64.codon",
-            "numpy/fusion/test_ops_int8.codon",
-            "numpy/fusion/test_ops_uint16.codon",
-            "numpy/fusion/test_ops_uint32.codon",
-            "numpy/fusion/test_ops_uint64.codon",
-            "numpy/fusion/test_ops_uint8.codon",
-            "numpy/fusion/test_ownership.codon",
-            "numpy/fusion/test_producers.codon",
-            "numpy/fusion/test_reductions.codon",
-            "numpy/fusion/test_shape_validation.codon",
-            "numpy/fusion/test_truth_reductions.codon",
-            "numpy/random_tests/test_mt19937.codon",
-            "numpy/random_tests/test_pcg64.codon",
-            "numpy/random_tests/test_philox.codon",
-            "numpy/random_tests/test_sfc64.codon",
-            "numpy/test_dtype.codon",
-            "numpy/test_elision.codon",
-            "numpy/test_fft.codon",
-            "numpy/test_functional.codon",
-            "numpy/test_indexing.codon",
-            "numpy/test_io.codon",
-            "numpy/test_lib.codon",
-            "numpy/test_linalg.codon",
-            "numpy/test_loops.codon",
-            "numpy/test_misc.codon",
-            "numpy/test_ndmath.codon",
-            "numpy/test_npdatetime.codon",
-            "numpy/test_pybridge.codon",
-            "numpy/test_reductions.codon",
-            "numpy/test_routines.codon",
-            "numpy/test_sorting.codon",
-            "numpy/test_statistics.codon",
-            "numpy/test_ufunc.codon",
-            "numpy/test_window.codon"
-        ),
+        testing::ValuesIn(getFixtureFiles("NumPyTests")),
         testing::Values(true, false),
         testing::Values(""),
         testing::Values(""),

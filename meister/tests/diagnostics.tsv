@@ -1,0 +1,25 @@
+# Path relative to test/, section name, and Meister diagnostic prefix.
+# Peg and native parser diagnostics use different wording for these syntax errors.
+parser/typecheck/test_assign.codon	assign_err_7	'function call' is an illegal expression for augmented assignment
+parser/typecheck/test_call.codon	parameter_slash_first_error	at least one argument must precede /
+parser/typecheck/test_call.codon	parameter_slash_twice_error	/ may appear only once
+parser/typecheck/test_call.codon	parameter_slash_after_star_error	/ must be ahead of *
+parser/typecheck/test_call.codon	parameter_bare_star_error	named arguments must follow bare *
+parser/typecheck/test_call.codon	parameter_bare_star_kwargs_error	named arguments must follow bare *
+parser/typecheck/test_call.codon	parameter_star_twice_error	* argument may appear only once
+parser/typecheck/test_call.codon	parameter_star_vararg_error	* argument may appear only once
+parser/typecheck/test_call.codon	parameter_generic_bare_star_error	named arguments must follow bare *
+parser/typecheck/test_call.codon	parameter_lambda_bare_star_error	named arguments must follow bare *
+parser/typecheck/test_call.codon	call_err_2	invalid syntax
+parser/typecheck/test_call.codon	call_err_3	invalid syntax
+parser/typecheck/test_function.codon	function_err_0b	parameter without a default follows parameter with a default
+parser/typecheck/test_function.codon	function_err_0c	* argument may appear only once
+parser/typecheck/test_function.codon	function_err_0e	var-positional argument cannot have default value
+parser/typecheck/test_function.codon	function_err_0f	arguments cannot follow var-keyword argument
+parser/typecheck/test_function.codon	function_err_0h	var-keyword argument cannot have default value
+parser/typecheck/test_function.codon	function_err_0i	arguments cannot follow var-keyword argument
+parser/typecheck/test_import.codon	import_c_dylib_error	invalid syntax
+parser/typecheck/test_import.codon	import_err_2	invalid syntax
+
+# Meister rejects this forwarded call before attaching the realization frame.
+parser/typecheck/test_call.codon	forward_error	bar() takes 2 arguments (2 given)

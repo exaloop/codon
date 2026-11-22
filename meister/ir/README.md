@@ -23,6 +23,11 @@ devirtualization, and NumPy helper inlining, fusion, lifetime management, and
 bounds-check elision. The pass manager uses the C++ release pass order and
 analysis dependencies.
 
+## Tests
+
+See [Meister tests](../tests/README.md) for the uv environment, parallel pytest
+command, and fixture layout.
+
 ## LLVM emission and execution
 
 Build Codon against Exaloop LLVM first. Meister uses `ctypes` to load the

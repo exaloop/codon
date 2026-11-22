@@ -70,108 +70,8 @@ TEST(MissingReturnTest, GuardsOnlyReachableNonnullableFallthrough) {
   auto options = codon::Options::getDefault("build/codon_test");
   options->debug = false;
   codon::Compiler compiler(*options);
-  llvm::cantFail(compiler.parseCode("missing_return.codon", R"(
-def error():
-  raise ValueError("original")
-def error_wrapper():
-  error()
-@export
-def required(flag: bool) -> int:
-  if flag:
-    return 17
-@export
-def complete(flag: bool) -> int:
-  if flag:
-    return 17
-  else:
-    return 18
-@export
-def nullable(flag: bool) -> Optional[int]:
-  if flag:
-    return 17
-@export
-def nullable_union(flag: bool) -> Union[int, str, NoneType]:
-  if flag:
-    return "present"
-@export
-def optional_union(flag: bool) -> Optional[Union[int, str]]:
-  if flag:
-    return "present"
-@export
-def required_union(flag: bool) -> Union[int, str]:
-  if flag:
-    return "present"
-@export
-def nothing(flag: bool):
-  if flag:
-    print(flag)
-@export
-def calls_error(flag: bool) -> int:
-  if flag:
-    return 17
-  error_wrapper()
-@export
-def caught_error() -> int:
-  try:
-    error_wrapper()
-  except ValueError:
-    pass
-@export
-def finally_returns(flag: bool) -> int:
-  try:
-    if flag:
-      return 17
-  finally:
-    return 18
-@export
-def finally_breaks() -> int:
-  while True:
-    try:
-      return 17
-    finally:
-      break
-@export
-def forever() -> int:
-  while True:
-    continue
-def throwing_generator():
-  error()
-  yield 17
-@export
-def creates_generator() -> int:
-  throwing_generator()
-@export
-def protected_return(flag: bool) -> int:
-  try:
-    if flag:
-      error()
-    return 17
-  except ValueError:
-    return 18
-@export
-def nonempty_loop() -> int:
-  for index in range(1):
-    return index
-@export
-def possibly_empty_loop(count: int) -> int:
-  for index in range(count):
-    return index
-@export
-def caught_return_expression() -> int:
-  try:
-    return int("bad")
-  except ValueError:
-    pass
-@export
-def complete_else(flag: bool) -> int:
-  try:
-    if flag:
-      error()
-  except ValueError:
-    return 17
-  else:
-    return 18
-)"));
+  llvm::cantFail(
+      compiler.parseCode("missing_return.codon", readCIRSource("missing_return.codon")));
   transform::lowering::ImperativeForFlowLowering().run(compiler.getModule());
   transform::lowering::MissingReturnLowering pass;
   pass.run(compiler.getModule());
@@ -408,44 +308,8 @@ TEST(CIRFoldingTest, FoldsSideEffectFreeSequencesBeforeLLVM) {
   options->debug = false;
   options->native = false;
   codon::Compiler compiler(*options);
-  llvm::cantFail(compiler.parseCode("folding_pure_sequence.codon", R"(
-@export
-def fold_variable(value: int) -> int:
-    return 1 + (0 * value) + 2
-
-@export
-def fold_right_variable(value: int) -> int:
-    return 1 + (value * 0) + 2
-
-def pure(value: int) -> int:
-    return value + 1
-
-@export
-def fold_call(value: int) -> int:
-    return 1 + (0 * pure(value)) + 2
-
-def consume(value: int) -> int:
-    print(value)
-    return value
-
-@export
-def fold_argument(value: int) -> int:
-    return consume(1 + (0 * value) + 2)
-
-@export
-def fold_assignment(value: int) -> int:
-    result = 1 + (0 * value) + 2
-    consume(result)
-    return result
-
-def record(counter: Ptr[int]) -> int:
-    counter[0] += 1
-    return counter[0]
-
-@export
-def fold_effect(counter: Ptr[int]) -> int:
-    return 1 + (0 * record(counter)) + 2
-)"));
+  llvm::cantFail(compiler.parseCode("folding_pure_sequence.codon",
+                                    readCIRSource("folding_pure_sequence.codon")));
   compiler.getPassManager()->run(compiler.getModule());
 
   struct Inspector : public util::Operator {

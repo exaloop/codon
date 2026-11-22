@@ -414,8 +414,9 @@ def typecheck_index(self: TypeVisitor, node: ast.IndexExpr) -> ast.Expr:
 
     # IndexExpr[i1, ..., iN] is internally represented as
     # IndexExpr[TupleExpr[i1, ..., iN]] for N > 1
-    items = list(node.index.items) if isinstance(node.index, ast.TupleExpr) else [node.index]
-    is_tuple = isinstance(node.index, ast.TupleExpr)
+    # The native tuple cast excludes lists and sets, which inherit TupleExpr here.
+    is_tuple = type(node.index) is ast.TupleExpr
+    items = list(node.index.items) if is_tuple else [node.index]
     orig_index = node.index.clone()
     for idx, item in enumerate(items):
         if utils.is_type_expr(node.expr) and isinstance(item, ast.ListExpr):

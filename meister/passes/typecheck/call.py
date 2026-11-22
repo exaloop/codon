@@ -983,7 +983,7 @@ def call_reorder_arguments(
             ):
                 raise TypecheckError(
                     expr,
-                    f"'{utils.get_unmangled_name(self.ctx, generic.name)}' not provided",
+                    f"generic '{utils.get_unmangled_name(self.ctx, generic.name)}' not provided",
                 )
 
     expr.items = args

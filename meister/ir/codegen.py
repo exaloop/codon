@@ -108,6 +108,24 @@ class StageTimings:
         self.switch(name)
 
 
+def emit_module(cc, library, file, defines, *, standalone=False):
+    """Emit and verify an LLVM module. The caller owns the returned module."""
+    module = llvm.Module(library, "codon", file)
+    try:
+        version = ".".join(
+            defines[f"__codon_version_{part}__"] for part in ("major", "minor", "micro")
+        )
+        LLVMVisitor(
+            module, debug=cc.options.debug, standalone=standalone, version=version
+        ).process(cc.module)
+        module.debug_builder.finalize()
+        module.verify()
+        return module
+    except BaseException:
+        module.close()
+        raise
+
+
 def main(mode, argv):
     parser = argparse.ArgumentParser(prog=f"python -m meister {mode}")
     parser.add_argument("-release", "--release", action="store_true", help="enable release optimizations")
@@ -171,17 +189,7 @@ def main(mode, argv):
 
     construct = timing.stage("llvm construct") if timing else nullcontext()
     with construct:
-        module = llvm.Module(library_api, "codon", file)
-        try:
-            version = ".".join(
-                defines[f"__codon_version_{part}__"] for part in ("major", "minor", "micro")
-            )
-            LLVMVisitor(module, debug=cc.options.debug, version=version).process(cc.module)
-            module.debug_builder.finalize()
-            module.verify()
-        except BaseException:
-            module.close()
-            raise
+        module = emit_module(cc, library_api, file, defines)
     with module:
         if mode == "run":
             if timing:

@@ -45,6 +45,8 @@ class FrontendOptions:
     autopy: bool = False
     # true to use unordered dictionary implementation
     unordereddict: bool = False
+    # Compiler fixtures use the optimization pipeline in both debug and release.
+    test: bool = False
 
     def get_early_defines(self) -> Dict[str, str]:
         import sys

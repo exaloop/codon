@@ -59,7 +59,7 @@ def typecheck_int(self: TypeVisitor, node: ast.IntExpr):
     if not node.has_value:
         holder = ast.StringExpr(value)
         if not suffix:
-            raise TypecheckError(node, f"integer '{value}' is out of range")
+            raise TypecheckError(node, f"integer '{value}' cannot fit into 64-bit integer")
     else:
         holder = ast.IntExpr(node.get_value())
 

@@ -1,0 +1,37 @@
+
+@export
+def fold_variable(value: int) -> int:
+    return 1 + (0 * value) + 2
+
+@export
+def fold_right_variable(value: int) -> int:
+    return 1 + (value * 0) + 2
+
+def pure(value: int) -> int:
+    return value + 1
+
+@export
+def fold_call(value: int) -> int:
+    return 1 + (0 * pure(value)) + 2
+
+def consume(value: int) -> int:
+    print(value)
+    return value
+
+@export
+def fold_argument(value: int) -> int:
+    return consume(1 + (0 * value) + 2)
+
+@export
+def fold_assignment(value: int) -> int:
+    result = 1 + (0 * value) + 2
+    consume(result)
+    return result
+
+def record(counter: Ptr[int]) -> int:
+    counter[0] += 1
+    return counter[0]
+
+@export
+def fold_effect(counter: Ptr[int]) -> int:
+    return 1 + (0 * record(counter)) + 2

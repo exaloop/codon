@@ -14,8 +14,8 @@ def log(x: float) -> float:
 print log(5.5)  #: 1.7047480922384253
 
 from C import seq_flags: Int[32] as e
-# debug | standalone == 5
-print e  #: 5
+# Standalone (4) plus the debug flag (1) in debug mode.
+print e == (5 if __debug__ else 4)  #: True
 
 #%% import_c_shadow_error,barebones
 # Issue #45

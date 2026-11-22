@@ -1056,14 +1056,14 @@ def transform_ptr(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr | None:
             value = self.ctx.find_at(head.value, self.ctx.time)
             if value is None or not value.is_var():
                 raise TypecheckError(
-                    expr, "__ptr__() only takes identifiers or tuple fields as arguments"
+                    expr, "__ptr__() only takes identifiers or fields rooted in identifiers as arguments"
                 )
             break
         if isinstance(head, ast.DotExpr) and head.expr:
             head = head.expr
         else:
             raise TypecheckError(
-                expr, "__ptr__() only takes identifiers or tuple fields as arguments"
+                expr, "__ptr__() only takes identifiers or fields rooted in identifiers as arguments"
             )
 
     assert expr.type and arg.type

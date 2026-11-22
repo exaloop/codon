@@ -446,8 +446,9 @@ def _realize_func_body(
         else:
             if unmangled.startswith("$"):
                 unmangled = unmangled.removeprefix("$")
-                generic_type = typ.func_generics[generic_idx].type
-                if generic_type.is_runtime and (
+                generic = typ.func_generics[generic_idx]
+                generic_type = generic.type
+                if generic.is_runtime and (
                     generic_type != ast.types.Stdlib.Type or utils.is_metaclass_type(generic_type)
                 ):
                     generic_type = utils.instantiate_type_var(ctx, generic_type)

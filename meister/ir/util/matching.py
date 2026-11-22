@@ -4,10 +4,17 @@ from .. import (
     AssignInstr, AwaitInstr, BodiedFunc, BreakInstr, CallInstr, Const, ContinueInstr,
     ExternalFunc, ExtractInstr, FlowInstr, ForFlow, Func, IfFlow, ImperativeForFlow,
     InsertInstr, InternalFunc, LLVMFunc, PipelineFlow, PointerValue, ReturnInstr,
-    SeriesFlow, StackAllocInstr, TernaryInstr, ThrowInstr, Type, Var, VarValue,
+    SeriesFlow, StackAllocInstr, TernaryInstr, ThrowInstr, Type, Value, Var, VarValue,
     WhileFlow, YieldInInstr, YieldInstr,
 )
 from ..dsl import CustomConst, CustomFlow, CustomInstr
+
+
+class AnyValue(Value):
+    """C++: codon/cir/util/matching.h. A wildcard for structural matching."""
+
+    def _get_type(self):
+        return self.module.get_int_type()
 
 
 def match(first, second, check_names=False):
@@ -24,6 +31,8 @@ def match(first, second, check_names=False):
         first, second = first.get_actual(), second.get_actual()
         if isinstance(first, Type) or isinstance(second, Type):
             return isinstance(first, Type) and isinstance(second, Type) and first.is_type(second)
+        if isinstance(first, AnyValue) or isinstance(second, AnyValue):
+            return True
         if type(first) is not type(second) or (not check_names and first.name != second.name):
             return False
         pair = (first, second)
