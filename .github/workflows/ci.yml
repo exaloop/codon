@@ -228,7 +228,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: windows-2022
+          - os: windows-latest
             arch: windows-x86_64
             msvc_arch: amd64
             python_arch: x64
@@ -257,7 +257,14 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: ${{ matrix.msvc_arch }}
-          vsversion: '2022'
+
+      - name: Set up build compiler
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: '22.1.8'
+          force-url: https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.8/LLVM-22.1.8-win64.exe
+          directory: C:/opt/clang
+          env: 'true'
 
       - name: Install build and test dependencies
         run: |
@@ -278,15 +285,14 @@ jobs:
       - name: Build Codon
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
-          C:/opt/llvm-codon/bin/clang.exe --version
+          C:/opt/clang/bin/clang.exe --version
           cmake -S . -B build -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
             -DLLVM_DIR=C:/opt/llvm-codon/lib/cmake/llvm `
-            -DCMAKE_C_COMPILER=C:/opt/llvm-codon/bin/clang.exe `
-            -DCMAKE_CXX_COMPILER=C:/opt/llvm-codon/bin/clang++.exe `
+            -DCMAKE_C_COMPILER=C:/opt/clang/bin/clang.exe `
+            -DCMAKE_CXX_COMPILER=C:/opt/clang/bin/clang++.exe `
             -DCMAKE_C_COMPILER_TARGET=${{ matrix.target }} `
-            -DCMAKE_CXX_COMPILER_TARGET=${{ matrix.target }} `
-            -DCODON_GPU=OFF
+            -DCMAKE_CXX_COMPILER_TARGET=${{ matrix.target }}
           cmake --build build --config Release --parallel 2
           cmake --install build --prefix codon-deploy
 
@@ -329,7 +335,7 @@ jobs:
       matrix:
         shard: [0, 1, 2, 3]
         platform:
-          - os: windows-2022
+          - os: windows-latest
             arch: windows-x86_64
             msvc_arch: amd64
             python_arch: x64
@@ -356,7 +362,14 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: ${{ matrix.platform.msvc_arch }}
-          vsversion: '2022'
+
+      - name: Set up build compiler
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: '22.1.8'
+          force-url: https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.8/LLVM-22.1.8-win64.exe
+          directory: C:/opt/clang
+          env: 'true'
 
       - name: Install test dependencies
         run: |
