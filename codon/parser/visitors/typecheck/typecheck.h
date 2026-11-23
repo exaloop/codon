@@ -438,6 +438,7 @@ public:
   Expr *transformStaticFnArgHasType(CallExpr *);
   Expr *transformStaticFnArgGetType(CallExpr *);
   Expr *transformStaticFnArgs(CallExpr *);
+  Expr *transformStaticFnArgKind(CallExpr *);
   Expr *transformStaticFnHasDefault(CallExpr *);
   Expr *transformStaticFnGetDefault(CallExpr *);
   Expr *transformStaticFnWrapCallArgs(CallExpr *);

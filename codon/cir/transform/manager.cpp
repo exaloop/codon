@@ -174,10 +174,8 @@ void PassManager::registerStandardPasses() {
     // Pythonic
     registerPass(std::make_unique<pythonic::DictArithmeticOptimization>());
     registerPass(std::make_unique<pythonic::ListAdditionOptimization>());
-    registerPass(std::make_unique<pythonic::StrAdditionOptimization>());
     registerPass(std::make_unique<pythonic::GeneratorArgumentOptimization>());
     registerPass(std::make_unique<pythonic::EnumerateOptimization>());
-    registerPass(std::make_unique<pythonic::IOCatOptimization>());
     registerPass(std::make_unique<pythonic::FormattingOptimization>());
 
     // lowering
@@ -218,6 +216,12 @@ void PassManager::registerStandardPasses() {
             seKey1, rdKey, globalKey, /*repeat=*/5, /*runGlobalDemoton=*/false),
         /*insertBefore=*/"", {seKey1, rdKey, globalKey},
         {seKey1, rdKey, cfgKey, globalKey, capKey});
+    registerPass(std::make_unique<pythonic::StrAppendOptimization>(rdKey, domKey), "",
+                 {rdKey, domKey}, {seKey1, seKey2, rdKey, cfgKey, globalKey, capKey});
+    registerPass(std::make_unique<pythonic::StrAdditionOptimization>(), "", {},
+                 {cfgKey, globalKey});
+    registerPass(std::make_unique<pythonic::IOCatOptimization>(), "", {},
+                 {cfgKey, globalKey});
     registerPass(std::make_unique<numpy::NumPyFusionPass>(numpyKey, seKey2),
                  /*insertBefore=*/"", {numpyKey, seKey2},
                  {seKey1, rdKey, cfgKey, globalKey, capKey});

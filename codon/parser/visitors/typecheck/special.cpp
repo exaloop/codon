@@ -1573,6 +1573,40 @@ Expr *TypecheckVisitor::transformStaticFnArgs(CallExpr *expr) {
   return transform(N<TupleExpr>(v));
 }
 
+Expr *TypecheckVisitor::transformStaticFnArgKind(CallExpr *expr) {
+  if (auto unbound = expr->getType()->getUnbound())
+    unbound->staticKind = LiteralKind::String;
+
+  auto function = extractFunction(expr->begin()->getExpr()->getType());
+  if (!function)
+    E(Error::CUSTOM, getSrcInfo(), "expected a function, got '{}'",
+      expr->begin()->getExpr()->getType()->prettyString());
+  auto index = extractFuncGeneric(expr->getExpr()->getType())->getIntStatic();
+  seqassert(index, "expected a static integer");
+  int64_t argumentIndex = 0;
+  for (const auto &argument : *function->ast) {
+    if (argument.isGeneric())
+      continue;
+    if (argumentIndex++ != index->value)
+      continue;
+    auto stars = argument.getNameWithStars().first;
+    std::string kind;
+    if (stars == 2)
+      kind = "var_keyword";
+    else if (stars == 1)
+      kind = "var_positional";
+    else if (argument.kind == Param::PositionalOnly)
+      kind = "positional_only";
+    else if (argument.kind == Param::KeywordOnly)
+      kind = "keyword_only";
+    else
+      kind = "positional_or_keyword";
+    return transform(N<StringExpr>(kind));
+  }
+  E(Error::CUSTOM, getSrcInfo(), "argument out of bounds");
+  return nullptr;
+}
+
 Expr *TypecheckVisitor::transformStaticFnHasDefault(CallExpr *expr) {
   if (auto u = expr->getType()->getUnbound())
     u->staticKind = LiteralKind::Bool;

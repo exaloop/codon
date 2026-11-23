@@ -52,3 +52,39 @@ TEST_F(CIRCoreTest, DominatorAnalysisTernary) {
   ASSERT_FALSE(dom.isDominated(start, end));
   ASSERT_FALSE(dom.isDominated(end, middle));
 }
+
+TEST_F(CIRCoreTest, DominatorAnalysisImperativeForUpdate) {
+  for (bool useContinue : {false, true}) {
+    auto *function = module->Nr<BodiedFunc>("loop_dominance");
+    auto *body = module->Nr<SeriesFlow>();
+    function->setBody(body);
+    auto *index = module->Nr<Var>(module->getIntType());
+    function->push_back(index);
+    auto *seed = module->getBool(false);
+    auto *read = module->Nr<VarValue>(index);
+    auto *after = module->getBool(true);
+    auto *loopBody = module->Nr<SeriesFlow>();
+    loopBody->push_back(read);
+    if (useContinue)
+      loopBody->push_back(module->Nr<ContinueInstr>());
+    body->push_back(seed);
+    body->push_back(module->Nr<ImperativeForFlow>(module->getInt(0), 1,
+                                                  module->getInt(3), loopBody, index));
+    body->push_back(after);
+
+    auto graph = analyze::dataflow::buildCFGraph(function);
+    analyze::dataflow::DominatorInspector dominators(graph.get());
+    dominators.analyze();
+    EXPECT_TRUE(dominators.isDominated(read, seed));
+    EXPECT_TRUE(dominators.isDominated(after, seed));
+    analyze::dataflow::CFBlock *update = nullptr;
+    for (auto *block : *graph)
+      if (block->getName() == "forUpdate")
+        update = block;
+    ASSERT_NE(update, nullptr);
+    auto *readBlock = graph->getBlock(read);
+    EXPECT_NE(
+        std::find(readBlock->successors_begin(), readBlock->successors_end(), update),
+        readBlock->successors_end());
+  }
+}

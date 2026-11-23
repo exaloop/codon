@@ -7,48 +7,16 @@ class strbuf:
     kind: int
 
     def __init__(self, capacity: int = 16, kind: int = 0):
-        from internal.types.str import _kind_width
+        from internal.types.str import _check_str_length, _kind_width
 
+        _check_str_length(capacity)
         self.data = Ptr[u8](capacity * _kind_width(kind))
         self.n = 0
         self.m = capacity
         self.kind = kind
 
     def append(self, s: str):
-        from internal.gc import realloc
-        from internal.types.str import _kind_width, _make_meta, _unicode_copy_range
-
-        adding = s.__len__()
-        needed = self.n + adding
-        new_kind = self.kind if self.kind >= s._kind() else s._kind()
-
-        if needed > self.m or new_kind != self.kind:
-            capacity = self.m
-            if capacity == 0:
-                capacity = 1
-            while capacity < needed:
-                capacity *= 2
-
-            if new_kind == self.kind:
-                width = _kind_width(self.kind)
-                self.data = realloc(
-                    self.data,
-                    capacity * width,
-                    self.m * width,
-                )
-            else:
-                expanded = Ptr[u8](capacity * _kind_width(new_kind))
-                source = str(self.data, _make_meta(self.n, self.kind))
-                destination = str(expanded, _make_meta(capacity, new_kind))
-                _unicode_copy_range(destination, source, 0, 0, self.n)
-                self.data = expanded
-                self.kind = new_kind
-
-            self.m = capacity
-
-        destination = str(self.data, _make_meta(self.m, self.kind))
-        _unicode_copy_range(destination, s, self.n, 0, adding)
-        self.n = needed
+        _strbuf_append(self, s)
 
     def reverse(self):
         from internal.types.str import _make_meta
@@ -76,3 +44,89 @@ class strbuf:
         from internal.types.str import _make_meta
 
         return str(self.data, _make_meta(self.n, self.kind))
+
+
+def _strbuf_grown_capacity(capacity: int, needed: int) -> int:
+    from internal.types.str import LEN_MASK, _check_str_length
+
+    _check_str_length(needed)
+    capacity = max(capacity, 1)
+    while capacity < needed:
+        capacity *= 2
+    # The capacity itself is packed into the temporary copy destination's metadata.
+    return min(capacity, LEN_MASK)
+
+
+def _strbuf_append(output, value: str) -> None:
+    from internal.gc import realloc
+    from internal.types.str import _kind_width, _make_meta, _meta_len, _unicode_copy_range
+
+    adding = _meta_len(value._meta)
+    needed = output.n + adding
+    new_kind = output.kind if output.kind >= value._kind() else value._kind()
+
+    if needed > output.m or new_kind != output.kind:
+        capacity = _strbuf_grown_capacity(output.m, needed)
+
+        # Zero capacity owns no allocation: the pointer can be null or borrowed.
+        if output.m != 0 and new_kind == output.kind:
+            width = _kind_width(output.kind)
+            output.data = realloc(output.data, capacity * width, output.m * width)
+        else:
+            expanded = Ptr[u8](capacity * _kind_width(new_kind))
+            source = str(output.data, _make_meta(output.n, output.kind))
+            destination = str(expanded, _make_meta(capacity, new_kind))
+            _unicode_copy_range(destination, source, 0, 0, output.n)
+            output.data = expanded
+            output.kind = new_kind
+
+        output.m = capacity
+
+    destination = str(output.data, _make_meta(output.m, output.kind))
+    _unicode_copy_range(destination, value, output.n, 0, adding)
+    output.n = needed
+
+
+class _StrAppendBuffer:
+    data: Ptr[u8]
+    n: int
+    m: int
+    kind: int
+
+    def __init__(self):
+        from internal.types.str import KIND_ASCII
+
+        self.data = Ptr[u8]()
+        self.n = 0
+        self.m = 0
+        self.kind = KIND_ASCII
+
+
+# Bind these compiler-generated operations while loading the stdlib, before
+# user @extend methods can change their length, allocation or copy operations.
+@__force__
+def _str_append_private(output: _StrAppendBuffer, value: str) -> None:
+    from internal.types.str import _meta_kind, _meta_len
+
+    # str.__add__ returns the other operand unchanged if either side is empty.
+    # Its backing storage can still be modified through an external view.
+    if output.n == 0:
+        output.data = value._ptr
+        output.n = _meta_len(value._meta)
+        output.kind = _meta_kind(value._meta)
+    elif _meta_len(value._meta) != 0:
+        _strbuf_append(output, value)
+
+
+@__force__
+def _str_append_seed(value: str) -> _StrAppendBuffer:
+    output = _StrAppendBuffer()
+    _str_append_private(output, value)
+    return output
+
+
+@__force__
+def _str_append_finish(output: _StrAppendBuffer) -> str:
+    from internal.types.str import _make_meta
+
+    return str(output.data, _make_meta(output.n, output.kind))
