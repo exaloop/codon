@@ -1,0 +1,372 @@
+# Usage
+
+The `codon` command includes several subcommands for compiling and executing code on Linux, macOS, and Windows x86-64. The commands below use a POSIX shell unless marked as PowerShell; Codon's subcommands and flags are the same on all three platforms.
+
+## `codon run`
+
+`codon run` will compile and execute the provided program:
+
+```bash
+codon run file.py           # compile and run (defaults to debug mode)
+codon run -debug file.py    # compile and run in debug mode
+codon run -release file.py  # compile and run with optimizations
+```
+
+If the file is given as `-`, then the program is read from standard input:
+
+```bash
+echo 'print("hello")' | codon run -release -
+# hello
+```
+
+Program arguments can be provided after the file, as in:
+
+```bash
+codon run -release file.py arg1 arg2 arg3
+```
+
+For example:
+
+```bash
+echo 'import sys; print(sys.argv)' | codon run -release - arg1 arg2 arg3
+# ['-', 'arg1', 'arg2', 'arg3']
+```
+
+## `codon build`
+
+`codon build` will compile to a desired output type, be it an executable, object file, shared library, LLVM IR or Python extension. The `-release` and `-debug` flags also apply to `codon build` in the same way as described from `codon run` above.
+
+The optional `-o <file>` parameter can be used to specify the output file. If no output type is specified, the output type is determined from the file name provided to `-o`. If no output file name is specified, the output file name is derived from the input file name, in combination with the output type (e.g. compiling `foo.py` to an object file results in output file `foo.o`).
+
+### Compile to executable
+
+The `-exe` flag can be used to generate an executable:
+
+```bash
+# compile 'program.py' to executable 'program'
+codon build -exe program.py
+
+# compile 'program.py' to executable 'hello'
+codon build -exe -o hello program.py
+
+# compile 'program.py' to executable 'hello' with optimizations
+codon build -exe -o hello -release program.py
+
+# compile 'program.py' to executable 'hello' with optimizations
+# '-exe' is inferred from `-o` argument
+codon build -o hello -release program.py
+```
+
+On Windows, use an explicit `.exe` output name and the `.\` relative path prefix when running it from PowerShell:
+
+```powershell
+codon build -release -o hello.exe program.py
+.\hello.exe
+```
+
+The Windows linker uses `clang` and `lld-link` with an initialized MSVC/Windows SDK environment, as described in the [installation guide](https://docs.exaloop.io/start/install/). Keep the Codon SDK's `bin` directory on `PATH` when running generated executables so Windows can find their runtime DLLs. An executable alone is not a self-contained deployment of those libraries.
+
+Codon uses a system compiler driver to link the actual executable after compilation. Extra linker flags can be passed with the `-linker-flags` argument. For example, on Linux or macOS:
+
+```bash
+# includes /foo/bar in the executable's rpath
+codon build -release -linker-flags '-Wl,-rpath,/foo/bar' program.py
+```
+
+Multiple linker flags can be passed by separating them with a space in the argument to `-linker-flags`.
+
+#### Position-independent executables
+
+On Linux or macOS, use `--pie` to build a position-independent executable (PIE):
+
+```bash
+codon build -release --pie -o program program.py
+```
+
+This selects executable output, generates position-independent object code, and links with `-pie`. It cannot be combined with another explicit output type such as `-obj`, `-lib`, or `-pyext`. Specifying `-pie` via `-linker-flags` also works:
+
+```bash
+codon build -release -linker-flags=-pie -o program program.py
+```
+
+### Compile to shared library
+
+The `-lib` flag can be used to generate a shared library:
+
+```bash
+# compile 'program.py' to shared library 'program.so'
+codon build -lib program.py
+
+# compile 'program.py' to shared library 'hello.so'
+codon build -lib -o hello.so program.py
+
+# compile 'program.py' to shared library 'hello.so' with optimizations
+codon build -lib -o hello.so -release program.py
+
+# compile 'program.py' to shared library 'hello.so' with optimizations
+# '-lib' is inferred from `-o` argument
+codon build -o hello.so -release program.py
+```
+
+The `-linker-flags` flag described above also applies when compiling to a shared library.
+
+On Windows, use a DLL filename, for example `codon build -lib -release -o hello.dll program.py`. Windows does not use ELF or Mach-O rpaths; dependent runtime DLLs must be discoverable by the Windows loader.
+
+info
+
+When compiling to a shared library, the program's main code will be included and executed when the library is loaded as a _global constructor_. This allows you to include any necessary initialization code in the main program. This behavior can be controlled via the `-global-ctor=<yes|no|auto>` flag, which enables e.g. global constructor creation when compiling to other output types like object files.
+
+info
+
+If you intend to call a Codon-generated shared library from C or C++, be sure to mark relevant functions with `@export` to ensure they are made visible by the linker. Exported functions can be called as regular C functions (i.e. they follow the C ABI). [Learn more →](https://docs.exaloop.io/integrations/cpp/codon-from-cpp/)
+
+### Compile to object file
+
+The `-obj` flag can be used to generate an object file:
+
+```bash
+# compile 'program.py' to object file 'program.o'
+codon build -obj program.py
+
+# compile 'program.py' to object file 'hello.o'
+codon build -obj -o hello.o program.py
+
+# compile 'program.py' to object file 'hello.o' with optimizations
+codon build -obj -o hello.o -release program.py
+
+# compile 'program.py' to object file 'hello.o' with optimizations
+# '-obj' is inferred from `-o` argument
+codon build -o hello.o -release program.py
+```
+
+On Windows, `.obj` filenames are also recognized, for example `codon build -obj -release -o hello.obj program.py`.
+
+### Compile to assembly code
+
+The `-asm` flag can be used to generate assembly code:
+
+```bash
+# compile 'program.py' to assembly file 'program.s'
+codon build -asm program.py
+
+# compile 'program.py' to assembly file 'hello.s'
+codon build -asm -o hello.s program.py
+
+# compile 'program.py' to assembly file 'hello.s' with optimizations
+codon build -asm -o hello.s -release program.py
+
+# compile 'program.py' to assembly file 'hello.s' with optimizations
+# '-asm' is inferred from `-o` argument
+codon build -o hello.s -release program.py
+```
+
+### Compile to LLVM IR
+
+The `-llvm` flag can be used to generate LLVM IR:
+
+```bash
+# compile 'program.py' to LLVM IR file 'program.ll'
+codon build -llvm program.py
+
+# compile 'program.py' to LLVM IR file 'hello.ll'
+codon build -llvm -o hello.ll program.py
+
+# compile 'program.py' to LLVM IR file 'hello.ll' with optimizations
+codon build -llvm -o hello.ll -release program.py
+
+# compile 'program.py' to LLVM IR file 'hello.ll' with optimizations
+# '-llvm' is inferred from `-o` argument
+codon build -o hello.ll -release program.py
+```
+
+### Compile to Python extension
+
+The `-pyext` flag can be used to generate a Python extension:
+
+```bash
+# compile 'program.py' to Python extension 'program.o'
+codon build -pyext program.py
+
+# compile 'program.py' to Python extension 'hello.o'
+codon build -pyext -o hello.o program.py
+
+# compile 'program.py' to Python extension 'hello.o' with optimizations
+codon build -pyext -o hello.o -release program.py
+
+# compile 'program.py' to Python extension 'hello.o' with module
+# name 'mymodule' and optimizations enabled
+codon build -pyext -o hello.o -release -module mymodule program.py
+```
+
+info
+
+When using `-pyext`, you will also often want to use the `--relocation-model=pic` flag to generate position-independent code.
+
+## `codon doc`
+
+`codon doc` extracts API information from a source file or library, including docstrings, signatures, class members, and source locations. Its JSON output can feed a custom documentation tool or Codon's reference-page renderer, which also generates the [standard library reference](https://docs.exaloop.io/libraries/api/).
+
+### Extracting a library's API
+
+Documentation lives alongside the code as module, class, and function docstrings. Type annotations and default values become part of the generated signatures, while docstrings provide the explanation and can contain Markdown formatting. For example, a module at `src/mylib/numeric.codon` might contain:
+
+```python
+"""Numeric utilities for working with bounded values."""
+
+def clamp(value: float, lower: float = 0.0, upper: float = 1.0) -> float:
+		"""Limit `value` to the inclusive interval from `lower` to `upper`.
+
+		Values already within the interval are returned unchanged.
+		"""
+		return min(max(value, lower), upper)
+```
+
+From that project's directory, the following command extracts the package's API without running its code:
+
+```bash
+codon doc src/mylib --root src --exclude mylib/tests > api.json
+```
+
+Here, `--root src` establishes the import root, so the example module is named `mylib.numeric` rather than `numeric`. The root also provides an import search location. When omitted, it is inferred from the input path and surrounding package directories containing `__init__.codon` or `__init__.py`. A single source file is also a valid input, such as `codon doc src/mylib/numeric.codon --root src`.
+
+Directory inputs are searched recursively for `.codon` and `.py` files, with Python sources subject to Codon's supported syntax. Other file types, hidden paths, `__pycache__`, and `__init_test__.codon` or `__init_test__.py` are skipped. Each `--exclude` names a file or directory subtree relative to the root, rather than a glob pattern; multiple exclusions can be supplied by repeating the flag.
+
+Imported dependencies remain available for resolving references, but only the discovered input modules receive documentation pages. An excluded module may therefore still be read when another module imports it. Extraction does not execute decorators or infer APIs created at runtime, and annotations that cannot be resolved retain their source text instead of requiring a successful type check.
+
+### Rendering a reference
+
+The renderer is provided as `scripts/docgen.py` in the Codon source repository. It requires Python 3.11 or later and the packages listed in `docs/requirements.txt`; building the compiler from source is not necessary. From a Codon checkout, a dedicated environment can be prepared with:
+
+```bash
+python3 -m venv build/docs-venv
+build/docs-venv/bin/python -m pip install -r docs/requirements.txt
+```
+
+With the extracted JSON available, the renderer can generate pages for an existing documentation site:
+
+```bash
+build/docs-venv/bin/python scripts/docgen.py \
+	/path/to/project/api.json /path/to/site/docs/reference \
+	--project "My Library" --route /reference \
+	--source-url 'https://github.com/example/mylib/blob/{revision}/src' \
+	--source-revision v1.0
+```
+
+`--project` supplies the display name and `--route` sets the API's URL prefix. The source URL corresponds to the extraction root, which is why this example ends in `/src`; `{revision}` is replaced with the URL-encoded value of `--source-revision`. Source links are omitted when no source URL is supplied. For Codon's own reference, `--stdlib` selects its standard title, routes, sidebar, and source links instead of the generic project defaults.
+
+The output consists of Markdown with embedded HTML and Docusaurus frontmatter, along with an API search index. Codon's documentation site supplies the API styles and search interface; another site can integrate the generated content with its own presentation. Public names appear in the reference, with special methods included on class pages. Re-exports and type aliases link to their definitions when those definitions are part of the documented library, and `@extend` methods are collected on the corresponding class page.
+
+Regeneration updates files recorded in `.codon-doc-manifest.json` and removes stale generated pages while leaving unrelated files alone. Existing files that are not tracked by the manifest are protected from being overwritten, so output from an older generator can be moved to a backup directory before the first run with the new renderer.
+
+## `codon jit`
+
+Codon provides a debugging interface for its JIT compilation capabilities through the `codon jit` subcommand. This subcommand uses the same JIT engine internally as used by Codon's [Python JIT decorator](https://docs.exaloop.io/integrations/python/codon-from-python/) and [Jupyter kernel](https://docs.exaloop.io/integrations/jupyter/). However, it is intended to be used as a debugging utility rather than as a general usage mode.
+
+warning
+
+`codon jit` is intended to be used as a debugging utility for Codon's JIT compilation capabilities. The interface may change between Codon versions.
+
+`codon jit` can be passed a file name to read from, or `-` to read from standard input. For example:
+
+```bash
+echo 'print("hello world")' | codon jit -
+```
+
+This prints the JIT's version banner and the program's output. It can also be used as a REPL if no file is provided. JIT inputs can be separated with the string `#%%`.
+
+## Using Codon in an existing Python codebase
+
+Codon provides a Python package called `codon-jit` that can be installed with `pip`. This package supports JIT compilation on a per-function basis within an existing Python codebase.
+
+Learn more in the [Python JIT docs](https://docs.exaloop.io/integrations/python/codon-from-python/).
+
+## Measuring performance
+
+`codon run` includes compilation before executing a program. For repeated end-to-end measurements, building once separates that preparation from the execution being measured:
+
+```bash
+codon build -release -o program program.py
+time ./program
+```
+
+For a particular operation within a program, `time.perf_counter()` can bracket the work while leaving input preparation outside the timed region. A useful comparison uses the same inputs, checks the results, and distinguishes startup, I/O and Python-conversion costs from the computation itself. Several runs help reveal variation from scheduling and caching; a single speedup figure rarely describes every input size or machine.
+
+Release mode enables optimization without changing the default Python-style numerical semantics. Options such as `-numerics=c`, `-fast-math` and `-disable-exceptions` make additional behavioral trade-offs, so they belong in a benchmark only when the application can accept those changes.
+
+## Additional options
+
+See [Options](https://docs.exaloop.io/start/options/) for a full list of compiler options. Several notable options are described in more detail below.
+
+### Disabling exceptions
+
+By default, Codon does exception handling to match Python's semantics and behavior. If you know your program does not raise or catch exceptions, they can be disabled altogether with the `-disable-exceptions` flag.
+
+`-disable-exceptions` can lead to (sometimes substantial) performance improvements by enabling the compiler to deduce additional information about the semantics of the program. For example, if the compiler can deduce that there will be no index errors in a loop that iterates over an array, it can potentially use that information to perform vectorization or other optimizations.
+
+In some contexts, exceptions are disabled automatically by Codon, such as when compiling for GPU execution.
+
+### Numerical semantics
+
+While Codon follows Python semantics by default, C semantics differ and can yield better performance. The `-numerics=<mode>` flag can be used to control this behavior:
+
+-   `-numerics=py`: Python semantics; matches Python behavior at the cost of performance
+-   `-numerics=c`: C semantics; differs from Python but best performance
+
+For example, integer division rounds towards zero in C whereas it rounds down in Python:
+
+```python
+print((-3) // 2)
+# Codon: -1 (with `-numerics=c` flag)
+# Python: -2
+```
+
+Similarly, floating-point division by zero returns `inf` in Codon with C semantics enabled, whereas it raises an exception in Python:
+
+```python
+print(1.0 / 0.0)
+# Codon: inf (with `-numerics=c` flag)
+# Python: 'ZeroDivisionError: division by zero'
+```
+
+### Fast-math
+
+[Fast-math optimizations](https://llvm.org/docs/LangRef.html#fast-math-flags) can be enabled with the `-fast-math` flag. Note that this flag makes various assumptions about `nan` and `inf` values, so it is best to use it with caution.
+
+### Disabling optimization passes
+
+The `-disable-opt <pass>` flag can be used to disable specific optimization passes. For example:
+
+```bash
+# compile & run with optimizations, but don't perform NumPy fusion optimization
+codon run -release -disable-opt core-numpy-fusion program.py
+```
+
+### Compile-time definitions
+
+Literal variables can be passed on the command-line via the `-D` flag. These variables are treated as compile-time constants and can be used for [compile-time metaprogramming](https://docs.exaloop.io/language/meta/).
+
+For example, the following code:
+
+```python
+n = Int[N](42)
+print(n * n)
+```
+
+can be executed with:
+
+```bash
+codon run -DN=16 program.py
+```
+
+to use a 16-bit integer as the type of variable `n`.
+
+### Logging
+
+Codon can display logging information and also output intermediate compilation results via the `-log <streams>` command. The argument to `-log` can contain any of the following characters:
+
+-   `t` (time): Displays timings for various stages of the compilation process.
+-   `T` (typecheck): Enables logging during type checking
+-   `i` (IR): Enables logging during Codon IR passes
+-   `l` (dump): Dumps intermediate compilation results, including AST, Codon IR and LLVM IR
+
+Source: https://docs.exaloop.io/start/usage/
