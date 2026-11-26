@@ -11,6 +11,8 @@ An uncaught string exit writes the message to `stderr` and exits with status `1`
 time.
 """
 
+from threading import Lock as _Lock
+
 platform: Literal[str] = static.platform()
 
 argv = list(__argv__, __argc__)
@@ -25,6 +27,14 @@ stderr._state._write_through = True
 __stdin__ = stdin
 __stdout__ = stdout
 __stderr__ = stderr
+
+_interned_strings = Dict[str, str]()
+_intern_lock = _Lock()
+
+def intern(s: str, /) -> str:
+    """Return the canonical string for s, retaining it for the life of the process."""
+    with _intern_lock:
+        return _interned_strings.setdefault(s, s)
 
 def exit(status=0, /):
     if status is None:

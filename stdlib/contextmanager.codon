@@ -1,0 +1,40 @@
+# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
+
+class _GeneratorContextManager[T]:
+    _generator: Generator[T]
+    _entered: bool = False
+    _closed: bool = False
+
+    def __enter__(self, /) -> T:
+        if self._entered:
+            raise RuntimeError("context manager has already been entered")
+        self._entered = True
+        try:
+            if not self._generator._advance():
+                raise RuntimeError("generator didn't yield")
+            return self._generator._get()
+        except:
+            self._closed = True
+            self._generator._destroy()
+            raise
+
+    def __exit__(self, /):
+        if not self._entered or self._closed:
+            raise RuntimeError("context manager is not active")
+        self._closed = True
+        try:
+            if self._generator._advance():
+                raise RuntimeError("generator didn't stop")
+        finally:
+            self._generator._destroy()
+
+
+def contextmanager(func, /):
+    """Turn a single-yield generator function into a context manager factory.
+
+    The generator resumes for cleanup on both normal and exceptional exits.
+    """
+    def wrapper(*args, **kwargs):
+        return _GeneratorContextManager(func(*args, **kwargs))
+
+    return wrapper

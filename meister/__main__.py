@@ -4,6 +4,55 @@ from pathlib import Path
 from .bridge import *
 
 
+def main_codon(argv):
+    mode = argv[0]
+
+    if mode == "tokenize":
+        from .parser.tokenize import main as tokenize_main
+
+        tokenize_main(argv[1])
+    elif mode == "scope":
+        from . import ast, parser
+        from .passes.scope import ScopeCache
+
+        try:
+            node = parser.parse(file=argv[1])
+            assert isinstance(node, ast.Stmt)
+            scoped = ScopeCache().scope(cast(ast.Stmt, node))
+            print(ast.dump(scoped, indent=2, include_attributes=True))
+        except parser.pegen.CodonSyntaxError as error:
+            print(f"{error.location}: {error.message}")
+        except ast.NodeError as error:
+            if error.info:
+                print(f"{error.info}: {error}")
+            else:
+                print(error)
+    # elif mode == "typecheck":
+    #     from .passes import typecheck
+    #     try:
+    #         cache = cache.Cache(root)
+    #         node = cache.parse(file=argv[1])
+    #         node = cache.scope(node)
+    #         node = typecheck.typecheck_program(cache, node, file=argv[1])
+
+    #         print(ast.dump(node, indent=2, include_attributes=True, types=True))
+    #         for fn_data in cache.functions.values():
+    #             for r in fn_data.realizations.values():
+    #                 if r.ast:
+    #                     print(ast.dump(r.ast, indent=2, include_attributes=True, types=True))
+    #     except parser.pegen.CodonSyntaxError as error:
+    #         print(f"{error.location}: {error.msg}")
+    #     except ast.NodeError as error:
+    #         if error.info:
+    #             print(f"{error.info}: {error}")
+    #         else:
+    #             print(error)
+    #     finally:
+    #         pass
+    else:
+        print(f"Invalid mode: {mode}")
+
+
 def main(argv):
     mode = argv[0]
     root = str(Path(__file__).resolve().parent)
@@ -172,4 +221,7 @@ def main(argv):
 #         pass
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv[1:]))
+    if __python__:
+        raise SystemExit(main(sys.argv[1:]))
+    else:
+        main_codon(sys.argv[1:])
