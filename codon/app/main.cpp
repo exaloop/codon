@@ -242,13 +242,6 @@ int docMode(const std::vector<const char *> &args, const std::string &argv0) {
   return EXIT_SUCCESS;
 }
 
-std::string parseSourceArgs(const std::vector<const char *> &args) {
-  llvm::cl::opt<std::string> input(llvm::cl::Positional, llvm::cl::desc("<input file>"),
-                                   llvm::cl::init("-"));
-  llvm::cl::ParseCommandLineOptions(args.size(), args.data());
-  return input.getValue();
-}
-
 std::unique_ptr<codon::Compiler> processSource(const char *argv0,
                                                const std::string &input,
                                                bool standalone, bool pyExtension) {
@@ -316,8 +309,11 @@ int runMode(const std::vector<const char *> &args) {
       "l", llvm::cl::desc("Load and link the specified library"));
   llvm::cl::list<std::string> progArgs(llvm::cl::ConsumeAfter,
                                        llvm::cl::desc("<program arguments>..."));
-  auto compiler = processSource(args[0], parseSourceArgs(args), /*standalone=*/false,
-                                /*pyExtension=*/false);
+  llvm::cl::opt<std::string> input(llvm::cl::Positional, llvm::cl::desc("<input file>"),
+                                   llvm::cl::init("-"));
+  llvm::cl::ParseCommandLineOptions(args.size(), args.data());
+  auto compiler =
+      processSource(args[0], input, /*standalone=*/false, /*pyExtension=*/false);
   if (!compiler)
     return EXIT_FAILURE;
   std::vector<std::string> libsVec(libs);
@@ -434,7 +430,9 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
   llvm::cl::opt<bool> trace(
       "compile-trace",
       llvm::cl::desc("Write a compilation time trace next to the output"));
-  auto input = parseSourceArgs(args);
+  llvm::cl::opt<std::string> input(llvm::cl::Positional, llvm::cl::desc("<input file>"),
+                                   llvm::cl::init("-"));
+  llvm::cl::ParseCommandLineOptions(args.size(), args.data());
   if (trace)
     llvm::timeTraceProfilerInitialize(/*TimeTraceGranularity=*/500, "codon");
   auto cleanup = llvm::make_scope_exit([&] {

@@ -98,6 +98,11 @@ llvm::cl::opt<Options::GlobalCTORMode> GlobalCTOR(
                                 "'yes' if shared library output, 'no' otherwise")),
     llvm::cl::init(Options::GlobalCTORMode::Auto));
 
+llvm::cl::opt<unsigned> Threads(
+    "cir-analysis-threads", llvm::cl::init(Options::DEFAULT_THREADS),
+    llvm::cl::desc(
+        "Maximum threads for independent CIR dataflow analyses (1 for serial)"));
+
 void apply(Options *opt) {
   opt->debug = (OptMode == Debug);
   opt->quick = (OptMode == ReleaseQuick);
@@ -105,8 +110,8 @@ void apply(Options *opt) {
   opt->pynum = (Numerics == Python);
   opt->noexc = DisableExceptions;
   opt->fastmath = FastMath;
-  opt->autofree = AutoFree;
   opt->autopy = AutoPython;
+  opt->autofree = AutoFree;
   opt->unordereddict = UnorderedDict;
   opt->ctor = GlobalCTOR;
   opt->plugins.assign(Plugins.begin(), Plugins.end());
@@ -120,6 +125,7 @@ void apply(Options *opt) {
   opt->march = llvm::codegen::getMArch();
   opt->mcpu = llvm::codegen::getCPUStr();
   opt->mattrs = llvm::codegen::getFeatureList();
+  opt->threads = Threads;
   if (opt->march == "native") {
     opt->march.clear();
     if (opt->mcpu.empty()) {

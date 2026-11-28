@@ -4,6 +4,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <sstream>
 
 #ifdef _WIN32
@@ -582,11 +583,17 @@ llvm::Expected<std::unique_ptr<codon::Options>> parseJITOptions(const char *name
 
   using Options = codon::Options;
   const std::pair<const char *, bool Options::*> booleans[] = {
-      {"debug", &Options::debug},       {"pmempty", &Options::pmempty},
-      {"capture", &Options::capture},   {"native", &Options::native},
-      {"pynum", &Options::pynum},       {"noexc", &Options::noexc},
-      {"fastmath", &Options::fastmath}, {"autopy", &Options::autopy},
-      {"autofree", &Options::autofree}, {"unordereddict", &Options::unordereddict},
+      {"debug", &Options::debug},
+      {"quick", &Options::quick},
+      {"pmempty", &Options::pmempty},
+      {"capture", &Options::capture},
+      {"native", &Options::native},
+      {"pynum", &Options::pynum},
+      {"noexc", &Options::noexc},
+      {"fastmath", &Options::fastmath},
+      {"autopy", &Options::autopy},
+      {"autofree", &Options::autofree},
+      {"unordereddict", &Options::unordereddict},
   };
   for (const auto &[key, member] : booleans) {
     if (auto *value = object->get(key)) {
@@ -596,6 +603,17 @@ llvm::Expected<std::unique_ptr<codon::Options>> parseJITOptions(const char *name
       options.get()->*member = *setting;
       object->erase(key);
     }
+  }
+  if (options->debug && options->quick)
+    return llvm::createStringError(
+        "JIT options 'debug' and 'quick' are mutually exclusive");
+  if (auto *value = object->get("threads")) {
+    auto workers = value->getAsUINT64();
+    if (!workers || *workers > std::numeric_limits<unsigned>::max())
+      return llvm::createStringError(
+          "JIT option 'threads' must be an unsigned integer");
+    options->threads = static_cast<unsigned>(*workers);
+    object->erase("threads");
   }
   const std::pair<const char *, std::string Options::*> strings[] = {
       {"libdevice", &Options::libdevice},

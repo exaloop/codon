@@ -36,11 +36,15 @@ Option names match the fields in `codon/compiler/options.h`:
 
 | Type | Options |
 | --- | --- |
-| `bool` | `debug`, `pmempty`, `capture`, `native`, `pynum`, `noexc`, `fastmath`, `autopy`, `autofree`, `unordereddict` |
+| `bool` | `debug`, `quick`, `pmempty`, `capture`, `native`, `pynum`, `noexc`, `fastmath`, `autopy`, `autofree`, `unordereddict` |
+| `int` | `threads` (unsigned) |
 | `str` | `libdevice`, `gpuName`, `gpuFeat`, `gpuOutput`, `log`, `march`, `mcpu` |
 | List of `str` | `plugins`, `defines`, `disabled`, `mattrs` |
 
 Defaults match `Options`, except the JIT compiles in release mode (`debug=False`).
+Use `quick=True` for shorter release builds. It cannot be combined with `debug=True`.
+`threads` limits CIR workers for this JIT only: the default is 4, `1` is
+serial, and `0` allows all available physical cores.
 For example, `pynum=False` selects C numerical semantics, `fastmath=True` relaxes
 floating-point semantics, and `unordereddict=True` selects unordered dictionaries.
 `defines=["SIZE=64", "LABEL=str:example"]` supplies compile-time constants using

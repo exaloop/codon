@@ -380,6 +380,7 @@ struct CaptureTracker : public util::Visitor {
   RDManager rd;
   OrderCache order;
   std::vector<DerivedSet> dsets;
+  size_t remainingCursors = 0;
   struct Vars {
     std::vector<const Var *> vars;
     bool escapes = false;
@@ -481,8 +482,18 @@ struct CaptureTracker : public util::Visitor {
         continue;
       const auto &toCauses = it->second;
       for (auto *fromVar : fromVars) {
-        auto &next =
-            dset.backwardProgress[{cause->getId(), toVar->getId(), fromVar->getId()}];
+        size_t next = 0;
+        if (toCauses.size() > 4) {
+          auto key = std::make_tuple(cause->getId(), toVar->getId(), fromVar->getId());
+          auto &progress = dset.backwardProgress;
+          auto cursor = progress.find(key);
+          if (cursor != progress.end()) {
+            next = std::exchange(cursor->second, toCauses.size());
+          } else if (remainingCursors) {
+            progress.try_emplace(key, toCauses.size());
+            --remainingCursors;
+          }
+        }
         for (; next < toCauses.size(); ++next) {
           auto *toCause = toCauses[next];
           if (isA<AssignInstr>(toCause) || isA<SyntheticAssignInstr>(toCause) ||
@@ -654,6 +665,9 @@ struct CaptureTracker : public util::Visitor {
       void preHook(Node *v) override { nodes.push_back(v); }
     } order;
     order.process(const_cast<Func *>(func));
+    // Bound the cache across all argument roots, not per source/target pair.
+    // Uncached links rescan the causes; the transfer itself is unchanged.
+    remainingCursors = order.nodes.size();
     unsigned oldSize = 0;
     do {
       oldSize = size();

@@ -17,6 +17,9 @@ struct Options {
   /// true if compiling in debug mode
   bool debug = true;
 
+  /// Prefer a shorter release optimization pipeline for edit/run cycles.
+  bool quick = false;
+
   /// true if running tests (internal use only)
   bool test = false;
 
@@ -92,8 +95,9 @@ struct Options {
   /// target features (e.g. +sse4.2, +neon, etc.)
   std::vector<std::string> mattrs;
 
-  /// Prefer a shorter release optimization pipeline for edit/run cycles.
-  bool quick = false;
+  static constexpr unsigned DEFAULT_THREADS = 4;
+  /// CIR analysis worker limit (0: available cores, 1: serial).
+  unsigned threads = DEFAULT_THREADS;
 
   /// Get a default-options instance.
   /// @return default options instance

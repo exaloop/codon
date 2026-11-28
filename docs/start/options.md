@@ -47,6 +47,8 @@ Maximum compiler workers for independent reaching-definition and dominator analy
 modules use up to four physical cores by default; small modules stay serial.
 Use `1` for serial compilation or `0` to allow all available physical cores.
 This does not change the thread count of the compiled program.
+Embedded compilers can set `Options::threads` per instance.
+In Python, use `codon.set_options(threads=1)` before the first JIT call.
 
 
 ## `-disable-exceptions`

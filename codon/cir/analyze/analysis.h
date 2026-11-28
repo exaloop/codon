@@ -34,6 +34,11 @@ public:
   /// Sets the manager.
   /// @param mng the new manager
   void setManager(transform::PassManager *mng) { manager = mng; }
+
+  /// Returns the compiler options.
+  /// @return the compiler options, or nullptr if no manager is set
+  Options *getOptions() const;
+
   /// Returns the result of a given analysis.
   /// @param key the analysis key
   template <typename AnalysisType>

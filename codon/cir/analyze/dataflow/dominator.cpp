@@ -107,7 +107,7 @@ std::unique_ptr<Result> DominatorAnalysis::run(const Module *m) {
     jobs.push_back(inspector.get());
     ret->results[graph.first] = std::move(inspector);
   }
-  analyzeGraphs(jobs);
+  analyzeGraphs(jobs, getOptions()->threads);
   return ret;
 }
 
