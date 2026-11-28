@@ -5,15 +5,15 @@
 #include <any>
 #include <memory>
 #include <peglib.h>
+#include <ranges>
 #include <string>
 #include <vector>
 
+#include "codon/cir/llvm/llvm.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
 #include "codon/parser/peg/rules.h"
 #include "codon/parser/visitors/format/format.h"
-
-#include <ranges>
 
 double totalPeg = 0.0;
 
@@ -118,6 +118,7 @@ parseExpr(Cache *cache, const std::string &code, const codon::SrcInfo &offset) {
 }
 
 llvm::Expected<Stmt *> parseFile(Cache *cache, const std::string &file) {
+  llvm::TimeTraceScope trace("Codon Parse File", file);
   auto lines = cache->fs->read_lines(file);
 
   // Build the parser buffer once (avoid join and copying if lines)

@@ -7,8 +7,10 @@ case "$(uname -s)" in
   MINGW*|MSYS*) windows=1 ;;
 esac
 exe_suffix=""
+python=python3
 if [ "$windows" -eq 1 ]; then
   exe_suffix=".exe"
+  python=python
 fi
 export codon="$arg/codon$exe_suffix"
 
@@ -16,8 +18,26 @@ export codon="$arg/codon$exe_suffix"
 [ "$($codon run "$testdir/argv.codon" aa bb cc)" == "aa,bb,cc" ] || exit 1
 
 # build test
-"$codon" build -release -o "$arg/test_binary$exe_suffix" "$testdir/build.codon" || exit 2
+trace="$arg/test_binary$exe_suffix.trace.json"
+rm -f "$trace" || exit 2
+"$codon" build -release -compile-trace -o "$arg/test_binary$exe_suffix" "$testdir/build.codon" || exit 2
 [ "$("$arg/test_binary$exe_suffix")" == "hello" ] || exit 2
+"$python" - "$trace" <<'PY' || exit 2
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as f:
+    spans = {e["name"] for e in json.load(f)["traceEvents"] if e["ph"] == "X"}
+assert {"Codon Parse File", "Codon LLVM"} <= spans, spans
+PY
+
+# The short release pipeline must still lower generators and use release semantics.
+quick_result=$("$codon" run -release-quick - <<'EOF'
+def squares(n: int):
+    for i in range(n):
+        yield i * i
+print(__debug__, sum(squares(6)))
+EOF
+) || exit 2
+[ "$quick_result" == "0 55" ] || exit 2
 
 if [ "$windows" -eq 0 ]; then
   "$codon" build -release -linker-flags=--pie -o "$arg/test_pie" "$testdir/build.codon" || exit 2

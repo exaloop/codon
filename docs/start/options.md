@@ -18,6 +18,37 @@ Turns on compiler optimizations and disables debug information.
 Use this for production builds or performance benchmarking.
 
 
+## `-release-quick`
+
+Use this for edit/run cycles when you want release semantics, including plugin
+optimizations, without the full cost of a production build. It runs each CIR
+folding group once and uses one host LLVM O2 pipeline instead of two O3
+pipelines. Generated code may be slower. Use `-release` for final benchmarks.
+
+
+## `-compile-trace` (build only)
+
+`codon build -release -compile-trace -o app main.py` writes `app.trace.json`
+alongside the normal output. Open the JSON in Perfetto or a Chrome trace viewer.
+`Codon Import` shows why a module was loaded; `Codon Parse File` isolates the
+file read and parse. `Codon Realize Function` shows which functions asked the
+type checker to specialize others, labeled by function family. Within each
+`Codon LLVM` round, `PassManager<Function>` identifies optimization work on
+individual specializations. `OptFunction` is separate code-generation time.
+
+Event times are inclusive: a parent's duration already includes its children.
+Individual spans shorter than 0.5 ms are omitted. Use untraced builds for
+wall-clock benchmarks.
+
+
+## `-cir-analysis-threads <n>`
+
+Maximum compiler workers for independent reaching-definition and dominator analyses. Large
+modules use up to four physical cores by default; small modules stay serial.
+Use `1` for serial compilation or `0` to allow all available physical cores.
+This does not change the thread count of the compiled program.
+
+
 ## `-disable-exceptions`
 
 Disables exception handling. Attempting to raise an exception will

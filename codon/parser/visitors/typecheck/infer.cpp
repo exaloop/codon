@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "codon/cir/attribute.h"
+#include "codon/cir/llvm/llvm.h"
 #include "codon/cir/type.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
@@ -396,6 +397,8 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
     }
   }
 
+  llvm::TimeTraceScope trace("Codon Realize Function",
+                             [&] { return type->getFuncName(); });
   auto oldCtx = this->ctx;
   this->ctx = imp->ctx;
   ctx->prepareCheckpoint();

@@ -3,6 +3,7 @@
 #pragma once
 
 #include <algorithm>
+#include <functional>
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
@@ -45,6 +46,8 @@ private:
     std::vector<std::string> reqs;
     /// vector of invalidated analyses
     std::vector<std::string> invalidates;
+    /// Optional change report for passes that can prove an iteration was a no-op.
+    std::function<bool()> changed;
 
     PassMetadata() = default;
     PassMetadata(std::unique_ptr<Pass> pass, std::vector<std::string> reqs,

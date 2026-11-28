@@ -92,6 +92,9 @@ struct Options {
   /// target features (e.g. +sse4.2, +neon, etc.)
   std::vector<std::string> mattrs;
 
+  /// Prefer a shorter release optimization pipeline for edit/run cycles.
+  bool quick = false;
+
   /// Get a default-options instance.
   /// @return default options instance
   static std::unique_ptr<Options> getDefault(const std::string &argv0);

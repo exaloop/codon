@@ -363,13 +363,17 @@ TEST_F(CIRCoreTest, CanonicalizationKeepsUnchangedCalls) {
   options->pmempty = true;
   transform::PassManager manager(options.get());
   manager.registerAnalysis(std::make_unique<PureAnalysis>());
-  manager.registerPass(
-      std::make_unique<transform::cleanup::CanonicalizationPass>(ANALYSIS_KEY), "",
-      {ANALYSIS_KEY}, {ANALYSIS_KEY});
+  auto canon = std::make_unique<transform::cleanup::CanonicalizationPass>(ANALYSIS_KEY);
+  auto *changes = canon.get();
+  manager.registerPass(std::move(canon), "", {ANALYSIS_KEY}, {ANALYSIS_KEY});
+  auto *nested = module->Nr<SeriesFlow>();
+  body->push_back(nested);
   auto originalSize = std::distance(module->values_begin(), module->values_end());
   manager.run(module.get());
+  EXPECT_NE(changes->getNumChanges(), 0u); // flattening is an IR mutation, too
   EXPECT_EQ(std::distance(module->values_begin(), module->values_end()), originalSize);
   manager.run(module.get());
+  EXPECT_EQ(changes->getNumChanges(), 0u);
   EXPECT_EQ(std::distance(module->values_begin(), module->values_end()), originalSize);
   EXPECT_EQ(body->front(), call);
 

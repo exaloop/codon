@@ -1630,7 +1630,12 @@ void runLLVMOptimizationPasses(llvm::Module *module, PluginManager *plugins,
   auto machine = options->native
                      ? getTargetMachine(module, options, /*setFunctionAttributes=*/true)
                      : std::unique_ptr<llvm::TargetMachine>();
-  llvm::PassBuilder pb(machine.get());
+  llvm::PassInstrumentationCallbacks callbacks;
+  llvm::TimeProfilingPassesHandler passTracing;
+  bool tracing = llvm::timeTraceProfilerEnabled();
+  if (tracing)
+    passTracing.registerCallbacks(callbacks);
+  llvm::PassBuilder pb(machine.get(), {}, std::nullopt, tracing ? &callbacks : nullptr);
 
   llvm::Triple moduleTriple(module->getTargetTriple());
   llvm::TargetLibraryInfoImpl tlii(moduleTriple);
@@ -1649,8 +1654,8 @@ void runLLVMOptimizationPasses(llvm::Module *module, PluginManager *plugins,
         pb.buildO0DefaultPipeline(llvm::OptimizationLevel::O0);
     mpm.run(*module, mam);
   } else {
-    llvm::ModulePassManager mpm =
-        pb.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O3);
+    llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(
+        options->quick ? llvm::OptimizationLevel::O2 : llvm::OptimizationLevel::O3);
     mpm.run(*module, mam);
   }
 
@@ -1687,21 +1692,26 @@ void optimize(llvm::Module *module, Options *options, PluginManager *plugins) {
   }
   {
     TIME("llvm/opt1");
+    llvm::TimeTraceScope trace("Codon LLVM", "host round 1");
     runLLVMOptimizationPasses(module, plugins, options);
   }
-  if (!debug) {
+  if (!debug && !options->quick) {
     TIME("llvm/opt2");
+    llvm::TimeTraceScope trace("Codon LLVM", "host round 2");
     runLLVMOptimizationPasses(module, plugins, options);
   }
   if (GPUmodule) {
     auto gpuOptions = *options;
     gpuOptions.native = false;
+    gpuOptions.quick = false;
     {
       TIME("llvm/gpuopt1");
+      llvm::TimeTraceScope trace("Codon LLVM", "GPU round 1");
       runLLVMOptimizationPasses(GPUmodule.get(), /*plugins=*/nullptr, &gpuOptions);
     }
     {
       TIME("llvm/gpuopt2");
+      llvm::TimeTraceScope trace("Codon LLVM", "GPU round 2");
       runLLVMOptimizationPasses(GPUmodule.get(), /*plugins=*/nullptr, &gpuOptions);
     }
     {

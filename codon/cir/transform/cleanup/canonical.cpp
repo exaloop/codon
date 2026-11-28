@@ -323,6 +323,7 @@ struct CanonConstSub : public RewriteRule {
 const std::string CanonicalizationPass::KEY = "core-cleanup-canon";
 
 void CanonicalizationPass::run(Module *m) {
+  flattened = 0;
   registerStandardRules(m);
   Rewriter::reset();
   OperatorPass::run(m);
@@ -338,12 +339,14 @@ void CanonicalizationPass::handle(SeriesFlow *v) {
   auto it = v->begin();
   while (it != v->end()) {
     if (auto *series = cast<SeriesFlow>(*it)) {
+      ++flattened;
       it = v->erase(it);
       for (auto *x : *series) {
         it = v->insert(it, x);
         ++it;
       }
     } else if (auto *flowInstr = cast<FlowInstr>(*it)) {
+      ++flattened;
       it = v->erase(it);
       // inserting in reverse order causes [flow, value] to be added
       it = v->insert(it, flowInstr->getValue());

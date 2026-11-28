@@ -387,3 +387,23 @@ def test_order_finally(value, condition):
     return result
 assert test_order_finally('value', True) == ['value']
 assert test_order_finally('value', False) == ['value']
+
+@test
+def test_backward_link_multiple_sources(value, left, right, condition):
+    holder = A([])
+    assign(holder, left if condition else right)
+    holder.a[0] = value
+    holder.a[1] = value
+    holder.a[2] = value
+    holder.a[3] = value
+    holder.a[4] = value
+    # Each possible source of the alias must see the later writes.
+    assert expect_capture(False, False, (1, 2))
+    assert expect_capture(False, False, ())
+    assert expect_capture(False, False, ())
+    assert expect_capture(False, False, ())
+
+left, right = [''] * 5, [''] * 5
+test_backward_link_multiple_sources('L', left, right, True)
+test_backward_link_multiple_sources('R', left, right, False)
+assert left == ['L'] * 5 and right == ['R'] * 5

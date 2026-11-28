@@ -6,17 +6,20 @@
 
 namespace codon {
 namespace {
-enum OptModeEnum { Debug, Release };
+enum OptModeEnum { Debug, Release, ReleaseQuick };
 enum NumericsEnum { C, Python };
 
-llvm::cl::opt<OptModeEnum>
-    OptMode(llvm::cl::desc("optimization mode"),
-            llvm::cl::values(
-                clEnumValN(Debug, "debug",
-                           "Turn off compiler optimizations and show backtraces"),
-                clEnumValN(Release, "release",
-                           "Turn on compiler optimizations and disable debug info")),
-            llvm::cl::init(Debug));
+llvm::cl::opt<OptModeEnum> OptMode(
+    llvm::cl::desc("optimization mode"),
+    llvm::cl::values(
+        clEnumValN(Debug, "debug",
+                   "Turn off compiler optimizations and show backtraces"),
+        clEnumValN(Release, "release",
+                   "Turn on compiler optimizations and disable debug info"),
+        clEnumValN(
+            ReleaseQuick, "release-quick",
+            "Optimize for shorter release builds (may reduce runtime performance)")),
+    llvm::cl::init(Debug));
 
 llvm::cl::opt<bool> DisableExceptions("disable-exceptions",
                                       llvm::cl::desc("Disable exception handling"),
@@ -97,6 +100,7 @@ llvm::cl::opt<Options::GlobalCTORMode> GlobalCTOR(
 
 void apply(Options *opt) {
   opt->debug = (OptMode == Debug);
+  opt->quick = (OptMode == ReleaseQuick);
   opt->native = !DisableNative;
   opt->pynum = (Numerics == Python);
   opt->noexc = DisableExceptions;

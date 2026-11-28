@@ -7,11 +7,19 @@
 #include <limits>
 #include <tuple>
 
+#include "codon/cir/analyze/dataflow/parallel.h"
+#include "codon/cir/llvm/llvm.h"
+
 namespace codon {
 namespace ir {
 namespace analyze {
 namespace dataflow {
 namespace {
+
+llvm::cl::opt<unsigned>
+    AnalysisThreads("cir-analysis-threads", llvm::cl::init(4),
+                    llvm::cl::desc("Maximum threads for independent CIR "
+                                   "dataflow analyses (1 for serial)"));
 
 id_t getKilled(const Value *val) {
   if (auto *assign = cast<AssignInstr>(val)) {
@@ -294,14 +302,19 @@ std::vector<ReachingDef> RDInspector::getReachingDefinitions(const Var *var,
 
 const std::string RDAnalysis::KEY = "core-analyses-rd";
 
+unsigned getAnalysisThreads() { return AnalysisThreads; }
+
 std::unique_ptr<Result> RDAnalysis::run(const Module *m) {
   auto *cfgResult = getAnalysisResult<CFResult>(cfAnalysisKey);
   auto ret = std::make_unique<RDResult>(cfgResult);
+  std::vector<RDInspector *> jobs;
   for (const auto &graph : cfgResult->graphs) {
     auto inspector = std::make_unique<RDInspector>(graph.second.get());
-    inspector->analyze();
+    jobs.push_back(inspector.get());
     ret->results[graph.first] = std::move(inspector);
   }
+
+  analyzeGraphs(jobs);
   return ret;
 }
 

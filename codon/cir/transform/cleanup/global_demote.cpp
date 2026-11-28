@@ -53,9 +53,9 @@ void GlobalDemotionPass::run(Module *M) {
       continue;
     seqassertn(it.first->isGlobal(), "var was not global [{}]", it.first->getSrcInfo());
     it.first->setGlobal(false);
+    ++numDemotions;
     if (auto *func = cast<BodiedFunc>(it.second)) {
       func->push_back(it.first);
-      ++numDemotions;
       LOG_IR("[{}] demoted {} to a local of {}", KEY, *it.first, func->getName());
     }
   }

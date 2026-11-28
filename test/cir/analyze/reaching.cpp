@@ -1,7 +1,9 @@
 #include "test.h"
 
 #include "codon/cir/analyze/dataflow/cfg.h"
+#include "codon/cir/analyze/dataflow/dominator.h"
 #include "codon/cir/analyze/dataflow/reaching.h"
+#include "codon/cir/transform/manager.h"
 
 using namespace codon::ir;
 
@@ -17,6 +19,51 @@ std::unordered_set<codon::ir::id_t> rdset(analyze::dataflow::RDInspector &rd, Va
   return set;
 }
 } // namespace
+
+TEST_F(CIRCoreTest, DataflowAnalysesKeepFunctionResultsIsolated) {
+  using namespace analyze::dataflow;
+  struct Probe : transform::Pass {
+    std::vector<std::tuple<Func *, Var *, Value *, Value *>> cases;
+    std::string getKey() const override { return "rd-probe"; }
+    void run(Module *) override {
+      auto *result = getAnalysisResult<RDResult>(RDAnalysis::KEY);
+      auto *dominators = getAnalysisResult<DominatorResult>(DominatorAnalysis::KEY);
+      for (auto [f, var, loc, value] : cases) {
+        auto &rd = *result->results.at(f->getId());
+        EXPECT_EQ(rdset(rd, var, loc),
+                  std::unordered_set<codon::ir::id_t>{value->getId()});
+        auto &dom = *dominators->results.at(f->getId());
+        EXPECT_TRUE(dom.isDominated(loc, value));
+        EXPECT_FALSE(dom.isDominated(value, loc));
+      }
+    }
+  };
+  auto probe = std::make_unique<Probe>();
+  for (int i = 0; i < 96; ++i) {
+    auto *f = module->Nr<BodiedFunc>("f" + std::to_string(i));
+    auto *var = module->Nr<Var>(module->getIntType());
+    auto *value = module->getInt(i);
+    auto *loc = module->Nr<VarValue>(var);
+    f->push_back(var);
+    auto *body = module->Nr<SeriesFlow>();
+    body->push_back(module->Nr<AssignInstr>(var, value));
+    auto *branch = module->Nr<SeriesFlow>();
+    branch->push_back(loc);
+    body->push_back(module->Nr<IfFlow>(module->getBool(true), branch));
+    f->setBody(body);
+    probe->cases.emplace_back(f, var, loc, value);
+  }
+  cast<BodiedFunc>(module->getMainFunc())->setBody(module->Nr<SeriesFlow>());
+  auto options = codon::Options::getDefault("");
+  options->pmempty = true;
+  transform::PassManager pm(options.get());
+  pm.registerAnalysis(std::make_unique<CFAnalysis>());
+  pm.registerAnalysis(std::make_unique<RDAnalysis>(CFAnalysis::KEY), {CFAnalysis::KEY});
+  pm.registerAnalysis(std::make_unique<DominatorAnalysis>(CFAnalysis::KEY),
+                      {CFAnalysis::KEY});
+  pm.registerPass(std::move(probe), "", {RDAnalysis::KEY, DominatorAnalysis::KEY});
+  pm.run(module.get());
+}
 
 TEST_F(CIRCoreTest, RDAnalysisSimple) {
   auto *f = module->Nr<BodiedFunc>("test_f");
