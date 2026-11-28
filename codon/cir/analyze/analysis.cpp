@@ -8,6 +8,10 @@ namespace codon {
 namespace ir {
 namespace analyze {
 
+Options *Analysis::getOptions() const {
+  return manager ? manager->getOptions() : nullptr;
+}
+
 Result *Analysis::doGetAnalysis(const std::string &key) {
   return manager ? manager->getAnalysisResult(key) : nullptr;
 }

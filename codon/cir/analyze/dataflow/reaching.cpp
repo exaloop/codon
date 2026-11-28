@@ -7,6 +7,8 @@
 #include <limits>
 #include <tuple>
 
+#include "codon/cir/analyze/dataflow/parallel.h"
+
 namespace codon {
 namespace ir {
 namespace analyze {
@@ -297,11 +299,14 @@ const std::string RDAnalysis::KEY = "core-analyses-rd";
 std::unique_ptr<Result> RDAnalysis::run(const Module *m) {
   auto *cfgResult = getAnalysisResult<CFResult>(cfAnalysisKey);
   auto ret = std::make_unique<RDResult>(cfgResult);
+  std::vector<RDInspector *> jobs;
   for (const auto &graph : cfgResult->graphs) {
     auto inspector = std::make_unique<RDInspector>(graph.second.get());
-    inspector->analyze();
+    jobs.push_back(inspector.get());
     ret->results[graph.first] = std::move(inspector);
   }
+
+  analyzeGraphs(jobs, getOptions()->threads);
   return ret;
 }
 

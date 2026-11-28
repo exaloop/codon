@@ -25,7 +25,9 @@ if __name__ == "__main__" and "--options-only" not in sys.argv:
 def test_options():
     for settings in ({"fastmath": 1}, {"fastmath": None}, {"mcpu": True},
                      {"disabled": "folding"}, {"mattrs": [1]},
-                     {"unknown": True}, {"standalone": True}):
+                     {"unknown": True}, {"standalone": True},
+                     {"threads": -1}, {"threads": True},
+                     {"quick": True, "debug": True}):
         try:
             codon.set_options(**settings)
             assert False, settings
@@ -33,7 +35,8 @@ def test_options():
             pass
 
     disabled = ["not-a-pass"]
-    codon.set_options(fastmath=True, native=False, disabled=disabled)
+    codon.set_options(fastmath=True, native=False, disabled=disabled,
+                      quick=True, threads=1)
     codon.set_options(pynum=False, unordereddict=True,
                       defines=["JIT_SCALE=7", "JIT_LABEL=str:configured"])
     disabled.append(1)
@@ -71,7 +74,7 @@ def test_options():
     except RuntimeError:
         pass
 
-    wrapper = codon.JITWrapper(pynum=False, debug=True)
+    wrapper = codon.JITWrapper(pynum=False, debug=True, threads=0)
     wrapper.set_options(fastmath=True)
     wrapper.execute("assert __py_numerics__ == 0\nassert __debug__ == 1\n", "", 0, False)
     try:

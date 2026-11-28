@@ -44,7 +44,9 @@ The `codon::jit::JIT` constructor takes three arguments:
 
 - `options`: a `codon::Options` configuration. `getDefault(argv[0])` supplies
   defaults and the executable location used for library discovery; the
-  example then enables JIT compilation and output capture.
+  example then enables JIT compilation and output capture. For shorter
+  release compilations set `debug = false` and `quick = true`; set
+  `threads = 1` if the host manages its own parallelism.
 - `mode`: currently supports either an empty string or `"jupyter"`, where the
   latter adds support for the
   [`_repr_mimebundle_`](https://ipython.readthedocs.io/en/latest/whatsnew/version5.html#define-repr-mimebundle)

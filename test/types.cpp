@@ -726,8 +726,11 @@ TEST(JITOptionsTest, RejectsInvalidOptions) {
   for (const auto *settings :
        {"[]", "{", R"({"fastmath": 1})", R"({"native": null})", R"({"mcpu": true})",
         R"({"disabled": "folding"})", R"({"mattrs": [1]})", R"({"jit": false})",
-        R"({"standalone": true})", R"({"unknown": true})",
-        R"({"defines": ["missing-value"]})", R"({"defines": ["name=1", "name=2"]})"}) {
+        R"({"standalone": true})", R"({"unknown": true})", R"({"quick": 1})",
+        R"({"quick": true, "debug": true})", R"({"threads": -1})",
+        R"({"threads": 1.5})", R"({"threads": true})",
+        R"({"threads": 4294967296})", R"({"defines": ["missing-value"]})",
+        R"({"defines": ["name=1", "name=2"]})"}) {
     auto result = jit_validate_options(settings);
     EXPECT_EQ(result.result, nullptr);
     EXPECT_NE(result.error, nullptr) << settings;
@@ -739,6 +742,7 @@ TEST(JITOptionsTest, AppliesOptionsBeforeInitialization) {
   auto result =
       jit_init_with_options("build/codon_test",
                             R"({"pynum": false, "fastmath": true, "capture": true,
+           "quick": true, "threads": 1,
            "native": false, "gpuName": "sm_80", "mattrs": [],
          "defines": ["JIT_SCALE=7", "JIT_LABEL=str:configured"],
            "disabled": ["not-a-pass"]})");
@@ -747,6 +751,8 @@ TEST(JITOptionsTest, AppliesOptionsBeforeInitialization) {
   auto *options = jit->getCompiler()->getOptions();
   EXPECT_TRUE(options->jit);
   EXPECT_FALSE(options->debug);
+  EXPECT_TRUE(options->quick);
+  EXPECT_EQ(options->threads, 1u);
   EXPECT_FALSE(options->pynum);
   EXPECT_TRUE(options->fastmath);
   EXPECT_FALSE(options->native);

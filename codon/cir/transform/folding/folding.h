@@ -13,6 +13,7 @@ namespace transform {
 namespace folding {
 
 class FoldingPass;
+class ConstPropPass;
 
 /// Group of constant folding passes.
 class FoldingPassGroup : public PassGroup {
@@ -21,6 +22,8 @@ private:
   cleanup::CanonicalizationPass *canon;
   FoldingPass *fp;
   cleanup::DeadCodeCleanupPass *dce;
+  ConstPropPass *prop;
+  bool addedVars = false;
 
 public:
   static CODON_API const std::string KEY;
@@ -36,6 +39,8 @@ public:
                    int repeat = 5, bool runGlobalDemotion = true);
 
   bool shouldRepeat(int num) const override;
+  void run(Module *m) override;
+  bool changed() const;
 };
 
 } // namespace folding

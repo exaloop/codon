@@ -5,6 +5,7 @@
 #include <tuple>
 #include <vector>
 
+#include "codon/cir/llvm/llvm.h"
 #include "codon/compiler/compiler.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
@@ -370,6 +371,7 @@ Stmt *TypecheckVisitor::transformPythonImport(Expr *what,
 ///        __name__ = [I]
 ///        [imported top-level statements]```
 Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
+  llvm::TimeTraceScope trace("Codon Import", file.path);
   // Use a clean context to parse a new file
   auto moduleID = file.module;
   std::ranges::replace(moduleID, '.', '_');

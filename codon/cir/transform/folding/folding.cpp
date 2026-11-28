@@ -30,16 +30,34 @@ FoldingPassGroup::FoldingPassGroup(const std::string &sideEffectsPass,
 
   if (runGlobalDemotion)
     push_back(std::move(gdUnique));
-  push_back(std::make_unique<ConstPropPass>(reachingDefPass, globalVarPass));
+  auto propUnique = std::make_unique<ConstPropPass>(reachingDefPass, globalVarPass);
+  prop = propUnique.get();
+  push_back(std::move(propUnique));
   push_back(std::move(canonUnique));
   push_back(std::move(fpUnique));
   push_back(std::move(dceUnique));
 }
 
+void FoldingPassGroup::run(Module *m) {
+  // Even a rejected rewrite can realize a new operator while checking its type.
+  auto lastVar = [&]() { return m->begin() == m->end() ? nullptr : m->back(); };
+  auto *before = lastVar();
+  PassGroup::run(m);
+  addedVars = before != lastVar();
+}
+
 bool FoldingPassGroup::shouldRepeat(int num) const {
-  return PassGroup::shouldRepeat(num) &&
-         ((gd && gd->getNumDemotions() != 0) || canon->getNumReplacements() != 0 ||
-          fp->getNumReplacements() != 0 || dce->getNumReplacements() != 0);
+  LOG_TIME("[T] folding round {}: demoted={}, propagated={}, canonicalized={}, "
+           "folded={}, removed={}",
+           num, gd ? gd->getNumDemotions() : 0, prop->getNumReplacements(),
+           canon->getNumChanges(), fp->getNumReplacements(), dce->getNumReplacements());
+  return PassGroup::shouldRepeat(num) && changed();
+}
+
+bool FoldingPassGroup::changed() const {
+  return addedVars || (gd && gd->getNumDemotions()) || prop->getNumReplacements() ||
+         canon->getNumChanges() || fp->getNumReplacements() ||
+         dce->getNumReplacements();
 }
 
 } // namespace folding

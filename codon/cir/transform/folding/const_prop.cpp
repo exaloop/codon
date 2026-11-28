@@ -65,6 +65,7 @@ void ConstPropPass::handle(VarValue *v) {
   }
 
   v->replaceAll(replacement);
+  ++numReplacements;
 }
 
 void ConstPropPass::handle(ExtractInstr *v) {
@@ -81,7 +82,6 @@ void ConstPropPass::handle(ExtractInstr *v) {
   if (!r)
     return;
 
-  auto *c = r->cfgResult;
   auto it = r->results.find(getParentFunc()->getId());
   if (it == r->results.end())
     return;
@@ -110,6 +110,7 @@ void ConstPropPass::handle(ExtractInstr *v) {
   util::CloneVisitor cv(v->getModule());
   auto *replacement = cv.clone(*(call->begin() + idx));
   v->replaceAll(replacement);
+  ++numReplacements;
 }
 
 } // namespace folding

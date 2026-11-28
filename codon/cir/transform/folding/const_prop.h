@@ -16,6 +16,7 @@ private:
   std::string reachingDefKey;
   /// Key of the global variables analysis
   std::string globalVarsKey;
+  int numReplacements = 0;
 
 public:
   static CODON_API const std::string KEY;
@@ -27,6 +28,11 @@ public:
       : reachingDefKey(reachingDefKey), globalVarsKey(globalVarsKey) {}
 
   std::string getKey() const override { return KEY; }
+  int getNumReplacements() const { return numReplacements; }
+  void run(Module *m) override {
+    numReplacements = 0;
+    OperatorPass::run(m);
+  }
   void handle(VarValue *v) override;
   void handle(ExtractInstr *v) override;
 };

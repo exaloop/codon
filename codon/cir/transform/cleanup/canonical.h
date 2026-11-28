@@ -15,6 +15,7 @@ namespace cleanup {
 class CanonicalizationPass : public OperatorPass, public Rewriter {
 private:
   std::string sideEffectsKey;
+  unsigned flattened = 0;
 
 public:
   /// Constructs a canonicalization pass
@@ -24,6 +25,7 @@ public:
 
   static CODON_API const std::string KEY;
   std::string getKey() const override { return KEY; }
+  unsigned getNumChanges() const { return getNumReplacements() + flattened; }
 
   void run(Module *m) override;
   void handle(CallInstr *) override;

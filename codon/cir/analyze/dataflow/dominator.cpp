@@ -2,6 +2,7 @@
 
 #include "dominator.h"
 
+#include "codon/cir/analyze/dataflow/parallel.h"
 #include "codon/cir/llvm/llvm.h"
 
 namespace codon {
@@ -100,11 +101,13 @@ const std::string DominatorAnalysis::KEY = "core-analyses-dominator";
 std::unique_ptr<Result> DominatorAnalysis::run(const Module *m) {
   auto *cfgResult = getAnalysisResult<CFResult>(cfAnalysisKey);
   auto ret = std::make_unique<DominatorResult>(cfgResult);
+  std::vector<DominatorInspector *> jobs;
   for (const auto &graph : cfgResult->graphs) {
     auto inspector = std::make_unique<DominatorInspector>(graph.second.get());
-    inspector->analyze();
+    jobs.push_back(inspector.get());
     ret->results[graph.first] = std::move(inspector);
   }
+  analyzeGraphs(jobs, getOptions()->threads);
   return ret;
 }
 

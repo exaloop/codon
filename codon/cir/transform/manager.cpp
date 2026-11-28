@@ -122,8 +122,9 @@ void PassManager::runPass(Module *module, const std::string &name) {
     meta.pass->run(module);
     timer.log();
 
-    for (auto &inv : meta.invalidates)
-      invalidate(inv);
+    if (!meta.changed || meta.changed())
+      for (auto &inv : meta.invalidates)
+        invalidate(inv);
 
     run = meta.pass->shouldRepeat(++it);
   }
@@ -211,11 +212,16 @@ void PassManager::registerStandardPasses() {
     registerPass(std::make_unique<numpy::NumPyInlinePass>(numpyKey),
                  /*insertBefore=*/"", {numpyKey},
                  {seKey1, seKey2, rdKey, cfgKey, globalKey, capKey});
-    registerPass(
-        std::make_unique<folding::FoldingPassGroup>(
-            seKey1, rdKey, globalKey, /*repeat=*/5, /*runGlobalDemoton=*/false),
-        /*insertBefore=*/"", {seKey1, rdKey, globalKey},
-        {seKey1, rdKey, cfgKey, globalKey, capKey});
+    auto addFolding = [&](const std::string &sideEffects, bool demote) {
+      auto group = std::make_unique<folding::FoldingPassGroup>(
+          sideEffects, rdKey, globalKey, options->quick ? 1 : 5, demote);
+      auto *fold = group.get();
+      auto key = registerPass(std::move(group), "", {sideEffects, rdKey, globalKey},
+                              {sideEffects, rdKey, cfgKey, globalKey});
+      if (!key.empty())
+        passes.at(key).changed = [fold] { return fold->changed(); };
+    };
+    addFolding(seKey1, false);
     registerPass(std::make_unique<pythonic::StrAppendOptimization>(rdKey, domKey), "",
                  {rdKey, domKey}, {seKey1, seKey2, rdKey, cfgKey, globalKey, capKey});
     registerPass(std::make_unique<pythonic::StrAdditionOptimization>(), "", {},
@@ -245,12 +251,7 @@ void PassManager::registerStandardPasses() {
     if (!options->jit) {
       // Don't demote globals in JIT mode, since they might be used later
       // by another user input.
-      registerPass(
-          std::make_unique<folding::FoldingPassGroup>(seKey2, rdKey, globalKey,
-                                                      /*repeat=*/5,
-                                                      /*runGlobalDemoton=*/true),
-          /*insertBefore=*/"", {seKey2, rdKey, globalKey},
-          {seKey2, rdKey, cfgKey, globalKey});
+      addFolding(seKey2, true);
     }
     registerPass(std::make_unique<cleanup::DevirtualizationPass>(rdKey),
                  /*insertBefore=*/"", {rdKey}, {cfgKey, rdKey, globalKey});
